@@ -27,12 +27,33 @@ hooks + git pre-commit hooks) live in the repo and run locally — see [CLAUDE.m
 
 ---
 
+## Supabase — Postgres, Auth, RLS
+
+**Local (Stage 1 PR #2) — done.** Development runs against a local Supabase stack in Docker
+(`supabase/config.toml`). It's free, offline, and disposable.
+
+- **Run it:** `supabase start` (needs Docker). `supabase status` prints the local URLs/keys;
+  `supabase stop` shuts it down. See [SETUP.md](SETUP.md).
+- **Local URLs:** API `http://127.0.0.1:54321`, Studio `http://127.0.0.1:54323`,
+  mail catcher (Mailpit) `http://127.0.0.1:54324`.
+- **Keys:** the local anon/service-role keys are the **standard public demo keys** — identical
+  on every Supabase install, not secrets. Only `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`
+  go into `.env.local` (gitignored). The service-role key is not used by app code.
+- **Schema:** `supabase/migrations/` (version-controlled). First migration: `tasks` table with
+  RLS, owner-scoped policies, soft-delete, and no client hard-delete. `supabase db reset`
+  re-applies migrations to the **local** DB only.
+
+**Cloud (Stage 1 PR #3) — pending.** One production project (anon + service-role keys, auth
+hardening, daily encrypted backups). Documented here when provisioned.
+
+---
+
 ## Not yet provisioned
 
 Added in later stages; documented here when they are:
 
-- **Supabase** (Stage 1) — Postgres, Auth, RLS, Realtime, Edge Functions. anon + service-role keys.
-- **Vercel** (Stage 1) — frontend hosting + PR previews.
+- **Supabase cloud** (Stage 1 PR #3) — production project + auth hardening + backups.
+- **Vercel** (Stage 1 PR #3) — frontend hosting + PR previews.
 - **Anthropic Console** (Stage 4) — API key for in-app AI; spend limits set here.
 - **Sentry** (Stage 2) — error monitoring; DSN.
 

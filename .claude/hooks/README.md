@@ -18,6 +18,9 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 | `git add .env*` (non-example) | Bash | staging real env files | Secrets leak via git |
 | Force-push / push to main | Bash | `git push --force` or `origin main` | Bypasses PR + CI gate |
 | Reading `.env*`, `*.pem`, `*.key` via shell | Bash | `cat`/`less`/`head` on secret files | Secrets entering Claude's context |
+| `supabase db reset --linked` / `--db-url <remote>` | Bash | `db reset` + remote flag | Wipes a **production** database — only the local (Docker) reset is allowed |
+| `supabase projects delete` | Bash | `projects delete` | Irreversible deletion of a hosted project |
+| Remote `DROP`/`TRUNCATE`/`DELETE` SQL | Bash | destructive verb + a non-localhost `postgres://…@host` | Destructive SQL against prod; run it only on the local DB via migrations |
 
 > Bash command-matching is scoped per shell command: the gap between a command
 > and its target excludes `;`, `&`, `|`, so a `.env` mentioned in a *later*
@@ -28,6 +31,14 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 | Reading `*.pem` / `*.key` | Read | file_path suffix | Private key material |
 | Writing to `.env*` (non-example) | Edit/Write | file_path basename match | Only `.env.example` is committed |
 | Embedding secret values | Edit/Write | regex patterns for `sk-ant-`, DB URLs with passwords, private key blocks, AWS keys, GitHub tokens, raw JWTs | Secrets must never appear in committed files |
+
+> **Gotcha — the destructive-DB guard matches on *mention*, not just execution.** A Bash
+> command that merely contains `supabase db reset --linked`, `projects delete`, or a remote
+> `postgres://…@host` + `DROP/DELETE` is blocked — including a `git commit -m "…"` or
+> `gh pr create --body "…"` whose **text** describes those commands. Workaround: put the
+> message in a file and use `git commit -F <file>` / `gh pr create --body-file <file>` (the
+> hook scans the command string, not file contents). This false-positive is the safe default —
+> we'd rather block a commit message than risk a real prod wipe.
 
 ---
 
