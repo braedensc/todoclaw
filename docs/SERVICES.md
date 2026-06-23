@@ -75,7 +75,7 @@ merged-ready; it activates once you provision the accounts and set the secrets b
 
    | Secret | Value |
    |---|---|
-   | `BACKUP_DATABASE_URL` | the `backup_ro` role's Postgres connection string — form `postgresql://backup_ro@HOST:5432/postgres` with the password inserted after the role name (Supabase shows the full string under Project Settings → Database) |
+   | `BACKUP_DATABASE_URL` | the `backup_ro` role's Postgres connection string — form `postgresql://backup_ro@HOST:5432/postgres` with the password inserted after the role name (Supabase shows the full string under Project Settings → Database). Add **`?sslmode=require`** if SSL is enforced (see Database network security below) |
    | `BACKUP_GPG_PASSPHRASE` | a strong passphrase to encrypt dumps (store it in your password manager — **without it the backups can't be decrypted**) |
 
 ### Backups
@@ -97,6 +97,24 @@ psql "<target-db-url>" < backup.sql
 
 Proven locally before ship (PR #3): seed → dump → AES-256 encrypt → wipe table → decrypt →
 restore → rows + RLS recovered.
+
+### Database network security (decisions, 2026-06-23)
+
+- **Enforce SSL → ON.** Settings → Database → *Enforce SSL on incoming connections*. Forces
+  TLS on every **direct** Postgres connection. The app is unaffected (it talks to the API over
+  HTTPS, never direct DB). When enabled, append **`?sslmode=require`** to `BACKUP_DATABASE_URL`
+  so the backup job negotiates TLS explicitly and can't silently fall back.
+- **Network / IP restrictions → OFF for now (deliberate).** They gate only *direct DB*
+  connections (port 5432), **not the API** — and the API (anon key + RLS + JWT) is the actual
+  internet-facing surface, already locked down. Turning them on would:
+  - **break the daily backup job** — GitHub Actions runners have no stable IP (huge rotating
+    Azure ranges; can't be allow-listed without effectively allowing the internet), and
+  - **block `db push`** from a roaming dev laptop.
+  Direct DB access is already gated by secret role passwords **+ SSL**, which is sufficient for
+  a two-person app.
+  - **Enable later** once backups egress through a **static IP** (a self-hosted runner or a
+    small proxy): then allow-list that IP + your home/office IP and lock the DB port down hard.
+    A Stage 6 hardening step.
 
 ---
 
