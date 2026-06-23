@@ -100,3 +100,13 @@ ownership.
   round-trip is proven locally before ship.
 - **One-time `db push`** seeds the cloud schema (a documented bootstrap exception); CI-driven
   migrations on merge are a Stage 2/6 task.
+
+**Update (2026-06-23) — backup auth reality.** The least-privilege `backup_ro` plan didn't
+survive contact with Supabase's managed pooler: the **free pooler (Supavisor) only accepts the
+built-in `postgres` user**, not custom roles, and the **direct connection is IPv6-only** (GitHub
+Actions runners are IPv4-only → "Network unreachable"). So the daily backup authenticates as
+`postgres` via the **session pooler** (`aws-1-us-west-2…`, port 5432, `sslmode=require`), with
+the dump still scoped to `--schema=public`. Tradeoff accepted: the backup secret holds the main
+DB credential (rotate if exposed). `backup_ro` is created and reserved for restoring strict
+least-privilege once we add the Supabase **IPv4 add-on** or a **self-hosted runner**. Backup →
+encrypt → upload verified working in prod (encrypted artifact produced).
