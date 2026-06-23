@@ -75,16 +75,16 @@ merged-ready; it activates once you provision the accounts and set the secrets b
 
    | Secret | Value |
    |---|---|
-   | `BACKUP_DATABASE_URL` | the `backup_ro` role's **session-pooler** connection string. ⚠️ Use the **Session pooler**, not the direct `db.<ref>.supabase.co` host — the direct host is **IPv6-only** and unreachable from GitHub Actions runners (which are IPv4-only). Copy the **Session pooler** URI from Project Settings → Database → *Connection pooling*, then change the user from `postgres.<ref>` to `backup_ro.<ref>`, use backup_ro's password, and append `?sslmode=require`. Form (password omitted): `postgresql://backup_ro.<ref>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require` |
+   | `BACKUP_DATABASE_URL` | the **`postgres`** user's **Session-pooler** connection string (IPv4). Get it from the dashboard's green **Connect** button → **Session pooler** (port **5432**), drop in your DB password, and append `?sslmode=require`. Form (password omitted): `postgresql://postgres.<ref>@aws-<N>-<region>.pooler.supabase.com:5432/postgres?sslmode=require` — the `aws-<N>-` prefix is project-specific (ours is **`aws-1-us-west-2`**; `aws-0` returned "tenant not found"). ⚠️ **Not** the direct `db.<ref>.supabase.co` host (IPv6-only, unreachable from GitHub runners) and **not** a custom role — the free pooler only accepts the built-in `postgres` user. Treat this secret as full-DB access; rotate the DB password if exposed. The read-only `backup_ro` role exists but can't be used via the free pooler — it's reserved for a future least-privilege upgrade (Supabase IPv4 add-on or a self-hosted runner). |
    | `BACKUP_GPG_PASSPHRASE` | a strong passphrase to encrypt dumps (store it in your password manager — **without it the backups can't be decrypted**) |
 
 ### Backups
 
 `.github/workflows/backup.yml` runs **daily (09:00 UTC)** + on-demand. It `pg_dump`s the
-`public` schema as the least-privilege `backup_ro` role, encrypts with AES-256, and uploads an
-**encrypted artifact (90-day retention)**. Until both secrets are set it runs green but skips.
-Trigger manually from the **Actions** tab to test. **`BACKUP_DATABASE_URL` must use the session
-pooler** (IPv4) — the direct DB host is IPv6-only and unreachable from GitHub runners.
+`public` schema (via the **session pooler**, IPv4, as the `postgres` user), encrypts with
+AES-256, and uploads an **encrypted artifact (90-day retention)**. Until both secrets are set it
+runs green but skips. Trigger manually from the **Actions** tab to test. **Verified working
+2026-06-23** — produced an encrypted artifact from the cloud DB.
 
 ### Restore runbook
 
@@ -116,6 +116,12 @@ restore → rows + RLS recovered.
   - **Enable later** once backups egress through a **static IP** (a self-hosted runner or a
     small proxy): then allow-list that IP + your home/office IP and lock the DB port down hard.
     A Stage 6 hardening step.
+- **Backup auth → `postgres` via session pooler (not least-privilege, deliberate).** The free
+  pooler only accepts the built-in `postgres` user, and the direct connection (which *would*
+  accept the read-only `backup_ro`) is IPv6-only / unreachable from GitHub runners. So the
+  backup secret holds the `postgres` credential — rotate it if exposed. Restoring strict
+  least-privilege (`backup_ro`) needs the Supabase **IPv4 add-on** or a **self-hosted runner** —
+  the same future hardening as network restrictions above.
 
 ---
 
