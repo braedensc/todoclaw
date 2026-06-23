@@ -36,9 +36,7 @@ export function AuthForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <h2 className="text-lg font-medium">
-        {mode === 'signin' ? 'Sign in' : 'Create account'}
-      </h2>
+      <h2 className="text-lg font-medium">{mode === 'signin' ? 'Sign in' : 'Create account'}</h2>
 
       <input
         type="email"
@@ -74,9 +72,7 @@ export function AuthForm() {
         onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
         className="text-sm text-slate-500 underline"
       >
-        {mode === 'signin'
-          ? 'Need an account? Sign up'
-          : 'Have an account? Sign in'}
+        {mode === 'signin' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
       </button>
     </form>
   )

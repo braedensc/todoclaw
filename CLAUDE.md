@@ -40,7 +40,7 @@ Todoclaw is a ground-up rebuild of EisenClaw — an Eisenhower-matrix task plann
 
 ## Commands
 
-> Stubs — filled in as tooling is installed in each stage.
+> Real as of Stage 2 except `test:e2e` (Playwright, PR #5). Run `nvm use` (Node 22) first.
 
 ```bash
 # Dev
@@ -48,13 +48,14 @@ npm run dev            # Vite dev server
 supabase start         # Start local Supabase (Docker)
 
 # Quality
-npm run lint           # ESLint
-npm run format         # Prettier
-npm run typecheck      # tsc --noEmit
+npm run lint           # ESLint (flat config)
+npm run format         # Prettier (write)
+npm run format:check   # Prettier (check only — what CI runs)
+npm run typecheck      # tsc -b (no emit)
 
 # Test
-npm test               # Vitest (unit + integration)
-npm run test:e2e       # Playwright
+npm test               # Vitest (unit + component, jsdom)
+npm run test:e2e       # Playwright (added in Stage 2 PR #5)
 npm run test:watch     # Vitest watch mode
 
 # DB
@@ -173,7 +174,7 @@ At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw S
 - **Priority score:** `x×0.45 + y×0.55 + (daysUntil(due) ≤ 2 ? 0.18 : 0)` — importance weighted above urgency.
 - **Clustering:** seed-based, non-transitive. `CX=0.09, CY=0.07` overlap thresholds. A "bridge" card move cannot cascade-regroup distant clusters.
 - **Collision resolution:** spiral outward from target, step `0.016`, clamp to `[0.04, 0.96]`. Only called on list-view slider commit — NOT on grid drag (overlap→cluster handles it there).
-- **Daily reset:** computed against the user's stored timezone, not server UTC. `user_schedule.config.timezone` is authoritative.
+- **Daily reset:** computed against the user's stored timezone, not server UTC. The `user_schedule.timezone` column (hoisted out of `config` jsonb — see ADR-0007) is authoritative; `daily_state` is one row per `(user_id, local-date)`, so the reset is non-destructive (today = today's row).
 - **Realtime conflict:** higher `_clientRev` (epoch ms) wins. Ignore Realtime events that originated from this client.
 - **Mobile breakpoint:** `< 720px`. Tap-to-place replaces drag on mobile.
 - **Drag/drop implementation:** spike @dnd-kit vs. raw pointer events before committing — the free-canvas model (continuous coords, custom clustering) cuts against @dnd-kit's sortable grain. Touch/mobile is the hard requirement.

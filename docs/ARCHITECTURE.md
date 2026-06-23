@@ -110,3 +110,184 @@ the dump still scoped to `--schema=public`. Tradeoff accepted: the backup secret
 DB credential (rotate if exposed). `backup_ro` is created and reserved for restoring strict
 least-privilege once we add the Supabase **IPv4 add-on** or a **self-hosted runner**. Backup →
 encrypt → upload verified working in prod (encrypted artifact produced).
+
+## ADR-0007 — Stage 2 schema: habits, daily_state, user_schedule (+ RLS, shared Zod types)
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #1)
+
+The remaining tables from the master-plan schema, each **replicating the proven `tasks`
+pattern** (ADR-0005): RLS enabled; the only policies are owner-scoped (`user_id = auth.uid()`
+in `USING` + `WITH CHECK`) and only for `authenticated`; `user_id` defaults to `auth.uid()`;
+`grant select, insert, update` only — **no DELETE grant or policy**. Three migrations, one per
+table, in PR #1.
+
+- **`habits`** — soft-delete (`deleted_at`) like `tasks`; `subtasks` is an **embedded ordered
+  jsonb array** of `{id,text}`, not a child table. Subtasks have no independent identity, are
+  always loaded with the habit, and EisenClaw stored them inline — a jsonb array keeps that
+  1:1 fidelity without a join. Index `(user_id) where deleted_at is null`.
+- **`daily_state`** — **one row per `(user_id, date)`** (PK), not a single mutable
+  current-state row. This makes the daily reset **non-destructive by construction**: "today" is
+  just the row for today's date; yesterday's row persists. There is deliberately **no
+  `lastReset` column** — the row's existence is the reset signal, so the stale-comparison race
+  the original had (EISENCLAW-LOGIC-TO-PORT.md §10) cannot recur. `date` is the user's **local**
+  calendar day (never `current_date`, which is server-UTC) — computed via the helper below;
+  no DB default, to force a timezone-correct value. Columns `done`/`done_at`/`habit_done`/
+  `subtask_done` are jsonb maps; `subtask_done` is keyed by the composite `"habitId:subtaskId"`.
+  No soft-delete (the rows *are* the historical record).
+- **`user_schedule`** — one row per user (PK `user_id`). **`timezone` is hoisted to a top-level
+  `text not null default 'UTC'` column** (with a `length(btrim(...)) > 0` CHECK) because it is
+  load-bearing for the timezone-correct daily reset and deserves a NOT NULL guarantee + cheap
+  read — not a jsonb extract. The rest (`location`/`weekday`/`weekend`/`running`, the Plan My
+  Day context) stays in `config` jsonb. This **deviates from the master plan's `config`-only
+  shape** for that correctness reason. An `updated_at` trigger (`public.set_updated_at()`,
+  reusable) keeps the row's mtime fresh.
+
+**Shared Zod types (the "Zod = TS type" deliverable).** `src/types/{habit,daily-state,
+user-schedule}.ts` mirror each table and double as parse guards at the Supabase boundary.
+`tasks.bucket` tightened to `z.literal('oneoff').nullable()` (only `oneoff` exists —
+Discrepancy #8; nullable because Stage 1 rows carry no bucket). `tasks.recurring` and
+`user_schedule.config` are **left loose** — tightening a shape no code produces yet is
+dead-spec risk; they are modeled by the stages that consume them (recurring → Stage 3,
+config → the AI stage).
+
+**Deliberately deferred (additive, no dead code now):**
+- The permanent **`history` table** (denormalized Done-tab log with conditional restore) →
+  **Stage 3**, with the Done feature. The master schema lists no history table; it is purely
+  additive.
+- Per-table **TanStack hooks** (`useHabits`/`useDailyState`/`useUserSchedule`) → **Stage 3**,
+  when UI consumes them. Building them now would be untested-by-UI dead code.
+- Default **`user_schedule` row** creation → **app-side upsert on first authenticated load**
+  (the `use-tasks` insert pattern: client omits `user_id`, the DB default + RLS assign it),
+  **not** a trigger on `auth.users`. A `SECURITY DEFINER` trigger that errors inside the signup
+  transaction breaks signup entirely with an opaque error — a documented Supabase footgun.
+
+**Timezone helper.** `src/lib/dates.ts` `localDateInTZ(timeZone, instant?)` → `YYYY-MM-DD` via
+`Intl.DateTimeFormat(...).formatToParts` (locale-deterministic). This is the canonical "today
+in the user's timezone" used to pick the `daily_state.date` row, directly retiring Discrepancy
+#3. Seed-tested in PR #2.
+
+**Note — platform-default grants.** Supabase's `postgres`-role default privileges
+(`pg_default_acl`) auto-grant `TRUNCATE, REFERENCES, TRIGGER` to `anon`/`authenticated` on every
+new `public` table. These appear on the new tables exactly as they already do on the
+reviewed `tasks` table, and are **not reachable through PostgREST** (no TRUNCATE endpoint; the
+roles are NOLOGIN). Left as-is for consistency with the shipped baseline; a uniform
+`revoke TRUNCATE/REFERENCES/TRIGGER` across all app tables is a possible future hardening, not
+a per-table divergence snuck in here.
+
+**Verified.** `supabase db reset` applies all three cleanly; a two-user JWT proof (one
+rolled-back transaction simulating two `authenticated` sessions) confirmed for every new table:
+cross-user reads/writes blocked, `WITH CHECK` blocks forging `user_id`, hard `DELETE` is
+permission-denied, `habits` soft-delete is recoverable, `daily_state` `(user_id,date)` isolation
+holds with no PK clash across users, and the blank-`timezone` CHECK fires.
+
+## ADR-0008 — Dev tooling: ESLint (flat) + Prettier + Vitest + React Testing Library
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #2)
+
+The lint/format tooling deferred from Stage 1 (ADR-0001) plus the unit/component test
+harness, in one cohesive PR (so we don't lint code in one PR and re-touch it for tests in
+the next). CI jobs + branch protection that *enforce* these are a separate PR (#4).
+
+- **ESLint** — flat config (ESLint 10) in `eslint.config.js`: `@eslint/js` recommended +
+  `typescript-eslint` recommended + `eslint-plugin-react-hooks` + `eslint-plugin-react-refresh`,
+  with `eslint-config-prettier` **last** so Prettier owns all formatting. Chose the
+  **non-type-aware** `recommended` (not `recommendedTypeChecked`) for speed and to avoid the
+  "file not in project" friction the project-reference layout creates; type-checked rules are a
+  deliberate later toggle, not a Stage 2 dependency. `no-unused-vars` is configured to honor the
+  `_`-prefix convention (matching `tsconfig`'s `noUnusedParameters`).
+- **Prettier** — `.prettierrc` (`semi: false`, `singleQuote`, `trailingComma: all`,
+  `printWidth: 100`) matches the hand-written Stage 1 style, so adoption churned only a few
+  lines. **Markdown is in `.prettierignore`** — docs/ADRs/READMEs are hand-formatted (tables,
+  wrapping) and Prettier's markdown reflow would be pure noise.
+- **Vitest + RTL** — `vitest.config.ts` (jsdom; `globals: false`, so test APIs are imported
+  explicitly from `vitest` and strict TS needs **no** ambient `vitest/globals` types).
+  `src/test/setup.ts` registers jest-dom via `@testing-library/jest-dom/vitest` (which also
+  augments `expect`'s types) and runs RTL `cleanup()` after each test.
+- **Two traps handled** (per the planning critique):
+  - *`tsc -b` sees test files* (they live under `src/`). Explicit `vitest` imports + the
+    jest-dom/vitest augmentation mean no `tsconfig` `types` surgery; `vitest.config.ts` is added
+    to `tsconfig.node.json`'s `include` so it's typechecked node-side.
+  - *`src/lib/supabase.ts` throws on missing env at import.* Component tests `vi.mock` the data
+    hooks (`./use-tasks`) so no client/env is needed. A future env-based test must use a
+    **non-JWT** dummy anon key — the Claude Code `PreToolUse` hook blocks writing `eyJ…` values
+    into files.
+- **Pre-commit** — `lint-staged` appended to `.husky/pre-commit` *after* the secretlint block,
+  preserving the Node-PATH shim: `eslint --fix` + `prettier --write` on staged `ts/tsx`. Still
+  layer 2 (bypassable); CI (PR #4) is the real gate.
+- **Seed tests** — `localDateInTZ` (timezone + DST + invalid-zone), Zod round-trips for all four
+  schemas (incl. the `bucket` literal and the blank-`timezone` rejection), and a `TaskList`
+  render smoke test. `npm run lint`/`typecheck`/`test`/`format:check` all green locally.
+
+## ADR-0009 — Observability: Sentry (dev mode) + React error boundaries + Sentry MCP
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #3)
+
+- **Sentry SDK — "dev mode".** `@sentry/react` is initialized in `src/main.tsx` **only when
+  `VITE_SENTRY_DSN` is set** (`environment: import.meta.env.MODE`). With no DSN it is a no-op, so
+  DSN-less devs, CI, and tests never send events. The DSN is a **public ingest URL, not a
+  secret** (matches none of the hook's secret patterns); it's typed optional in
+  `src/vite-env.d.ts`, documented in `.env.example`, and the real value lives in `.env.local`
+  (Braeden adds it — the `PreToolUse` hook blocks Claude from writing `.env*`). Full production
+  Sentry — live DSN, source maps, release/alert config — is **Stage 6**.
+- **Error boundaries.** `src/components/ErrorBoundary.tsx` is a reusable class component
+  (`getDerivedStateFromError` + `componentDidCatch` → `Sentry.captureException`, which no-ops
+  when Sentry isn't initialized) with an accessible `role="alert"` fallback + a retry button.
+  It formalizes the inline boundary EisenClaw had (LOGIC-TO-PORT §13). Wrapped at **two levels**:
+  the **root** in `main.tsx` (outside `QueryClientProvider`, last-resort catch-all) and the
+  **authed region** in `App.tsx` (inside the provider, so a `TaskList`/query crash can't take
+  down the header/sign-out). Stage 3 feature regions (grid, list, …) wrap their own as they land.
+- **Sentry MCP — user-scoped, not committed** (the approved choice). Registered via
+  `claude mcp add --scope user --transport http sentry https://mcp.sentry.dev/mcp` → lives in
+  `~/.claude.json`, never the repo, and authenticates by OAuth on first use (no token on disk in
+  the project). Lets Claude read Sentry issues directly when triaging. The setup command is in
+  SERVICES.md so it's reproducible; collaborators opt in on their own machines.
+- **Verified.** A test renders a throwing child inside `ErrorBoundary` and asserts the fallback
+  shows and `captureException` is called; `lint`/`typecheck`/`test`/`format:check` green.
+
+## ADR-0010 — CI quality gate + branch protection (the merge-then-require ordering)
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #4)
+
+`ci.yml` gains three jobs beside the Stage 1 secret/path gate — **Lint** (ESLint + Prettier
+check), **Typecheck** (`tsc -b`), **Test** (Vitest) — all Node 22 / `npm ci`, running in
+parallel on every push to `main` and every PR. This makes lint/types/tests the **unbypassable**
+gate (layer 3); the pre-commit hook (layer 2) is the fast local mirror.
+
+- **A job's `name:` IS its required-status-check context.** So the contexts are exactly
+  `Lint` / `Typecheck` / `Test` / `Secret scan + forbidden paths`.
+- **Merge the jobs, THEN require them — never in one motion.** GitHub will accept a required
+  context that has never reported, but the instant you do, **every open PR is blocked**
+  ("Expected — waiting for status to report") until that exact context reports on its head SHA.
+  With the Stage 2 PRs stacked and open, flipping protection before the jobs exist on those
+  branches would wedge them all. So: this PR only *adds* the jobs; the branch-protection update
+  (`POST …/required_status_checks/contexts`, which adds without dropping the existing context) is
+  a separate admin step run **after this PR merges to `main`** and the jobs have reported there.
+  Command + rationale live in SERVICES.md.
+- **`strict: true` tradeoff.** Required "branch up to date" means more rebasing now that there
+  are four checks; acceptable for a 1–2 person repo, revisit if it becomes friction.
+- **E2E stays out of this gate** — the Playwright smoke job (PR #5) lands non-required first so
+  flakiness can't wedge `main`; promote it to required only once proven stable.
+
+## ADR-0011 — E2E: Playwright smoke in CI; full DB-backed E2E stays local
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #5)
+
+Playwright is the E2E framework. The confirmed scope (with Braeden) is **smoke-only in CI**, not
+full Supabase-in-CI:
+
+- **CI smoke** — one **chromium-only** test runs against the Vite **dev server** with **dummy,
+  non-JWT** Supabase env (`playwright.config.ts` `webServer.env`). With no stored session,
+  `getSession()` resolves `null` and the app renders the sign-in form — so the smoke proves
+  build + server + Playwright wiring **without a database**. The job installs only chromium
+  (`--with-deps chromium`) to keep it fast.
+- **Non-required** in branch protection initially (it runs on every PR but doesn't block merge),
+  so a flaky browser run can't wedge `main`. Promote to required once it's proven stable.
+- **Why not full Supabase-in-CI** — booting the Docker Supabase stack in Actions is slow, flakier,
+  and burns more minutes (Braeden values low cost / reliability). **Full DB-backed E2E**
+  (auth → RLS → render with two users) is documented as a **local** workflow against the running
+  `supabase start` stack; revisit Supabase-in-CI (or a self-hosted runner) only if the smoke
+  proves insufficient.
+- **Isolation** — specs live in `e2e/*.spec.ts`, outside `src/`, so they're picked up by neither
+  Vitest (`src/**/*.test.*`) nor `tsc -b` (`include: ["src"]`); Playwright transpiles them itself.
+  `playwright.config.ts` is typechecked node-side (added to `tsconfig.node.json`). Artifacts
+  (`test-results/`, `playwright-report/`) are gitignored. Verified: smoke passes locally.

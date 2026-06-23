@@ -42,11 +42,35 @@ in `.env.local` or any frontend file.
 ## Common commands
 
 ```bash
-npm run dev         # Vite dev server → http://localhost:5173
-npm run build       # tsc -b (typecheck) + vite build → dist/
-npm run preview     # serve the production build locally
-npm run typecheck   # tsc -b, no emit
+npm run dev          # Vite dev server → http://localhost:5173
+npm run build        # tsc -b (typecheck) + vite build → dist/
+npm run preview      # serve the production build locally
+npm run typecheck    # tsc -b, no emit
+npm run lint         # ESLint (flat config)
+npm run format       # Prettier — rewrite files
+npm run format:check # Prettier — check only (what CI runs)
+npm test             # Vitest (unit + component) once
+npm run test:watch   # Vitest in watch mode
 ```
+
+## Testing
+
+Unit + component tests use **Vitest** + **React Testing Library** under jsdom (Stage 2 PR #2).
+Test files sit next to their subject as `*.test.ts(x)`; jest-dom matchers and RTL cleanup are
+wired in `src/test/setup.ts`. Tests need no Supabase/network — component tests `vi.mock` the
+data hooks. Run `npm test` (CI runs the same).
+
+**End-to-end (Playwright, PR #5).** Specs live in `e2e/*.spec.ts`.
+
+```bash
+npx playwright install chromium   # one-time: download the browser
+npm run test:e2e                  # starts the dev server + runs the smoke (chromium)
+```
+
+The config (`playwright.config.ts`) starts the Vite dev server itself with dummy Supabase env,
+so the smoke runs with no `.env.local` and no database (the app shows the sign-in form when
+logged out). CI runs this same smoke as a **non-required** job. Full DB-backed E2E (auth → RLS →
+render) is a local exercise against the running `supabase start` stack — see ADR-0011.
 
 ## Local Supabase
 
@@ -95,9 +119,14 @@ renders from Postgres through RLS.
 ### Schema / migrations
 
 - Migrations live in `supabase/migrations/` (version-controlled, each with intent + down path).
+  Tables: `tasks`, `habits`, `daily_state`, `user_schedule` (all owner-scoped RLS; see
+  docs/ARCHITECTURE.md ADR-0005/0007).
 - Add one with `supabase migration new <name>`, write the SQL, then `supabase db reset` to apply
   locally. **`db reset` only ever touches the local DB** — the Claude Code hook blocks
   `--linked`/remote resets.
+- **Migrations are serialized:** pull latest `main` before generating one so your timestamp
+  sorts last, and never hand-edit a timestamp. Each migration file needs a unique timestamp
+  prefix (Supabase keys `schema_migrations` by it).
 
 ## Troubleshooting
 
