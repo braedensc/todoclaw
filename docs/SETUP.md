@@ -95,9 +95,14 @@ renders from Postgres through RLS.
 ### Schema / migrations
 
 - Migrations live in `supabase/migrations/` (version-controlled, each with intent + down path).
+  Tables: `tasks`, `habits`, `daily_state`, `user_schedule` (all owner-scoped RLS; see
+  docs/ARCHITECTURE.md ADR-0005/0007).
 - Add one with `supabase migration new <name>`, write the SQL, then `supabase db reset` to apply
   locally. **`db reset` only ever touches the local DB** — the Claude Code hook blocks
   `--linked`/remote resets.
+- **Migrations are serialized:** pull latest `main` before generating one so your timestamp
+  sorts last, and never hand-edit a timestamp. Each migration file needs a unique timestamp
+  prefix (Supabase keys `schema_migrations` by it).
 
 ## Troubleshooting
 

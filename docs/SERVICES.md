@@ -39,8 +39,9 @@ hooks + git pre-commit hooks) live in the repo and run locally — see [CLAUDE.m
 - **Keys:** the local anon/service-role keys are the **standard public demo keys** — identical
   on every Supabase install, not secrets. Only `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`
   go into `.env.local` (gitignored). The service-role key is not used by app code.
-- **Schema:** `supabase/migrations/` (version-controlled). First migration: `tasks` table with
-  RLS, owner-scoped policies, soft-delete, and no client hard-delete. `supabase db reset`
+- **Schema:** `supabase/migrations/` (version-controlled). Tables: `tasks` (Stage 1) plus
+  `habits`, `daily_state`, `user_schedule` (Stage 2, PR #1) — all owner-scoped RLS, soft-delete
+  where applicable, no client hard-delete (see ADR-0005, ADR-0007). `supabase db reset`
   re-applies migrations to the **local** DB only.
 
 **Cloud (Stage 1 PR #3) — code ready, awaiting provisioning.** One production project. The

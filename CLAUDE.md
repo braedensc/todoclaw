@@ -173,7 +173,7 @@ At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw S
 - **Priority score:** `x×0.45 + y×0.55 + (daysUntil(due) ≤ 2 ? 0.18 : 0)` — importance weighted above urgency.
 - **Clustering:** seed-based, non-transitive. `CX=0.09, CY=0.07` overlap thresholds. A "bridge" card move cannot cascade-regroup distant clusters.
 - **Collision resolution:** spiral outward from target, step `0.016`, clamp to `[0.04, 0.96]`. Only called on list-view slider commit — NOT on grid drag (overlap→cluster handles it there).
-- **Daily reset:** computed against the user's stored timezone, not server UTC. `user_schedule.config.timezone` is authoritative.
+- **Daily reset:** computed against the user's stored timezone, not server UTC. The `user_schedule.timezone` column (hoisted out of `config` jsonb — see ADR-0007) is authoritative; `daily_state` is one row per `(user_id, local-date)`, so the reset is non-destructive (today = today's row).
 - **Realtime conflict:** higher `_clientRev` (epoch ms) wins. Ignore Realtime events that originated from this client.
 - **Mobile breakpoint:** `< 720px`. Tap-to-place replaces drag on mobile.
 - **Drag/drop implementation:** spike @dnd-kit vs. raw pointer events before committing — the free-canvas model (continuous coords, custom clustering) cuts against @dnd-kit's sortable grain. Touch/mobile is the hard requirement.
