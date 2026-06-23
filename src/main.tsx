@@ -4,6 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Sentry from '@sentry/react'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
+// Self-hosted fonts (no external Google Fonts request — privacy). Fraunces (variable)
+// for headings, IBM Plex Sans for body/UI. Families are declared in tailwind.config.js.
+import '@fontsource-variable/fraunces/index.css'
+import '@fontsource/ibm-plex-sans/400.css'
+import '@fontsource/ibm-plex-sans/500.css'
+import '@fontsource/ibm-plex-sans/600.css'
 import './index.css'
 
 // Sentry "dev mode": only initializes when a DSN is provided (set VITE_SENTRY_DSN in
