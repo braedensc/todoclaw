@@ -75,7 +75,7 @@ merged-ready; it activates once you provision the accounts and set the secrets b
 
    | Secret | Value |
    |---|---|
-   | `BACKUP_DATABASE_URL` | the `backup_ro` role's Postgres connection string — form `postgresql://backup_ro@HOST:5432/postgres` with the password inserted after the role name (Supabase shows the full string under Project Settings → Database). Add **`?sslmode=require`** if SSL is enforced (see Database network security below) |
+   | `BACKUP_DATABASE_URL` | the `backup_ro` role's **session-pooler** connection string. ⚠️ Use the **Session pooler**, not the direct `db.<ref>.supabase.co` host — the direct host is **IPv6-only** and unreachable from GitHub Actions runners (which are IPv4-only). Copy the **Session pooler** URI from Project Settings → Database → *Connection pooling*, then change the user from `postgres.<ref>` to `backup_ro.<ref>`, use backup_ro's password, and append `?sslmode=require`. Form (password omitted): `postgresql://backup_ro.<ref>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require` |
    | `BACKUP_GPG_PASSPHRASE` | a strong passphrase to encrypt dumps (store it in your password manager — **without it the backups can't be decrypted**) |
 
 ### Backups
@@ -83,7 +83,8 @@ merged-ready; it activates once you provision the accounts and set the secrets b
 `.github/workflows/backup.yml` runs **daily (09:00 UTC)** + on-demand. It `pg_dump`s the
 `public` schema as the least-privilege `backup_ro` role, encrypts with AES-256, and uploads an
 **encrypted artifact (90-day retention)**. Until both secrets are set it runs green but skips.
-Trigger manually from the **Actions** tab to test.
+Trigger manually from the **Actions** tab to test. **`BACKUP_DATABASE_URL` must use the session
+pooler** (IPv4) — the direct DB host is IPv6-only and unreachable from GitHub runners.
 
 ### Restore runbook
 
