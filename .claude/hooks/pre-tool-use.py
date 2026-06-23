@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""
+PreToolUse security hook for Todoclaw.
+Runs before every Claude Code tool call.
+Exit 0 = allow. Exit 2 = block (stdout shown as reason to Claude + user).
+"""
+import json
+import os
+import re
+import sys
+
+
+def block(reason: str) -> None:
+    print(f"[Security Hook] BLOCKED: {reason}")
+    sys.exit(2)
+
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+tool = data.get("tool_name", "")
+inp = data.get("tool_input", {})
+
+
+# ── Bash ──────────────────────────────────────────────────────────────────────
+if tool == "Bash":
+    cmd = inp.get("command", "")
+
+    # Block rm -rf / rm -fr / rm --recursive --force
+    if re.search(r"\brm\b[^#\n]*-[a-zA-Z]*r[a-zA-Z]*f", cmd) or \
+       re.search(r"\brm\b[^#\n]*-[a-zA-Z]*f[a-zA-Z]*r", cmd) or \
+       re.search(r"\brm\b[^#\n]*--recursive", cmd):
+        block(
+            "rm -rf / rm --recursive detected — use specific paths or ask Braeden to confirm."
+        )
+
+    # Block curl/wget piped directly to a shell
+    if re.search(
+        r"(curl|wget)\s[^|\n]*\|\s*(bash|sh|zsh|fish|python3?|ruby|perl)", cmd
+    ):
+        block(
+            "Piping curl/wget into a shell is a supply-chain risk. "
+            "Download first, inspect, then run."
+        )
+
+    # Block staging planning/ or real .env files
+    if re.search(r"\bgit\s+add\b[^#\n]*(planning/|\.env(?!\.example))", cmd):
+        block(
+            "Staging planning/ or .env files is forbidden — "
+            "these paths are gitignored to prevent leaks."
+        )
+
+    # Block direct commits to main or force-push
+    if re.search(r"\bgit\s+push\b[^#\n]*(\s+--force|\s+-f\s|\s+origin\s+main)", cmd):
+        block("Direct or force-push to main is not allowed. Use a feature branch + PR.")
+
+    # Block shell-reading secret files (cat, less, head, etc.)
+    if re.search(
+        r"\b(cat|less|head|tail|bat|open|more)\b[^#\n]*(\.env(?!\.example)|\.pem\b|\.key\b)",
+        cmd,
+    ):
+        block(
+            "Reading secret files (.env, .pem, .key) via shell is not allowed. "
+            "Reference by variable name only."
+        )
+
+
+# ── Read ──────────────────────────────────────────────────────────────────────
+if tool == "Read":
+    path = inp.get("file_path", "")
+    basename = os.path.basename(path)
+
+    if re.match(r"^\.env", basename) and not basename.endswith(".example"):
+        block(
+            f"Reading {basename} is blocked — it may contain real secrets. "
+            "Reference env vars by name only."
+        )
+    if re.search(r"\.(pem|key)$", basename):
+        block(f"Reading {basename} is blocked — private key files are off-limits.")
+
+
+# ── Edit / Write ──────────────────────────────────────────────────────────────
+if tool in ("Edit", "Write"):
+    path = inp.get("file_path", "")
+    basename = os.path.basename(path)
+
+    # Block writing to real .env files
+    if re.match(r"^\.env", basename) and not basename.endswith(".example"):
+        block(
+            f"Writing to {basename} is blocked. "
+            "Only .env.example (with placeholder values) is committed."
+        )
+
+    # Block embedding secret values in any file content
+    content = inp.get("new_string", "") or inp.get("content", "")
+    SECRET_PATTERNS = [
+        (r"sk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic API key (sk-ant-…)"),
+        (r"(?:supabase|postgres)://[^:@\s]+:[^@\s]{8,}@", "DB connection string with password"),
+        (r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----", "Private key block"),
+        (r"(?:AKID|AKIA)[A-Z0-9]{16}", "AWS access key"),
+        (r"gh[pousr]_[A-Za-z0-9_]{36,}", "GitHub personal access token"),
+        (r"eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}", "JWT token value"),
+    ]
+    for pattern, label in SECRET_PATTERNS:
+        if re.search(pattern, content):
+            block(
+                f"Secret value pattern detected in file content ({label}). "
+                "Reference secrets by env var name only — never embed values."
+            )
+
+
+sys.exit(0)

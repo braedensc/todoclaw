@@ -1,0 +1,22 @@
+# Reference material — never published
+planning/
+
+# Secrets
+.env
+.env.local
+.env*.local
+*.pem
+*.key
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# OS
+.DS_Store
+
+# Claude Code runtime (local-only, not project config)
+.claude/audit.log
+.claude/settings.local.json
