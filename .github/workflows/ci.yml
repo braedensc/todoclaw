@@ -13,8 +13,9 @@ name: CI
 on:
   push:
     branches: [main]
+  # Run on every PR regardless of base branch — so stacked PRs (base != main) are gated too,
+  # not just PRs that target main directly.
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
