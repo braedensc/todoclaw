@@ -84,9 +84,9 @@ if tool == "Bash":
     cmd = inp.get("command", "")
 
     # Block rm -rf / rm -fr / rm --recursive --force
-    if re.search(r"\brm\b[^#\n]*-[a-zA-Z]*r[a-zA-Z]*f", cmd) or \
-       re.search(r"\brm\b[^#\n]*-[a-zA-Z]*f[a-zA-Z]*r", cmd) or \
-       re.search(r"\brm\b[^#\n]*--recursive", cmd):
+    if re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*r[a-zA-Z]*f", cmd) or \
+       re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*f[a-zA-Z]*r", cmd) or \
+       re.search(r"\brm\b[^#\n;&|]*--recursive", cmd):
         block(
             "rm -rf / rm --recursive detected — use specific paths or ask Braeden to confirm."
         )
@@ -101,19 +101,19 @@ if tool == "Bash":
         )
 
     # Block staging planning/ or real .env files
-    if re.search(r"\bgit\s+add\b[^#\n]*(planning/|\.env(?!\.example))", cmd):
+    if re.search(r"\bgit\s+add\b[^#\n;&|]*(planning/|\.env(?!\.example))", cmd):
         block(
             "Staging planning/ or .env files is forbidden — "
             "these paths are gitignored to prevent leaks."
         )
 
     # Block direct commits to main or force-push
-    if re.search(r"\bgit\s+push\b[^#\n]*(\s+--force|\s+-f\s|\s+origin\s+main)", cmd):
+    if re.search(r"\bgit\s+push\b[^#\n;&|]*(\s+--force|\s+-f\s|\s+origin\s+main)", cmd):
         block("Direct or force-push to main is not allowed. Use a feature branch + PR.")
 
     # Block shell-reading secret files (cat, less, head, etc.)
     if re.search(
-        r"\b(cat|less|head|tail|bat|open|more)\b[^#\n]*(\.env(?!\.example)|\.pem\b|\.key\b)",
+        r"\b(cat|less|head|tail|bat|open|more)\b[^#\n;&|]*(\.env(?!\.example)|\.pem\b|\.key\b)",
         cmd,
     ):
         block(

@@ -18,6 +18,12 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 | `git add .env*` (non-example) | Bash | staging real env files | Secrets leak via git |
 | Force-push / push to main | Bash | `git push --force` or `origin main` | Bypasses PR + CI gate |
 | Reading `.env*`, `*.pem`, `*.key` via shell | Bash | `cat`/`less`/`head` on secret files | Secrets entering Claude's context |
+
+> Bash command-matching is scoped per shell command: the gap between a command
+> and its target excludes `;`, `&`, `|`, so a `.env` mentioned in a *later*
+> command on the same line (e.g. `cat foo; grep x .env`) is no longer a false
+> positive — the real read (`cat .env`) still blocks.
+
 | Reading `.env*` (non-example) | Read | file_path basename match | Same reason — use env var names, not values |
 | Reading `*.pem` / `*.key` | Read | file_path suffix | Private key material |
 | Writing to `.env*` (non-example) | Edit/Write | file_path basename match | Only `.env.example` is committed |
