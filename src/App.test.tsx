@@ -15,9 +15,17 @@ vi.mock('./lib/supabase', () => ({
 }))
 vi.mock('./features/tasks/use-tasks', () => ({
   useAddTask: () => ({ mutate: vi.fn(), isPending: false }),
+  // GridView (the default tab) reads/mutates tasks; stub them so the shell renders.
+  useTasks: () => ({ data: [] }),
+  useUpdateTask: () => ({ mutate: vi.fn() }),
+  useSoftDeleteTask: () => ({ mutate: vi.fn() }),
 }))
 vi.mock('./features/schedule/use-user-schedule', () => ({
   useEnsureUserSchedule: () => ({ mutate: vi.fn() }),
+  useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
+}))
+vi.mock('./features/daily-state/use-daily-state', () => ({
+  useDailyState: () => ({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } }),
 }))
 
 describe('App shell', () => {
