@@ -11,6 +11,14 @@ Todoclaw is a ground-up rebuild of EisenClaw — an Eisenhower-matrix task plann
 **Parity spec:** `planning/eisenclaw-export/docs/eisenclaw.md` is the acceptance spec — every feature is "done" only when it matches that document.
 **Port reference:** `planning/EISENCLAW-LOGIC-TO-PORT.md` has verbatim constants, formulas, and thresholds extracted from the EisenClaw source with file:line citations. The code there is authoritative over the narrative spec where they conflict. Read the "Discrepancies & Open Questions" section first.
 
+**Reference material** (all under `planning/`, which is gitignored — read it to port logic, never commit it):
+- `eisenclaw-export/docs/eisenclaw.md` — parity spec (behavior)
+- `EISENCLAW-LOGIC-TO-PORT.md` — port reference (exact constants/formulas, code-authoritative)
+- `eisenclaw-export/scripts/planner.html` — original client (all UI + logic, 943 lines)
+- `eisenclaw-export/scripts/planner-server.js` — original Node server (sync, backups, Plan My Day)
+- `eisenclaw-export/data/user-schedule-braeden.json` — schedule config shape (→ `user_schedule` table)
+- `eisenclaw-export/pics/Todopic{1-6}.jpeg` — screenshots of the original UI (visual parity reference; see `docs/STYLE.md` for what each shows)
+
 ---
 
 ## Stack
