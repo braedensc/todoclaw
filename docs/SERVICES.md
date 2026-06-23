@@ -10,10 +10,19 @@ which keys live where, and links to dashboards. Updated as each service is added
 - **Repo:** [braedensc/todoclaw](https://github.com/braedensc/todoclaw) — **public**, created 2026-06-23.
 - **Auth (local):** `gh` CLI logged in as `braedensc` (scopes: `repo`, `workflow`, `read:org`, `gist`).
 - **CI:** [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on push to `main` and every PR.
-  Currently: secretlint + forbidden-path gate. Lint / typecheck / test jobs are added in Stage 2.
-- **Branch protection (`main`):** require a PR + the `Secret scan + forbidden paths` check passing,
-  strict (branch must be up to date), **enforced for admins** (unbypassable). 0 required approvals
-  (solo repo). Settings → Branches.
+  Four parallel jobs: `Secret scan + forbidden paths` (secretlint + path gate), `Lint`
+  (ESLint + Prettier check), `Typecheck` (`tsc -b`), `Test` (Vitest). Added in Stage 2 PR #4.
+- **Branch protection (`main`):** require a PR + passing checks, strict (branch must be up to
+  date), **enforced for admins** (unbypassable). 0 required approvals (solo repo). Settings →
+  Branches. **Required contexts:** `Secret scan + forbidden paths` today; after PR #4 merges, add
+  `Lint`, `Typecheck`, `Test` (each job's `name:` *is* its context). Run this **only after the
+  new jobs have reported on `main`** — otherwise every open PR wedges waiting on a context that
+  has never run:
+  ```bash
+  gh api -X POST repos/braedensc/todoclaw/branches/main/protection/required_status_checks/contexts \
+    -f 'contexts[]=Lint' -f 'contexts[]=Typecheck' -f 'contexts[]=Test'
+  ```
+  (POST to `/contexts` *adds* without dropping the existing one.)
 - **Security features enabled** (Settings → Code security):
   | Feature | State | What it does |
   |---|---|---|
@@ -126,12 +135,33 @@ restore → rows + RLS recovered.
 
 ---
 
+## Sentry — error monitoring (Stage 2 PR #3, dev mode)
+
+The `@sentry/react` SDK is wired but **DSN-gated**: it only initializes when `VITE_SENTRY_DSN`
+is set, so it's off until you provide a DSN. Error boundaries report crashes to it. Full
+production Sentry (live alerts, source maps, releases) is Stage 6.
+
+**Setup (you, in the dashboard + locally):**
+1. Create a project at [sentry.io](https://sentry.io) (platform: React). Copy its **DSN** — a
+   DSN is a public ingest URL, not a secret.
+2. Add it to `.env.local` (Claude can't write `.env*`): `VITE_SENTRY_DSN=<your-dsn>`. Restart
+   `npm run dev`. Errors caught by the boundaries now appear in Sentry.
+3. **Sentry MCP** (lets Claude read your Sentry issues): already registered **user-scoped** (in
+   `~/.claude.json`, not committed) via
+   `claude mcp add --scope user --transport http sentry https://mcp.sentry.dev/mcp`. It shows
+   "Needs authentication" until you run `/mcp` in an interactive `claude` session and complete
+   the OAuth. Collaborators run the same command on their own machines.
+
+> Leaving `VITE_SENTRY_DSN` blank disables Sentry entirely (the app no-ops) — the planner works
+> the same without it.
+
+---
+
 ## Not yet provisioned
 
 Added in later stages; documented here when they are:
 
 - **Anthropic Console** (Stage 4) — API key for in-app AI; spend limits set here.
-- **Sentry** (Stage 2) — error monitoring; DSN.
 
 ---
 

@@ -14,6 +14,11 @@ node_modules/
 # Build output
 dist/
 
+# Playwright (E2E) artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
 # OS
 .DS_Store
 
