@@ -1,6 +1,7 @@
 import { AuthForm } from './features/auth/AuthForm'
 import { useSession } from './features/auth/use-session'
 import { TaskList } from './features/tasks/TaskList'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { supabase } from './lib/supabase'
 
 export default function App() {
@@ -26,7 +27,9 @@ export default function App() {
       {loading ? (
         <p className="text-slate-500">Loading…</p>
       ) : session ? (
-        <TaskList />
+        <ErrorBoundary>
+          <TaskList />
+        </ErrorBoundary>
       ) : (
         <AuthForm />
       )}

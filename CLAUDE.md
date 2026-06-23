@@ -40,7 +40,7 @@ Todoclaw is a ground-up rebuild of EisenClaw — an Eisenhower-matrix task plann
 
 ## Commands
 
-> Stubs — filled in as tooling is installed in each stage.
+> Real as of Stage 2 except `test:e2e` (Playwright, PR #5). Run `nvm use` (Node 22) first.
 
 ```bash
 # Dev
@@ -48,13 +48,14 @@ npm run dev            # Vite dev server
 supabase start         # Start local Supabase (Docker)
 
 # Quality
-npm run lint           # ESLint
-npm run format         # Prettier
-npm run typecheck      # tsc --noEmit
+npm run lint           # ESLint (flat config)
+npm run format         # Prettier (write)
+npm run format:check   # Prettier (check only — what CI runs)
+npm run typecheck      # tsc -b (no emit)
 
 # Test
-npm test               # Vitest (unit + integration)
-npm run test:e2e       # Playwright
+npm test               # Vitest (unit + component, jsdom)
+npm run test:e2e       # Playwright (added in Stage 2 PR #5)
 npm run test:watch     # Vitest watch mode
 
 # DB

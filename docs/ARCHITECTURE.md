@@ -179,3 +179,115 @@ rolled-back transaction simulating two `authenticated` sessions) confirmed for e
 cross-user reads/writes blocked, `WITH CHECK` blocks forging `user_id`, hard `DELETE` is
 permission-denied, `habits` soft-delete is recoverable, `daily_state` `(user_id,date)` isolation
 holds with no PK clash across users, and the blank-`timezone` CHECK fires.
+
+## ADR-0008 — Dev tooling: ESLint (flat) + Prettier + Vitest + React Testing Library
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #2)
+
+The lint/format tooling deferred from Stage 1 (ADR-0001) plus the unit/component test
+harness, in one cohesive PR (so we don't lint code in one PR and re-touch it for tests in
+the next). CI jobs + branch protection that *enforce* these are a separate PR (#4).
+
+- **ESLint** — flat config (ESLint 10) in `eslint.config.js`: `@eslint/js` recommended +
+  `typescript-eslint` recommended + `eslint-plugin-react-hooks` + `eslint-plugin-react-refresh`,
+  with `eslint-config-prettier` **last** so Prettier owns all formatting. Chose the
+  **non-type-aware** `recommended` (not `recommendedTypeChecked`) for speed and to avoid the
+  "file not in project" friction the project-reference layout creates; type-checked rules are a
+  deliberate later toggle, not a Stage 2 dependency. `no-unused-vars` is configured to honor the
+  `_`-prefix convention (matching `tsconfig`'s `noUnusedParameters`).
+- **Prettier** — `.prettierrc` (`semi: false`, `singleQuote`, `trailingComma: all`,
+  `printWidth: 100`) matches the hand-written Stage 1 style, so adoption churned only a few
+  lines. **Markdown is in `.prettierignore`** — docs/ADRs/READMEs are hand-formatted (tables,
+  wrapping) and Prettier's markdown reflow would be pure noise.
+- **Vitest + RTL** — `vitest.config.ts` (jsdom; `globals: false`, so test APIs are imported
+  explicitly from `vitest` and strict TS needs **no** ambient `vitest/globals` types).
+  `src/test/setup.ts` registers jest-dom via `@testing-library/jest-dom/vitest` (which also
+  augments `expect`'s types) and runs RTL `cleanup()` after each test.
+- **Two traps handled** (per the planning critique):
+  - *`tsc -b` sees test files* (they live under `src/`). Explicit `vitest` imports + the
+    jest-dom/vitest augmentation mean no `tsconfig` `types` surgery; `vitest.config.ts` is added
+    to `tsconfig.node.json`'s `include` so it's typechecked node-side.
+  - *`src/lib/supabase.ts` throws on missing env at import.* Component tests `vi.mock` the data
+    hooks (`./use-tasks`) so no client/env is needed. A future env-based test must use a
+    **non-JWT** dummy anon key — the Claude Code `PreToolUse` hook blocks writing `eyJ…` values
+    into files.
+- **Pre-commit** — `lint-staged` appended to `.husky/pre-commit` *after* the secretlint block,
+  preserving the Node-PATH shim: `eslint --fix` + `prettier --write` on staged `ts/tsx`. Still
+  layer 2 (bypassable); CI (PR #4) is the real gate.
+- **Seed tests** — `localDateInTZ` (timezone + DST + invalid-zone), Zod round-trips for all four
+  schemas (incl. the `bucket` literal and the blank-`timezone` rejection), and a `TaskList`
+  render smoke test. `npm run lint`/`typecheck`/`test`/`format:check` all green locally.
+
+## ADR-0009 — Observability: Sentry (dev mode) + React error boundaries + Sentry MCP
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #3)
+
+- **Sentry SDK — "dev mode".** `@sentry/react` is initialized in `src/main.tsx` **only when
+  `VITE_SENTRY_DSN` is set** (`environment: import.meta.env.MODE`). With no DSN it is a no-op, so
+  DSN-less devs, CI, and tests never send events. The DSN is a **public ingest URL, not a
+  secret** (matches none of the hook's secret patterns); it's typed optional in
+  `src/vite-env.d.ts`, documented in `.env.example`, and the real value lives in `.env.local`
+  (Braeden adds it — the `PreToolUse` hook blocks Claude from writing `.env*`). Full production
+  Sentry — live DSN, source maps, release/alert config — is **Stage 6**.
+- **Error boundaries.** `src/components/ErrorBoundary.tsx` is a reusable class component
+  (`getDerivedStateFromError` + `componentDidCatch` → `Sentry.captureException`, which no-ops
+  when Sentry isn't initialized) with an accessible `role="alert"` fallback + a retry button.
+  It formalizes the inline boundary EisenClaw had (LOGIC-TO-PORT §13). Wrapped at **two levels**:
+  the **root** in `main.tsx` (outside `QueryClientProvider`, last-resort catch-all) and the
+  **authed region** in `App.tsx` (inside the provider, so a `TaskList`/query crash can't take
+  down the header/sign-out). Stage 3 feature regions (grid, list, …) wrap their own as they land.
+- **Sentry MCP — user-scoped, not committed** (the approved choice). Registered via
+  `claude mcp add --scope user --transport http sentry https://mcp.sentry.dev/mcp` → lives in
+  `~/.claude.json`, never the repo, and authenticates by OAuth on first use (no token on disk in
+  the project). Lets Claude read Sentry issues directly when triaging. The setup command is in
+  SERVICES.md so it's reproducible; collaborators opt in on their own machines.
+- **Verified.** A test renders a throwing child inside `ErrorBoundary` and asserts the fallback
+  shows and `captureException` is called; `lint`/`typecheck`/`test`/`format:check` green.
+
+## ADR-0010 — CI quality gate + branch protection (the merge-then-require ordering)
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #4)
+
+`ci.yml` gains three jobs beside the Stage 1 secret/path gate — **Lint** (ESLint + Prettier
+check), **Typecheck** (`tsc -b`), **Test** (Vitest) — all Node 22 / `npm ci`, running in
+parallel on every push to `main` and every PR. This makes lint/types/tests the **unbypassable**
+gate (layer 3); the pre-commit hook (layer 2) is the fast local mirror.
+
+- **A job's `name:` IS its required-status-check context.** So the contexts are exactly
+  `Lint` / `Typecheck` / `Test` / `Secret scan + forbidden paths`.
+- **Merge the jobs, THEN require them — never in one motion.** GitHub will accept a required
+  context that has never reported, but the instant you do, **every open PR is blocked**
+  ("Expected — waiting for status to report") until that exact context reports on its head SHA.
+  With the Stage 2 PRs stacked and open, flipping protection before the jobs exist on those
+  branches would wedge them all. So: this PR only *adds* the jobs; the branch-protection update
+  (`POST …/required_status_checks/contexts`, which adds without dropping the existing context) is
+  a separate admin step run **after this PR merges to `main`** and the jobs have reported there.
+  Command + rationale live in SERVICES.md.
+- **`strict: true` tradeoff.** Required "branch up to date" means more rebasing now that there
+  are four checks; acceptable for a 1–2 person repo, revisit if it becomes friction.
+- **E2E stays out of this gate** — the Playwright smoke job (PR #5) lands non-required first so
+  flakiness can't wedge `main`; promote it to required only once proven stable.
+
+## ADR-0011 — E2E: Playwright smoke in CI; full DB-backed E2E stays local
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #5)
+
+Playwright is the E2E framework. The confirmed scope (with Braeden) is **smoke-only in CI**, not
+full Supabase-in-CI:
+
+- **CI smoke** — one **chromium-only** test runs against the Vite **dev server** with **dummy,
+  non-JWT** Supabase env (`playwright.config.ts` `webServer.env`). With no stored session,
+  `getSession()` resolves `null` and the app renders the sign-in form — so the smoke proves
+  build + server + Playwright wiring **without a database**. The job installs only chromium
+  (`--with-deps chromium`) to keep it fast.
+- **Non-required** in branch protection initially (it runs on every PR but doesn't block merge),
+  so a flaky browser run can't wedge `main`. Promote to required once it's proven stable.
+- **Why not full Supabase-in-CI** — booting the Docker Supabase stack in Actions is slow, flakier,
+  and burns more minutes (Braeden values low cost / reliability). **Full DB-backed E2E**
+  (auth → RLS → render with two users) is documented as a **local** workflow against the running
+  `supabase start` stack; revisit Supabase-in-CI (or a self-hosted runner) only if the smoke
+  proves insufficient.
+- **Isolation** — specs live in `e2e/*.spec.ts`, outside `src/`, so they're picked up by neither
+  Vitest (`src/**/*.test.*`) nor `tsc -b` (`include: ["src"]`); Playwright transpiles them itself.
+  `playwright.config.ts` is typechecked node-side (added to `tsconfig.node.json`). Artifacts
+  (`test-results/`, `playwright-report/`) are gitignored. Verified: smoke passes locally.
