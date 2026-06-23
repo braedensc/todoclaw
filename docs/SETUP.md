@@ -58,7 +58,19 @@ npm run test:watch   # Vitest in watch mode
 Unit + component tests use **Vitest** + **React Testing Library** under jsdom (Stage 2 PR #2).
 Test files sit next to their subject as `*.test.ts(x)`; jest-dom matchers and RTL cleanup are
 wired in `src/test/setup.ts`. Tests need no Supabase/network — component tests `vi.mock` the
-data hooks. Run `npm test` (CI runs the same). End-to-end tests (Playwright) arrive in PR #5.
+data hooks. Run `npm test` (CI runs the same).
+
+**End-to-end (Playwright, PR #5).** Specs live in `e2e/*.spec.ts`.
+
+```bash
+npx playwright install chromium   # one-time: download the browser
+npm run test:e2e                  # starts the dev server + runs the smoke (chromium)
+```
+
+The config (`playwright.config.ts`) starts the Vite dev server itself with dummy Supabase env,
+so the smoke runs with no `.env.local` and no database (the app shows the sign-in form when
+logged out). CI runs this same smoke as a **non-required** job. Full DB-backed E2E (auth → RLS →
+render) is a local exercise against the running `supabase start` stack — see ADR-0011.
 
 ## Local Supabase
 

@@ -243,3 +243,51 @@ the next). CI jobs + branch protection that *enforce* these are a separate PR (#
   SERVICES.md so it's reproducible; collaborators opt in on their own machines.
 - **Verified.** A test renders a throwing child inside `ErrorBoundary` and asserts the fallback
   shows and `captureException` is called; `lint`/`typecheck`/`test`/`format:check` green.
+
+## ADR-0010 — CI quality gate + branch protection (the merge-then-require ordering)
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #4)
+
+`ci.yml` gains three jobs beside the Stage 1 secret/path gate — **Lint** (ESLint + Prettier
+check), **Typecheck** (`tsc -b`), **Test** (Vitest) — all Node 22 / `npm ci`, running in
+parallel on every push to `main` and every PR. This makes lint/types/tests the **unbypassable**
+gate (layer 3); the pre-commit hook (layer 2) is the fast local mirror.
+
+- **A job's `name:` IS its required-status-check context.** So the contexts are exactly
+  `Lint` / `Typecheck` / `Test` / `Secret scan + forbidden paths`.
+- **Merge the jobs, THEN require them — never in one motion.** GitHub will accept a required
+  context that has never reported, but the instant you do, **every open PR is blocked**
+  ("Expected — waiting for status to report") until that exact context reports on its head SHA.
+  With the Stage 2 PRs stacked and open, flipping protection before the jobs exist on those
+  branches would wedge them all. So: this PR only *adds* the jobs; the branch-protection update
+  (`POST …/required_status_checks/contexts`, which adds without dropping the existing context) is
+  a separate admin step run **after this PR merges to `main`** and the jobs have reported there.
+  Command + rationale live in SERVICES.md.
+- **`strict: true` tradeoff.** Required "branch up to date" means more rebasing now that there
+  are four checks; acceptable for a 1–2 person repo, revisit if it becomes friction.
+- **E2E stays out of this gate** — the Playwright smoke job (PR #5) lands non-required first so
+  flakiness can't wedge `main`; promote it to required only once proven stable.
+
+## ADR-0011 — E2E: Playwright smoke in CI; full DB-backed E2E stays local
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #5)
+
+Playwright is the E2E framework. The confirmed scope (with Braeden) is **smoke-only in CI**, not
+full Supabase-in-CI:
+
+- **CI smoke** — one **chromium-only** test runs against the Vite **dev server** with **dummy,
+  non-JWT** Supabase env (`playwright.config.ts` `webServer.env`). With no stored session,
+  `getSession()` resolves `null` and the app renders the sign-in form — so the smoke proves
+  build + server + Playwright wiring **without a database**. The job installs only chromium
+  (`--with-deps chromium`) to keep it fast.
+- **Non-required** in branch protection initially (it runs on every PR but doesn't block merge),
+  so a flaky browser run can't wedge `main`. Promote to required once it's proven stable.
+- **Why not full Supabase-in-CI** — booting the Docker Supabase stack in Actions is slow, flakier,
+  and burns more minutes (Braeden values low cost / reliability). **Full DB-backed E2E**
+  (auth → RLS → render with two users) is documented as a **local** workflow against the running
+  `supabase start` stack; revisit Supabase-in-CI (or a self-hosted runner) only if the smoke
+  proves insufficient.
+- **Isolation** — specs live in `e2e/*.spec.ts`, outside `src/`, so they're picked up by neither
+  Vitest (`src/**/*.test.*`) nor `tsc -b` (`include: ["src"]`); Playwright transpiles them itself.
+  `playwright.config.ts` is typechecked node-side (added to `tsconfig.node.json`). Artifacts
+  (`test-results/`, `playwright-report/`) are gitignored. Verified: smoke passes locally.
