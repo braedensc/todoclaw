@@ -42,11 +42,23 @@ in `.env.local` or any frontend file.
 ## Common commands
 
 ```bash
-npm run dev         # Vite dev server → http://localhost:5173
-npm run build       # tsc -b (typecheck) + vite build → dist/
-npm run preview     # serve the production build locally
-npm run typecheck   # tsc -b, no emit
+npm run dev          # Vite dev server → http://localhost:5173
+npm run build        # tsc -b (typecheck) + vite build → dist/
+npm run preview      # serve the production build locally
+npm run typecheck    # tsc -b, no emit
+npm run lint         # ESLint (flat config)
+npm run format       # Prettier — rewrite files
+npm run format:check # Prettier — check only (what CI runs)
+npm test             # Vitest (unit + component) once
+npm run test:watch   # Vitest in watch mode
 ```
+
+## Testing
+
+Unit + component tests use **Vitest** + **React Testing Library** under jsdom (Stage 2 PR #2).
+Test files sit next to their subject as `*.test.ts(x)`; jest-dom matchers and RTL cleanup are
+wired in `src/test/setup.ts`. Tests need no Supabase/network — component tests `vi.mock` the
+data hooks. Run `npm test` (CI runs the same). End-to-end tests (Playwright) arrive in PR #5.
 
 ## Local Supabase
 

@@ -61,4 +61,15 @@ if [ -n "$STAGED" ]; then
   fi
 fi
 
+# ── 3. Lint + format staged code (eslint --fix + prettier via lint-staged) ─────
+# Added in Stage 2. lint-staged needs Node >= 20 — the PATH shim above guarantees it.
+if [ -f node_modules/.bin/lint-staged ]; then
+  if ! node_modules/.bin/lint-staged; then
+    echo ""
+    echo "  BLOCKED: lint-staged failed — fix the eslint/prettier errors above."
+    echo ""
+    exit 1
+  fi
+fi
+
 exit 0

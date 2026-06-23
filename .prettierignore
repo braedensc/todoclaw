@@ -1,0 +1,10 @@
+dist
+node_modules
+coverage
+playwright-report
+test-results
+package-lock.json
+supabase/.temp
+.husky/_
+# Markdown is hand-formatted (docs, ADRs, READMEs); leave Prettier out of it.
+*.md

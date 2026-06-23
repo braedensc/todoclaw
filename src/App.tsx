@@ -23,13 +23,7 @@ export default function App() {
         )}
       </header>
 
-      {loading ? (
-        <p className="text-slate-500">Loading…</p>
-      ) : session ? (
-        <TaskList />
-      ) : (
-        <AuthForm />
-      )}
+      {loading ? <p className="text-slate-500">Loading…</p> : session ? <TaskList /> : <AuthForm />}
     </main>
   )
 }

@@ -36,9 +36,7 @@ export function TaskList() {
       </form>
 
       {tasks.isLoading && <p className="text-slate-500">Loading tasks…</p>}
-      {tasks.isError && (
-        <p className="text-red-600">Failed to load tasks: {String(tasks.error)}</p>
-      )}
+      {tasks.isError && <p className="text-red-600">Failed to load tasks: {String(tasks.error)}</p>}
 
       {tasks.data && tasks.data.length === 0 && (
         <p className="text-slate-500">No tasks yet — add one above.</p>
