@@ -7,6 +7,7 @@ Exit 0 = allow. Exit 2 = block (stdout shown as reason to Claude + user).
 import json
 import os
 import re
+import subprocess
 import sys
 
 
@@ -22,6 +23,60 @@ except Exception:
 
 tool = data.get("tool_name", "")
 inp = data.get("tool_input", {})
+
+
+# ── Branch guard: no edits or commits while on main ─────────────────────────────
+# Enforces the feature-branch workflow automatically (see docs/COLLABORATION.md).
+# Edit/Write and `git commit` are blocked whenever the todoclaw repo is on a
+# protected branch, so starting new work *forces* a branch first. This is what
+# keeps main clean and conflict-free when several people (or agents) share the repo.
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+PROTECTED_BRANCHES = {"main", "master"}
+BRANCH_HELP = (
+    "You're on `{branch}` in the todoclaw repo, where direct edits/commits are "
+    "blocked (docs/COLLABORATION.md). Create a feature branch first, then retry:\n"
+    "  git checkout -b <type>/<short-kebab-desc>\n"
+    "  (type = feat | fix | chore | refactor | docs; e.g. feat/grid-drag)\n"
+    "Pull latest main before branching if collaborators are active: "
+    "git checkout main && git pull && git checkout -b <type>/<desc>"
+)
+
+
+def _current_branch() -> str:
+    try:
+        r = subprocess.run(
+            ["git", "-C", PROJECT_ROOT, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _in_project(path: str) -> bool:
+    if not path:
+        return False
+    try:
+        return (
+            os.path.commonpath([os.path.abspath(path), PROJECT_ROOT]) == PROJECT_ROOT
+        )
+    except Exception:
+        return False
+
+
+if tool in ("Edit", "Write") and _in_project(inp.get("file_path", "")):
+    branch = _current_branch()
+    if branch in PROTECTED_BRANCHES:
+        block(BRANCH_HELP.format(branch=branch))
+
+if tool == "Bash" and re.search(r"\bgit\s+commit\b", inp.get("command", "")):
+    branch = _current_branch()
+    if branch in PROTECTED_BRANCHES:
+        block(BRANCH_HELP.format(branch=branch))
 
 
 # ── Bash ──────────────────────────────────────────────────────────────────────

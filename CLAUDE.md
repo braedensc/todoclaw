@@ -117,6 +117,28 @@ planning/             # Reference only — gitignored, never published
 
 ---
 
+## Branch Workflow (do this automatically — never wait to be told)
+
+Full workflow, worktrees, and team conventions: `docs/COLLABORATION.md`.
+
+**At the start of any new feature, fix, or task — before your first `Edit`/`Write` — check the branch and create one if needed:**
+
+```bash
+git rev-parse --abbrev-ref HEAD          # what branch am I on?
+# If on main (or the working tree has unrelated WIP), branch before editing:
+git checkout main && git pull --ff-only  # start from latest (skip pull if offline/no remote)
+git checkout -b <type>/<short-kebab-desc>
+```
+
+- **Branch name:** `<type>/<short-kebab-desc>`, type ∈ `feat | fix | chore | refactor | docs` — same set as commit prefixes. Examples: `feat/grid-drag`, `fix/cluster-overlap`, `docs/collaboration`.
+- **One task = one branch = one PR.** Keep branches small and short-lived — they merge cleanly; long-lived branches collide.
+- **The PreToolUse hook enforces this:** `Edit`/`Write`/`git commit` are *blocked* while on `main`. If you see that block, branch and retry — do not try to work around it.
+- **Don't switch branches mid-task** if files are uncommitted. Commit or stash first.
+- **Migrations are serialized:** before adding a `supabase/migrations/` file, pull latest main so your timestamp/order is last. Never generate migrations on two branches in parallel without coordinating.
+- **Open a PR when the task is done** (`gh pr create`); never merge your own work directly to `main`.
+
+---
+
 ## Hard Rules
 
 These apply every session without exception:

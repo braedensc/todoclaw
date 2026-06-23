@@ -10,6 +10,8 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 
 | What it blocks | Tool | Pattern | Why |
 |---|---|---|---|
+| Edit/Write while on `main`/`master` | Edit/Write | repo branch is protected + file is inside the project | Forces the feature-branch workflow automatically (`docs/COLLABORATION.md`) — keeps `main` clean for collaborators |
+| `git commit` while on `main`/`master` | Bash | `git commit` + protected branch | Same — no direct commits to `main` |
 | `rm -rf` / `rm --recursive` | Bash | `rm` with recursive+force flags | Accidental mass deletion |
 | `curl/wget \| bash` | Bash | pipe to shell | Supply-chain attack vector |
 | `git add planning/` | Bash | staging forbidden paths | `planning/` is gitignored reference; leaking it would publish EisenClaw source |
