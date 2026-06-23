@@ -25,3 +25,4 @@ playwright/.cache/
 # Claude Code runtime (local-only, not project config)
 .claude/audit.log
 .claude/settings.local.json
+.claude/launch.json
