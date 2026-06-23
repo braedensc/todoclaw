@@ -63,3 +63,40 @@ access guard**. The service-role key bypasses RLS and never appears in any front
 The master plan calls for spiking @dnd-kit vs. raw pointer events for the free-canvas grid.
 That belongs with grid work in **Stage 3**, not the Stage 1 skeleton — Stage 1 only proves the
 pipeline (toolchain → DB → auth → render), so no drag/drop dependency is added yet.
+
+## ADR-0005 — No client hard-delete: soft-delete + RLS deny-by-default
+
+**Date:** 2026-06-23 · **Stage:** 1 (PR #2)
+
+`tasks` carries `deleted_at`; the app only ever soft-deletes (an `UPDATE`). The migration
+grants `authenticated` **`select, insert, update` — never `delete`** — and defines **no DELETE
+policy**, so a hard delete from the client is structurally impossible (doubly: no grant *and*
+no policy). RLS is deny-by-default, scoped `to authenticated`, gated on `user_id = auth.uid()`
+for both `USING` and `WITH CHECK`, so a client can neither read others' rows nor forge
+ownership.
+
+- **Why:** directly serves the "no accidental data loss / no escalation" requirement. Recovery
+  doesn't depend on backups for the common case — deleted data is still a live row.
+- The service-role key bypasses RLS for admin/backup needs but is never used by app code.
+- Verified with a psql two-user proof and a supabase-js e2e (isolation, escalation blocked,
+  hard-delete denied, soft-delete recoverable).
+
+## ADR-0006 — Production topology + encrypted backups
+
+**Date:** 2026-06-23 · **Stage:** 1 (PR #3)
+
+- **One cloud Supabase project = prod; local Docker = dev.** No staging project (keeps cost at
+  zero); the local stack is the safe place to break things. The Claude Code hook blocks
+  destructive ops against remote DBs, so the single prod project is protected from a
+  fat-fingered reset.
+- **Security headers/CSP** ship via `vercel.json` (HSTS, `X-Frame-Options: DENY`, nosniff,
+  CSP limiting `connect-src` to self + `*.supabase.co`). Auth hardening lives in the Supabase
+  dashboard (human-only toggles), documented in SERVICES.md.
+- **Backups: daily encrypted `pg_dump` of the `public` schema → GitHub Actions artifact**
+  (90-day retention). Authenticated by a dedicated least-privilege **`backup_ro`** role
+  (SELECT on `public` only — not service-role). GitHub artifacts were chosen over R2/B2 for
+  zero extra setup to prove the pipeline; the upload step is the only thing to swap if we later
+  want longer retention / off-platform durability. The dump → encrypt → decrypt → restore
+  round-trip is proven locally before ship.
+- **One-time `db push`** seeds the cloud schema (a documented bootstrap exception); CI-driven
+  migrations on merge are a Stage 2/6 task.
