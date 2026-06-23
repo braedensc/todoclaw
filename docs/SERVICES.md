@@ -43,8 +43,60 @@ hooks + git pre-commit hooks) live in the repo and run locally — see [CLAUDE.m
   RLS, owner-scoped policies, soft-delete, and no client hard-delete. `supabase db reset`
   re-applies migrations to the **local** DB only.
 
-**Cloud (Stage 1 PR #3) — pending.** One production project (anon + service-role keys, auth
-hardening, daily encrypted backups). Documented here when provisioned.
+**Cloud (Stage 1 PR #3) — code ready, awaiting provisioning.** One production project. The
+PR #3 code (`vercel.json`, `.github/workflows/backup.yml`, the `backup_role` migration) is
+merged-ready; it activates once you provision the accounts and set the secrets below.
+
+---
+
+## Production deploy & backups — Stage 1 PR #3
+
+> One production Supabase project = prod; local Docker = dev. No staging (zero cost). The
+> code is written; this is the **human provisioning checklist** (accounts, OAuth, secrets).
+
+### Provisioning checklist (you, in dashboards)
+
+1. **Supabase cloud project**
+   - Create the project; copy the **Project URL** + **anon** key (for Vercel) and note the
+     **service-role** key (server-only; never the frontend).
+   - **Auth hardening** (Authentication → Providers/Policies): require **email confirmation**,
+     enable **leaked-password protection**, set a **password policy**, short **JWT expiry** +
+     refresh rotation, **disable anonymous sign-ins**, and restrict **redirect/allowed URLs**
+     to the Vercel domain + `http://localhost:5173`.
+   - Apply the schema: `supabase link --project-ref <ref>` then **one-time** `supabase db push`
+     (the documented bootstrap exception; CI-driven migrations come in Stage 2/6).
+   - Create the backup role's password (SQL editor — not committed):
+     `alter role backup_ro with password '<strong-generated>';`
+2. **Vercel**
+   - Import the GitHub repo (OAuth). Framework preset: Vite; build `npm run build`; output
+     `dist`. `vercel.json` already sets the security headers/CSP.
+   - Add **production env vars**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (cloud values).
+3. **GitHub Actions secrets** (repo → Settings → Secrets → Actions) — enables daily backups:
+
+   | Secret | Value |
+   |---|---|
+   | `BACKUP_DATABASE_URL` | the `backup_ro` role's Postgres connection string — form `postgresql://backup_ro@HOST:5432/postgres` with the password inserted after the role name (Supabase shows the full string under Project Settings → Database) |
+   | `BACKUP_GPG_PASSPHRASE` | a strong passphrase to encrypt dumps (store it in your password manager — **without it the backups can't be decrypted**) |
+
+### Backups
+
+`.github/workflows/backup.yml` runs **daily (09:00 UTC)** + on-demand. It `pg_dump`s the
+`public` schema as the least-privilege `backup_ro` role, encrypts with AES-256, and uploads an
+**encrypted artifact (90-day retention)**. Until both secrets are set it runs green but skips.
+Trigger manually from the **Actions** tab to test.
+
+### Restore runbook
+
+```bash
+# 1. download the db-backup-<run_id> artifact from the Actions run, then:
+gpg --batch --passphrase "$BACKUP_GPG_PASSPHRASE" -d backup.sql.gpg > backup.sql
+# 2. restore into a fresh/throwaway database (local or a new Supabase project):
+psql "<target-db-url>" < backup.sql
+# 3. verify row counts match expectations.
+```
+
+Proven locally before ship (PR #3): seed → dump → AES-256 encrypt → wipe table → decrypt →
+restore → rows + RLS recovered.
 
 ---
 
@@ -52,8 +104,6 @@ hardening, daily encrypted backups). Documented here when provisioned.
 
 Added in later stages; documented here when they are:
 
-- **Supabase cloud** (Stage 1 PR #3) — production project + auth hardening + backups.
-- **Vercel** (Stage 1 PR #3) — frontend hosting + PR previews.
 - **Anthropic Console** (Stage 4) — API key for in-app AI; spend limits set here.
 - **Sentry** (Stage 2) — error monitoring; DSN.
 
