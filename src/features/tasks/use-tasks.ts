@@ -4,6 +4,11 @@ import { TaskSchema, type Task } from '../../types/task'
 
 const TASKS_KEY = ['tasks'] as const
 
+// Fields a client may patch via useUpdateTask. id/user_id/created_at are never client-set;
+// deletes go through useSoftDeleteTask. This covers every later-feature write: grid x/y,
+// text, due date, staged, recurring.
+type TaskPatch = Partial<Pick<Task, 'text' | 'x' | 'y' | 'due' | 'staged' | 'recurring'>>
+
 // Fetch the signed-in user's LIVE tasks. RLS restricts rows to user_id = auth.uid();
 // we additionally filter out soft-deleted rows (deleted_at is not null).
 async function fetchTasks(): Promise<Task[]> {
@@ -23,11 +28,28 @@ export function useTasks() {
 
 // Insert a task. user_id is NOT sent by the client — the DB default (auth.uid())
 // and RLS WITH CHECK assign and enforce ownership server-side.
+//
+// x/y seed at 0.5 (grid center), matching EisenClaw: new tasks default staged:true (DB
+// default) but must have non-null x/y or the priority score computes NaN downstream.
 export function useAddTask() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (text: string) => {
-      const { error } = await supabase.from('tasks').insert({ text })
+      const { error } = await supabase.from('tasks').insert({ text, x: 0.5, y: 0.5 })
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+  })
+}
+
+// Generic single-task update — the shared write path for x/y, text, due, staged, recurring
+// used by every later feature PR (grid drag, list sliders, inline edit). RLS scopes the
+// row to the owner; the client never sets user_id.
+export function useUpdateTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: TaskPatch }) => {
+      const { error } = await supabase.from('tasks').update(patch).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),

@@ -6,6 +6,50 @@ Code style, naming conventions, component patterns, state patterns, and UI/UX de
 
 ---
 
+## Design tokens
+
+The EisenClaw "warm paper" palette and fonts are implemented as Tailwind theme tokens in
+`tailwind.config.js` (`theme.extend`). Use the token names below — never raw hex in
+components. The body base (background + text + body font) is applied in `src/index.css`
+(`@layer base { body { ... } }`); exact source hex values are in
+`planning/EISENCLAW-LOGIC-TO-PORT.md` § 13.
+
+### Fonts
+
+Self-hosted via [`@fontsource`](https://fontsource.org/) — imported in `src/main.tsx`, so the
+page makes **no external Google Fonts request** (privacy: nothing about a page load leaks to a
+third party). Families are declared as Tailwind tokens.
+
+| Token | Family | Use |
+|---|---|---|
+| `font-serif` | Fraunces (variable) | Headings / headline (e.g. the "Todoclaw" wordmark) |
+| `font-sans` | IBM Plex Sans | Body / UI (the `body` default) |
+
+### Colors
+
+| Token | Hex | Use |
+|---|---|---|
+| `bg` | `#f4efe6` | App background (warm paper) |
+| `panel` | `#fbf8f1` | Raised panels / cards-backing |
+| `card` | `#ffffff` | Task cards |
+| `ink` | `#2e2a24` | Primary text; dark buttons |
+| `muted` | `#7a7466` | Secondary text |
+| `muted-light` | `#9a9080` | Tertiary text |
+| `muted-faint` | `#bcb09a` | Faint labels / placeholders |
+| `border` | `#e4dcc9` | Default hairline borders |
+| `border-strong` | `#ddd4c0` | Stronger borders (grid, inputs) |
+| `primary` | `#5b8a72` | Green — Add / Set primary buttons |
+| `accent` | `#c2693f` | Terracotta — one-time bucket dot, urgency badge |
+| `quadrant-do-now` | `#bf5e2a` | "Do Now" quadrant (urgent + important) |
+| `quadrant-schedule` | `#3d7a5f` | "Schedule" quadrant (important, not urgent) |
+| `quadrant-errands` | `#7d6b1e` | "Errands" quadrant (urgent, not important) |
+| `quadrant-someday` | `#857c6e` | "Someday" quadrant (neither) |
+
+> Quadrant **background tints** (the low-alpha `rgba(...)` fills behind the grid) are deferred
+> to the grid PR that paints the canvas — see `EISENCLAW-LOGIC-TO-PORT.md` § 13.
+
+---
+
 ## Visual parity reference (screenshots)
 
 Ground-truth screenshots of the original EisenClaw UI live in
