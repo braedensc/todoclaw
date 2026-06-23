@@ -10,12 +10,20 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 
 | What it blocks | Tool | Pattern | Why |
 |---|---|---|---|
+| Edit/Write while on `main`/`master` | Edit/Write | repo branch is protected + file is inside the project | Forces the feature-branch workflow automatically (`docs/COLLABORATION.md`) — keeps `main` clean for collaborators |
+| `git commit` while on `main`/`master` | Bash | `git commit` + protected branch | Same — no direct commits to `main` |
 | `rm -rf` / `rm --recursive` | Bash | `rm` with recursive+force flags | Accidental mass deletion |
 | `curl/wget \| bash` | Bash | pipe to shell | Supply-chain attack vector |
 | `git add planning/` | Bash | staging forbidden paths | `planning/` is gitignored reference; leaking it would publish EisenClaw source |
 | `git add .env*` (non-example) | Bash | staging real env files | Secrets leak via git |
 | Force-push / push to main | Bash | `git push --force` or `origin main` | Bypasses PR + CI gate |
 | Reading `.env*`, `*.pem`, `*.key` via shell | Bash | `cat`/`less`/`head` on secret files | Secrets entering Claude's context |
+
+> Bash command-matching is scoped per shell command: the gap between a command
+> and its target excludes `;`, `&`, `|`, so a `.env` mentioned in a *later*
+> command on the same line (e.g. `cat foo; grep x .env`) is no longer a false
+> positive — the real read (`cat .env`) still blocks.
+
 | Reading `.env*` (non-example) | Read | file_path basename match | Same reason — use env var names, not values |
 | Reading `*.pem` / `*.key` | Read | file_path suffix | Private key material |
 | Writing to `.env*` (non-example) | Edit/Write | file_path basename match | Only `.env.example` is committed |
