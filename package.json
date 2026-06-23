@@ -52,6 +52,7 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "@sentry/react": "^10.60.0",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-query": "^5.101.1",
     "react": "^18.3.1",

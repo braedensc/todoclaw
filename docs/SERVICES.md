@@ -126,12 +126,33 @@ restore → rows + RLS recovered.
 
 ---
 
+## Sentry — error monitoring (Stage 2 PR #3, dev mode)
+
+The `@sentry/react` SDK is wired but **DSN-gated**: it only initializes when `VITE_SENTRY_DSN`
+is set, so it's off until you provide a DSN. Error boundaries report crashes to it. Full
+production Sentry (live alerts, source maps, releases) is Stage 6.
+
+**Setup (you, in the dashboard + locally):**
+1. Create a project at [sentry.io](https://sentry.io) (platform: React). Copy its **DSN** — a
+   DSN is a public ingest URL, not a secret.
+2. Add it to `.env.local` (Claude can't write `.env*`): `VITE_SENTRY_DSN=<your-dsn>`. Restart
+   `npm run dev`. Errors caught by the boundaries now appear in Sentry.
+3. **Sentry MCP** (lets Claude read your Sentry issues): already registered **user-scoped** (in
+   `~/.claude.json`, not committed) via
+   `claude mcp add --scope user --transport http sentry https://mcp.sentry.dev/mcp`. It shows
+   "Needs authentication" until you run `/mcp` in an interactive `claude` session and complete
+   the OAuth. Collaborators run the same command on their own machines.
+
+> Leaving `VITE_SENTRY_DSN` blank disables Sentry entirely (the app no-ops) — the planner works
+> the same without it.
+
+---
+
 ## Not yet provisioned
 
 Added in later stages; documented here when they are:
 
 - **Anthropic Console** (Stage 4) — API key for in-app AI; spend limits set here.
-- **Sentry** (Stage 2) — error monitoring; DSN.
 
 ---
 

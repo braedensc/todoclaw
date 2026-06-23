@@ -217,3 +217,29 @@ the next). CI jobs + branch protection that *enforce* these are a separate PR (#
 - **Seed tests** — `localDateInTZ` (timezone + DST + invalid-zone), Zod round-trips for all four
   schemas (incl. the `bucket` literal and the blank-`timezone` rejection), and a `TaskList`
   render smoke test. `npm run lint`/`typecheck`/`test`/`format:check` all green locally.
+
+## ADR-0009 — Observability: Sentry (dev mode) + React error boundaries + Sentry MCP
+
+**Date:** 2026-06-23 · **Stage:** 2 (PR #3)
+
+- **Sentry SDK — "dev mode".** `@sentry/react` is initialized in `src/main.tsx` **only when
+  `VITE_SENTRY_DSN` is set** (`environment: import.meta.env.MODE`). With no DSN it is a no-op, so
+  DSN-less devs, CI, and tests never send events. The DSN is a **public ingest URL, not a
+  secret** (matches none of the hook's secret patterns); it's typed optional in
+  `src/vite-env.d.ts`, documented in `.env.example`, and the real value lives in `.env.local`
+  (Braeden adds it — the `PreToolUse` hook blocks Claude from writing `.env*`). Full production
+  Sentry — live DSN, source maps, release/alert config — is **Stage 6**.
+- **Error boundaries.** `src/components/ErrorBoundary.tsx` is a reusable class component
+  (`getDerivedStateFromError` + `componentDidCatch` → `Sentry.captureException`, which no-ops
+  when Sentry isn't initialized) with an accessible `role="alert"` fallback + a retry button.
+  It formalizes the inline boundary EisenClaw had (LOGIC-TO-PORT §13). Wrapped at **two levels**:
+  the **root** in `main.tsx` (outside `QueryClientProvider`, last-resort catch-all) and the
+  **authed region** in `App.tsx` (inside the provider, so a `TaskList`/query crash can't take
+  down the header/sign-out). Stage 3 feature regions (grid, list, …) wrap their own as they land.
+- **Sentry MCP — user-scoped, not committed** (the approved choice). Registered via
+  `claude mcp add --scope user --transport http sentry https://mcp.sentry.dev/mcp` → lives in
+  `~/.claude.json`, never the repo, and authenticates by OAuth on first use (no token on disk in
+  the project). Lets Claude read Sentry issues directly when triaging. The setup command is in
+  SERVICES.md so it's reproducible; collaborators opt in on their own machines.
+- **Verified.** A test renders a throwing child inside `ErrorBoundary` and asserts the fallback
+  shows and `captureException` is called; `lint`/`typecheck`/`test`/`format:check` green.
