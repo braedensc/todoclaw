@@ -50,7 +50,54 @@ npm run typecheck   # tsc -b, no emit
 
 ## Local Supabase
 
-> Added in Stage 1 PR #2 (`supabase start`, migrations, seeding). Placeholder for now.
+Development runs against a local Supabase stack in Docker — free, offline, disposable.
+
+```bash
+# one-time: install the CLI
+brew install supabase/tap/supabase
+
+# start / inspect / stop the local stack (Docker must be running)
+supabase start            # boots Postgres, Auth, PostgREST, Studio, … (first run pulls images)
+supabase status           # prints local URLs + keys
+supabase stop             # shut it down
+
+# apply migrations to the LOCAL db (re-runs every migration from clean)
+supabase db reset
+```
+
+Local URLs: API `http://127.0.0.1:54321` · Studio `http://127.0.0.1:54323` · Mailpit (catches
+sign-up emails) `http://127.0.0.1:54324`.
+
+### Create `.env.local` from the running stack
+
+Claude cannot write `.env.local` (the security hook blocks `.env` writes and JWT values), so
+create it yourself. With the stack running, this maps the local values to the Vite var names:
+
+```bash
+supabase status -o env \
+  --override-name api.url=VITE_SUPABASE_URL \
+  --override-name auth.anon_key=VITE_SUPABASE_ANON_KEY \
+  | grep '^VITE_' > .env.local
+```
+
+The anon key is public by design (RLS is the guard). Never put the service-role key in
+`.env.local`.
+
+### Run the app against it
+
+```bash
+nvm use && npm run dev          # http://localhost:5173
+```
+
+Sign up (local has email confirmation off, so you're logged in immediately), add a task, and it
+renders from Postgres through RLS.
+
+### Schema / migrations
+
+- Migrations live in `supabase/migrations/` (version-controlled, each with intent + down path).
+- Add one with `supabase migration new <name>`, write the SQL, then `supabase db reset` to apply
+  locally. **`db reset` only ever touches the local DB** — the Claude Code hook blocks
+  `--linked`/remote resets.
 
 ## Troubleshooting
 

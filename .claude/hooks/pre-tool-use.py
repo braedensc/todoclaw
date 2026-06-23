@@ -121,6 +121,39 @@ if tool == "Bash":
             "Reference by variable name only."
         )
 
+    # ── Guard PROD/REMOTE databases from destructive ops ────────────────────────
+    # The local Supabase stack (Docker, 127.0.0.1) is disposable — resetting it is
+    # routine and stays allowed. Production is irreplaceable, so the catastrophic
+    # remote operations are blocked here (defence against a fat-fingered command by
+    # Claude *or* a human). Prod changes go through reviewed, reversible migrations.
+
+    # `supabase db reset` wipes the database. Local is fine; --linked / --db-url
+    # target a REMOTE db and would destroy it.
+    if re.search(r"\bsupabase\b[^#\n]*\bdb\s+reset\b", cmd) and \
+       re.search(r"--linked\b|--db-url\b", cmd):
+        block(
+            "`supabase db reset` against a linked/remote database wipes it. "
+            "Only the local (Docker) reset is allowed; change prod via reviewed, "
+            "reversible migrations."
+        )
+
+    # Deleting a hosted Supabase project is irreversible.
+    if re.search(r"\bsupabase\b[^#\n]*\bprojects?\s+delete\b", cmd):
+        block("`supabase projects delete` is irreversible and is not allowed.")
+
+    # Raw destructive SQL (DROP / TRUNCATE / DELETE) aimed at a NON-localhost
+    # Postgres host — e.g. psql against a remote connection string. A postgres URL
+    # whose host is not localhost/127.0.0.1 alongside a destructive verb is blocked.
+    if re.search(r"\b(drop|truncate|delete)\b", cmd, re.IGNORECASE) and re.search(
+        r"postgres(?:ql)?://[^\s'\"]*@(?!(?:localhost|127\.0\.0\.1|0\.0\.0\.0))",
+        cmd,
+        re.IGNORECASE,
+    ):
+        block(
+            "Destructive SQL (DROP/TRUNCATE/DELETE) against a remote database is "
+            "blocked. Run destructive changes only on the local DB, via migrations."
+        )
+
 
 # ── Read ──────────────────────────────────────────────────────────────────────
 if tool == "Read":
