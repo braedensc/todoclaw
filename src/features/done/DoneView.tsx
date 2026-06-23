@@ -1,9 +1,140 @@
-// Placeholder for the Done tab — the permanent completion history (newest-first) with
-// conditional restore. Built in a later Stage 3 PR; this stub keeps the shell wired.
-export function DoneView() {
+import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useDailyState } from '../daily-state/use-daily-state'
+import { useSoftDeleteTask } from '../tasks/use-tasks'
+import { useHistory, useRestoreTask } from './use-history'
+import type { History } from '../../types/history'
+
+// Done tab: the permanent completion history, newest-first. The query already orders by
+// completed_at desc, so we render rows as-is.
+//
+// Restore is shown ONLY while a completion is still in TODAY's daily_state.done map
+// (canRestore) — a permanent history row from a previous day can't be un-done. Restore
+// flips today's `done`; it leaves the history row intact (history is append-only).
+//
+// Delete SOFT-deletes the task (useSoftDeleteTask) — the history row PERSISTS (it is the
+// permanent log, denormalized so it survives the task going away). Recurring tasks never
+// reach history (they don't write it), so they never appear here.
+
+// Format an ISO instant for display: "May 19 at 12:18 AM" (matches the EisenClaw Done tab).
+function formatCompletedAt(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const day = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${day} at ${time}`
+}
+
+interface HistoryRowProps {
+  entry: History
+  canRestore: boolean
+  onRestore: () => void
+  onDelete: () => void
+  busy: boolean
+}
+
+function HistoryRow({ entry, canRestore, onRestore, onDelete, busy }: HistoryRowProps) {
   return (
-    <section aria-label="Done" className="rounded-xl border border-border-strong bg-panel p-8">
-      <p className="text-muted">Done — nothing here yet.</p>
+    <li className="flex items-center gap-3 border-l-2 border-primary bg-card px-4 py-3">
+      <span aria-hidden className="text-primary">
+        ✓
+      </span>
+      <span className="min-w-0 flex-1 truncate text-ink">{entry.text}</span>
+      <span className="shrink-0 text-xs text-muted-light">
+        {formatCompletedAt(entry.completed_at)}
+      </span>
+      {canRestore && (
+        <button
+          type="button"
+          onClick={onRestore}
+          disabled={busy}
+          aria-label={`Restore "${entry.text}"`}
+          title="Restore — marks this task not done for today"
+          className="shrink-0 rounded px-2 py-1 text-sm text-muted hover:bg-bg hover:text-ink disabled:opacity-50"
+        >
+          ↩
+        </button>
+      )}
+      {entry.task_id && (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={busy}
+          aria-label={`Delete "${entry.text}"`}
+          title="Delete the task (the history record is kept)"
+          className="shrink-0 rounded px-2 py-1 text-sm text-muted hover:bg-bg hover:text-accent disabled:opacity-50"
+        >
+          ×
+        </button>
+      )}
+    </li>
+  )
+}
+
+export function DoneView() {
+  const { data: schedule } = useUserSchedule()
+  const timeZone = schedule?.timezone ?? 'UTC'
+
+  const history = useHistory()
+  const daily = useDailyState(timeZone)
+  const restore = useRestoreTask()
+  const softDelete = useSoftDeleteTask()
+
+  const todayDone = daily.data?.done ?? {}
+  const busy = restore.isPending || softDelete.isPending
+
+  const handleRestore = (taskId: string | null) => {
+    if (!taskId) return
+    restore.mutate({ taskId, timeZone })
+  }
+
+  const handleDelete = (taskId: string | null, text: string) => {
+    if (!taskId) return
+    // The history record is permanent; this only soft-deletes the task itself.
+    if (!window.confirm(`Delete the task "${text}"? Its completion stays in your history.`)) return
+    softDelete.mutate(taskId)
+  }
+
+  if (history.isLoading) {
+    return (
+      <section aria-label="Done" className="rounded-xl border border-border-strong bg-panel p-8">
+        <p className="text-muted">Loading…</p>
+      </section>
+    )
+  }
+
+  if (history.isError) {
+    return (
+      <section aria-label="Done" className="rounded-xl border border-border-strong bg-panel p-8">
+        <p className="text-accent">Couldn’t load your history. Try again.</p>
+      </section>
+    )
+  }
+
+  const entries = history.data ?? []
+
+  return (
+    <section aria-label="Done" className="rounded-xl border border-border-strong bg-panel p-6">
+      <p className="mb-4 text-sm text-muted">
+        Your full completion history — permanent. <span aria-hidden>↩</span> restores tasks marked
+        done today; <span aria-hidden>×</span> deletes the task (the record stays here).
+      </p>
+
+      {entries.length === 0 ? (
+        <p className="text-muted">Nothing done yet — completed tasks land here.</p>
+      ) : (
+        <ul className="space-y-2">
+          {entries.map((entry) => (
+            <HistoryRow
+              key={entry.id}
+              entry={entry}
+              canRestore={Boolean(entry.task_id && todayDone[entry.task_id])}
+              onRestore={() => handleRestore(entry.task_id)}
+              onDelete={() => handleDelete(entry.task_id, entry.text)}
+              busy={busy}
+            />
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
