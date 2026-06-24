@@ -7,6 +7,7 @@ import { GridView } from './GridView'
 // spies we assert against; the schedule/daily-state hooks return fixtures the tests override.
 const updateMutate = vi.fn()
 const softDeleteMutate = vi.fn()
+const markDoneMutate = vi.fn()
 let tasksFixture: Task[] = []
 let doneTodayFixture: Record<string, boolean> = {}
 
@@ -14,6 +15,9 @@ vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksFixture }),
   useUpdateTask: () => ({ mutate: updateMutate }),
   useSoftDeleteTask: () => ({ mutate: softDeleteMutate }),
+}))
+vi.mock('../done/use-history', () => ({
+  useMarkTaskDone: () => ({ mutate: markDoneMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
@@ -45,6 +49,7 @@ function makeTask(over: Partial<Task>): Task {
 beforeEach(() => {
   updateMutate.mockClear()
   softDeleteMutate.mockClear()
+  markDoneMutate.mockClear()
   tasksFixture = []
   doneTodayFixture = {}
 })
@@ -176,5 +181,144 @@ describe('GridView hover actions', () => {
     fireEvent.change(input, { target: { value: 'New name' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(updateMutate).toHaveBeenCalledWith({ id: 'edit-me', patch: { text: 'New name' } })
+  })
+})
+
+describe('GridView grid mark-done', () => {
+  it('marks a normal card done via the Done data layer (writes history)', () => {
+    tasksFixture = [makeTask({ id: 'norm', text: 'Buy milk', bucket: 'oneoff', staged: false })]
+    render(<GridView />)
+    fireEvent.click(screen.getByLabelText('Done'))
+    expect(markDoneMutate).toHaveBeenCalledWith({
+      taskId: 'norm',
+      text: 'Buy milk',
+      bucket: 'oneoff',
+      timeZone: 'America/New_York',
+    })
+    expect(updateMutate).not.toHaveBeenCalled()
+  })
+
+  it('resets a recurring card cycle (patches recurring) instead of writing history', () => {
+    tasksFixture = [
+      makeTask({
+        id: 'rec',
+        text: 'Water plants',
+        recurring: { frequencyDays: 3, lastDoneAt: null, doneCount: 2 },
+      }),
+    ]
+    render(<GridView />)
+    fireEvent.click(screen.getByLabelText('Done (resets cycle)'))
+    expect(markDoneMutate).not.toHaveBeenCalled()
+    expect(updateMutate).toHaveBeenCalledTimes(1)
+    const call = updateMutate.mock.calls[0]![0] as {
+      id: string
+      patch: { recurring: { lastDoneAt: string | null; doneCount: number; frequencyDays: number } }
+    }
+    expect(call.id).toBe('rec')
+    expect(call.patch.recurring.frequencyDays).toBe(3)
+    expect(call.patch.recurring.doneCount).toBe(3) // 2 + 1
+    expect(call.patch.recurring.lastDoneAt).not.toBeNull() // cycle reset to now
+  })
+})
+
+describe('GridView clustering', () => {
+  // Two tasks within CX (0.09) / CY (0.07) of each other → one bubble, not two cards.
+  it('collapses overlapping placed tasks into a single bubble with the count', () => {
+    tasksFixture = [
+      makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
+    ]
+    render(<GridView />)
+
+    const bubbles = screen.getAllByTestId('cluster-bubble')
+    expect(bubbles).toHaveLength(1)
+    expect(within(bubbles[0]!).getByText('2')).toBeInTheDocument()
+    // The cards are hidden inside the cluster until the popup opens.
+    expect(screen.queryByTestId('grid-card')).not.toBeInTheDocument()
+  })
+
+  it('renders non-overlapping tasks as individual cards (no bubble)', () => {
+    tasksFixture = [
+      makeTask({ id: 'a', text: 'Top left', x: 0.1, y: 0.9 }),
+      makeTask({ id: 'b', text: 'Bottom right', x: 0.9, y: 0.1 }),
+    ]
+    render(<GridView />)
+
+    expect(screen.getAllByTestId('grid-card')).toHaveLength(2)
+    expect(screen.queryByTestId('cluster-bubble')).not.toBeInTheDocument()
+  })
+
+  it('opens a popup listing the clustered tasks when the bubble is clicked', () => {
+    tasksFixture = [
+      makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
+    ]
+    render(<GridView />)
+
+    expect(screen.queryByTestId('cluster-popup')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
+
+    const popup = screen.getByTestId('cluster-popup')
+    expect(within(popup).getByText('Clean kitchen')).toBeInTheDocument()
+    expect(within(popup).getByText('Clean bedroom')).toBeInTheDocument()
+    expect(within(popup).getByText('2 tasks here')).toBeInTheDocument()
+  })
+
+  it('marks a normal popup row done via the Done data layer', () => {
+    tasksFixture = [
+      makeTask({ id: 'a', text: 'Clean kitchen', bucket: 'oneoff', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
+    ]
+    render(<GridView />)
+    fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
+
+    const popup = screen.getByTestId('cluster-popup')
+    const rowA = within(popup).getByText('Clean kitchen').closest('[data-task-id]') as HTMLElement
+    fireEvent.click(within(rowA).getByLabelText('Mark done'))
+
+    expect(markDoneMutate).toHaveBeenCalledWith({
+      taskId: 'a',
+      text: 'Clean kitchen',
+      bucket: 'oneoff',
+      timeZone: 'America/New_York',
+    })
+  })
+
+  it('resets a recurring popup row cycle instead of writing history', () => {
+    tasksFixture = [
+      makeTask({
+        id: 'rec',
+        text: 'Water plants',
+        x: 0.5,
+        y: 0.5,
+        recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+      }),
+      makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
+    ]
+    render(<GridView />)
+    fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
+
+    const popup = screen.getByTestId('cluster-popup')
+    const recRow = within(popup).getByText('Water plants').closest('[data-task-id]') as HTMLElement
+    fireEvent.click(within(recRow).getByLabelText('Mark done'))
+
+    expect(markDoneMutate).not.toHaveBeenCalled()
+    const call = updateMutate.mock.calls.find(
+      (c) => (c[0] as { id: string }).id === 'rec',
+    )?.[0] as { patch: { recurring: { doneCount: number } } }
+    expect(call.patch.recurring.doneCount).toBe(1)
+  })
+
+  it('closes the popup when the grid background is clicked', () => {
+    tasksFixture = [
+      makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
+    ]
+    render(<GridView />)
+    fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
+    expect(screen.getByTestId('cluster-popup')).toBeInTheDocument()
+
+    fireEvent.pointerDown(screen.getByTestId('grid-canvas'))
+    expect(screen.queryByTestId('cluster-popup')).not.toBeInTheDocument()
   })
 })
