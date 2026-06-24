@@ -7,11 +7,13 @@ import { resolveCollision } from '../../lib/collision'
 
 // Component tests with all data hooks mocked (no Supabase, no network). We assert the
 // behavior the list OWNS — ranking order, quadrant coloring, inline-edit + slider commit
-// wiring, the staging badge, and done-today exclusion. The pure logic itself (taskScore,
-// resolveCollision math) is covered in src/lib/*.test.ts, so we don't re-test it here.
+// wiring, the staging badge, done-today exclusion, the done control's normal-vs-recurring
+// branch, and the recurring set/remove controls. The pure logic itself (taskScore,
+// resolveCollision math, recurring thresholds/colors) is covered in src/lib/*.test.ts.
 
 const updateMutate = vi.fn()
 const deleteMutate = vi.fn()
+const markDoneMutate = vi.fn()
 let tasksData: Task[] = []
 let doneToday: Record<string, true> = {}
 
@@ -19,6 +21,9 @@ vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksData, isLoading: false, isError: false }),
   useUpdateTask: () => ({ mutate: updateMutate }),
   useSoftDeleteTask: () => ({ mutate: deleteMutate }),
+}))
+vi.mock('../done/use-history', () => ({
+  useMarkTaskDone: () => ({ mutate: markDoneMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'UTC' } }),
@@ -50,9 +55,14 @@ function makeTask(over: Partial<Task>): Task {
 beforeEach(() => {
   updateMutate.mockClear()
   deleteMutate.mockClear()
+  markDoneMutate.mockClear()
   tasksData = []
   doneToday = {}
 })
+
+// A recent ISO timestamp (yesterday) so a recurring task with a real frequency reads as a
+// live cycle rather than "never done". Used by the recurring-section tests.
+const RECENT = new Date(Date.now() - 86_400_000).toISOString()
 
 describe('ListView', () => {
   it('renders rows in descending score order', () => {
@@ -143,5 +153,126 @@ describe('ListView', () => {
     tasksData = []
     render(<ListView />)
     expect(screen.getByText(/No tasks yet/i)).toBeInTheDocument()
+  })
+
+  describe('done control', () => {
+    it('marks a NORMAL task done via useMarkTaskDone (not useUpdateTask)', () => {
+      tasksData = [makeTask({ id: 'n1', text: 'normal', bucket: 'oneoff' })]
+      render(<ListView />)
+
+      fireEvent.click(screen.getByLabelText('Mark done'))
+
+      expect(markDoneMutate).toHaveBeenCalledWith({
+        taskId: 'n1',
+        text: 'normal',
+        bucket: 'oneoff',
+        timeZone: 'UTC',
+      })
+      // A normal mark-done must NOT touch the recurring/task update path.
+      expect(updateMutate).not.toHaveBeenCalled()
+    })
+
+    it('marks a RECURRING task done via useUpdateTask with a bumped cycle (no history)', () => {
+      tasksData = [
+        makeTask({
+          id: 'r1',
+          text: 'chore',
+          recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 2 },
+        }),
+      ]
+      render(<ListView />)
+
+      fireEvent.click(screen.getByLabelText('Mark done (resets clock)'))
+
+      // Recurring done resets the clock: doneCount bumps, lastDoneAt becomes a fresh ISO.
+      expect(markDoneMutate).not.toHaveBeenCalled()
+      expect(updateMutate).toHaveBeenCalledTimes(1)
+      const arg = updateMutate.mock.calls[0]![0] as {
+        id: string
+        patch: { recurring: { frequencyDays: number; lastDoneAt: string; doneCount: number } }
+      }
+      expect(arg.id).toBe('r1')
+      expect(arg.patch.recurring.frequencyDays).toBe(7)
+      expect(arg.patch.recurring.doneCount).toBe(3)
+      expect(arg.patch.recurring.lastDoneAt).not.toBe(RECENT)
+      expect(Number.isNaN(Date.parse(arg.patch.recurring.lastDoneAt))).toBe(false)
+    })
+  })
+
+  describe('recurring section (expanded row)', () => {
+    it('Set makes a task recurring via useUpdateTask with a fresh recurring object', () => {
+      tasksData = [makeTask({ id: 's1', text: 'make me recurring', recurring: null })]
+      render(<ListView />)
+
+      fireEvent.click(screen.getByLabelText('Expand row'))
+      fireEvent.change(screen.getByLabelText('Days between repeats'), { target: { value: '7' } })
+      fireEvent.click(screen.getByText('Set'))
+
+      expect(updateMutate).toHaveBeenCalledWith({
+        id: 's1',
+        patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } },
+      })
+    })
+
+    it('Remove clears recurring (recurring: null) via useUpdateTask', () => {
+      tasksData = [
+        makeTask({
+          id: 'rm1',
+          text: 'stop repeating',
+          recurring: { frequencyDays: 30, lastDoneAt: RECENT, doneCount: 1 },
+        }),
+      ]
+      render(<ListView />)
+
+      fireEvent.click(screen.getByLabelText('Expand row'))
+      fireEvent.click(screen.getByText('Remove'))
+
+      expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
+    })
+
+    it('renders the cadence (fmtFrequency) and status label for a recurring task', () => {
+      // 7-day cadence done yesterday → "weekly" + an in-Nd "soon"/"ok" status label.
+      tasksData = [
+        makeTask({
+          id: 'f1',
+          text: 'weekly chore',
+          recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 1 },
+        }),
+      ]
+      render(<ListView />)
+
+      fireEvent.click(screen.getByLabelText('Expand row'))
+      // fmtFrequency(7) === 'weekly'; the recurring section renders the cadence word.
+      expect(screen.getAllByText(/weekly/).length).toBeGreaterThan(0)
+      // recurringStatus → "in 6d" (daysLeft 6). The label shows in both the collapsed row's
+      // status span and the expanded recurring section, so assert at least one is present.
+      expect(screen.getAllByText('in 6d').length).toBeGreaterThan(0)
+      // The editable frequency input reflects the current cadence.
+      expect(screen.getByLabelText('Recurring frequency in days')).toHaveValue(7)
+    })
+
+    it('shows the ×N count badge once doneCount >= 3', () => {
+      tasksData = [
+        makeTask({
+          id: 'c1',
+          text: 'counted',
+          recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 4 },
+        }),
+      ]
+      render(<ListView />)
+      expect(screen.getByLabelText('Completed 4 times')).toHaveTextContent('×4')
+    })
+
+    it('hides the ×N count badge below doneCount 3', () => {
+      tasksData = [
+        makeTask({
+          id: 'c2',
+          text: 'not counted',
+          recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 2 },
+        }),
+      ]
+      render(<ListView />)
+      expect(screen.queryByLabelText(/Completed/)).not.toBeInTheDocument()
+    })
   })
 })
