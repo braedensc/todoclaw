@@ -17,14 +17,16 @@ export interface GridCardProps {
   onRename: (text: string) => void
   onDelete: () => void
   onBackToTray: () => void
+  /** Mark this task done — caller branches recurring (reset cycle) vs normal (write history). */
+  onDone: () => void
 }
 
 /**
  * A single placed task card on the grid. The 3px top border encodes status: a recurring
  * task uses its RC_COLOR (overdue/due/soon/ok), otherwise the quadrant color for its (x,y).
- * Hover reveals edit / delete / back-to-tray. The whole card is the drag handle; the action
- * buttons stopPropagation so clicking them never starts a drag. "Mark done" is intentionally
- * absent here — it needs the Done data-layer RPC and lands in a later PR.
+ * Hover reveals done / edit / delete / back-to-tray. The whole card is the drag handle; the
+ * action buttons stopPropagation so clicking them never starts a drag. Done marks a normal
+ * task complete for today (it leaves the grid) or resets a recurring task's cycle.
  */
 export function GridCard({
   task,
@@ -35,6 +37,7 @@ export function GridCard({
   onRename,
   onDelete,
   onBackToTray,
+  onDone,
 }: GridCardProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.text)
@@ -121,6 +124,9 @@ export function GridCard({
       {/* Hover action buttons — hidden until hover; each stops propagation so it isn't a drag. */}
       {!editing && (
         <div className="absolute -top-2 right-1 hidden gap-1 group-hover:flex">
+          <ActionButton label={task.recurring ? 'Done (resets cycle)' : 'Done'} onClick={onDone}>
+            ✓
+          </ActionButton>
           <ActionButton
             label="Edit task"
             onClick={() => {

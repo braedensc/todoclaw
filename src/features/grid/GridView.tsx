@@ -2,14 +2,18 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
+import { useMarkTaskDone } from '../done/use-history'
 import { useUserSchedule } from '../schedule/use-user-schedule'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { recurringStatus } from '../../lib/recurring'
+import { clusterAccentColor, clusterDominant, computeClusters } from '../../lib/clustering'
 import { useFreeDrag, toNormalized, type NormalizedPoint } from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { GridCanvas } from './GridCanvas'
 import { GridCard } from './GridCard'
 import { StagingTray } from './StagingTray'
+import { ClusterBubble } from '../clustering/ClusterBubble'
+import { ClusterPopup } from '../clustering/ClusterPopup'
 
 // Browser default IANA zone — used only when the user_schedule row hasn't loaded yet, so the
 // daily-state "done today" filter still resolves against a sane local day.
@@ -44,6 +48,7 @@ export function GridView() {
 
   const updateTask = useUpdateTask()
   const softDelete = useSoftDeleteTask()
+  const markDone = useMarkTaskDone()
 
   // Live "ghost" position for the card under drag, so it tracks the pointer before the write
   // lands. Keyed by id; cleared on drop.
@@ -52,19 +57,54 @@ export function GridView() {
   // Tap-to-place selection (mobile / touch): the tray task awaiting a grid tap.
   const [placingId, setPlacingId] = useState<string | null>(null)
 
+  // The open cluster popup, keyed by its dominant task id (the bubble's data-task-id). Closed
+  // by clicking the grid background, dragging a row out, or marking a recurring task done.
+  const [openClusterId, setOpenClusterId] = useState<string | null>(null)
+
   const placedTasks = useMemo(
     () => tasks.filter((t): t is Task & { x: number; y: number } => isPlaced(t, doneToday ?? {})),
     [tasks, doneToday],
   )
   const stagedTasks = useMemo(() => tasks.filter((t) => t.staged), [tasks])
 
+  // Seed-based, non-transitive grouping (math lives in lib/clustering). A group of 1 renders as
+  // a normal card; a group of >1 collapses into a bubble + expandable popup.
+  const clusters = useMemo(() => computeClusters(placedTasks), [placedTasks])
+
   const updateMutate = updateTask.mutate
+  const softDeleteMutate = softDelete.mutate
+  const markDoneMutate = markDone.mutate
+
+  // --- Mark done (shared by grid cards + popup rows) -------------------------------------
+  // Normal task: write history + today's daily_state (it leaves the grid). Recurring task:
+  // reset the cycle (lastDoneAt=now, doneCount+1) WITHOUT touching history/daily_state — it
+  // re-evaluates to "ok" and is hidden until the next cycle. Closes any open popup.
+  const handleDone = useCallback(
+    (task: Task) => {
+      setOpenClusterId(null)
+      if (task.recurring) {
+        updateMutate({
+          id: task.id,
+          patch: {
+            recurring: {
+              ...task.recurring,
+              lastDoneAt: new Date().toISOString(),
+              doneCount: (task.recurring.doneCount ?? 0) + 1,
+            },
+          },
+        })
+      } else {
+        markDoneMutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
+      }
+    },
+    [markDoneMutate, updateMutate, timeZone],
+  )
 
   // --- Reposition (grid card) drag -------------------------------------------------------
   const handleRepositionDrop = useCallback(
     (id: string, point: NormalizedPoint) => {
       setGhost(null)
-      // No collision resolution on drag — overlap is fine (clustering handles it later).
+      // No collision resolution on drag — overlap is fine (clustering absorbs it).
       updateMutate({ id, patch: { x: point.x, y: point.y } })
     },
     [updateMutate],
@@ -93,9 +133,35 @@ export function GridView() {
     onMove: handleMoveGhost,
   })
 
-  // --- Tap-to-place (mobile / touch) -----------------------------------------------------
+  // --- Popup row → grid drag-out ---------------------------------------------------------
+  // Pulls a task out of a cluster: drop commits its new x/y (and clears any staged flag) so it
+  // separates from the seed. The popup is closed on pointer-down (handled by startDrag below).
+  const handlePopupDrop = useCallback(
+    (id: string, point: NormalizedPoint) => {
+      setGhost(null)
+      updateMutate({ id, patch: { x: point.x, y: point.y, staged: false } })
+    },
+    [updateMutate],
+  )
+  const popupDrag = useFreeDrag({
+    surfaceRef: gridRef,
+    onDrop: handlePopupDrop,
+    onMove: handleMoveGhost,
+  })
+  const startPopupRowDrag = useCallback(
+    (task: Task) => (event: PointerEvent) => {
+      // Dragging a row out implicitly closes the popup; the card then tracks the pointer.
+      setOpenClusterId(null)
+      popupDrag.startDrag(task.id)(event)
+    },
+    [popupDrag],
+  )
+
+  // --- Tap-to-place (mobile / touch) + background click (close popup) ---------------------
   const handleGridPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      // A click on empty canvas always dismisses an open cluster popup.
+      setOpenClusterId(null)
       if (!isMobile || !placingId) return
       const rect = gridRef.current?.getBoundingClientRect()
       if (!rect) return
@@ -123,21 +189,59 @@ export function GridView() {
             </p>
           )}
 
-          {placedTasks.map((task) => {
-            const live = ghost?.id === task.id ? ghost.point : { x: task.x, y: task.y }
-            // Data-space → screen: x left→right, y inverted (high importance = top).
+          {clusters.map((group) => {
+            // A singleton group renders exactly as before — a normal, draggable card.
+            if (group.length === 1) {
+              const task = group[0]!
+              const live = ghost?.id === task.id ? ghost.point : { x: task.x!, y: task.y! }
+              // Data-space → screen: x left→right, y inverted (high importance = top).
+              return (
+                <GridCard
+                  key={task.id}
+                  task={task}
+                  screenX={live.x}
+                  screenY={1 - live.y}
+                  dragging={draggingId === task.id}
+                  onPointerDown={reposition.startDrag(task.id)}
+                  onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
+                  onDelete={() => softDeleteMutate(task.id)}
+                  onBackToTray={() => updateMutate({ id: task.id, patch: { staged: true } })}
+                  onDone={() => handleDone(task)}
+                />
+              )
+            }
+
+            // Overlapping group → a single bubble at the dominant task's coords, with the
+            // expandable popup. Accent/dominant come from lib/clustering (recurring-aware).
+            const dominant = clusterDominant(group, { timeZone })
+            const accentColor = clusterAccentColor(group, { timeZone })
+            const open = openClusterId === dominant.id
             return (
-              <GridCard
-                key={task.id}
-                task={task}
-                screenX={live.x}
-                screenY={1 - live.y}
-                dragging={draggingId === task.id}
-                onPointerDown={reposition.startDrag(task.id)}
-                onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
-                onDelete={() => softDelete.mutate(task.id)}
-                onBackToTray={() => updateMutate({ id: task.id, patch: { staged: true } })}
-              />
+              <ClusterBubble
+                key={dominant.id}
+                group={group}
+                accentColor={accentColor}
+                screenX={dominant.x ?? 0.5}
+                screenY={1 - (dominant.y ?? 0.5)}
+                open={open}
+                onToggle={() => setOpenClusterId(open ? null : dominant.id)}
+              >
+                {open && (
+                  <ClusterPopup
+                    group={group}
+                    accentColor={accentColor}
+                    dominantY={dominant.y ?? 0.5}
+                    timeZone={timeZone}
+                    onDone={handleDone}
+                    onEdit={() => setOpenClusterId(null)}
+                    onDelete={(task) => {
+                      softDeleteMutate(task.id)
+                      setOpenClusterId(null)
+                    }}
+                    onRowPointerDown={startPopupRowDrag}
+                  />
+                )}
+              </ClusterBubble>
             )
           })}
         </GridCanvas>
