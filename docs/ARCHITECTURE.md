@@ -316,3 +316,63 @@ full Supabase-in-CI:
   Vitest (`src/**/*.test.*`) nor `tsc -b` (`include: ["src"]`); Playwright transpiles them itself.
   `playwright.config.ts` is typechecked node-side (added to `tsconfig.node.json`). Artifacts
   (`test-results/`, `playwright-report/`) are gitignored. Verified: smoke passes locally.
+
+## ADR-0012 — `history` table: denormalized snapshot + append-only (reconciled with soft-delete)
+
+**Date:** 2026-06-24 · **Stage:** 3 (PR6)
+
+The Done tab is backed by a dedicated `public.history` table — the permanent completion log —
+**not** a view over `tasks`/`daily_state`. Three coupled decisions:
+
+- **Denormalized snapshot.** Each row carries its own `text` and `bucket`, captured at
+  completion time, and a `task_id` that is **nullable with NO foreign key**. The snapshot is
+  the source of truth. This is the deliberate reconciliation with ADR-0005's soft-delete-only
+  model: deleting a completed task from the Done tab **soft-deletes the task** (`useSoftDeleteTask`)
+  while the history row survives intact. A FK + `on delete cascade` would have erased history on
+  delete; a FK without cascade would have blocked it. No FK at all means the log is independent
+  of the task's lifecycle — exactly what a permanent record needs.
+- **Append-only / immutable.** The grant is **SELECT + INSERT only** — no UPDATE, no DELETE, and
+  no update/delete RLS policy. Once a completion is written it cannot be mutated or removed by the
+  app. "Restore" does not delete a history row (it only flips today's `daily_state.done`); "delete
+  from the Done tab" targets the task, never the row. So there is no client path that rewrites the
+  log. (This is a behaviour change from EisenClaw, whose `×` removed the entry from history — we
+  keep the permanent record instead and re-point `×` at the task.)
+- **`task_id` retained for restore-eligibility only.** Restore is offered (`canRestore`) only while
+  the completion is still in **today's** `daily_state.done` map — checked by `task_id`. A row from
+  a previous day, or whose task is gone, simply shows no Restore button. RLS owner-scopes the table
+  (`user_id = auth.uid()`); the index `(user_id, completed_at desc)` serves the newest-first read.
+
+## ADR-0013 — Keep `daily_state` jsonb maps; write them via atomic `SECURITY INVOKER` merge RPCs
+
+**Date:** 2026-06-24 · **Stage:** 3 (PR6)
+
+`daily_state` keeps its four jsonb maps (`done`/`done_at`/`habit_done`/`subtask_done`) on **one
+row per (user, local day)** rather than normalizing completions into child rows. Writes go through
+three plpgsql RPCs (`set_task_done`, `set_task_undone`, `set_daily_flag`) added in the same
+migration.
+
+- **Why keep the jsonb maps (don't normalize).** A normalized `daily_completion(user_id, date,
+  kind, key, value)` table would trade the clobber problem for a join + per-toggle row churn and a
+  second table to RLS, with no payoff: the maps are only ever read whole (the Done tab + habits
+  read "what's checked today"), never queried by key across days. One row per day stays the simplest
+  shape that matches the access pattern, and the non-destructive date-keyed reset (ADR-0007) already
+  depends on it.
+- **Why RPCs instead of client read-modify-write (the real fix).** With the maps on one shared row,
+  a client that reads the row, edits a map in JS, and writes it back **races** any concurrent write
+  to the same row — task-done racing a habit-check clobbers the other's edit (the jsonb-clobber
+  hazard flagged in validation). The RPC does the merge server-side as
+  `<map> = <map> || jsonb_build_object(key, val)` inside the `UPDATE`, so the merge is against the
+  **current** row value under the row lock the `UPDATE` takes. Concurrent toggles to different keys
+  both survive. `set_task_done` additionally folds the `history` INSERT into the **same
+  transaction**, so there is never a done-without-history window. `.rpc()` is still the Supabase
+  query builder, not raw SQL; plpgsql-in-migration is already precedent (`set_updated_at`).
+- **Why `SECURITY INVOKER` (not DEFINER).** The functions run as the **caller**, so RLS still
+  applies and `auth.uid()` is the real signed-in user. `user_id` is `auth.uid()` everywhere inside
+  the function and is **never a parameter** — a caller cannot address another user's row. A
+  `SECURITY DEFINER` function would run as the owner and bypass RLS; we explicitly do not want that.
+  `search_path` is pinned to `public` as defence-in-depth. `set_daily_flag` whitelists its target
+  map to `habit_done`/`subtask_done`, so the habits PR (PR9) reuses it with **no new migration**.
+- **Realtime deferral (recorded here).** Realtime is deferred to Stage 5 (ADR/PR1 rationale: RLS
+  scopes each user to their own rows, so Realtime only helps same-user-multi-device). The merge-RPC
+  design makes adding it later purely additive — server-side atomic merges mean a future Realtime
+  push reflects a consistent row, with no client-merge reconciliation to retrofit.
