@@ -1,4 +1,5 @@
 import { useTasks, useUpdateTask, useSoftDeleteTask } from '../tasks/use-tasks'
+import { useMarkTaskDone } from '../done/use-history'
 import { useUserSchedule } from '../schedule/use-user-schedule'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { taskScore } from '../../lib/scoring'
@@ -25,6 +26,7 @@ export function ListView() {
 
   const updateTask = useUpdateTask()
   const softDelete = useSoftDeleteTask()
+  const markDone = useMarkTaskDone()
 
   if (isLoading) {
     return (
@@ -66,6 +68,44 @@ export function ListView() {
     updateTask.mutate({ id, patch: { due } })
   const handleDelete = (id: string) => softDelete.mutate(id)
 
+  // Mark a NORMAL task done: archives it via the Done data-layer RPC (writes today's
+  // daily_state.done + appends history in one transaction). It then leaves the list (filtered
+  // out by doneToday on the next render) and shows in the Done tab.
+  const handleDone = (task: Task) =>
+    markDone.mutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
+
+  // Mark a RECURRING task done: reset its cycle — lastDoneAt=now, doneCount+=1 — via the plain
+  // task UPDATE. Deliberately NOT history/daily_state (parity spec: recurring done lives in
+  // lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
+  const handleDoneRecurring = (task: Task) => {
+    if (!task.recurring) return
+    updateTask.mutate({
+      id: task.id,
+      patch: {
+        recurring: {
+          ...task.recurring,
+          lastDoneAt: new Date().toISOString(),
+          doneCount: (task.recurring.doneCount ?? 0) + 1,
+        },
+      },
+    })
+  }
+
+  // Recurring set/edit/remove — all write the `recurring` jsonb through the shared task UPDATE.
+  const handleSetRecurring = (id: string, frequencyDays: number) =>
+    updateTask.mutate({
+      id,
+      patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
+    })
+  // Editing the cadence preserves lastDoneAt + doneCount (only the frequency changes).
+  const handleSetFrequency = (id: string, frequencyDays: number) => {
+    const task = active.find((t) => t.id === id)
+    if (!task?.recurring) return
+    updateTask.mutate({ id, patch: { recurring: { ...task.recurring, frequencyDays } } })
+  }
+  const handleRemoveRecurring = (id: string) =>
+    updateTask.mutate({ id, patch: { recurring: null } })
+
   return (
     <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
       <p className="mb-3 text-sm text-muted">
@@ -83,6 +123,11 @@ export function ListView() {
             onUpdateText={handleUpdateText}
             onUpdateCoords={handleUpdateCoords}
             onUpdateDue={handleUpdateDue}
+            onDone={handleDone}
+            onDoneRecurring={handleDoneRecurring}
+            onSetRecurring={handleSetRecurring}
+            onSetFrequency={handleSetFrequency}
+            onRemoveRecurring={handleRemoveRecurring}
             onDelete={handleDelete}
           />
         ))}
