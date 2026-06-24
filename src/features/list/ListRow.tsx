@@ -8,11 +8,17 @@ import { ExpandedRow } from './ExpandedRow'
 
 // A single ranked list row. Reads pure logic from src/lib (quadrant color, due/recurring
 // badges) and writes through the mutation callbacks the parent supplies (text edit, x/y
-// commit, due commit, soft delete). All write hooks live in the parent (ListView) so this
-// component stays presentational + locally-stateful (edit buffer, expanded toggle).
+// commit, due commit, done, recurring set/edit/remove, soft delete). All write hooks live in
+// the parent (ListView) so this component stays presentational + locally-stateful (edit
+// buffer, expanded toggle).
 //
-// NO done control here: marking done needs the Done data-layer RPC from a parallel PR and is
-// wired in the next wave (parity spec note in the PR brief).
+// The done control branches on recurring (parity spec / EisenClaw `toggleDone`): a NORMAL
+// task goes to the Done tab + history (onDone), a RECURRING task instead resets its cycle
+// (onDoneRecurring) — no history, no daily_state. Both handlers live in ListView.
+
+// The `×N` recurring count badge appears once a recurring task has been completed this many
+// times — mirrors the grid card (src/features/grid/grid-constants.ts RECURRING_BADGE_MIN_DONE).
+const RECURRING_BADGE_MIN_DONE = 3
 
 interface ListRowProps {
   task: Task
@@ -23,6 +29,16 @@ interface ListRowProps {
   onUpdateText: (id: string, text: string) => void
   onUpdateCoords: (id: string, x: number, y: number) => void
   onUpdateDue: (id: string, due: string | null) => void
+  /** Mark a NORMAL task done (Done tab + history). Recurring tasks use onDoneRecurring. */
+  onDone: (task: Task) => void
+  /** Mark a RECURRING task done — resets its cycle (lastDoneAt/doneCount), no history. */
+  onDoneRecurring: (task: Task) => void
+  /** Make the task recurring with the given cadence (writes a fresh `recurring`). */
+  onSetRecurring: (id: string, frequencyDays: number) => void
+  /** Change an already-recurring task's cadence (preserves lastDoneAt + doneCount). */
+  onSetFrequency: (id: string, frequencyDays: number) => void
+  /** Drop the recurring schedule (writes `recurring: null`). */
+  onRemoveRecurring: (id: string) => void
   onDelete: (id: string) => void
 }
 
@@ -34,6 +50,11 @@ export function ListRow({
   onUpdateText,
   onUpdateCoords,
   onUpdateDue,
+  onDone,
+  onDoneRecurring,
+  onSetRecurring,
+  onSetFrequency,
+  onRemoveRecurring,
   onDelete,
 }: ListRowProps) {
   const [expanded, setExpanded] = useState(false)
@@ -44,6 +65,7 @@ export function ListRow({
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
   const due = daysUntil(task.due, { timeZone })
   const status = recurringStatus(task.recurring)
+  const showCount = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
   function commitText() {
     setEditing(false)
@@ -85,6 +107,16 @@ export function ListRow({
             aria-label={`Recurring, ${status.label}`}
           >
             ↻
+          </span>
+        )}
+
+        {/* Recurring completion count — mirrors the grid card's ×N badge at doneCount >= 3. */}
+        {showCount && (
+          <span
+            className="shrink-0 text-xs font-semibold text-muted"
+            aria-label={`Completed ${task.recurring?.doneCount} times`}
+          >
+            ×{task.recurring?.doneCount}
           </span>
         )}
 
@@ -138,6 +170,18 @@ export function ListRow({
           )
         )}
 
+        {/* Done control. Branches on recurring: a normal task is archived (Done tab + history),
+            a recurring task instead resets its clock (no history). Both go through ListView. */}
+        <button
+          type="button"
+          onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
+          aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
+          title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
+          className="shrink-0 rounded border border-border-strong px-2 py-1 text-sm text-muted hover:bg-bg hover:text-ink"
+        >
+          ✓
+        </button>
+
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -166,6 +210,9 @@ export function ListRow({
           task={task}
           onCommitCoords={handleCommitCoords}
           onCommitDue={(d) => onUpdateDue(task.id, d)}
+          onSetRecurring={(freq) => onSetRecurring(task.id, freq)}
+          onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
+          onRemoveRecurring={() => onRemoveRecurring(task.id)}
         />
       )}
     </li>

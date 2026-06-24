@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
+import { RecurringSection } from '../recurring/RecurringSection'
 
 // The expanded detail panel of a list row: urgency/importance sliders (each paired with a
-// number input), a due-date picker, a live quadrant badge, and a recurring-section
-// placeholder (PR8 fills it).
+// number input), a due-date picker, a live quadrant badge, and the recurring section
+// (set / edit / remove a repeat schedule — src/features/recurring/RecurringSection.tsx).
 //
 // Slider/number semantics (parity spec "Expanded row"): the controls drive LOCAL state so
 // the badge and thumb track the drag live, but x/y are only COMMITTED on pointer-up / blur —
@@ -21,9 +22,22 @@ interface ExpandedRowProps {
   onCommitCoords: (x: number, y: number) => void
   /** Commit a due date (ISO 'YYYY-MM-DD' or null) — fired on date-picker change. */
   onCommitDue: (due: string | null) => void
+  /** Set a fresh recurring schedule of N days (writes `recurring`, lastDoneAt null, count 0). */
+  onSetRecurring: (frequencyDays: number) => void
+  /** Change an already-recurring task's cadence (preserves lastDoneAt + doneCount). */
+  onSetFrequency: (frequencyDays: number) => void
+  /** Drop the recurring schedule (writes `recurring: null`). */
+  onRemoveRecurring: () => void
 }
 
-export function ExpandedRow({ task, onCommitCoords, onCommitDue }: ExpandedRowProps) {
+export function ExpandedRow({
+  task,
+  onCommitCoords,
+  onCommitDue,
+  onSetRecurring,
+  onSetFrequency,
+  onRemoveRecurring,
+}: ExpandedRowProps) {
   // Local, live coords (percent 0–100). Null x/y default to grid center (50), matching scoring.
   // These initialize from the task once; when a committed write lands and the task coords
   // change, ListRow remounts this panel via a coord-derived `key`, so the initializers re-run
@@ -76,11 +90,12 @@ export function ExpandedRow({ task, onCommitCoords, onCommitDue }: ExpandedRowPr
         </span>
       </div>
 
-      {/* Recurring controls land in PR8 — disabled placeholder holds the spot. */}
-      <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-        <span aria-hidden>↻</span>
-        <span>Recurring — set in a later update</span>
-      </div>
+      <RecurringSection
+        task={task}
+        onSetRecurring={onSetRecurring}
+        onSetFrequency={onSetFrequency}
+        onRemoveRecurring={onRemoveRecurring}
+      />
     </div>
   )
 }

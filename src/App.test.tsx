@@ -20,6 +20,11 @@ vi.mock('./features/tasks/use-tasks', () => ({
   useUpdateTask: () => ({ mutate: vi.fn() }),
   useSoftDeleteTask: () => ({ mutate: vi.fn() }),
 }))
+// GridView's grid mark-done action calls useMarkTaskDone (Done data layer); stub it so the
+// shell renders without a QueryClientProvider / network.
+vi.mock('./features/done/use-history', () => ({
+  useMarkTaskDone: () => ({ mutate: vi.fn() }),
+}))
 vi.mock('./features/schedule/use-user-schedule', () => ({
   useEnsureUserSchedule: () => ({ mutate: vi.fn() }),
   useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
