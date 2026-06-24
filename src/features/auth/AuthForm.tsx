@@ -2,41 +2,31 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 
-type Mode = 'signin' | 'signup'
-
-// Minimal email/password auth for the Stage 1 skeleton. Real auth hardening
-// (email confirmation, password policy, leaked-password protection) is configured
-// in the cloud Supabase dashboard in PR #3; local dev has confirmations off.
+// Sign-in only. Todoclaw is an invite-only app (Stage 4, ADR-0014): public sign-up is
+// disabled in the Supabase Auth dashboard and accounts are created by owner invite, so the
+// client offers no account-creation path. AI features run on the owner's key for every
+// signed-in (trusted) user — see ADR-0015. Auth hardening (email confirmation, password
+// policy, leaked-password protection) is configured in the cloud Supabase dashboard.
 export function AuthForm() {
-  const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    setNotice(null)
 
-    const { error } =
-      mode === 'signin'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
 
-    if (error) {
-      setError(error.message)
-    } else if (mode === 'signup') {
-      setNotice('Account created. If email confirmation is on, check your inbox.')
-    }
+    if (error) setError(error.message)
     setBusy(false)
   }
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <h2 className="text-lg font-medium">{mode === 'signin' ? 'Sign in' : 'Create account'}</h2>
+      <h2 className="text-lg font-medium">Sign in</h2>
 
       <input
         type="email"
@@ -57,23 +47,16 @@ export function AuthForm() {
       />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {notice && <p className="text-sm text-emerald-700">{notice}</p>}
 
       <button
         type="submit"
         disabled={busy}
         className="rounded bg-slate-800 px-3 py-2 text-white disabled:opacity-50"
       >
-        {busy ? '…' : mode === 'signin' ? 'Sign in' : 'Sign up'}
+        {busy ? '…' : 'Sign in'}
       </button>
 
-      <button
-        type="button"
-        onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-        className="text-sm text-slate-500 underline"
-      >
-        {mode === 'signin' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
-      </button>
+      <p className="text-sm text-muted">Invite-only — contact the owner for access.</p>
     </form>
   )
 }

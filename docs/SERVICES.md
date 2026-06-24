@@ -73,6 +73,12 @@ merged-ready; it activates once you provision the accounts and set the secrets b
      enable **leaked-password protection**, set a **password policy**, short **JWT expiry** +
      refresh rotation, **disable anonymous sign-ins**, and restrict **redirect/allowed URLs**
      to the Vercel domain + `http://localhost:5173`.
+   - **Invite-only (Stage 4, ADR-0014):** Authentication → **disable public sign-ups** (turn off
+     "Allow new users to sign up" / "Enable email signup"), then **invite each user by email**
+     (Authentication → Users → *Invite / Add user*). The frontend is sign-in-only, so this
+     dashboard toggle is the real gate. Everyone invited is trusted, which is what lets AI run
+     on the owner's key (ADR-0015). To onboard someone new, invite their email here — there is
+     no self-service sign-up.
    - Apply the schema: `supabase link --project-ref <ref>` then **one-time** `supabase db push`
      (the documented bootstrap exception; CI-driven migrations come in Stage 2/6).
    - Create the backup role's password (SQL editor — not committed):
