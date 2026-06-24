@@ -409,3 +409,67 @@ The planner remains **fully usable without AI** regardless.
 as a front door. Anthropic offers no third-party billing OAuth, so direct-Anthropic public sharing
 would force raw BYOK — avoid. If/when sign-up opens, add Cloudflare Turnstile CAPTCHA on auth (not
 needed while invite-only).
+
+## ADR-0015 — Owner-key AI architecture + rate-limit/budget guardrails
+
+**Date:** 2026-06-24 · **Stage:** 4 (PR2)
+
+All Stage 4 AI runs on the **owner's** Anthropic key, **server-side only**, in Supabase Edge
+Functions (Deno 2). This ADR records the architecture every AI feature (Plan My Day → PR3, chat
+→ PR4) sits on; this PR builds the shared foundation + guardrails + a proof endpoint (`ai-status`).
+
+**Key handling (the hard invariant).** `ANTHROPIC_API_KEY` is an Edge Function secret
+(`supabase secrets set`), read via `Deno.env`. It is **never** a `VITE_*` var, never in the
+bundle, never logged. The frontend calls functions through the Supabase client (which attaches
+the user's JWT); the model is only ever reached server-side.
+
+**Request path (`supabase/functions/_shared/`).** `cors.ts` locks `Access-Control-Allow-Origin`
+to an `ALLOWED_ORIGIN` allow-list (never `*` — Discrepancy #7); `auth.ts` builds a Supabase
+client scoped to the **caller's JWT**, so every DB call runs under RLS as the real user and
+`auth.uid()` is server-derived (the model never supplies `user_id`). There is **no service-role
+client** in any AI function — a prompt-injected tool can at worst touch the caller's own rows
+(RLS), and destructive tools require confirmation (PR4). Inputs are Zod-validated at the boundary.
+
+**Guardrails that bound the owner's key** (migration `20260624010000_ai_usage_and_budget.sql`):
+
+- **Per-user rate limits** — `ai_usage` (append-only event rows; same owner-scoped RLS pattern
+  as every table) + `ai_usage_check_and_record` (**SECURITY INVOKER**: counts the caller's
+  trailing-hour/day rows for a feature, raises when over, else records the request). Append-only
+  rows (not a mutable counter) avoid a read-modify-write race and need no cron reset — the
+  trailing window self-expires.
+- **Global monthly budget kill-switch** — `ai_budget_ledger`, one row per `YYYY-MM` accumulating
+  spend in micro-dollars. It is **global** (not user-scoped), so RLS can't express "only the
+  system writes it"; instead the table has RLS on with **no grants and no policies** → invisible
+  to app roles, reachable **only** through `ai_budget_check` / `ai_budget_add` (**SECURITY
+  DEFINER**, run as owner). This is the deliberate way to keep the **service-role key out of the
+  functions**: the ledger is reached via these RPCs under the caller's JWT, never an admin client.
+  `auth.uid()` still identifies the caller inside a DEFINER function (it reads the JWT claim, not
+  the function owner). Monthly reset is cron-free — a new month is a new PK row at zero (the same
+  "row-existence is the reset" philosophy as `daily_state`, ADR-0007).
+
+**Cost model.** `claude-sonnet-4-6` for both AI features (cost-aware choice). Cost is computed
+from the response `usage` at Sonnet pricing ($3/$15 per 1M in/out) into micro-dollars
+(`input*3 + output*15`) and added to the ledger post-call. **Balanced tier** (chosen 2026-06-24):
+global cap **$20/month**; per-user **chat 30/hour + 100/day**, **Plan My Day 10/day**. Limits +
+cap are constants in `guardrails.ts` — tunable without a schema change.
+
+**Verified.** `supabase db reset` applies the migration; a psql proof confirms the rate-limit
+raises after N, the kill-switch returns negative remaining once over cap, `ai_budget_ledger` is
+`permission denied` for `authenticated`, and the DEFINER functions raise for an anon caller.
+The `ai-status` function was driven end-to-end (`supabase functions serve` + curl): authed →
+200 + status; no token → 401. Deno unit tests cover the CORS origin-lock and the cost math.
+
+**CORS caveat (local).** `supabase functions serve` injects a permissive
+`Access-Control-Allow-Origin: *` at the local gateway, so the origin-lock can't be observed via
+local curl; the function's own headers are what apply in production (this is why every Supabase
+function sets its own CORS). The lock is verified by the `cors.ts` deno unit test; re-verify
+against the deployed function in Stage 6.
+
+**Consent deviation (recorded).** The original "AI opt-in, off by default" gate is **deferred**
+for the invite-only MVP (ADR-0014): AI is available to every signed-in/trusted user, bounded by
+the guardrails above rather than per-user consent. Re-adding consent later is a thin layer (a
+boolean + a one-time notice gating the panels + a server-side check) — no rework of this
+architecture. The planner stays fully usable without AI.
+
+**Deferred:** CI auto-deploy of functions (manual `supabase functions deploy` for now → Stage 6);
+a public version's billing model (OpenRouter OAuth / paid SaaS — never raw BYOK; ADR-0014).

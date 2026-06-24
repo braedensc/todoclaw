@@ -163,11 +163,35 @@ production Sentry (live alerts, source maps, releases) is Stage 6.
 
 ---
 
-## Not yet provisioned
+## Anthropic — in-app AI (Stage 4)
 
-Added in later stages; documented here when they are:
+AI (Plan My Day, chat) runs on the **owner's** Anthropic key, **server-side only** in Supabase
+Edge Functions. The key is never in the frontend bundle or any `VITE_*` var (ADR-0015).
 
-- **Anthropic Console** (Stage 4) — API key for in-app AI; spend limits set here.
+**Provisioning (you, in dashboards/CLI):**
+
+1. **Anthropic Console** ([console.anthropic.com](https://console.anthropic.com)) — create an
+   API key (`sk-ant-…`). Set a **spend limit / billing alert** here — cheap insurance against a
+   runaway loop (the in-app monthly kill-switch is the primary bound; this is the backstop).
+2. **Set the function secrets** (Claude cannot — the hook blocks `.env*` + the `sk-ant-…` value):
+
+   ```bash
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...          # the owner key (required)
+   supabase secrets set ALLOWED_ORIGIN=https://<your-vercel-domain>   # CORS lock (prod origin)
+   ```
+
+   `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected into functions — no secret needed.
+   For **local** serve, pass these via `--env-file` instead (the `ai-status` proof endpoint needs
+   no key — it makes no model call).
+3. **Deploy the functions** (manual for Stage 4; CI auto-deploy → Stage 6):
+   `supabase functions deploy ai-status` (and `plan-my-day` / `ai-chat` as they land).
+
+**Cost guardrails** (in-app, ADR-0015): per-user rate limits (chat 30/hr·100/day, Plan My Day
+10/day) + a **global $20/month budget kill-switch**. If the kill-switch trips, every AI endpoint
+refuses until the next month. Tunable via constants in `supabase/functions/_shared/guardrails.ts`.
+
+> Treat the Anthropic key like any secret: if exposure is suspected, **rotate it in the Console**
+> and re-run `supabase secrets set ANTHROPIC_API_KEY=…`.
 
 ---
 

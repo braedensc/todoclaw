@@ -1,0 +1,6 @@
+{
+  "//": "Deno config for the Edge Functions. The frontend ESLint + tsc ignore this tree; it is checked with Deno. Prettier still formats it (one repo formatter).",
+  "tasks": {
+    "test": "deno test --allow-env --no-check _shared/"
+  }
+}
