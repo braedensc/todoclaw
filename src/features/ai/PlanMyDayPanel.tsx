@@ -5,6 +5,7 @@ import { useDailyState } from '../daily-state/use-daily-state'
 import { useUserSchedule } from '../schedule/use-user-schedule'
 import { useAiStatus } from './use-ai-status'
 import { usePlanMyDay, buildPlanRequest, type PlanRock } from './use-plan-my-day'
+import { AiPrivacyNote } from './AiPrivacyNote'
 
 const FALLBACK_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -112,6 +113,10 @@ export function PlanMyDayPanel({ onClose }: { onClose: () => void }) {
         ) : (
           <p className="text-muted">Loading your day…</p>
         )}
+
+        <div className="mt-5 border-t border-border pt-3">
+          <AiPrivacyNote />
+        </div>
       </div>
     </div>
   )

@@ -21,5 +21,9 @@ Functions (`supabase/functions/`).
   drives the confirm/decline round-trip. Tools are user-scoped (RLS); the model never sets
   `user_id`. See ADR-0017 + `supabase/functions/README.md`.
 
+- **`AiPrivacyNote.tsx`** — a short, honest disclosure shown in both AI panels: AI runs on the
+  owner's Anthropic key, your task/message text is sent to Anthropic, and chat isn't saved. The
+  full opt-in **consent gate** is still deferred (ADR-0014/0015); this is the lightweight notice.
+
 Guardrails (rate limits + global monthly budget kill-switch) and the server-side architecture
 live in `supabase/functions/README.md` and ADR-0015.
