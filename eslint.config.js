@@ -10,7 +10,10 @@ import prettier from 'eslint-config-prettier'
 // later toggle, not a Stage 2 dependency. `eslint-config-prettier` is LAST so it switches
 // off any stylistic rules that would fight Prettier (Prettier owns formatting).
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'playwright-report', 'test-results'] },
+  // supabase/functions is Deno (different runtime + globals + npm:/URL imports); it is
+  // checked with Deno's own toolchain (deno check / deno test), not the frontend ESLint.
+  // Prettier still formats it (one repo formatter).
+  { ignores: ['dist', 'coverage', 'playwright-report', 'test-results', 'supabase/functions'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
