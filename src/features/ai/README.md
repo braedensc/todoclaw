@@ -14,10 +14,12 @@ Functions (`supabase/functions/`).
   `usePlanMyDay` calls the `plan-my-day` Edge Function; the panel renders the structured
   `{headline, availableTime, bigRock, smallRocks, habitNote}`.
 
-Arriving next:
-
-- **Chat** (PR4) — `ChatPanel` (streaming slide-over) + `use-ai-chat`, backed by the `ai-chat`
-  Edge Function with user-scoped tools and confirmation before destructive actions.
+- **`ChatPanel.tsx`** + **`use-ai-chat.ts`** — Chat (PR4). A right slide-over that streams the
+  assistant's reply token-by-token and pauses for **confirmation before any destructive action**
+  (complete / move-to-trash). `use-ai-chat` fetches the `ai-chat` Edge Function directly (so it can
+  read the SSE stream — `functions.invoke` doesn't stream), holds the conversation client-side, and
+  drives the confirm/decline round-trip. Tools are user-scoped (RLS); the model never sets
+  `user_id`. See ADR-0017 + `supabase/functions/README.md`.
 
 Guardrails (rate limits + global monthly budget kill-switch) and the server-side architecture
 live in `supabase/functions/README.md` and ADR-0015.

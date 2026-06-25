@@ -14,10 +14,15 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   guardrails.ts  # per-user rate limits + global budget kill-switch + cost math
   weather.ts     # wttr.in summary, cached ~30min via weather_cache (DEFINER get/put)
   plan-prompt.ts # Plan My Day prompt builder + emit_plan tool (structured output)
-  *.test.ts      # deno unit tests for the pure logic (cors, cost, prompt builder)
+  placement.ts   # due-date → x/y/staged auto-placement table (Discrepancy #5)
+  chat-tools.ts  # chat tools: defs + Zod input + executors + the destructive set
+  chat-prompt.ts # chat system prompt (trust-boundary framing) + grid seeding
+  sse.ts         # Server-Sent Events encoder for the streaming chat
+  dates.ts       # localDateInTZ port (for complete_task's user-local date)
+  *.test.ts      # deno unit tests for the pure logic (cors, cost, prompt, placement, tools, dates)
 ai-status/       # PR2 proof endpoint: returns the caller's budget/rate-limit state (no model call)
 plan-my-day/     # PR3: schedule + weather-aware daily plan (forced emit_plan tool → structured JSON)
-# ai-chat/       — PR4 (streaming chat + tools)
+ai-chat/         # PR4: streaming chat with user-scoped tools; confirm before destructive ops (ADR-0017)
 ```
 
 ## Guardrails (protect the owner's key — ADR-0015)
