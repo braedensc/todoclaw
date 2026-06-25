@@ -154,7 +154,7 @@ These apply every session without exception:
 
 5. **No direct or force push to `main`.** All changes via PR. CI is the unbypassable gate.
 
-6. **AI is opt-in, off by default.** The entire planner works without it. AI features require explicit user enablement with a clear privacy notice.
+6. **The entire planner works without AI.** AI is additive, never required — a hard invariant. (MVP note, Stage 4: for the **invite-only** app on the owner's key, AI is available to every signed-in/trusted user; the original "opt-in, off by default" consent gate is **deferred** — see ADR-0014/0015. The owner key is bounded by server-side rate limits + a monthly budget kill-switch, not per-user consent. Re-adding a consent layer later is a thin change.)
 
 ---
 
