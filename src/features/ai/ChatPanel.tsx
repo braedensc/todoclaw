@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAiStatus } from './use-ai-status'
 import { useAiChat, type ChatItem } from './use-ai-chat'
+import { AiPrivacyNote } from './AiPrivacyNote'
 
 // Chat — a right slide-over (stays open while you work the grid/list). Streams the assistant's
 // reply token-by-token and pauses for confirmation before any destructive tool runs. The model
@@ -40,6 +41,10 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
         >
           ✕
         </button>
+      </div>
+
+      <div className="border-b border-border px-4 py-2">
+        <AiPrivacyNote compact />
       </div>
 
       <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto p-4">
