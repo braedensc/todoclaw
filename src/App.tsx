@@ -12,6 +12,7 @@ import { TabNav } from './components/TabNav'
 import type { Tab } from './components/tabs'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { PlanMyDayPanel } from './features/ai/PlanMyDayPanel'
+import { ChatPanel } from './features/ai/ChatPanel'
 import { supabase } from './lib/supabase'
 
 // Renders the active tab's view. Lightweight switch — no router (project convention).
@@ -35,6 +36,7 @@ function AppShell() {
   const [tab, setTab] = useState<Tab>('grid')
   const [text, setText] = useState('')
   const [showPlan, setShowPlan] = useState(false)
+  const [showChat, setShowChat] = useState(false)
   const addTask = useAddTask()
   const ensureSchedule = useEnsureUserSchedule()
 
@@ -85,6 +87,14 @@ function AppShell() {
 
           <button
             type="button"
+            onClick={() => setShowChat((v) => !v)}
+            className="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            Chat
+          </button>
+
+          <button
+            type="button"
             onClick={() => void supabase.auth.signOut()}
             className="text-sm text-muted underline hover:text-ink"
           >
@@ -102,6 +112,12 @@ function AppShell() {
       {showPlan && (
         <ErrorBoundary>
           <PlanMyDayPanel onClose={() => setShowPlan(false)} />
+        </ErrorBoundary>
+      )}
+
+      {showChat && (
+        <ErrorBoundary>
+          <ChatPanel onClose={() => setShowChat(false)} />
         </ErrorBoundary>
       )}
     </>
