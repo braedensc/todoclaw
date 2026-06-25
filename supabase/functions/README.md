@@ -12,9 +12,11 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   auth.ts        # caller-JWT-scoped Supabase client (RLS applies; no service-role here)
   anthropic.ts   # Anthropic SDK client factory + MODEL/MAX_TOKENS (owner key from env)
   guardrails.ts  # per-user rate limits + global budget kill-switch + cost math
-  *.test.ts      # deno unit tests for the pure logic (cors, cost)
+  weather.ts     # wttr.in summary, cached ~30min via weather_cache (DEFINER get/put)
+  plan-prompt.ts # Plan My Day prompt builder + emit_plan tool (structured output)
+  *.test.ts      # deno unit tests for the pure logic (cors, cost, prompt builder)
 ai-status/       # PR2 proof endpoint: returns the caller's budget/rate-limit state (no model call)
-# plan-my-day/   — PR3 (Plan My Day)
+plan-my-day/     # PR3: schedule + weather-aware daily plan (forced emit_plan tool → structured JSON)
 # ai-chat/       — PR4 (streaming chat + tools)
 ```
 

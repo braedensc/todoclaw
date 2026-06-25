@@ -11,6 +11,7 @@ import { HabitsView } from './features/habits/HabitsView'
 import { TabNav } from './components/TabNav'
 import type { Tab } from './components/tabs'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { PlanMyDayPanel } from './features/ai/PlanMyDayPanel'
 import { supabase } from './lib/supabase'
 
 // Renders the active tab's view. Lightweight switch — no router (project convention).
@@ -33,6 +34,7 @@ function ActiveView({ tab }: { tab: Tab }) {
 function AppShell() {
   const [tab, setTab] = useState<Tab>('grid')
   const [text, setText] = useState('')
+  const [showPlan, setShowPlan] = useState(false)
   const addTask = useAddTask()
   const ensureSchedule = useEnsureUserSchedule()
 
@@ -73,12 +75,10 @@ function AppShell() {
             </button>
           </form>
 
-          {/* Plan My Day arrives in Stage 4 — disabled stub holds its place in the layout. */}
           <button
             type="button"
-            disabled
-            title="Coming in Stage 4"
-            className="cursor-not-allowed rounded bg-ink px-4 py-2 text-sm font-medium text-white opacity-50"
+            onClick={() => setShowPlan(true)}
+            className="rounded bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90"
           >
             Plan My Day
           </button>
@@ -98,6 +98,12 @@ function AppShell() {
       <div className="mt-6">
         <ActiveView tab={tab} />
       </div>
+
+      {showPlan && (
+        <ErrorBoundary>
+          <PlanMyDayPanel onClose={() => setShowPlan(false)} />
+        </ErrorBoundary>
+      )}
     </>
   )
 }

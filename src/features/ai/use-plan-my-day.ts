@@ -1,0 +1,94 @@
+import { useMutation } from '@tanstack/react-query'
+import { supabase } from '../../lib/supabase'
+import { daysUntil } from '../../lib/scoring'
+import { recurringStatus } from '../../lib/recurring'
+import type { Task } from '../../types/task'
+import type { Habit } from '../../types/habit'
+
+// The structured plan the plan-my-day Edge Function returns (mirrors EMIT_PLAN_TOOL there).
+export type PlanWhen = 'morning' | 'lunch' | 'afternoon' | 'evening'
+export interface PlanRock {
+  task: string
+  why: string
+  duration: string
+  when: PlanWhen
+}
+export interface DayPlan {
+  headline: string
+  availableTime: string
+  bigRock: PlanRock | null
+  smallRocks: PlanRock[]
+  habitNote: string
+}
+
+export interface PlanRequest {
+  today: string
+  dayOfWeek: string
+  tasks: {
+    text: string
+    importance: number
+    urgency: number
+    due: string | null
+    dueInDays: number | null
+  }[]
+  recurringDue: { text: string; status: string }[]
+  habits: string[]
+}
+
+// Build the request payload from the same data the grid/list use, reusing src/lib scoring +
+// recurring so the on-grid filtering and date math live in ONE place. Mirrors EisenClaw's
+// planMyDay selection: on-grid = not staged, not done today, not recurring; plus recurring
+// chores that are overdue/due/soon; plus active habits. Pure → unit-tested.
+export function buildPlanRequest(
+  tasks: Task[],
+  habits: Habit[],
+  doneMap: Record<string, boolean>,
+  timeZone: string,
+  now: Date = new Date(),
+): PlanRequest {
+  const planTasks = tasks
+    .filter((t) => !t.staged && !doneMap[t.id] && !t.recurring && t.x != null && t.y != null)
+    .map((t) => ({
+      text: t.text,
+      importance: Math.round((t.y ?? 0.5) * 100),
+      urgency: Math.round((t.x ?? 0.5) * 100),
+      due: t.due,
+      dueInDays: daysUntil(t.due, { timeZone, now }),
+    }))
+
+  const recurringDue: { text: string; status: string }[] = []
+  for (const t of tasks) {
+    if (!t.recurring) continue
+    const s = recurringStatus(t.recurring, { now })
+    if (s && (s.code === 'overdue' || s.code === 'due' || s.code === 'soon')) {
+      recurringDue.push({ text: t.text, status: s.label })
+    }
+  }
+
+  const fmt = (opts: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
+
+  return {
+    today: fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+    dayOfWeek: fmt({ weekday: 'long' }),
+    tasks: planTasks,
+    recurringDue,
+    habits: habits.filter((h) => h.active).map((h) => h.text),
+  }
+}
+
+// Calls the plan-my-day Edge Function (server-side Anthropic, owner key). invoke() attaches the
+// user's JWT automatically. Throws on any non-2xx (rate-limited / budget-exhausted / failure) —
+// the panel reads useAiStatus().paused to show the "AI paused this month" notice proactively.
+export function usePlanMyDay() {
+  return useMutation<DayPlan, Error, PlanRequest>({
+    mutationFn: async (body) => {
+      const { data, error } = await supabase.functions.invoke<{ plan: DayPlan }>('plan-my-day', {
+        body,
+      })
+      if (error) throw error
+      if (!data?.plan) throw new Error('No plan returned')
+      return data.plan
+    },
+  })
+}

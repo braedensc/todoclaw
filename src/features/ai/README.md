@@ -8,11 +8,14 @@ Functions (`supabase/functions/`).
 - **`use-ai-status.ts`** — `useAiStatus()`: queries the `ai-status` Edge Function for the
   caller's budget/rate-limit state. The panels use `paused` to show an "AI paused this month"
   notice when the global budget kill-switch has tripped.
+- **`PlanMyDayPanel.tsx`** + **`use-plan-my-day.ts`** — Plan My Day (PR3). A transient modal off
+  the header button that generates today's schedule-aware plan. `buildPlanRequest` (pure, tested)
+  assembles the day's tasks/recurring/habits from the existing hooks + `src/lib` scoring/recurring;
+  `usePlanMyDay` calls the `plan-my-day` Edge Function; the panel renders the structured
+  `{headline, availableTime, bigRock, smallRocks, habitNote}`.
 
 Arriving next:
 
-- **Plan My Day** (PR3) — `PlanMyDayPanel` (modal off the header button) + `use-plan-my-day`,
-  backed by the `plan-my-day` Edge Function.
 - **Chat** (PR4) — `ChatPanel` (streaming slide-over) + `use-ai-chat`, backed by the `ai-chat`
   Edge Function with user-scoped tools and confirmation before destructive actions.
 
