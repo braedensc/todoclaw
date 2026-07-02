@@ -269,6 +269,24 @@ the next). CI jobs + branch protection that *enforce* these are a separate PR (#
 - **Verified.** A test renders a throwing child inside `ErrorBoundary` and asserts the fallback
   shows and `captureException` is called; `lint`/`typecheck`/`test`/`format:check` green.
 
+**Update (Stage 6) — production hardening.** The "dev mode" gate is kept as-is (it's the right
+default); Stage 6 turns Sentry *on in prod* and adds release tracking:
+
+- **Live DSN via Vercel prod env**, not `.env.local` — Braeden sets `VITE_SENTRY_DSN` in the Vercel
+  project's **Production** environment (still a public ingest URL, not a secret). The dev-mode gate
+  is unchanged: no DSN ⇒ no-op, so previews/CI/local stay silent unless a DSN is present.
+- **Release tracking (the only code change).** `vite.config.ts` bakes Vercel's build commit into a
+  compile-time constant `__GIT_COMMIT_SHA__` (`define` reading `process.env.VERCEL_GIT_COMMIT_SHA`,
+  declared in `src/vite-env.d.ts`); `main.tsx` passes `release: todoclaw@<sha>` to `Sentry.init` so
+  every event is attributed to the exact deploy. Empty locally ⇒ `undefined` ⇒ Sentry omits the
+  release cleanly (no bare `todoclaw@`). Verified: build inlines the constant with **no dangling
+  `__GIT_COMMIT_SHA__`** identifier (no runtime `ReferenceError`); the live tagged-event path is
+  confirmed by the prod smoke once the DSN is set.
+- **Source maps: deliberately OFF.** Uploading them needs `@sentry/vite-plugin` + a `SENTRY_AUTH_TOKEN`
+  + org/project config — not worth it for a 2-person app; minified stacks + the release tag suffice.
+  Revisit if triage gets painful. **Alert rules:** the default "new issue" rule is kept; Braeden
+  confirms a delivery channel (email) in the dashboard. All dashboard steps live in SERVICES.md.
+
 ## ADR-0010 — CI quality gate + branch protection (the merge-then-require ordering)
 
 **Date:** 2026-06-23 · **Stage:** 2 (PR #4)

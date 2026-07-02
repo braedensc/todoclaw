@@ -167,13 +167,13 @@ returns a `200`/`401` (both mean the project is awake).
 
 ---
 
-## Sentry — error monitoring (Stage 2 PR #3, dev mode)
+## Sentry — error monitoring (dev mode Stage 2 PR #3 · prod hardening Stage 6, ADR-0009)
 
 The `@sentry/react` SDK is wired but **DSN-gated**: it only initializes when `VITE_SENTRY_DSN`
-is set, so it's off until you provide a DSN. Error boundaries report crashes to it. Full
-production Sentry (live alerts, source maps, releases) is Stage 6.
+is set, so it's off until you provide a DSN. Error boundaries report crashes to it. Stage 6 turns
+it on in prod + adds release tracking (code done; DSN + dashboard steps are yours).
 
-**Setup (you, in the dashboard + locally):**
+**Local setup (you, in the dashboard + locally):**
 1. Create a project at [sentry.io](https://sentry.io) (platform: React). Copy its **DSN** — a
    DSN is a public ingest URL, not a secret.
 2. Add it to `.env.local` (Claude can't write `.env*`): `VITE_SENTRY_DSN=<your-dsn>`. Restart
@@ -184,8 +184,21 @@ production Sentry (live alerts, source maps, releases) is Stage 6.
    "Needs authentication" until you run `/mcp` in an interactive `claude` session and complete
    the OAuth. Collaborators run the same command on their own machines.
 
+**Production (Stage 6) — you, in dashboards:**
+1. **Vercel → Project → Settings → Environment Variables:** add `VITE_SENTRY_DSN = <your-dsn>`
+   scoped to **Production** (and Preview if you want preview errors too). Redeploy to pick it up.
+   This is the switch that makes prod Sentry live — nothing else is required.
+2. **Release tracking is automatic** — no config. The build bakes in Vercel's commit SHA
+   (`VERCEL_GIT_COMMIT_SHA` → `release: todoclaw@<sha>`), so each issue shows the exact deploy.
+   (If `VERCEL_GIT_COMMIT_SHA` is ever empty, e.g. a non-git deploy, the release is simply omitted.)
+3. **Alerts → Alert Rules:** confirm the auto-created **"new issue"** rule is enabled and that a
+   **delivery channel** is set (your email, or a Slack integration) so notifications actually reach
+   you. Optionally add a rule for an error-rate spike.
+4. **Source maps: intentionally not uploaded** (ADR-0009) — they'd need `@sentry/vite-plugin` + a
+   `SENTRY_AUTH_TOKEN`; minified stacks + the release tag are enough for a 2-person app.
+
 > Leaving `VITE_SENTRY_DSN` blank disables Sentry entirely (the app no-ops) — the planner works
-> the same without it.
+> the same without it. This is why Vercel **preview** deploys stay silent unless you opt them in.
 
 ---
 
