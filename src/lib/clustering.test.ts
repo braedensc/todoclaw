@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from '../types/task'
-import { clusterAccentColor, clusterDominant, computeClusters } from './clustering'
+import {
+  clusterAccentColor,
+  clusterDominant,
+  clusterNearestDue,
+  computeClusters,
+} from './clustering'
 
 function makeTask(
   id: string,
@@ -111,5 +116,40 @@ describe('clusterAccentColor', () => {
     })
     const other = makeTask('other', 0.85, 0.88)
     expect(clusterAccentColor([dominant, other], opts)).toBe('#c2693f')
+  })
+})
+
+describe('clusterNearestDue', () => {
+  const opts = { timeZone: 'UTC', now: new Date('2026-07-02T12:00:00Z') }
+
+  it('returns the smallest daysUntil across the group', () => {
+    const soon = makeTask('soon', 0.5, 0.5, { due: '2026-07-05' }) // +3
+    const later = makeTask('later', 0.5, 0.5, { due: '2026-07-20' }) // +18
+    expect(clusterNearestDue([later, soon], opts)).toBe(3)
+  })
+
+  it('returns a negative value when the nearest task is overdue', () => {
+    const overdue = makeTask('od', 0.5, 0.5, { due: '2026-06-30' }) // -2
+    const future = makeTask('fut', 0.5, 0.5, { due: '2026-07-10' }) // +8
+    expect(clusterNearestDue([future, overdue], opts)).toBe(-2)
+  })
+
+  it('ignores recurring tasks (they carry their own status, not an urgency glow)', () => {
+    const rec = makeTask('rec', 0.5, 0.5, {
+      due: '2026-07-03',
+      recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+    })
+    const oneoff = makeTask('one', 0.5, 0.5, { due: '2026-07-09' }) // +7
+    // The recurring task's earlier due date is skipped; the one-off wins.
+    expect(clusterNearestDue([rec, oneoff], opts)).toBe(7)
+  })
+
+  it('returns null when no non-recurring member has a due date', () => {
+    const a = makeTask('a', 0.5, 0.5, { due: null })
+    const rec = makeTask('rec', 0.5, 0.5, {
+      due: '2026-07-03',
+      recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+    })
+    expect(clusterNearestDue([a, rec], opts)).toBeNull()
   })
 })

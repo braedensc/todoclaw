@@ -3,6 +3,12 @@ import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
+import {
+  DUE_BADGE_MUTED,
+  DUE_BADGE_URGENT,
+  stalenessStyle,
+  urgencyGlowStyle,
+} from '../../lib/visual-urgency'
 import { CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
 export interface GridCardProps {
@@ -10,6 +16,12 @@ export interface GridCardProps {
   /** Screen-space coordinates 0..1 (already y-inverted by the caller). */
   screenX: number
   screenY: number
+  /**
+   * Whole calendar days until this task's due date (from `daysUntil`, timezone-aware), or null
+   * when it has no due date. Drives the urgency glow + the due badge. Computed by the caller so
+   * the timezone lives in one place (GridView) rather than being threaded into every card.
+   */
+  daysUntilDue: number | null
   /** True while this card is the one being dragged (so we can suppress its transition). */
   dragging: boolean
   /** Pointer-down handler from useFreeDrag.startDrag(task.id) — begins a reposition drag. */
@@ -32,6 +44,7 @@ export function GridCard({
   task,
   screenX,
   screenY,
+  daysUntilDue,
   dragging,
   onPointerDown,
   onRename,
@@ -57,6 +70,11 @@ export function GridCard({
 
   const showBadge = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
+  // Urgency glow + staleness dust apply only to non-recurring cards (a recurring task carries its
+  // own RC_COLOR status; done tasks never reach the grid). See lib/visual-urgency.
+  const glow = rc ? null : urgencyGlowStyle(daysUntilDue)
+  const stale = rc ? null : stalenessStyle(task)
+
   const style: CSSProperties = {
     left: `${screenX * 100}%`,
     top: `${screenY * 100}%`,
@@ -65,6 +83,13 @@ export function GridCard({
     borderTopColor: borderColor,
     touchAction: 'none',
     transition: dragging ? 'none' : 'box-shadow 120ms ease',
+    // Glow overrides the resting shadow (its string carries its own drop-shadow layer). Overdue
+    // cards also get the pulse animation; the keyframe is global (src/index.css). `animation` is
+    // spread only when present so a future base animation on this card can't be clobbered.
+    ...(glow
+      ? { boxShadow: glow.boxShadow, ...(glow.animation ? { animation: glow.animation } : {}) }
+      : {}),
+    ...(stale ? { filter: stale.filter, opacity: stale.opacity } : {}),
   }
 
   function commitRename(): void {
@@ -124,6 +149,18 @@ export function GridCard({
         />
       ) : (
         <p className="break-words leading-snug">{task.text}</p>
+      )}
+
+      {/* Non-recurring due badge — the textual half of the urgency layer (html:590). Terracotta
+          when due within 2 days, muted grey otherwise. Recurring cards show their status badge
+          above instead, so this is suppressed when `rc` is set. */}
+      {!editing && !rc && daysUntilDue !== null && (
+        <span
+          className="mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold text-white"
+          style={{ backgroundColor: daysUntilDue <= 2 ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
+        >
+          {daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'today' : `${daysUntilDue}d`}
+        </span>
       )}
 
       {/* Hover action buttons — hidden until hover; each stops propagation so it isn't a drag. */}

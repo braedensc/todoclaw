@@ -9,7 +9,7 @@
 import type { Task } from '../types/task'
 import { quadrantMeta } from './quadrants'
 import { RC_COLOR, recurringStatus } from './recurring'
-import { taskScore, type ScoringOpts } from './scoring'
+import { daysUntil, taskScore, type ScoringOpts } from './scoring'
 
 /** Cluster overlap thresholds (html:147). */
 export const CX = 0.09
@@ -90,4 +90,21 @@ export function clusterAccentColor(group: Task[], opts: ScoringOpts): string {
   const status = recurringStatus(dominant.recurring, opts)
   if (status) return RC_COLOR[status.code]
   return quadrantMeta(dominant.x ?? 0.5, dominant.y ?? 0.5).color
+}
+
+/**
+ * Whole days until the nearest due date within a cluster (`daysUntil`), considering only the
+ * group's NON-recurring tasks — a recurring task carries its own status color, not an urgency
+ * glow. Returns the smallest such value, or `null` when no non-recurring member has a due date.
+ * Drives the cluster bubble's urgency glow (mirrors the per-card `daysUntil(due)` on the grid).
+ */
+export function clusterNearestDue(group: Task[], opts: ScoringOpts): number | null {
+  let min: number | null = null
+  for (const t of group) {
+    if (t.recurring) continue
+    const d = daysUntil(t.due, opts)
+    if (d === null) continue
+    if (min === null || d < min) min = d
+  }
+  return min
 }
