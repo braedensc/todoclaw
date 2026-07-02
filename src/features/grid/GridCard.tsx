@@ -163,9 +163,11 @@ export function GridCard({
         </span>
       )}
 
-      {/* Hover action buttons — hidden until hover; each stops propagation so it isn't a drag. */}
+      {/* Action buttons. Desktop: hidden until hover. Mobile (< 720px, no hover): always shown,
+          so a placed card stays actionable by touch — gated on the same `wide` breakpoint that
+          switches the grid to tap-to-place. Each stops propagation so a tap isn't a drag. */}
       {!editing && (
-        <div className="absolute -top-2 right-1 hidden gap-1 group-hover:flex">
+        <div className="absolute -top-2 right-1 flex gap-1 wide:hidden wide:group-hover:flex">
           <ActionButton label={task.recurring ? 'Done (resets cycle)' : 'Done'} onClick={onDone}>
             ✓
           </ActionButton>

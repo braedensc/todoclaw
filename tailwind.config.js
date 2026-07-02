@@ -9,6 +9,13 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      // The app's single mobile/desktop breakpoint, mirroring `MOBILE_MAX_WIDTH` (719) in
+      // src/hooks/use-is-mobile.ts: `wide:` utilities apply at >= 720px (desktop), so CSS layout
+      // and the JS `useIsMobile()` (which drives tap-to-place) flip at the exact same width.
+      // Added alongside Tailwind's defaults (sm/md/lg/xl), not replacing them.
+      screens: {
+        wide: '720px',
+      },
       colors: {
         // Surfaces (warm paper)
         bg: '#f4efe6',
