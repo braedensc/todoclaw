@@ -14,14 +14,6 @@ export const CARD_WIDTH = 112
 export const RECURRING_BADGE_MIN_DONE = 3
 
 /**
- * Background for the non-recurring due-date badge (html:590): terracotta ("urgent") when the
- * task is due within 2 days, muted grey otherwise. This is the textual half of the urgency layer
- * (the glow is the visual half); recurring tasks show their RC_COLOR status badge instead.
- */
-export const DUE_BADGE_URGENT = '#c2693f' // = accent
-export const DUE_BADGE_MUTED = '#8a8577'
-
-/**
  * Quadrant background tints (html:542-545). Indexed by `quadrantMeta(x,y).key` so a card's
  * region and the canvas tint stay in lockstep. Note: on screen the grid is y-inverted
  * (top = high importance), so Schedule/Do-Now occupy the top, Someday/Errands the bottom.

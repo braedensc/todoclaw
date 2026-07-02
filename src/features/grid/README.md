@@ -67,7 +67,7 @@ ADR-0019.
 - **Staleness** — `stalenessStyle(task)` desaturates + fades a card by age (`created_at → now`);
   staged tray cards are exempt.
 - **Due badge** — a small `overdue`/`today`/`Nd` pill (terracotta when due `≤ 2d`, else grey;
-  `DUE_BADGE_*` in `grid-constants.ts`).
+  `DUE_BADGE_*` in `src/lib/visual-urgency.ts`, shared with the cluster popup's due chip).
 
 ## Hover actions (placed cards) & mark done
 

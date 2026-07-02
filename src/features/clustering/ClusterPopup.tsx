@@ -3,6 +3,7 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
+import { DUE_BADGE_MUTED, DUE_BADGE_URGENT } from '../../lib/visual-urgency'
 import {
   CLUSTER_POPUP_FLIP_Y,
   CLUSTER_POPUP_MAX_HEIGHT,
@@ -148,7 +149,7 @@ function ClusterPopupRow({
         d !== null && (
           <span
             className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
-            style={{ backgroundColor: urgent ? '#c2693f' : '#8a8577' }}
+            style={{ backgroundColor: urgent ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
           >
             {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
           </span>

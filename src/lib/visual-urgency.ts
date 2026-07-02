@@ -13,6 +13,14 @@
 
 const MS_PER_DAY = 86_400_000
 
+/**
+ * Due-badge / due-chip background (html:590): terracotta when the task is due within 2 days,
+ * muted grey otherwise. Single source shared by the grid card's due badge (GridCard) and the
+ * cluster popup's due chip (ClusterPopup) so the two never drift.
+ */
+export const DUE_BADGE_URGENT = '#c2693f' // = accent
+export const DUE_BADGE_MUTED = '#8a8577'
+
 /** Extra box-shadow (and, when overdue, a pulse animation) merged into a card/bubble's style. */
 export interface GlowStyle {
   boxShadow: string

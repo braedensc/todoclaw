@@ -70,7 +70,8 @@ logic itself is `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle
   `saturate(0.3)`/`0.72`. Staged tray cards never desaturate. "A signal, not a judgment."
 - **Due badge** — the textual half of the layer: a small pill on non-recurring cards showing
   `overdue` / `today` / `Nd`, terracotta (`DUE_BADGE_URGENT`) when due within 2 days, muted grey
-  (`DUE_BADGE_MUTED`) otherwise (`src/features/grid/grid-constants.ts`, html:590).
+  (`DUE_BADGE_MUTED`) otherwise. Those two colors live in `src/lib/visual-urgency.ts` (html:590)
+  and are shared with the cluster popup's due chip, so the badge and chip never drift.
 
 ---
 

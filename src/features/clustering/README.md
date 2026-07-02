@@ -21,8 +21,9 @@ renders as a normal `GridCard`; a group of >1 becomes a bubble.
   rings (`group.slice(1, 3)`, each offset 4px) implying the stack. Clicking toggles the popup,
   which is passed in as `children` so it anchors to the bubble's positioned wrapper. Accepts an
   optional **`glow`** prop (`urgencyGlowStyle` result) that `GridView` computes from the nearest
-  due date among the group's non-recurring tasks — applied only while **closed** (an open bubble
-  uses its raised popup shadow). See `docs/STYLE.md` → _Visual urgency_.
+  due date among the group's non-recurring tasks (`clusterNearestDue` in `src/lib/clustering.ts`) —
+  applied only while **closed** (an open bubble uses its raised popup shadow). See `docs/STYLE.md`
+  → _Visual urgency_.
 - **`ClusterPopup.tsx`** — the floating panel (width 220, maxHeight 320, scrollable). It
   **flips above** the bubble when the dominant's **data-y > 0.55** (`CLUSTER_POPUP_FLIP_Y`,
   matching EisenClaw `html:616-617` — data-y high ⇒ bubble near the top of the y-inverted

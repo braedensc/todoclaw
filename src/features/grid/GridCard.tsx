@@ -3,13 +3,13 @@ import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
-import { stalenessStyle, urgencyGlowStyle } from '../../lib/visual-urgency'
 import {
-  CARD_WIDTH,
   DUE_BADGE_MUTED,
   DUE_BADGE_URGENT,
-  RECURRING_BADGE_MIN_DONE,
-} from './grid-constants'
+  stalenessStyle,
+  urgencyGlowStyle,
+} from '../../lib/visual-urgency'
+import { CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
 export interface GridCardProps {
   task: Task
@@ -84,8 +84,11 @@ export function GridCard({
     touchAction: 'none',
     transition: dragging ? 'none' : 'box-shadow 120ms ease',
     // Glow overrides the resting shadow (its string carries its own drop-shadow layer). Overdue
-    // cards also get the pulse animation; the keyframe is global (src/index.css).
-    ...(glow ? { boxShadow: glow.boxShadow, animation: glow.animation } : {}),
+    // cards also get the pulse animation; the keyframe is global (src/index.css). `animation` is
+    // spread only when present so a future base animation on this card can't be clobbered.
+    ...(glow
+      ? { boxShadow: glow.boxShadow, ...(glow.animation ? { animation: glow.animation } : {}) }
+      : {}),
     ...(stale ? { filter: stale.filter, opacity: stale.opacity } : {}),
   }
 
