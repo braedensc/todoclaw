@@ -84,8 +84,11 @@ The golden config (`playwright.golden.config.ts`) resolves the real local keys f
 `supabase status -o env`, starts its own dev server on port **5174**, and runs a Playwright **setup
 project** (`e2e/golden/auth.setup.ts`) that creates the fixed test user (`e2e@todoclaw.test`) via
 the admin API, wipes its rows for a clean slate, signs in, and saves the session to
-`e2e/.auth/state.json` (gitignored). Each spec re-wipes the user's rows in `beforeEach` for
-determinism. Add `npx playwright install chromium` if you haven't already.
+`e2e/.auth/state.json` (gitignored). Specs import `{ test, expect }` from `e2e/helpers/fixtures.ts`,
+whose page fixture re-wipes the user's rows and lands on the signed-in app before every test (and
+refuses to run with a `--workers` override — the suite shares one user, so it must stay serial).
+The browser is pinned to `en-US` / UTC for determinism. Add `npx playwright install chromium` if
+you haven't already.
 
 ## Local Supabase
 

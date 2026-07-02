@@ -20,6 +20,6 @@
     "vitest.config.ts",
     "playwright.config.ts",
     "playwright.golden.config.ts",
-    "e2e/helpers/**/*.ts"
+    "e2e/**/*.ts"
   ]
 }
