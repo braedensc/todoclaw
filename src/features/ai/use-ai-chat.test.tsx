@@ -22,6 +22,12 @@ function sseResponse(events: object[], status = 200) {
 
 const fetchMock = vi.fn()
 
+const sentBody = (call: number) =>
+  JSON.parse(fetchMock.mock.calls[call]![1].body) as {
+    messages: { role: string; content: unknown }[]
+    approvedToolUseIds: string[]
+  }
+
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   fetchMock.mockReset()
@@ -49,7 +55,7 @@ describe('useAiChat', () => {
     expect(result.current.items[1]!.text).toBe('Added it.')
   })
 
-  it('pauses on a destructive tool, then runs it after confirm', async () => {
+  it('pauses on a destructive tool, runs it after confirm, and pairs the tool_result into the held history', async () => {
     fetchMock
       .mockResolvedValueOnce(
         sseResponse([
@@ -60,7 +66,22 @@ describe('useAiChat', () => {
             name: 'delete_task',
             input: { task_id: 't1' },
             summary: 'Move "Call dentist" to the trash',
-            messages: [{ role: 'user', content: 'remove dentist' }],
+            // The server's echo always ends with the halted assistant tool_use turn.
+            messages: [
+              { role: 'user', content: 'remove dentist' },
+              {
+                role: 'assistant',
+                content: [
+                  { type: 'text', text: "I'll delete it." },
+                  {
+                    type: 'tool_use',
+                    id: 'toolu_9',
+                    name: 'delete_task',
+                    input: { task_id: 't1' },
+                  },
+                ],
+              },
+            ],
           },
           { type: 'done', stop_reason: 'awaiting-confirmation' },
         ]),
@@ -79,6 +100,12 @@ describe('useAiChat', () => {
           { type: 'done', stop_reason: 'end_turn' },
         ]),
       )
+      .mockResolvedValueOnce(
+        sseResponse([
+          { type: 'message', role: 'assistant', content: [] },
+          { type: 'done', stop_reason: 'end_turn' },
+        ]),
+      )
 
     const { result } = renderHook(() => useAiChat())
     act(() => result.current.send('remove dentist'))
@@ -92,17 +119,183 @@ describe('useAiChat', () => {
     await waitFor(() => expect(result.current.busy).toBe(false))
 
     // Second request carried the approved id.
-    const secondBody = JSON.parse(fetchMock.mock.calls[1]![1].body)
-    expect(secondBody.approvedToolUseIds).toEqual(['toolu_9'])
+    expect(sentBody(1).approvedToolUseIds).toEqual(['toolu_9'])
     // The executed tool note + the follow-up text are shown.
     expect(result.current.items.some((i) => i.role === 'tool' && i.ok)).toBe(true)
     expect(result.current.items.some((i) => i.text === 'Done.')).toBe(true)
+
+    // The next turn resends the held history: it must pair the confirmed tool_use with the
+    // tool_result the server executed (appended server-side only, never re-echoed). Without
+    // the pairing the history has a dangling tool_use and the real API rejects it with a 400.
+    act(() => result.current.send('thanks'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    const third = sentBody(2)
+    expect(third.messages.map((m) => m.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'user',
+    ])
+    expect(third.messages[2]).toEqual({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_9',
+          content: 'Moved to the trash "Call dentist".',
+          is_error: false,
+        },
+      ],
+    })
   })
 
-  it('surfaces a budget-exhausted error from the stream', async () => {
-    fetchMock.mockResolvedValueOnce(sseResponse([{ type: 'error', code: 'budget-exhausted' }]))
+  it('merges sibling tool results from one turn into a single user turn', async () => {
+    // A turn mixing a destructive and a non-destructive tool pauses before executing EITHER
+    // (atomic pre-scan); after confirm both run. The API requires every tool_use in a turn to
+    // be answered in the SINGLE next user message.
+    fetchMock
+      .mockResolvedValueOnce(
+        sseResponse([
+          {
+            type: 'tool-pending-confirmation',
+            tool_use_id: 'toolu_del',
+            name: 'delete_task',
+            input: { task_id: 't1' },
+            summary: 'Move "Old note" to the trash',
+            messages: [
+              { role: 'user', content: 'clean up' },
+              {
+                role: 'assistant',
+                content: [
+                  {
+                    type: 'tool_use',
+                    id: 'toolu_del',
+                    name: 'delete_task',
+                    input: { task_id: 't1' },
+                  },
+                  { type: 'tool_use', id: 'toolu_add', name: 'create_task', input: { text: 'x' } },
+                ],
+              },
+            ],
+          },
+          { type: 'done', stop_reason: 'awaiting-confirmation' },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        sseResponse([
+          {
+            type: 'tool-result',
+            tool_use_id: 'toolu_del',
+            name: 'delete_task',
+            ok: true,
+            summary: 'Moved to the trash "Old note".',
+          },
+          {
+            type: 'tool-result',
+            tool_use_id: 'toolu_add',
+            name: 'create_task',
+            ok: true,
+            summary: 'Added "x".',
+          },
+          { type: 'message', role: 'assistant', content: [] },
+          { type: 'done', stop_reason: 'end_turn' },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        sseResponse([
+          { type: 'message', role: 'assistant', content: [] },
+          { type: 'done', stop_reason: 'end_turn' },
+        ]),
+      )
+
+    const { result } = renderHook(() => useAiChat())
+    act(() => result.current.send('clean up'))
+    await waitFor(() => expect(result.current.pending).not.toBeNull())
+    act(() => result.current.confirm())
+    await waitFor(() => expect(result.current.busy).toBe(false))
+
+    act(() => result.current.send('next'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    const third = sentBody(2)
+    expect(third.messages.map((m) => m.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'user',
+    ])
+    expect(third.messages[2]!.content).toEqual([
+      {
+        type: 'tool_result',
+        tool_use_id: 'toolu_del',
+        content: 'Moved to the trash "Old note".',
+        is_error: false,
+      },
+      { type: 'tool_result', tool_use_id: 'toolu_add', content: 'Added "x".', is_error: false },
+    ])
+  })
+
+  it('keeps inline (non-confirmation) tool exchanges out of the held history', async () => {
+    // In the inline path the server runs the tool loop within one stream and the client never
+    // holds the assistant tool_use turn — so the result must stay UI-only. Pairing it into
+    // history would create a tool_result with no matching tool_use, which the API also rejects.
+    fetchMock
+      .mockResolvedValueOnce(
+        sseResponse([
+          {
+            type: 'tool-result',
+            tool_use_id: 'toolu_list',
+            name: 'list_tasks',
+            ok: true,
+            summary: '3 tasks.',
+          },
+          { type: 'text-delta', text: 'You have 3 tasks.' },
+          {
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'text', text: 'You have 3 tasks.' }],
+          },
+          { type: 'done', stop_reason: 'end_turn' },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        sseResponse([
+          { type: 'message', role: 'assistant', content: [] },
+          { type: 'done', stop_reason: 'end_turn' },
+        ]),
+      )
+
+    const { result } = renderHook(() => useAiChat())
+    act(() => result.current.send('what do I have?'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+    expect(result.current.items.some((i) => i.role === 'tool')).toBe(true)
+
+    act(() => result.current.send('ok'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(sentBody(1).messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+  })
+
+  it('maps the pre-stream budget kill-switch (HTTP 503) to the paused message', async () => {
+    fetchMock.mockResolvedValueOnce(sseResponse([], 503))
     const { result } = renderHook(() => useAiChat())
     act(() => result.current.send('hi'))
     await waitFor(() => expect(result.current.error).toMatch(/paused for this month/i))
+  })
+
+  it('maps the pre-stream rate limit (HTTP 429) to the slow-down message', async () => {
+    fetchMock.mockResolvedValueOnce(sseResponse([], 429))
+    const { result } = renderHook(() => useAiChat())
+    act(() => result.current.send('hi'))
+    await waitFor(() => expect(result.current.error).toMatch(/rate limit/i))
+  })
+
+  it('shows the generic failure for in-band error events', async () => {
+    // The only codes the server emits in-band are 'tool-loop-cap' and 'chat_failed' — budget
+    // and rate-limit rejections arrive pre-stream as HTTP statuses (tested above).
+    fetchMock.mockResolvedValueOnce(sseResponse([{ type: 'error', code: 'tool-loop-cap' }]))
+    const { result } = renderHook(() => useAiChat())
+    act(() => result.current.send('hi'))
+    await waitFor(() => expect(result.current.error).toBe('Chat failed.'))
   })
 })
