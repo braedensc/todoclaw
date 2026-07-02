@@ -1,6 +1,6 @@
 name: Deploy (prod)
 
-# Stage 6 (ADR-0019) — CI-driven production deploy. On every successful CI run on `main`
+# Stage 6 (ADR-0020) — CI-driven production deploy. On every successful CI run on `main`
 # this applies pending database migrations and (re)deploys the Edge Functions to the ONE
 # production Supabase project. Replaces the hand-run `supabase db push` / `supabase
 # functions deploy` that ADR-0006 / ADR-0015 deferred to this stage.
@@ -28,11 +28,13 @@ name: Deploy (prod)
 #
 # ── Config (repo → Settings → Secrets and variables → Actions) ────────────────────────
 #   Migrations:
-#     • Secret   SUPABASE_DB_URL       = the prod SESSION-POOLER connection string (IPv4,
-#                                        `postgres` user, `?sslmode=require`) — the SAME shape
-#                                        as BACKUP_DATABASE_URL (paste the same value).
-#                                        ⚠️ NOT the direct `db.<ref>.supabase.co` host: that
-#                                        is IPv6-only and unreachable from GitHub runners.
+#     • Secret   BACKUP_DATABASE_URL   = the prod SESSION-POOLER connection string (IPv4,
+#                                        `postgres` user, `?sslmode=require`). REUSED from the
+#                                        backup job (already set) — migrations need write and
+#                                        backups read, but the free pooler forces the same
+#                                        `postgres` user, so one secret serves both. ⚠️ NOT the
+#                                        direct `db.<ref>.supabase.co` host: IPv6-only,
+#                                        unreachable from GitHub runners.
 #   Functions:
 #     • Secret   SUPABASE_ACCESS_TOKEN = a Supabase personal access token (dashboard →
 #                                        Account → Access Tokens). Authenticates the deploy;
@@ -102,11 +104,12 @@ jobs:
       - name: Preflight — is the DB URL configured?
         id: pre
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          # Reuses the backup job's secret (same session-pooler URL) — one secret, one source of truth.
+          SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         run: |
           if [ -z "$SUPABASE_DB_URL" ]; then
             # ::warning:: (not ::notice::) so a green run is never mistaken for "migrations applied".
-            echo "::warning::SUPABASE_DB_URL not set — SKIPPING migrations. Set it (session-pooler URL) to enable."
+            echo "::warning::BACKUP_DATABASE_URL not set — SKIPPING migrations (the deploy reuses the backup DB URL)."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -128,13 +131,13 @@ jobs:
         if: steps.pre.outputs.configured == 'true'
         continue-on-error: true # informational; never block the deploy on the preview
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         run: supabase db push --db-url "$SUPABASE_DB_URL" --dry-run
 
       - name: Apply migrations (db push)
         if: steps.pre.outputs.configured == 'true'
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         # `db push` has NO --yes flag and can hang on a "[Y/n]" prompt on some CI runners
         # (supabase/cli#2238); pipe `yes` to force non-interactive. Pipeline exit status is
         # db push's, so a failed migration still fails the step.

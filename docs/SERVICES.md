@@ -167,7 +167,7 @@ returns a `200`/`401` (both mean the project is awake).
 
 ---
 
-## Production deploy pipeline — Stage 6 (ADR-0019)
+## Production deploy pipeline — Stage 6 (ADR-0020)
 
 `.github/workflows/deploy.yml` applies pending **migrations** and (re)deploys the three **Edge
 Functions** to the prod project after every **green CI run on `main`** (`workflow_run` on `CI` + a
@@ -176,14 +176,15 @@ deploy). Replaces the by-hand `supabase db push` / `supabase functions deploy`.
 
 ### Config (repo → Settings → Secrets and variables → Actions)
 
-| Name | Kind | Value |
-|---|---|---|
-| `SUPABASE_DB_URL` | **Secret** | the prod **session-pooler** connection string — **paste the same value as `BACKUP_DATABASE_URL`** (`postgres` user, port 5432, `?sslmode=require`). ⚠️ NOT the direct `db.<ref>.supabase.co` host (IPv6-only, unreachable from runners). |
-| `SUPABASE_ACCESS_TOKEN` | **Secret** | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
-| `SUPABASE_PROJECT_REF` | Variable | the prod project ref (`hknmhkzumkjhylxclrcy`) — *already set*. |
+| Name | Kind | Status | Value |
+|---|---|---|---|
+| `BACKUP_DATABASE_URL` | Secret | ✅ already set | **Reused** for migrations (`db push`) — same session-pooler URL the backup job uses (`postgres` user, port 5432, `?sslmode=require`; the free pooler forces one user for read+write). No new secret needed. |
+| `SUPABASE_ACCESS_TOKEN` | Secret | ❌ **you add** | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
+| `SUPABASE_PROJECT_REF` | Variable | ✅ already set | the prod project ref (`hknmhkzumkjhylxclrcy`). |
 
-Until `SUPABASE_DB_URL` / `SUPABASE_ACCESS_TOKEN` are set, each job **skips green** (mirrors
-backup.yml / keepalive.yml), so the workflow merges without wedging anything.
+So the **only new Actions secret to add is `SUPABASE_ACCESS_TOKEN`** (for the function deploy) — the
+migrate job already has what it needs. Until `SUPABASE_ACCESS_TOKEN` is set the function-deploy job
+**skips green** (mirrors backup.yml / keepalive.yml), so the workflow merges without wedging anything.
 
 ### One-time prerequisites before the first function deploy works
 
@@ -264,7 +265,7 @@ Edge Functions. The key is never in the frontend bundle or any `VITE_*` var (ADR
    `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected into functions — no secret needed.
    For **local** serve, pass these via `--env-file` instead (the `ai-status` proof endpoint needs
    no key — it makes no model call).
-3. **Deploy the functions** — now **automated by CI** (`.github/workflows/deploy.yml`, ADR-0019):
+3. **Deploy the functions** — now **automated by CI** (`.github/workflows/deploy.yml`, ADR-0020):
    every green CI run on `main` deploys `ai-status` / `plan-my-day` / `ai-chat`. Seed the first
    deploy manually (**Actions → Deploy (prod) → Run workflow**). See **Production deploy pipeline**
    above for prereqs (incl. `ALLOWED_ORIGIN`) and the CORS re-verify.
