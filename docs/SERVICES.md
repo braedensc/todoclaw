@@ -167,6 +167,61 @@ returns a `200`/`401` (both mean the project is awake).
 
 ---
 
+## Production deploy pipeline — Stage 6 (ADR-0019)
+
+`.github/workflows/deploy.yml` applies pending **migrations** and (re)deploys the three **Edge
+Functions** to the prod project after every **green CI run on `main`** (`workflow_run` on `CI` + a
+success gate; `migrate` → `deploy-functions` sequential, so a failed migration blocks the function
+deploy). Replaces the by-hand `supabase db push` / `supabase functions deploy`.
+
+### Config (repo → Settings → Secrets and variables → Actions)
+
+| Name | Kind | Value |
+|---|---|---|
+| `SUPABASE_DB_URL` | **Secret** | the prod **session-pooler** connection string — **paste the same value as `BACKUP_DATABASE_URL`** (`postgres` user, port 5432, `?sslmode=require`). ⚠️ NOT the direct `db.<ref>.supabase.co` host (IPv6-only, unreachable from runners). |
+| `SUPABASE_ACCESS_TOKEN` | **Secret** | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
+| `SUPABASE_PROJECT_REF` | Variable | the prod project ref (`hknmhkzumkjhylxclrcy`) — *already set*. |
+
+Until `SUPABASE_DB_URL` / `SUPABASE_ACCESS_TOKEN` are set, each job **skips green** (mirrors
+backup.yml / keepalive.yml), so the workflow merges without wedging anything.
+
+### One-time prerequisites before the first function deploy works
+
+- **Function Secrets on the project** (set via CLI, never committed):
+  ```bash
+  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...          # owner key (already set)
+  supabase secrets set ALLOWED_ORIGIN=https://<prod-domain>  # CORS lock — REQUIRED
+  ```
+  Without `ALLOWED_ORIGIN`, `cors.ts` falls back to `http://localhost:5173` and the prod origin is
+  refused (in-app AI calls CORS-blocked). `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected.
+- **`verify_jwt = false`** is set per-function in `supabase/config.toml` (+ `--no-verify-jwt` on
+  deploy) so the CORS OPTIONS preflight reaches the function; the functions verify the JWT
+  themselves (`_shared/auth.ts`). Leaving the gateway check on would 401 the preflight and break
+  every AI call.
+
+### Seeding the first deploy + CORS re-verify (ADR-0015 left this open)
+
+The functions are **not yet deployed** (`supabase functions list --project-ref <ref>` is empty).
+After the secrets above are set, seed the first deploy by running the workflow manually (**Actions
+→ Deploy (prod) → Run workflow**, main only). Then re-verify the origin-lock against the **deployed**
+function:
+
+```bash
+# Allowed origin → expect 204 with an Access-Control-Allow-Origin echoing it:
+curl -i -X OPTIONS -H "Origin: https://<prod-domain>" https://<ref>.supabase.co/functions/v1/ai-status
+# Disallowed origin → must get NO Access-Control-Allow-Origin header back:
+curl -i -X OPTIONS -H "Origin: https://evil.example" https://<ref>.supabase.co/functions/v1/ai-status
+```
+
+### Rollback
+
+Supabase does **not** auto-run `down` migrations and `git revert` does not undo applied DDL. Roll a
+schema change back by running that migration's `-- down:` block via `psql "<session-pooler-url>"`,
+then deleting its row from `schema_migrations`; for a data-lossy change, restore the daily encrypted
+backup (take an on-demand backup first). `vercel rollback` reverts the frontend.
+
+---
+
 ## Sentry — error monitoring (Stage 2 PR #3, dev mode)
 
 The `@sentry/react` SDK is wired but **DSN-gated**: it only initializes when `VITE_SENTRY_DSN`
@@ -209,8 +264,10 @@ Edge Functions. The key is never in the frontend bundle or any `VITE_*` var (ADR
    `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected into functions — no secret needed.
    For **local** serve, pass these via `--env-file` instead (the `ai-status` proof endpoint needs
    no key — it makes no model call).
-3. **Deploy the functions** (manual for Stage 4; CI auto-deploy → Stage 6):
-   `supabase functions deploy ai-status` (and `plan-my-day` / `ai-chat` as they land).
+3. **Deploy the functions** — now **automated by CI** (`.github/workflows/deploy.yml`, ADR-0019):
+   every green CI run on `main` deploys `ai-status` / `plan-my-day` / `ai-chat`. Seed the first
+   deploy manually (**Actions → Deploy (prod) → Run workflow**). See **Production deploy pipeline**
+   above for prereqs (incl. `ALLOWED_ORIGIN`) and the CORS re-verify.
 
 **Cost guardrails** (in-app, ADR-0015): per-user rate limits (chat 30/hr·100/day, Plan My Day
 10/day) + a **global $20/month budget kill-switch**. If the kill-switch trips, every AI endpoint
