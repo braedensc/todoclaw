@@ -46,5 +46,11 @@ export default tseslint.config(
     files: ['**/*.test.{ts,tsx}', 'src/test/**'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
+  // Playwright E2E (smoke + golden harness): the test-runner runs in Node, while page.evaluate
+  // bodies run in the browser — so allow both global sets.
+  {
+    files: ['e2e/**/*.ts'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
   prettier,
 )
