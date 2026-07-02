@@ -53,16 +53,19 @@ hooks + git pre-commit hooks) live in the repo and run locally — see [CLAUDE.m
   where applicable, no client hard-delete (see ADR-0005, ADR-0007). `supabase db reset`
   re-applies migrations to the **local** DB only.
 
-**Cloud (Stage 1 PR #3) — code ready, awaiting provisioning.** One production project. The
-PR #3 code (`vercel.json`, `.github/workflows/backup.yml`, the `backup_role` migration) is
-merged-ready; it activates once you provision the accounts and set the secrets below.
+**Cloud — LIVE (provisioned 2026-07-02).** One production project (`hknmhkzumkjhylxclrcy`): schema
+applied, Vercel + backups active, and the CI-driven deploy pipeline (ADR-0022) deploying Edge
+Functions on merge — smoke-verified in prod (see **Production deploy pipeline** below). The
+checklist that follows is the original Stage 1 PR #3 provisioning record; the remaining open items
+are the deliberately-deferred backup least-privilege hardening (ADR-0006/ADR-0023).
 
 ---
 
 ## Production deploy & backups — Stage 1 PR #3
 
-> One production Supabase project = prod; local Docker = dev. No staging (zero cost). The
-> code is written; this is the **human provisioning checklist** (accounts, OAuth, secrets).
+> One production Supabase project = prod; local Docker = dev. No staging (zero cost). **Status
+> 2026-07-02: provisioning DONE** — project live, secrets set, backups verified. The checklist
+> below is the historical record + the deferred backup-hardening items.
 
 ### Provisioning checklist (you, in dashboards)
 
@@ -179,12 +182,12 @@ deploy). Replaces the by-hand `supabase db push` / `supabase functions deploy`.
 | Name | Kind | Status | Value |
 |---|---|---|---|
 | `BACKUP_DATABASE_URL` | Secret | ✅ already set | **Reused** for migrations (`db push`) — same session-pooler URL the backup job uses (`postgres` user, port 5432, `?sslmode=require`; the free pooler forces one user for read+write). No new secret needed. |
-| `SUPABASE_ACCESS_TOKEN` | Secret | ❌ **you add** | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
+| `SUPABASE_ACCESS_TOKEN` | Secret | ✅ set 2026-07-02 | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
 | `SUPABASE_PROJECT_REF` | Variable | ✅ already set | the prod project ref (`hknmhkzumkjhylxclrcy`). |
 
-So the **only new Actions secret to add is `SUPABASE_ACCESS_TOKEN`** (for the function deploy) — the
-migrate job already has what it needs. Until `SUPABASE_ACCESS_TOKEN` is set the function-deploy job
-**skips green** (mirrors backup.yml / keepalive.yml), so the workflow merges without wedging anything.
+All three are now set, and the pipeline has deployed successfully (functions live 2026-07-02). Before
+that, each job **preflight-skips green** when its secret is missing (mirrors backup.yml / keepalive.yml),
+so the workflow always merges without wedging anything.
 
 ### One-time prerequisites before the first function deploy works
 
