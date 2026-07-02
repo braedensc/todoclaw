@@ -53,16 +53,19 @@ hooks + git pre-commit hooks) live in the repo and run locally — see [CLAUDE.m
   where applicable, no client hard-delete (see ADR-0005, ADR-0007). `supabase db reset`
   re-applies migrations to the **local** DB only.
 
-**Cloud (Stage 1 PR #3) — code ready, awaiting provisioning.** One production project. The
-PR #3 code (`vercel.json`, `.github/workflows/backup.yml`, the `backup_role` migration) is
-merged-ready; it activates once you provision the accounts and set the secrets below.
+**Cloud — LIVE (provisioned 2026-07-02).** One production project (`hknmhkzumkjhylxclrcy`): schema
+applied, Vercel + backups active, and the CI-driven deploy pipeline (ADR-0022) deploying Edge
+Functions on merge — smoke-verified in prod (see **Production deploy pipeline** below). The
+checklist that follows is the original Stage 1 PR #3 provisioning record; the remaining open items
+are the deliberately-deferred backup least-privilege hardening (ADR-0006/ADR-0023).
 
 ---
 
 ## Production deploy & backups — Stage 1 PR #3
 
-> One production Supabase project = prod; local Docker = dev. No staging (zero cost). The
-> code is written; this is the **human provisioning checklist** (accounts, OAuth, secrets).
+> One production Supabase project = prod; local Docker = dev. No staging (zero cost). **Status
+> 2026-07-02: provisioning DONE** — project live, secrets set, backups verified. The checklist
+> below is the historical record + the deferred backup-hardening items.
 
 ### Provisioning checklist (you, in dashboards)
 
@@ -179,12 +182,12 @@ deploy). Replaces the by-hand `supabase db push` / `supabase functions deploy`.
 | Name | Kind | Status | Value |
 |---|---|---|---|
 | `BACKUP_DATABASE_URL` | Secret | ✅ already set | **Reused** for migrations (`db push`) — same session-pooler URL the backup job uses (`postgres` user, port 5432, `?sslmode=require`; the free pooler forces one user for read+write). No new secret needed. |
-| `SUPABASE_ACCESS_TOKEN` | Secret | ❌ **you add** | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
+| `SUPABASE_ACCESS_TOKEN` | Secret | ✅ set 2026-07-02 | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
 | `SUPABASE_PROJECT_REF` | Variable | ✅ already set | the prod project ref (`hknmhkzumkjhylxclrcy`). |
 
-So the **only new Actions secret to add is `SUPABASE_ACCESS_TOKEN`** (for the function deploy) — the
-migrate job already has what it needs. Until `SUPABASE_ACCESS_TOKEN` is set the function-deploy job
-**skips green** (mirrors backup.yml / keepalive.yml), so the workflow merges without wedging anything.
+All three are now set, and the pipeline has deployed successfully (functions live 2026-07-02). Before
+that, each job **preflight-skips green** when its secret is missing (mirrors backup.yml / keepalive.yml),
+so the workflow always merges without wedging anything.
 
 ### One-time prerequisites before the first function deploy works
 
@@ -204,12 +207,14 @@ migrate job already has what it needs. Until `SUPABASE_ACCESS_TOKEN` is set the 
   themselves (`_shared/auth.ts`). Leaving the gateway check on would 401 the preflight and break
   every AI call.
 
-### Seeding the first deploy + CORS re-verify (ADR-0015 left this open)
+### First deploy + CORS re-verify — resolved (ADR-0015 caveat closed)
 
-The functions are **not yet deployed** (`supabase functions list --project-ref <ref>` is empty).
-After the secrets above are set, seed the first deploy by running the workflow manually (**Actions
-→ Deploy (prod) → Run workflow**, main only). Then re-verify the origin-lock against the **deployed**
-function:
+**Done ✅ (2026-07-02).** Merging #43 auto-triggered the pipeline (no manual dispatch needed): the
+migrate job ran as an idempotent no-op and all three functions (`ai-status` / `plan-my-day` /
+`ai-chat`) deployed. **Prod smoke passed** — allowed-origin preflight → `204` echoing
+`access-control-allow-origin: https://todoclaw-psi.vercel.app`; disallowed origin → `204` with **no**
+ACAO header (browser blocks it); unauth `POST` to `ai-status` → `401`; app root → `200` HTML. The
+origin-lock re-verify (the ADR-0015 caveat) is reproducible any time with:
 
 ```bash
 # Allowed origin → expect 204 with an Access-Control-Allow-Origin echoing it:
@@ -276,22 +281,25 @@ Edge Functions. The key is never in the frontend bundle or any `VITE_*` var (ADR
 **Provisioning (you, in dashboards/CLI):**
 
 1. **Anthropic Console** ([console.anthropic.com](https://console.anthropic.com)) — create an
-   API key (`sk-ant-…`). Set a **spend limit / billing alert** here — cheap insurance against a
-   runaway loop (the in-app monthly kill-switch is the primary bound; this is the backstop).
-2. **Set the function secrets** (Claude cannot — the hook blocks `.env*` + the `sk-ant-…` value):
+   API key (`sk-ant-…`). Configure **spend alerts** here — see
+   **[Billing & cost alerts](#billing--cost-alerts-stage-6)** below (the in-app monthly kill-switch
+   is the primary bound; Console alerts are the backstop). Anthropic is the **only** service that
+   can actually run up a bill — Supabase Free and Vercel Hobby pause instead of charging.
+2. **Set the function secrets** (Claude cannot — the hook blocks `.env*` + the `sk-ant-…` value) —
+   **both set ✅** (`ANTHROPIC_API_KEY` 2026-06-25, `ALLOWED_ORIGIN` 2026-07-02):
 
    ```bash
-   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...          # the owner key (required)
-   supabase secrets set ALLOWED_ORIGIN=https://<your-vercel-domain>   # CORS lock (prod origin)
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...                       # the owner key (required)
+   supabase secrets set ALLOWED_ORIGIN=https://todoclaw-psi.vercel.app     # CORS lock (prod origin)
    ```
 
    `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected into functions — no secret needed.
    For **local** serve, pass these via `--env-file` instead (the `ai-status` proof endpoint needs
    no key — it makes no model call).
-3. **Deploy the functions** — now **automated by CI** (`.github/workflows/deploy.yml`, ADR-0022):
-   every green CI run on `main` deploys `ai-status` / `plan-my-day` / `ai-chat`. Seed the first
-   deploy manually (**Actions → Deploy (prod) → Run workflow**). See **Production deploy pipeline**
-   above for prereqs (incl. `ALLOWED_ORIGIN`) and the CORS re-verify.
+3. **Deploy the functions** — **automated by CI** (`.github/workflows/deploy.yml`, ADR-0022) and
+   **live in prod since 2026-07-02**: merging #43 auto-triggered the pipeline and deployed
+   `ai-status` / `plan-my-day` / `ai-chat`; the CORS origin-lock re-verify passed against the
+   deployed function. See **Production deploy pipeline** above.
 
 **Cost guardrails** (in-app, ADR-0015): per-user rate limits (chat 30/hr·100/day, Plan My Day
 10/day) + a **global $20/month budget kill-switch**. If the kill-switch trips, every AI endpoint
@@ -299,6 +307,51 @@ refuses until the next month. Tunable via constants in `supabase/functions/_shar
 
 > Treat the Anthropic key like any secret: if exposure is suspected, **rotate it in the Console**
 > and re-run `supabase secrets set ANTHROPIC_API_KEY=…`.
+
+---
+
+## Billing & cost alerts (Stage 6)
+
+Cost posture across the three paid-capable services. **Key finding:** only **Anthropic** bills per
+use (owner's key) — **Supabase Free and Vercel Hobby cannot charge you**; they *pause* the resource
+when a free-tier limit is hit. So real budget risk is Anthropic-only, and it's already bounded by the
+in-app **$20/month kill-switch** (ADR-0015); the Console alerts below are a backstop.
+
+### Anthropic — real spend; email alerts at $10 / $15 (you, in the Console)
+
+The API has **no free tier** — every call costs real money. Two independent controls:
+
+- **Email alerts (what we want):** Console → **Settings → Workspaces → [the app's workspace] →
+  Limits tab → "Add notification"**. Add one at **$10** and one at **$15** (month-to-date spend,
+  non-blocking emails). Repeat "Add notification" per threshold.
+- **Hard cap (deliberately skipped):** Console → **Settings → Limits → Spend limits → "Change
+  Limit"** is a *hard cap that pauses the API*. **Leave it unset** — a $25 cap makes no sense below
+  the $20 in-app kill-switch, which is the authoritative bound.
+
+> ⚠️ **Workspace caveat — may need a key rotation. Decision for you.** Dollar-threshold notifications
+> attach **only** to a **named Workspace**, not the Default Workspace. If the app's
+> `ANTHROPIC_API_KEY` lives in the Default Workspace, you'd have to **create a dedicated Workspace,
+> mint a new key there, and re-run `supabase secrets set ANTHROPIC_API_KEY=…`** (keys can't move
+> between workspaces). If that's more hassle than it's worth, the fallback is fine: rely on the **$20
+> in-app kill-switch** + periodic manual checks at **Settings → Usage / Cost** (view-only). The
+> planner's own guardrails already bound spend; these alerts are insurance, not load-bearing.
+
+### Supabase — Free tier can't bill you (nothing to configure)
+
+"You will not be charged while using the Free Plan" — no payment method, no overage billing; hitting
+a limit makes the project **read-only / paused**, never a charge. There is **no $-threshold alert**
+feature (Spend Cap is an org-level, **Pro-only** setting, effectively $0 on Free). Monitor manually
+at **Dashboard → [org] → Usage**. The keep-alive cron prevents the inactivity pause; the free-tier
+limits are the only "cap", and they pause rather than bill.
+
+### Vercel — Hobby can't bill you either (confirm default alerts)
+
+Hobby is free with **no overage billing** — exceed an included limit and the resource **pauses**
+(wait out the window), never an invoice. Spend Management (dollar caps, %/SMS alerts) is **Pro-only**.
+On Hobby, just confirm the default usage emails are on: **Dashboard → [team] → Settings → My
+Notifications → Usage group** ("Usage increased" + "Usage limit reached"), **Web + Email = on**. See
+consumption at **Dashboard → Usage**. (Out-of-band charges like domain renewals are purchases, not
+compute overage.)
 
 ---
 
