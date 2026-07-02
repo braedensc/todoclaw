@@ -47,10 +47,12 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
   // Playwright E2E (smoke + golden harness): the test-runner runs in Node, while page.evaluate
-  // bodies run in the browser — so allow both global sets.
+  // bodies run in the browser — so allow both global sets. No React here: Playwright fixtures
+  // take a `use` callback that the rules-of-hooks rule misreads as a React hook, so it's off.
   {
     files: ['e2e/**/*.ts'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: { 'react-hooks/rules-of-hooks': 'off' },
   },
   prettier,
 )

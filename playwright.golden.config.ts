@@ -21,6 +21,11 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',
+    // Pin the browser's locale + timezone so specs are deterministic on any host: the Done
+    // tab's timestamp format follows the locale, and running in UTC makes every timezone
+    // fallback in the app (browser zone vs 'UTC') resolve to the same calendar day.
+    locale: 'en-US',
+    timezoneId: 'UTC',
   },
   projects: [
     // Seeds the user + clean slate, then signs in once and saves storageState.

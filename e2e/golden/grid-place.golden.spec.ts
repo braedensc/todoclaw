@@ -1,21 +1,15 @@
-import { test, expect } from '@playwright/test'
-import { resolveLocalSupabaseEnv } from '../helpers/env'
-import { resetTestUserData } from '../helpers/db'
+import { test, expect } from '../helpers/fixtures'
 
 // Marquee golden path: it proves the whole harness end-to-end — a persisted session signs us in,
 // a real task is added, a real pointer drag places it on the grid, and the placement lands in the
 // expected Eisenhower quadrant.
+//
+// The add+drag mechanics are kept INLINE here deliberately: this spec is the canary for the drag
+// harness itself, so it must not depend on the shared helpers it validates. The shared version
+// every other spec uses lives in e2e/helpers/ui.ts — mirror mechanical changes there.
 const TASK = 'Ship the quarterly review'
 
-test.beforeEach(async () => {
-  // Clean slate per spec (the user row + session survive; only their app rows are wiped).
-  const { dbUrl } = resolveLocalSupabaseEnv()
-  await resetTestUserData(dbUrl)
-})
-
 test('add a task, drag it from the tray to the grid, and assert its quadrant', async ({ page }) => {
-  await page.goto('/')
-
   // Add a task — new tasks land in the staging tray (staged), not on the grid yet.
   await page.getByPlaceholder('Add a task…').fill(TASK)
   await page.getByRole('button', { name: /^Add$/ }).click()
