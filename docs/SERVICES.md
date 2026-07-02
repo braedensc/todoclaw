@@ -141,6 +141,32 @@ restore → rows + RLS recovered.
 
 ---
 
+## Keep-alive — free-tier anti-pause (Stage 6)
+
+Free-tier Supabase **pauses a project after ~7 days of no activity**; a paused project stops
+serving the API (an outage). [`.github/workflows/keepalive.yml`](../.github/workflows/keepalive.yml)
+prevents that: **daily (08:17 UTC)** it makes one tiny read-only REST request
+(`GET /rest/v1/tasks?select=id&limit=1`) to the production project, which resets the inactivity
+timer. It costs nothing (well within free Actions minutes) and reads no data — the anon role is
+granted nothing on `tasks`, so Postgres **denies** the query (HTTP 401), but processing it is
+exactly what counts as project activity. So `401`/`403` is the normal healthy response here (the
+job treats them, plus `200`/`206`, as success and only fails on `5xx`/unreachable).
+
+Configure it once (repo → Settings → **Secrets and variables → Actions**):
+
+| Name | Kind | Value |
+|---|---|---|
+| `SUPABASE_URL` | **Variable** | `https://<prod-ref>.supabase.co` (the prod Project URL) |
+| `SUPABASE_ANON_KEY` | **Secret** | the prod project's **anon** (public) key — Supabase → Settings → API |
+
+The anon key is public (it already ships in the frontend bundle, gated by RLS); it's stored as a
+Secret only for log-masking hygiene. Until both are set the workflow runs green but **skips**
+(same pattern as the backup job). Scheduled workflows only run from `main`, so it activates on
+merge — trigger it once manually from the **Actions** tab (`workflow_dispatch`) to confirm it
+returns a `200`/`401` (both mean the project is awake).
+
+---
+
 ## Sentry — error monitoring (Stage 2 PR #3, dev mode)
 
 The `@sentry/react` SDK is wired but **DSN-gated**: it only initializes when `VITE_SENTRY_DSN`
