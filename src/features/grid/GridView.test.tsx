@@ -40,7 +40,12 @@ function makeTask(over: Partial<Task>): Task {
     staged: false,
     bucket: 'oneoff',
     recurring: null,
-    created_at: '2026-06-23T00:00:00.000Z',
+    // Fresh by construction: derived from the SAME real clock GridCard's stalenessStyle reads (it
+    // injects no `now`), so a default card stays well under the 21-day staleness floor and never
+    // silently crosses a tier as real time passes. A fixed date here would rot — e.g. a
+    // '2026-06-23' default turns stale on 2026-07-14. Staleness-specific tests override created_at
+    // with a fixed far-past date (e.g. '2000-01-01') to assert the faded style deterministically.
+    created_at: new Date(Date.now() - 86_400_000).toISOString(), // ~1 day ago
     deleted_at: null,
     ...over,
   }
