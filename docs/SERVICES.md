@@ -186,11 +186,15 @@ it on in prod + adds release tracking (code done; DSN + dashboard steps are your
 
 **Production (Stage 6) — you, in dashboards:**
 1. **Vercel → Project → Settings → Environment Variables:** add `VITE_SENTRY_DSN = <your-dsn>`
-   scoped to **Production** (and Preview if you want preview errors too). Redeploy to pick it up.
-   This is the switch that makes prod Sentry live — nothing else is required.
-2. **Release tracking is automatic** — no config. The build bakes in Vercel's commit SHA
-   (`VERCEL_GIT_COMMIT_SHA` → `release: todoclaw@<sha>`), so each issue shows the exact deploy.
-   (If `VERCEL_GIT_COMMIT_SHA` is ever empty, e.g. a non-git deploy, the release is simply omitted.)
+   scoped to **Production**. This is the switch that makes prod Sentry live — nothing else is
+   required. Redeploy to pick it up. (Optionally also scope it to **Preview** — safe now, because
+   events are tagged `environment=preview` vs `production`, so you can filter preview noise out of
+   prod alerts.)
+2. **Release + environment tagging is automatic** — no config. The build bakes in Vercel's commit
+   SHA (`VERCEL_GIT_COMMIT_SHA` → `release: todoclaw@<sha>`) and `VERCEL_ENV`
+   (→ `environment: production | preview`), so each issue shows the exact deploy and which
+   environment it came from. (If `VERCEL_GIT_COMMIT_SHA` is ever empty, e.g. a non-git deploy, the
+   release is simply omitted.)
 3. **Alerts → Alert Rules:** confirm the auto-created **"new issue"** rule is enabled and that a
    **delivery channel** is set (your email, or a Slack integration) so notifications actually reach
    you. Optionally add a rule for an error-rate spike.

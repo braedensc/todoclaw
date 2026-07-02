@@ -19,7 +19,10 @@ import './index.css'
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,
-    environment: import.meta.env.MODE,
+    // Prefer Vercel's VERCEL_ENV ('production' | 'preview' | 'development') so preview deploys are
+    // tagged environment=preview, not lumped into production (import.meta.env.MODE is 'production'
+    // for every `vite build`). Falls back to MODE off Vercel (local build / dev).
+    environment: __VERCEL_ENV__ || import.meta.env.MODE,
     // Release tracking (Stage 6): tag every event with the commit that shipped it, so a new
     // error points at the exact deploy. __GIT_COMMIT_SHA__ is baked in from Vercel's build SHA
     // (vite.config.ts); empty locally → undefined, so Sentry omits the release instead of

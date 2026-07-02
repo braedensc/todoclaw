@@ -1,8 +1,10 @@
 /// <reference types="vite/client" />
 
-// Injected by vite.config.ts `define` from Vercel's VERCEL_GIT_COMMIT_SHA at build time.
-// Empty string when not built on Vercel (local dev / CI) — main.tsx maps that to "no release".
+// Injected by vite.config.ts `define` from Vercel's build-time env vars. Empty strings when not
+// built on Vercel (local dev / CI): __GIT_COMMIT_SHA__ → "no release", __VERCEL_ENV__ → fall back
+// to Vite's MODE for the Sentry environment tag (see main.tsx).
 declare const __GIT_COMMIT_SHA__: string
+declare const __VERCEL_ENV__: string
 
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL: string

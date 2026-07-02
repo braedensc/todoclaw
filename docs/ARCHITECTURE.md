@@ -253,7 +253,8 @@ the next). CI jobs + branch protection that *enforce* these are a separate PR (#
   secret** (matches none of the hook's secret patterns); it's typed optional in
   `src/vite-env.d.ts`, documented in `.env.example`, and the real value lives in `.env.local`
   (Braeden adds it — the `PreToolUse` hook blocks Claude from writing `.env*`). Full production
-  Sentry — live DSN, source maps, release/alert config — is **Stage 6**.
+  Sentry (live DSN, release tracking, alert rules) is **Stage 6** — see the *Update (Stage 6)*
+  block below, where **source maps are decided off** (not deferred).
 - **Error boundaries.** `src/components/ErrorBoundary.tsx` is a reusable class component
   (`getDerivedStateFromError` + `componentDidCatch` → `Sentry.captureException`, which no-ops
   when Sentry isn't initialized) with an accessible `role="alert"` fallback + a retry button.
@@ -275,13 +276,16 @@ default); Stage 6 turns Sentry *on in prod* and adds release tracking:
 - **Live DSN via Vercel prod env**, not `.env.local` — Braeden sets `VITE_SENTRY_DSN` in the Vercel
   project's **Production** environment (still a public ingest URL, not a secret). The dev-mode gate
   is unchanged: no DSN ⇒ no-op, so previews/CI/local stay silent unless a DSN is present.
-- **Release tracking (the only code change).** `vite.config.ts` bakes Vercel's build commit into a
-  compile-time constant `__GIT_COMMIT_SHA__` (`define` reading `process.env.VERCEL_GIT_COMMIT_SHA`,
-  declared in `src/vite-env.d.ts`); `main.tsx` passes `release: todoclaw@<sha>` to `Sentry.init` so
-  every event is attributed to the exact deploy. Empty locally ⇒ `undefined` ⇒ Sentry omits the
-  release cleanly (no bare `todoclaw@`). Verified: build inlines the constant with **no dangling
-  `__GIT_COMMIT_SHA__`** identifier (no runtime `ReferenceError`); the live tagged-event path is
-  confirmed by the prod smoke once the DSN is set.
+- **Release tracking + environment tagging (the code change).** `vite.config.ts` bakes two Vercel
+  build vars into compile-time constants (`define`, declared in `src/vite-env.d.ts`):
+  `__GIT_COMMIT_SHA__` (from `VERCEL_GIT_COMMIT_SHA`) and `__VERCEL_ENV__` (from `VERCEL_ENV`).
+  `main.tsx` passes `release: todoclaw@<sha>` so every event is attributed to the exact deploy, and
+  `environment: __VERCEL_ENV__ || import.meta.env.MODE` so **preview deploys tag as `preview`, not
+  `production`** — without this, `import.meta.env.MODE` is `'production'` for *every* `vite build`
+  (preview and prod alike), so a preview error would masquerade as a prod regression. Both empty
+  off-Vercel ⇒ release omitted, environment falls back to Vite's MODE. Verified: build inlines both
+  constants with **no dangling identifiers** (no runtime `ReferenceError`); the live tagged-event
+  path is confirmed by the prod smoke once the DSN is set.
 - **Source maps: deliberately OFF.** Uploading them needs `@sentry/vite-plugin` + a `SENTRY_AUTH_TOKEN`
   + org/project config — not worth it for a 2-person app; minified stacks + the release tag suffice.
   Revisit if triage gets painful. **Alert rules:** the default "new issue" rule is kept; Braeden
