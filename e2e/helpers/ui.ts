@@ -66,6 +66,9 @@ export async function placeTask(
  * fraction `(fx, fy)`. The mobile counterpart of `placeTask` (which drags). Requires a mobile
  * viewport + touch (the chromium-mobile project) so `useIsMobile` exposes the tray tap-select
  * handler and the canvas commits the tap. Returns the placed card's locator.
+ *
+ * Aim `fy` at the UPPER canvas (≲ 0.6): the fixed bottom tab bar overlays the lower viewport on
+ * mobile, so a tap near the canvas bottom can hit the nav instead of the canvas.
  */
 export async function tapPlaceTask(
   page: Page,

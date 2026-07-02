@@ -29,7 +29,10 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
   return (
     <aside
       aria-label="Chat"
-      className="fixed right-0 top-0 z-40 flex h-screen w-full max-w-sm flex-col border-l border-border-strong bg-panel"
+      // Mobile: full-screen drawer (z-50 so it covers the fixed bottom tab bar, which is z-40 —
+      // otherwise a 384px-wide drawer would leave the bar's tabs half-covered and untappable).
+      // Desktop (wide:): the original right slide-over, capped at max-w-sm.
+      className="fixed right-0 top-0 z-50 flex h-screen w-full flex-col border-l border-border-strong bg-panel wide:max-w-sm"
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="font-serif text-lg font-semibold text-ink">Chat</h2>

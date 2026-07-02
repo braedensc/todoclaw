@@ -650,11 +650,17 @@ unchanged.
 Makes the app mobile-first at the `< 720px` breakpoint and adds a mobile golden E2E project.
 Decisions:
 
-- **One breakpoint, defined once.** The app's mobile/desktop threshold is `MOBILE_MAX_WIDTH` (719)
-  in `use-is-mobile.ts`, driving `useIsMobile()` (which already flips the grid to tap-to-place,
-  ADR-0004). Stage 5 mirrors it as a Tailwind screen `wide: '720px'` so **CSS layout and JS
-  behaviour switch at the identical width** — no 720–768 zone where a stock breakpoint (`md`) would
-  disagree with `useIsMobile`. Adding `wide` via `theme.extend.screens` keeps Tailwind's defaults.
+- **One breakpoint for the interaction + shell, defined once.** The mobile/desktop threshold is
+  `MOBILE_MAX_WIDTH` (719) in `use-is-mobile.ts`, driving `useIsMobile()` (which already flips the
+  grid to tap-to-place, ADR-0004). Stage 5 mirrors it as a Tailwind screen `wide: '720px'` so the
+  pieces keyed off it — the view nav, grid-card action visibility, and tap-to-place — **flip at the
+  identical width**, with no 720–768 zone where a stock breakpoint (`md`) would disagree with
+  `useIsMobile`. Adding `wide` via `theme.extend.screens` keeps Tailwind's defaults. NOTE: the
+  grid's canvas/tray *column* arrangement is deliberately NOT moved to `wide`; it keeps its
+  pre-existing `lg` (1024px) breakpoint because a side-by-side canvas + 256px tray needs more room
+  than 720px. So on a 720–1023px tablet the nav/interaction are in desktop mode while the grid is
+  still stacked — a layout choice, not an interaction mismatch (drag/tap behave identically either
+  way).
 - **Bottom tab bar on mobile** (master plan's explicit call), top row on desktop — one
   `<nav aria-label="Views">` with responsive classes, NOT two components. The buttons and
   `aria-current` are identical across layouts, so the semantic selectors the golden suite relies on
@@ -664,6 +670,11 @@ Decisions:
   hover only — unreachable on touch. They are now always shown below `wide` (gated on the same
   breakpoint), so a placed card stays actionable on a phone. This is a genuine mobile bug the
   responsive pass surfaced, fixed here rather than deferred.
+- **Chat panel goes full-screen on mobile.** Adding a *fixed* bottom bar exposed a stacking clash:
+  the chat slide-over was `z-40 w-full max-w-sm` (a 384px right drawer), same z as the new bar, so
+  on a phone it half-covered the bar and left tabs untappable. Fixed by making the drawer full-width
+  on mobile (`w-full wide:max-w-sm`) at `z-50`, so it cleanly covers the bar (close it to return) —
+  standard mobile drawer behaviour. `PlanMyDayPanel` was already a `z-50 inset-0` modal, unaffected.
 - **Mobile golden specs as a second Playwright project.** `playwright.golden.config.ts` gains a
   `chromium-mobile` project (Pixel 7 viewport + touch) matching `*.mobile.golden.spec.ts`; the
   desktop `chromium` project `testIgnore`s that pattern (since `*.golden.spec.ts` also matches it).
