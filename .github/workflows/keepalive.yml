@@ -1,0 +1,66 @@
+name: Keep-Alive
+
+# Free-tier Supabase projects are PAUSED after ~7 days with no activity. A paused
+# project stops serving the API until it's manually resumed — an outage for a live
+# app. This workflow makes one tiny, read-only request to the production REST API on
+# a schedule so the inactivity timer never elapses. Cheapest reliable anti-pause:
+# a single `select id limit 1` against `tasks` (RLS returns [] for the anon role, but
+# the request still counts as project activity).
+#
+# Config (repo → Settings → Secrets and variables → Actions):
+#   - Variable `SUPABASE_URL`      = https://<prod-ref>.supabase.co
+#   - Secret   `SUPABASE_ANON_KEY` = the prod project's anon (public) key
+# The anon key is public (it ships in the frontend bundle and is gated by RLS); it's
+# stored as a Secret purely for log-masking hygiene. Until both are set the job runs
+# green but SKIPS (mirrors backup.yml), so an unconfigured fork is never red.
+#
+# NOTE: scheduled workflows only run from the DEFAULT branch (main), so this takes
+# effect once merged. Trigger manually (workflow_dispatch) from the Actions tab to test.
+
+on:
+  schedule:
+    - cron: '17 8 * * *' # daily 08:17 UTC (offset from the 09:00 backup; off the top of the hour)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping prod REST (anti-pause)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preflight — is the keep-alive configured?
+        id: pre
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::notice::Keep-alive not configured — set the SUPABASE_URL variable + SUPABASE_ANON_KEY secret to enable. Skipping."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ping the REST API
+        if: steps.pre.outputs.configured == 'true'
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          # Trailing slash trimmed so a configured URL with or without one both work.
+          base="${SUPABASE_URL%/}"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$base/rest/v1/tasks?select=id&limit=1")
+          echo "REST responded: HTTP $code"
+          case "$code" in
+            # 200/206 = normal (RLS yields [] for anon, which is expected and still counts as activity).
+            200|206) echo "keep-alive ok" ;;
+            # An auth/RLS rejection is still a served request that resets the pause timer — warn, don't fail.
+            401|403) echo "::warning::REST returned $code (auth/RLS) — still counts as activity, project kept alive" ;;
+            # 000 = curl couldn't reach the host (DNS/timeout); anything else is unexpected — fail so it's visible.
+            *) echo "::error::Unexpected REST status $code — the project may be unreachable or paused"; exit 1 ;;
+          esac
