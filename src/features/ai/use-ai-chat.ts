@@ -4,8 +4,10 @@ import { supabase } from '../../lib/supabase'
 // Streaming chat over the ai-chat Edge Function. functions.invoke() doesn't expose streams, so
 // we fetch() directly with the user's access token and read the SSE body. The conversation is
 // CLIENT-HELD: we keep the Anthropic message history in a ref and resend it each turn. Destructive
-// tools pause for confirmation — confirm() re-sends with the approved id; deny() feeds a declined
-// tool_result back so the model continues gracefully.
+// tools pause for confirmation — confirm() re-sends with the approved id and the executed
+// tool_result is mirrored back into the held history (the server appends it to its local copy
+// only, never over the wire); deny() feeds a declined tool_result back so the model continues
+// gracefully. Either way every tool_use we hold stays paired — a dangling one 400s at the API.
 
 const FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -28,6 +30,39 @@ type AnyMsg = { role: 'user' | 'assistant'; content: unknown }
 
 let counter = 0
 const nextId = () => `c${counter++}`
+
+// After a confirmation, the server executes the tool and appends the tool_result user turn to
+// its LOCAL copy of the conversation only — it is never re-echoed. When the history we hold ends
+// with the halted assistant tool_use turn (the confirm-resume case), pair the result into it —
+// the exact counterpart of deny() — so the pairing survives the next resend; a dangling tool_use
+// 400s at the API. Sibling results from the same turn merge into that ONE user turn (the API
+// requires every tool_use in a turn to be answered in the single next user message). In the
+// inline tool path we never hold the assistant tool_use turn, so there is nothing to pair and
+// the result stays UI-only (returns the history unchanged).
+function withToolResult(
+  hist: AnyMsg[],
+  toolUseId: string,
+  summary: string,
+  isError: boolean,
+): AnyMsg[] {
+  const holdsToolUse = (m: AnyMsg | undefined) =>
+    m?.role === 'assistant' &&
+    Array.isArray(m.content) &&
+    m.content.some((b: unknown) => {
+      const blk = b as { type?: string; id?: string }
+      return blk.type === 'tool_use' && blk.id === toolUseId
+    })
+  const block = { type: 'tool_result', tool_use_id: toolUseId, content: summary, is_error: isError }
+  const last = hist[hist.length - 1]
+  if (holdsToolUse(last)) return [...hist, { role: 'user', content: [block] }]
+  if (last?.role === 'user' && Array.isArray(last.content) && holdsToolUse(hist[hist.length - 2])) {
+    return [
+      ...hist.slice(0, -1),
+      { role: 'user', content: [...(last.content as unknown[]), block] },
+    ]
+  }
+  return hist
+}
 
 export function useAiChat() {
   const [items, setItems] = useState<ChatItem[]>([])
@@ -57,7 +92,15 @@ export function useAiChat() {
         body: JSON.stringify({ messages: history.current, approvedToolUseIds: approved.current }),
       })
       if (!res.ok || !res.body) {
-        setError(res.status === 429 ? 'Slow down a moment — rate limit reached.' : 'Chat failed.')
+        // Guardrail rejections arrive PRE-STREAM as HTTP statuses (precheck in ai-chat):
+        // 503 = monthly budget kill-switch, 429 = rate limit. Neither is sent in-band.
+        setError(
+          res.status === 503
+            ? 'AI is paused for this month (budget cap reached).'
+            : res.status === 429
+              ? 'Slow down a moment — rate limit reached.'
+              : 'Chat failed.',
+        )
         setBusy(false)
         return
       }
@@ -98,6 +141,12 @@ export function useAiChat() {
         break
       }
       case 'tool-result':
+        history.current = withToolResult(
+          history.current,
+          ev.tool_use_id as string,
+          ev.summary as string,
+          ev.ok === false,
+        )
         setItems((xs) => [
           ...xs,
           { id: nextId(), role: 'tool', text: ev.summary as string, ok: ev.ok as boolean },
@@ -114,13 +163,9 @@ export function useAiChat() {
       case 'done':
         break
       case 'error':
-        setError(
-          ev.code === 'budget-exhausted'
-            ? 'AI is paused for this month (budget cap reached).'
-            : ev.code === 'rate-limited'
-              ? 'Slow down a moment — rate limit reached.'
-              : 'Chat failed.',
-        )
+        // The only in-band codes are 'tool-loop-cap' and 'chat_failed' — budget/rate-limit
+        // rejections never reach the stream (they are the pre-stream 503/429 mapped in run()).
+        setError('Chat failed.')
         break
     }
   }
