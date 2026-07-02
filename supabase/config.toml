@@ -385,7 +385,7 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
-# ── Per-function settings (Stage 6 / ADR-0020) ──────────────────────────────────────────
+# ── Per-function settings (Stage 6 / ADR-0022) ──────────────────────────────────────────
 # verify_jwt = false turns OFF the platform GATEWAY's JWT check for these functions. They
 # verify the caller's JWT THEMSELVES (_shared/auth.ts → 401 without a valid token) and handle
 # the CORS preflight in-function (_shared/cors.ts). With the gateway check ON, an

@@ -167,7 +167,7 @@ returns a `200`/`401` (both mean the project is awake).
 
 ---
 
-## Production deploy pipeline — Stage 6 (ADR-0020)
+## Production deploy pipeline — Stage 6 (ADR-0022)
 
 `.github/workflows/deploy.yml` applies pending **migrations** and (re)deploys the three **Edge
 Functions** to the prod project after every **green CI run on `main`** (`workflow_run` on `CI` + a
@@ -265,7 +265,7 @@ Edge Functions. The key is never in the frontend bundle or any `VITE_*` var (ADR
    `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected into functions — no secret needed.
    For **local** serve, pass these via `--env-file` instead (the `ai-status` proof endpoint needs
    no key — it makes no model call).
-3. **Deploy the functions** — now **automated by CI** (`.github/workflows/deploy.yml`, ADR-0020):
+3. **Deploy the functions** — now **automated by CI** (`.github/workflows/deploy.yml`, ADR-0022):
    every green CI run on `main` deploys `ai-status` / `plan-my-day` / `ai-chat`. Seed the first
    deploy manually (**Actions → Deploy (prod) → Run workflow**). See **Production deploy pipeline**
    above for prereqs (incl. `ALLOWED_ORIGIN`) and the CORS re-verify.

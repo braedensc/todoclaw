@@ -1,6 +1,6 @@
 name: Deploy (prod)
 
-# Stage 6 (ADR-0020) — CI-driven production deploy. On every successful CI run on `main`
+# Stage 6 (ADR-0022) — CI-driven production deploy. On every successful CI run on `main`
 # this applies pending database migrations and (re)deploys the Edge Functions to the ONE
 # production Supabase project. Replaces the hand-run `supabase db push` / `supabase
 # functions deploy` that ADR-0006 / ADR-0015 deferred to this stage.

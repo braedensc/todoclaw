@@ -643,7 +643,7 @@ screenshotted in-browser (glow gradient, overdue pulse, staleness fade, cluster 
 Golden suite unaffected — no spec sets a due date, so glow/badge never render in it; selectors
 unchanged.
 
-## ADR-0020 — CI-driven prod deploy: migrations + Edge Functions on merge to main
+## ADR-0022 — CI-driven prod deploy: migrations + Edge Functions on merge to main
 
 **Date:** 2026-07-02 · **Stage:** 6
 
