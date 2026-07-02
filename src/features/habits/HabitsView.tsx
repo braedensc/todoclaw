@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import {
   useHabits,
@@ -23,13 +23,8 @@ import type { Habit } from '../../types/habit'
 // daily_state row while the habit rows themselves are untouched. All server state comes from
 // the shared hooks; this component owns only the add-habit draft text.
 
-// Fallback timezone until the schedule row loads — keeps localDateInTZ deterministic so the
-// daily_state read/write target the same date key on first paint.
-const FALLBACK_TZ = 'UTC'
-
 export function HabitsView() {
-  const { data: schedule } = useUserSchedule()
-  const timeZone = schedule?.timezone ?? FALLBACK_TZ
+  const timeZone = useTimeZone()
 
   const { data: habits, isLoading, isError } = useHabits()
   const { data: daily } = useDailyState(timeZone)

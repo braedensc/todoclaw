@@ -3,7 +3,7 @@ import type { PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
-import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { recurringStatus } from '../../lib/recurring'
 import { clusterAccentColor, clusterDominant, computeClusters } from '../../lib/clustering'
@@ -14,10 +14,6 @@ import { GridCard } from './GridCard'
 import { StagingTray } from './StagingTray'
 import { ClusterBubble } from '../clustering/ClusterBubble'
 import { ClusterPopup } from '../clustering/ClusterPopup'
-
-// Browser default IANA zone — used only when the user_schedule row hasn't loaded yet, so the
-// daily-state "done today" filter still resolves against a sane local day.
-const FALLBACK_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 /**
  * Which tasks render on the grid: active (not soft-deleted — already excluded by useTasks),
@@ -41,8 +37,7 @@ export function GridView() {
   const isMobile = useIsMobile()
 
   const { data: tasks = [] } = useTasks()
-  const { data: schedule } = useUserSchedule()
-  const timeZone = schedule?.timezone ?? FALLBACK_TZ
+  const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
   const doneToday = daily?.done
 

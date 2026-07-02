@@ -1,4 +1,4 @@
-import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useSoftDeleteTask } from '../tasks/use-tasks'
 import { useHistory, useRestoreTask } from './use-history'
@@ -71,8 +71,7 @@ function HistoryRow({ entry, canRestore, onRestore, onDelete, busy }: HistoryRow
 }
 
 export function DoneView() {
-  const { data: schedule } = useUserSchedule()
-  const timeZone = schedule?.timezone ?? 'UTC'
+  const timeZone = useTimeZone()
 
   const history = useHistory()
   const daily = useDailyState(timeZone)
