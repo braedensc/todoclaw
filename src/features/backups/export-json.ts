@@ -42,5 +42,7 @@ export function downloadJson(filename: string, content: unknown): void {
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
-  URL.revokeObjectURL(url)
+  // Defer the revoke: some browsers read the blob for the download asynchronously after click(),
+  // and revoking in the same tick can yield an empty/failed download.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }

@@ -209,11 +209,18 @@ begin
     );
 
   -- --- schedule ------------------------------------------------------------
+  -- Upsert (not a bare UPDATE): the user_schedule row is seeded app-side on first load, not by a
+  -- trigger, so an UPDATE-only would silently drop the snapshot's schedule if the row were absent.
   if v_data ? 'schedule' and v_data->'schedule' <> 'null'::jsonb then
-    update public.user_schedule
-    set timezone = coalesce(v_data->'schedule'->>'timezone', timezone),
-        config   = coalesce(v_data->'schedule'->'config', config)
-    where user_id = auth.uid();
+    insert into public.user_schedule (user_id, timezone, config)
+    values (
+      auth.uid(),
+      coalesce(v_data->'schedule'->>'timezone', 'UTC'),
+      coalesce(v_data->'schedule'->'config', '{}'::jsonb)
+    )
+    on conflict (user_id) do update set
+      timezone = coalesce(v_data->'schedule'->>'timezone', public.user_schedule.timezone),
+      config   = coalesce(v_data->'schedule'->'config', public.user_schedule.config);
   end if;
 end;
 $$;

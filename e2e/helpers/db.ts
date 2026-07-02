@@ -2,9 +2,19 @@ import { Client } from 'pg'
 import { TEST_USER } from './constants'
 
 // App tables that accumulate per-user state across runs. `history` is append-only at the app
-// layer (SELECT+INSERT grant only — ADR-0012), which is exactly why we clean it as the Postgres
-// superuser below rather than through PostgREST. Names are hardcoded constants (no injection).
-const USER_SCOPED_TABLES = ['history', 'daily_state', 'tasks', 'habits', 'user_schedule'] as const
+// layer (SELECT+INSERT grant only — ADR-0012) and `backups` snapshots persist until pruned, which
+// is exactly why we clean them as the Postgres superuser below rather than through PostgREST.
+// Names are hardcoded constants (no injection). `backups` has no FK to the others, so order is
+// unconstrained — it just needs to be wiped too, or the backups spec's empty-state assertion
+// fails on the second run.
+const USER_SCOPED_TABLES = [
+  'history',
+  'daily_state',
+  'tasks',
+  'habits',
+  'user_schedule',
+  'backups',
+] as const
 
 /**
  * Delete all of the test user's app rows so each spec starts from an identical clean slate.

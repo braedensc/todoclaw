@@ -2,6 +2,7 @@ import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useSoftDeleteTask } from '../tasks/use-tasks'
 import { useHistory, useRestoreTask } from './use-history'
+import { formatDateTime } from '../../lib/dates'
 import type { History } from '../../types/history'
 
 // Done tab: the permanent completion history, newest-first. The query already orders by
@@ -14,15 +15,6 @@ import type { History } from '../../types/history'
 // Delete SOFT-deletes the task (useSoftDeleteTask) — the history row PERSISTS (it is the
 // permanent log, denormalized so it survives the task going away). Recurring tasks never
 // reach history (they don't write it), so they never appear here.
-
-// Format an ISO instant for display: "May 19 at 12:18 AM" (matches the EisenClaw Done tab).
-function formatCompletedAt(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  const day = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  return `${day} at ${time}`
-}
 
 interface HistoryRowProps {
   entry: History
@@ -40,7 +32,7 @@ function HistoryRow({ entry, canRestore, onRestore, onDelete, busy }: HistoryRow
       </span>
       <span className="min-w-0 flex-1 truncate text-ink">{entry.text}</span>
       <span className="shrink-0 text-xs text-muted-light">
-        {formatCompletedAt(entry.completed_at)}
+        {formatDateTime(entry.completed_at)}
       </span>
       {canRestore && (
         <button

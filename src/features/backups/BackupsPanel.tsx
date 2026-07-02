@@ -1,21 +1,13 @@
 import { useBackups, useCreateBackup, useRestoreBackup } from './use-backups'
 import { useTasks } from '../tasks/use-tasks'
 import { useHabits } from '../habits/use-habits'
+import { formatDateTime } from '../../lib/dates'
 import { buildPlannerExport, downloadJson, exportFilename } from './export-json'
 
 // Backups panel — a modal overlay (z-50 so it covers the mobile bottom tab bar, per ADR-0020).
 // Lists the user's server-side snapshots newest-first with Create / Restore, plus a client-side
 // "Download JSON" export for portability. Snapshot + restore are RPCs (see use-backups); this
 // component is presentation + a restore confirmation.
-
-// "May 19 at 12:18 AM" — matches the Done tab's timestamp format (locale-driven).
-function formatCreatedAt(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const day = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  return `${day} at ${time}`
-}
 
 export function BackupsPanel({ onClose }: { onClose: () => void }) {
   const backups = useBackups()
@@ -104,10 +96,10 @@ export function BackupsPanel({ onClose }: { onClose: () => void }) {
                 className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
               >
                 <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                  {b.label ?? formatCreatedAt(b.created_at)}
+                  {b.label ?? formatDateTime(b.created_at)}
                   {b.label && (
                     <span className="ml-2 text-xs text-muted-light">
-                      {formatCreatedAt(b.created_at)}
+                      {formatDateTime(b.created_at)}
                     </span>
                   )}
                 </span>
@@ -115,7 +107,7 @@ export function BackupsPanel({ onClose }: { onClose: () => void }) {
                   type="button"
                   onClick={() => handleRestore(b.id)}
                   disabled={busy}
-                  aria-label={`Restore backup from ${formatCreatedAt(b.created_at)}`}
+                  aria-label={`Restore backup from ${formatDateTime(b.created_at)}`}
                   className="shrink-0 rounded px-3 py-1 text-sm font-medium text-primary hover:bg-bg disabled:opacity-50"
                 >
                   Restore
