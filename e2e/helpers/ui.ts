@@ -61,6 +61,37 @@ export async function placeTask(
   return card
 }
 
+/**
+ * Mobile tap-to-place: add a task, tap its tray card to select it, then tap the grid canvas at
+ * fraction `(fx, fy)`. The mobile counterpart of `placeTask` (which drags). Requires a mobile
+ * viewport + touch (the chromium-mobile project) so `useIsMobile` exposes the tray tap-select
+ * handler and the canvas commits the tap. Returns the placed card's locator.
+ *
+ * Aim `fy` at the UPPER canvas (≲ 0.6): the fixed bottom tab bar overlays the lower viewport on
+ * mobile, so a tap near the canvas bottom can hit the nav instead of the canvas.
+ */
+export async function tapPlaceTask(
+  page: Page,
+  text: string,
+  fx: number,
+  fy: number,
+): Promise<Locator> {
+  await addTask(page, text)
+  const trayCard = page.getByTestId('tray-card').filter({ hasText: text })
+  await trayCard.tap()
+  // Selection is what arms the next grid tap; assert it before tapping the canvas.
+  await expect(trayCard).toHaveAttribute('aria-pressed', 'true')
+
+  const canvas = page.getByTestId('grid-canvas')
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('grid canvas not laid out')
+  await canvas.tap({ position: { x: box.width * fx, y: box.height * fy } })
+
+  const card = page.getByTestId('grid-card').filter({ hasText: text })
+  await expect(card).toBeVisible()
+  return card
+}
+
 /** Switch top-level view via the tab nav and wait for it to become the active tab. */
 export async function switchTab(
   page: Page,

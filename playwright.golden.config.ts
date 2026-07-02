@@ -32,9 +32,21 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts$/ },
     {
       name: 'chromium',
+      // Desktop specs only — `*.golden.spec.ts` matches `*.mobile.golden.spec.ts` too, so
+      // ignore the mobile ones (they run in chromium-mobile at a phone viewport).
       testMatch: /\.golden\.spec\.ts$/,
+      testIgnore: /\.mobile\.golden\.spec\.ts$/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'], storageState: AUTH_STATE_PATH },
+    },
+    {
+      // Mobile golden specs (Stage 5): a phone viewport with touch, so `useIsMobile` flips the
+      // grid to tap-to-place and the nav to the bottom bar. Same seeded session; the per-test DB
+      // wipe (fixtures) keeps it independent of the desktop specs despite the shared user.
+      name: 'chromium-mobile',
+      testMatch: /\.mobile\.golden\.spec\.ts$/,
+      dependencies: ['setup'],
+      use: { ...devices['Pixel 7'], storageState: AUTH_STATE_PATH },
     },
   ],
   webServer: {

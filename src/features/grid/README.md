@@ -71,9 +71,11 @@ ADR-0019.
 
 ## Hover actions (placed cards) & mark done
 
-`GridCard` hover reveals **done ✓**, edit (inline rename — Enter/blur commits `text`),
-back-to-tray (`staged: true`), and delete (soft-delete). Each button stops pointer/click
-propagation so it never starts a drag.
+`GridCard` reveals **done ✓**, edit (inline rename — Enter/blur commits `text`), back-to-tray
+(`staged: true`), and delete (soft-delete). On desktop these appear on hover; on mobile (< 720px,
+no hover) they are **always visible** so a placed card stays actionable by touch (gated on the same
+`wide` breakpoint that switches placement to tap-to-place — see `docs/STYLE.md` → _Responsive
+layout_). Each button stops pointer/click propagation so it never starts a drag.
 
 **Mark done** (the `✓` on cards _and_ popup rows) goes through one shared handler that branches
 on `task.recurring`:

@@ -76,7 +76,9 @@ for you — ask it to "work on X in a new worktree.")
 
 **Caveat:** `node_modules/` and local Supabase state are per-folder. Run
 `npm install` (and point at the same local Supabase, or use separate ports) in
-each worktree.
+each worktree. (The pre-commit secret scan is the exception — it falls back to
+the main checkout's `secretlint` via the shared git dir, so commits from a
+worktree are still scanned even before you `npm install` there.)
 
 ---
 

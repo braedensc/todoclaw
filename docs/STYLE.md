@@ -75,6 +75,37 @@ logic itself is `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle
 
 ---
 
+## Responsive layout (Stage 5)
+
+Mobile-first around a **720px breakpoint** — the mobile/desktop threshold for the *interaction* and
+the shell. It is defined once as `MOBILE_MAX_WIDTH` (719) in `src/hooks/use-is-mobile.ts` and
+mirrored as a Tailwind screen named **`wide`** (`min-width: 720px`) in `tailwind.config.js`. So the
+pieces keyed off it — the view nav, the grid-card action visibility, and (via `useIsMobile()`)
+tap-to-place — all flip at the exact same width: the CSS `wide:` utilities and the JS never disagree
+about where the mobile/desktop line is (which a stock `md` = 768px breakpoint would).
+
+> The **grid's canvas/tray column** arrangement is a separate concern and keeps its own wider `lg`
+> (1024px) breakpoint (`GridView`): a side-by-side canvas + 256px tray needs more room than 720px,
+> so on tablets it stays stacked even though the nav/interaction are already in desktop mode. That
+> is a layout choice, not an interaction mismatch — drag/tap work the same whichever way it's laid out.
+
+- **View nav** (`TabNav`) — a **fixed bottom tab bar** on mobile (full-width, thumb-reachable, an
+  active tab marked by a top accent bar), the original **top tab row** at `wide:` and up. It is one
+  `<nav aria-label="Views">` with the same buttons + `aria-current` in both layouts, so assistive
+  tech and the E2E `switchTab` helper are layout-independent. The signed-in content area adds
+  `pb-24` on mobile to clear the fixed bar (`wide:pb-0`).
+- **Header** — stacks on mobile (title, then a full-width add-task input, then the action buttons
+  sharing a row); a single horizontal row at `wide:`.
+- **Grid** — the canvas stacks above the staging tray on narrow screens and sits beside it on large
+  screens (the tray's `lg:` sidebar — side-by-side needs the extra width, so this is 1024px, not the
+  720px `wide`). Placement switches from drag to **tap-to-place** below 720px (already built —
+  ADR-0004).
+- **Grid card actions** (done/edit/back/delete) — hover-reveal on desktop, but **always visible on
+  mobile** (there is no hover on touch), gated on the same `wide` breakpoint. Without this a placed
+  card would be un-actionable by touch.
+
+---
+
 ## Visual parity reference (screenshots)
 
 Ground-truth screenshots of the original EisenClaw UI live in
