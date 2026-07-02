@@ -188,13 +188,17 @@ migrate job already has what it needs. Until `SUPABASE_ACCESS_TOKEN` is set the 
 
 ### One-time prerequisites before the first function deploy works
 
-- **Function Secrets on the project** (set via CLI, never committed):
+- **Function Secrets on the project** (set via CLI, never committed) — **both set 2026-07-02** ✅:
   ```bash
-  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...          # owner key (already set)
-  supabase secrets set ALLOWED_ORIGIN=https://<prod-domain>  # CORS lock — REQUIRED
+  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...                        # owner key ✅ set 2026-06-25
+  supabase secrets set ALLOWED_ORIGIN=https://todoclaw-psi.vercel.app      # CORS lock ✅ set 2026-07-02
   ```
   Without `ALLOWED_ORIGIN`, `cors.ts` falls back to `http://localhost:5173` and the prod origin is
   refused (in-app AI calls CORS-blocked). `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected.
+  **Caveat — Vercel preview deploys can't use AI:** the lock is the single prod origin, and preview
+  URLs are per-deploy hashes (`todoclaw-<hash>-…vercel.app`) that won't match. This is deliberate —
+  previews are for visual/UX review and must not spend the owner's Anthropic budget. The rest of the
+  planner works on previews; only the AI panels CORS-block there.
 - **`verify_jwt = false`** is set per-function in `supabase/config.toml` (+ `--no-verify-jwt` on
   deploy) so the CORS OPTIONS preflight reaches the function; the functions verify the JWT
   themselves (`_shared/auth.ts`). Leaving the gateway check on would 401 the preflight and break
@@ -209,9 +213,11 @@ function:
 
 ```bash
 # Allowed origin → expect 204 with an Access-Control-Allow-Origin echoing it:
-curl -i -X OPTIONS -H "Origin: https://<prod-domain>" https://<ref>.supabase.co/functions/v1/ai-status
+curl -i -X OPTIONS -H "Origin: https://todoclaw-psi.vercel.app" \
+  https://hknmhkzumkjhylxclrcy.supabase.co/functions/v1/ai-status
 # Disallowed origin → must get NO Access-Control-Allow-Origin header back:
-curl -i -X OPTIONS -H "Origin: https://evil.example" https://<ref>.supabase.co/functions/v1/ai-status
+curl -i -X OPTIONS -H "Origin: https://evil.example" \
+  https://hknmhkzumkjhylxclrcy.supabase.co/functions/v1/ai-status
 ```
 
 ### Rollback
