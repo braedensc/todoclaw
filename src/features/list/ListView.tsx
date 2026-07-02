@@ -1,6 +1,6 @@
 import { useTasks, useUpdateTask, useSoftDeleteTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
-import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { taskScore } from '../../lib/scoring'
 import type { Task } from '../../types/task'
@@ -14,14 +14,9 @@ import { ListRow } from './ListRow'
 // All server state comes from the shared hooks; this component owns no task data, only the
 // orchestration (filter → sort → render) and the mutation wiring it hands to each row.
 
-// Fallback timezone if the schedule row hasn't loaded yet — keeps scoring deterministic and
-// NaN-free. The real zone (user_schedule.timezone) drives daysUntil once loaded.
-const FALLBACK_TZ = 'UTC'
-
 export function ListView() {
   const { data: tasks, isLoading, isError } = useTasks()
-  const { data: schedule } = useUserSchedule()
-  const timeZone = schedule?.timezone ?? FALLBACK_TZ
+  const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
 
   const updateTask = useUpdateTask()
