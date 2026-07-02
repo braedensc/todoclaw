@@ -50,9 +50,38 @@ if [ -n "$FORBIDDEN" ]; then
 fi
 
 # ── 2. Run secretlint on all staged files ────────────────────────────────────
+# A git worktree (e.g. .claude/worktrees/<name>/) usually has no node_modules of
+# its own, so the literal `node_modules/.bin/secretlint` path resolves only in a
+# checkout that ran `npm install`. Resolve the binary robustly: prefer a local
+# install, else fall back to the MAIN checkout's node_modules, located via the
+# shared git dir (`git rev-parse --git-common-dir`; its parent is the main
+# working tree). CWD stays the worktree, so the staged paths + .secretlintrc.json
+# resolve there while secretlint loads its rule preset from its own install.
+# If no binary is found we FAIL loudly — silently skipping would disable layer 2.
 STAGED=$(git diff --cached --name-only --diff-filter=ACM || true)
 if [ -n "$STAGED" ]; then
-  if ! echo "$STAGED" | xargs node_modules/.bin/secretlint --secretlintrc .secretlintrc.json; then
+  if [ -x node_modules/.bin/secretlint ]; then
+    SECRETLINT=node_modules/.bin/secretlint
+  else
+    COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null || echo "")
+    MAIN_ROOT=$(dirname -- "${COMMON_DIR:-.}")
+    if [ -x "$MAIN_ROOT/node_modules/.bin/secretlint" ]; then
+      SECRETLINT="$MAIN_ROOT/node_modules/.bin/secretlint"
+    else
+      SECRETLINT=""
+    fi
+  fi
+
+  if [ -z "$SECRETLINT" ]; then
+    echo ""
+    echo "  BLOCKED: could not find the secretlint binary — the secret scan did not run."
+    echo "  Run 'npm install' in the main checkout, then commit again."
+    echo "  (Do NOT bypass with --no-verify; that silently disables the local secret scan.)"
+    echo ""
+    exit 1
+  fi
+
+  if ! echo "$STAGED" | xargs "$SECRETLINT" --secretlintrc .secretlintrc.json; then
     echo ""
     echo "  BLOCKED: secretlint found a potential secret in staged files."
     echo "  Remove the secret value and reference it by env var name only."
