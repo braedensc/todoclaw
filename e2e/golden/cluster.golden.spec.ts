@@ -32,6 +32,15 @@ test('overlapping drops cluster into a bubble; the popup lists both tasks', asyn
   await expect(popup.getByTestId('cluster-popup-row').filter({ hasText: TASK_A })).toBeVisible()
   await expect(popup.getByTestId('cluster-popup-row').filter({ hasText: TASK_B })).toBeVisible()
 
+  // Clicking the OPEN bubble toggles the popup closed (regression: a leaked pointerdown used
+  // to hit the canvas dismiss handler first, so this click closed-then-instantly-reopened).
+  await stack.click()
+  await expect(popup).toHaveCount(0)
+
+  // …and clicking it again reopens, for the background-dismiss check below.
+  await stack.click()
+  await expect(popup).toBeVisible()
+
   // Clicking empty grid background dismisses the popup (the bubble stays). Use a TOP-area
   // spot: the 640px canvas extends below the 720px viewport fold, so a bottom-fraction click
   // would land outside the window and never reach the canvas.

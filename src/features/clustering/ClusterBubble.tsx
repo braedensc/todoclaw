@@ -61,6 +61,11 @@ export function ClusterBubble({
       data-task-id={group[0]?.id}
       className="absolute"
       style={wrapperStyle}
+      // Stop BOTH events at the wrapper: the grid canvas dismisses popups on pointerdown
+      // (GridView handleGridPointerDown), so a leaked pointerdown closed the popup before the
+      // button's click toggled it — clicking an open bubble closed-then-instantly-reopened
+      // instead of toggling closed. Clicks were already stopped so opening didn't re-dismiss.
+      onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Stacked depth rings — purely decorative; they sit behind the live bubble. */}
