@@ -17,6 +17,15 @@ export const test = base.extend({
       )
     }
 
+    // daily_state rows are keyed by the calendar day (the browser is pinned to UTC in the
+    // golden config). A test that STRADDLES UTC midnight would write day D and read day D+1's
+    // empty row — a once-in-a-blue-moon flake (UTC midnight = evening in US zones). If we're
+    // inside the danger window, just wait it out; this virtually never triggers.
+    const msToUtcMidnight = 86_400_000 - (Date.now() % 86_400_000)
+    if (msToUtcMidnight < 90_000) {
+      await new Promise((resolve) => setTimeout(resolve, msToUtcMidnight + 1_000))
+    }
+
     const { dbUrl } = resolveLocalSupabaseEnv()
     await resetTestUserData(dbUrl)
     await page.goto('/')
