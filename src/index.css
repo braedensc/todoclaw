@@ -9,3 +9,30 @@
     @apply bg-bg font-sans text-ink antialiased;
   }
 }
+
+/* Visual-urgency pulse for overdue cards / cluster bubbles (planning/EISENCLAW-LOGIC-TO-PORT.md
+   §4, html:912-915). Applied inline via urgencyGlowStyle().animation; the keyframe itself must
+   be global. The ring color is terracotta (#c2693f = accent). */
+@keyframes urgency-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 2px 7px rgba(0, 0, 0, 0.08),
+      0 0 0 2px rgba(194, 105, 63, 0.6),
+      0 0 14px 5px rgba(194, 105, 63, 0.28);
+  }
+  50% {
+    box-shadow:
+      0 2px 7px rgba(0, 0, 0, 0.08),
+      0 0 0 3px rgba(194, 105, 63, 0.78),
+      0 0 22px 8px rgba(194, 105, 63, 0.42);
+  }
+}
+
+/* Accessibility: keep the (static) overdue ring but stop the pulsing for users who ask for
+   reduced motion. Targets any element whose inline style references the keyframe. */
+@media (prefers-reduced-motion: reduce) {
+  [style*='urgency-pulse'] {
+    animation: none !important;
+  }
+}

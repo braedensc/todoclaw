@@ -156,6 +156,38 @@ describe('GridView card visuals', () => {
     render(<GridView />)
     expect(screen.getByText('×4')).toBeInTheDocument()
   })
+
+  // Visual urgency wired end-to-end onto the real card (the constant tiers themselves are pinned
+  // in lib/visual-urgency.test.ts — here we only prove GridView threads them onto the DOM node).
+  it('shows the overdue due badge + pulse animation for a past-due non-recurring card', () => {
+    tasksFixture = [makeTask({ id: 'od', text: 'Ship it', due: '2000-01-01', staged: false })]
+    render(<GridView />)
+    const card = screen.getByTestId('grid-card')
+    expect(within(card).getByText('overdue')).toBeInTheDocument()
+    // The overdue tier is the only one that animates; the keyframe lives in src/index.css.
+    expect(card.style.animation).toContain('urgency-pulse')
+  })
+
+  it('desaturates + fades a long-untouched (stale) card', () => {
+    tasksFixture = [makeTask({ id: 'old', created_at: '2000-01-01T00:00:00.000Z', staged: false })]
+    render(<GridView />)
+    // > 75 days old → opacity 0.72 (see stalenessStyle).
+    expect(screen.getByTestId('grid-card').style.opacity).toBe('0.72')
+  })
+
+  it('suppresses the urgency glow + due badge on a recurring card (it has its own status)', () => {
+    tasksFixture = [
+      makeTask({
+        id: 'rec-od',
+        due: '2000-01-01',
+        recurring: { frequencyDays: 1, lastDoneAt: null, doneCount: 0 },
+      }),
+    ]
+    render(<GridView />)
+    const card = screen.getByTestId('grid-card')
+    expect(card.style.animation).toBe('')
+    expect(within(card).queryByText('overdue')).not.toBeInTheDocument()
+  })
 })
 
 describe('GridView hover actions', () => {

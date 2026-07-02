@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { Task } from '../../types/task'
+import type { GlowStyle } from '../../lib/visual-urgency'
 import { CLUSTER_BUBBLE_SIZE, CLUSTER_DEPTH_OFFSET } from './cluster-constants'
 
 export interface ClusterBubbleProps {
@@ -10,6 +11,11 @@ export interface ClusterBubbleProps {
   /** Screen-space coordinates 0..1 (already y-inverted by the caller). */
   screenX: number
   screenY: number
+  /**
+   * Urgency glow for the whole cluster, from the nearest due date among its non-recurring tasks
+   * (null = none). Applied only in the CLOSED state — an open bubble uses its raised popup shadow.
+   */
+  glow?: GlowStyle | null
   /** True while the popup for this bubble is open (raises z-index + deepens the shadow). */
   open: boolean
   /** Open / close the popup. */
@@ -32,6 +38,7 @@ export function ClusterBubble({
   accentColor,
   screenX,
   screenY,
+  glow,
   open,
   onToggle,
   children,
@@ -52,7 +59,12 @@ export function ClusterBubble({
     width: CLUSTER_BUBBLE_SIZE,
     height: CLUSTER_BUBBLE_SIZE,
     border: `2px solid ${accentColor}`,
-    boxShadow: open ? '0 6px 20px rgba(0,0,0,.18)' : '0 2px 8px rgba(0,0,0,.10)',
+    // Open → raised popup shadow. Closed → the cluster's urgency glow if any, else the resting
+    // shadow. An overdue cluster also pulses (only while closed).
+    boxShadow: open
+      ? '0 6px 20px rgba(0,0,0,.18)'
+      : (glow?.boxShadow ?? '0 2px 8px rgba(0,0,0,.10)'),
+    ...(!open && glow?.animation ? { animation: glow.animation } : {}),
   }
 
   return (

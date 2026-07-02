@@ -17,7 +17,8 @@ main screen — a 2D matrix where `x` = urgency (0 left → 1 right) and `y` = i
   `quadrantMeta` color). Owns the `surfaceRef` used as the drag/tap coordinate space.
 - **`GridCard.tsx`** — one placed card (112px). The 3px top border encodes status: recurring
   → `RC_COLOR[recurringStatus().code]`, otherwise the quadrant color for its `(x, y)`. Renders
-  the recurring status badge + `×N` badge (`doneCount ≥ 3`), and hover actions.
+  the recurring status badge + `×N` badge (`doneCount ≥ 3`), the **visual-urgency layer** (glow /
+  staleness / due badge — see below), and hover actions.
 - **`StagingTray.tsx`** — lists `staged` tasks; the source of desktop drag-to-grid and mobile
   tap-select.
 - **`grid-constants.ts`** — verbatim EisenClaw visual constants (tints, gridline/axis colors,
@@ -48,6 +49,25 @@ collapses into a `ClusterBubble` (from `../clustering`) at the dominant task's c
 expandable `ClusterPopup`. Clicking the grid background closes any open popup; dragging a popup
 row out drops it at a fresh `{ x, y }` (separating it from the cluster). See
 `src/features/clustering/README.md` for the bubble/popup details.
+
+## Visual urgency (glow · pulse · staleness · due badge)
+
+Layered on top of the quadrant border, **for non-recurring cards only** (a recurring task shows its
+`RC_COLOR` status badge instead; done cards have left the grid). The tiers/constants are ported
+verbatim from EisenClaw and pinned in `src/lib/visual-urgency.test.ts`; the pure logic is
+`src/lib/visual-urgency.ts`. See `docs/STYLE.md` → _Visual urgency_ and `docs/ARCHITECTURE.md`
+ADR-0019.
+
+- **Glow** — `urgencyGlowStyle(daysUntilDue)` returns a `box-shadow` ring that intensifies toward
+  the deadline (overdue → strongest + pulse; then today / `≤2d` / `≤7d` / `≤14d`; beyond → none).
+  `GridView` computes `daysUntilDue = daysUntil(task.due, { timeZone })` and passes it as a prop, so
+  the timezone lives in one place. A **cluster bubble** glows for the nearest due date in its group.
+- **Pulse** — overdue items animate the global `urgency-pulse` keyframe (`src/index.css`), disabled
+  under `prefers-reduced-motion`.
+- **Staleness** — `stalenessStyle(task)` desaturates + fades a card by age (`created_at → now`);
+  staged tray cards are exempt.
+- **Due badge** — a small `overdue`/`today`/`Nd` pill (terracotta when due `≤ 2d`, else grey;
+  `DUE_BADGE_*` in `grid-constants.ts`).
 
 ## Hover actions (placed cards) & mark done
 

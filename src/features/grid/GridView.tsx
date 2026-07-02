@@ -6,6 +6,8 @@ import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { recurringStatus } from '../../lib/recurring'
+import { daysUntil } from '../../lib/scoring'
+import { urgencyGlowStyle } from '../../lib/visual-urgency'
 import { clusterAccentColor, clusterDominant, computeClusters } from '../../lib/clustering'
 import { useFreeDrag, toNormalized, type NormalizedPoint } from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
@@ -196,6 +198,7 @@ export function GridView() {
                   task={task}
                   screenX={live.x}
                   screenY={1 - live.y}
+                  daysUntilDue={daysUntil(task.due, { timeZone })}
                   dragging={draggingId === task.id}
                   onPointerDown={reposition.startDrag(task.id)}
                   onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
@@ -210,6 +213,14 @@ export function GridView() {
             // expandable popup. Accent/dominant come from lib/clustering (recurring-aware).
             const dominant = clusterDominant(group, { timeZone })
             const accentColor = clusterAccentColor(group, { timeZone })
+            // The bubble glows for its most-urgent member: the nearest due date among the
+            // group's non-recurring tasks (recurring tasks carry their own status).
+            const clusterMinD = group.reduce<number | null>((min, t) => {
+              if (t.recurring) return min
+              const d = daysUntil(t.due, { timeZone })
+              if (d === null) return min
+              return min === null || d < min ? d : min
+            }, null)
             const open = openClusterId === dominant.id
             return (
               <ClusterBubble
@@ -218,6 +229,7 @@ export function GridView() {
                 accentColor={accentColor}
                 screenX={dominant.x ?? 0.5}
                 screenY={1 - (dominant.y ?? 0.5)}
+                glow={urgencyGlowStyle(clusterMinD)}
                 open={open}
                 onToggle={() => setOpenClusterId(open ? null : dominant.id)}
               >

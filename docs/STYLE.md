@@ -50,6 +50,30 @@ third party). Families are declared as Tailwind tokens.
 
 ---
 
+## Visual urgency (glow · pulse · staleness)
+
+"Position = your decision. Warmth = the data." A placed card carries two independent, purely
+visual signals layered on top of its quadrant color. Both are **non-interactive** and apply only
+to **non-recurring** cards (a recurring task shows its `RC_COLOR` status badge instead) — and never
+to a done card (it has already left the grid). The exact tiers/constants are ported verbatim from
+EisenClaw (`EISENCLAW-LOGIC-TO-PORT.md` §4/§5) and pinned in `src/lib/visual-urgency.test.ts`; the
+logic itself is `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle`).
+
+- **Urgency glow** — a `box-shadow` ring that intensifies as the due date approaches, keyed on
+  `daysUntil(due)` (timezone-aware). Overdue → strongest terracotta ring **+ pulse**; due today →
+  ring; `≤ 2d` / `≤ 7d` / `≤ 14d` → progressively fainter; beyond 14 days (or no due date) → none.
+  A **cluster bubble** glows for the nearest due date among its non-recurring members.
+- **Pulse** — overdue cards/bubbles animate the `urgency-pulse` keyframe (`src/index.css`, 2s).
+  Gated behind `@media (prefers-reduced-motion: reduce)`: the static ring stays, the motion stops.
+- **Staleness dust** — a card untouched for weeks desaturates + fades by age (`created_at → now`):
+  `< 21d` none, `< 45d` `saturate(0.8)`/`0.90`, `< 75d` `saturate(0.55)`/`0.82`, `≥ 75d`
+  `saturate(0.3)`/`0.72`. Staged tray cards never desaturate. "A signal, not a judgment."
+- **Due badge** — the textual half of the layer: a small pill on non-recurring cards showing
+  `overdue` / `today` / `Nd`, terracotta (`DUE_BADGE_URGENT`) when due within 2 days, muted grey
+  (`DUE_BADGE_MUTED`) otherwise (`src/features/grid/grid-constants.ts`, html:590).
+
+---
+
 ## Visual parity reference (screenshots)
 
 Ground-truth screenshots of the original EisenClaw UI live in
