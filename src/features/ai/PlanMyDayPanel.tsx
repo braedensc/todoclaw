@@ -2,19 +2,16 @@ import { useEffect, useRef } from 'react'
 import { useTasks } from '../tasks/use-tasks'
 import { useHabits } from '../habits/use-habits'
 import { useDailyState } from '../daily-state/use-daily-state'
-import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useAiStatus } from './use-ai-status'
 import { usePlanMyDay, buildPlanRequest, type PlanRock } from './use-plan-my-day'
 import { AiPrivacyNote } from './AiPrivacyNote'
-
-const FALLBACK_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 // Plan My Day — a transient modal (not a tab): open it, it generates today's schedule-aware plan
 // once, and you can regenerate. The model call is server-side (owner key); this panel only sends
 // the day's tasks/habits and renders the structured result.
 export function PlanMyDayPanel({ onClose }: { onClose: () => void }) {
-  const { data: schedule } = useUserSchedule()
-  const timeZone = schedule?.timezone ?? FALLBACK_TZ
+  const timeZone = useTimeZone()
   const tasksQ = useTasks()
   const habitsQ = useHabits()
   const dailyQ = useDailyState(timeZone)
