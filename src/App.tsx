@@ -56,17 +56,18 @@ function AppShell() {
 
   return (
     <>
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-serif text-3xl font-semibold text-ink">Todoclaw</h1>
+      <header className="mb-6 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-center wide:justify-between">
+        <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
 
         <div className="flex flex-wrap items-center gap-2">
-          <form onSubmit={handleAdd} className="flex gap-2">
+          {/* Add-task form: full-width on mobile so the input is comfortably tappable. */}
+          <form onSubmit={handleAdd} className="flex w-full gap-2 wide:w-auto">
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Add a task…"
               aria-label="Add a task"
-              className="rounded border border-border-strong bg-card px-3 py-2 text-sm"
+              className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm wide:flex-none"
             />
             <button
               type="submit"
@@ -77,10 +78,11 @@ function AppShell() {
             </button>
           </form>
 
+          {/* Action buttons share the row on mobile (flex-1), natural width on desktop. */}
           <button
             type="button"
             onClick={() => setShowPlan(true)}
-            className="rounded bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="flex-1 whitespace-nowrap rounded bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
           >
             Plan My Day
           </button>
@@ -88,7 +90,7 @@ function AppShell() {
           <button
             type="button"
             onClick={() => setShowChat((v) => !v)}
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="flex-1 rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
           >
             Chat
           </button>
@@ -105,7 +107,8 @@ function AppShell() {
 
       <TabNav active={tab} onChange={setTab} />
 
-      <div className="mt-6">
+      {/* pb clears the fixed mobile bottom bar; the desktop top-nav needs no extra space. */}
+      <div className="mt-6 pb-24 wide:pb-0">
         <ActiveView tab={tab} />
       </div>
 

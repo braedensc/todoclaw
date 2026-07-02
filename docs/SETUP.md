@@ -90,6 +90,12 @@ refuses to run with a `--workers` override — the suite shares one user, so it 
 The browser is pinned to `en-US` / UTC for determinism. Add `npx playwright install chromium` if
 you haven't already.
 
+Two spec projects run off that one setup: **`chromium`** (Desktop Chrome) runs the desktop specs
+(`*.golden.spec.ts`), and **`chromium-mobile`** (Pixel 7 viewport + touch, Stage 5) runs the mobile
+specs (`*.mobile.golden.spec.ts` — tap-to-place and the bottom tab bar). Both depend on the same
+seeded session; the per-test wipe keeps them independent despite sharing the user. Run one project
+with `npm run test:e2e:golden -- --project chromium-mobile`.
+
 ## Local Supabase
 
 Development runs against a local Supabase stack in Docker — free, offline, disposable.

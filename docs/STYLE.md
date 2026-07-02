@@ -75,6 +75,29 @@ logic itself is `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle
 
 ---
 
+## Responsive layout (Stage 5)
+
+Mobile-first, with **one breakpoint at 720px** — the single mobile/desktop threshold for the whole
+app. It is defined once as `MOBILE_MAX_WIDTH` (719) in `src/hooks/use-is-mobile.ts` and mirrored as
+a Tailwind screen named **`wide`** (`min-width: 720px`) in `tailwind.config.js`. So the CSS layout
+(`wide:` utilities) and the JS `useIsMobile()` flip at the exact same width — no zone where the
+layout says "desktop" but the interaction says "mobile".
+
+- **View nav** (`TabNav`) — a **fixed bottom tab bar** on mobile (full-width, thumb-reachable, an
+  active tab marked by a top accent bar), the original **top tab row** at `wide:` and up. It is one
+  `<nav aria-label="Views">` with the same buttons + `aria-current` in both layouts, so assistive
+  tech and the E2E `switchTab` helper are layout-independent. The signed-in content area adds
+  `pb-24` on mobile to clear the fixed bar (`wide:pb-0`).
+- **Header** — stacks on mobile (title, then a full-width add-task input, then the action buttons
+  sharing a row); a single horizontal row at `wide:`.
+- **Grid** — the canvas stacks above the staging tray on mobile and sits beside it on wide screens;
+  placement switches from drag to **tap-to-place** below 720px (already built — ADR-0004).
+- **Grid card actions** (done/edit/back/delete) — hover-reveal on desktop, but **always visible on
+  mobile** (there is no hover on touch), gated on the same `wide` breakpoint. Without this a placed
+  card would be un-actionable by touch.
+
+---
+
 ## Visual parity reference (screenshots)
 
 Ground-truth screenshots of the original EisenClaw UI live in
