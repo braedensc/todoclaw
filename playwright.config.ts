@@ -8,6 +8,9 @@ const PORT = 5173
 
 export default defineConfig({
   testDir: './e2e',
+  // The DB-backed golden suite (e2e/golden/**) is a LOCAL workflow with its own config
+  // (playwright.golden.config.ts); keep it out of this smoke run so CI stays no-DB (ADR-0011).
+  testIgnore: '**/golden/**',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

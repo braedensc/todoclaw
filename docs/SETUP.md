@@ -69,8 +69,23 @@ npm run test:e2e                  # starts the dev server + runs the smoke (chro
 
 The config (`playwright.config.ts`) starts the Vite dev server itself with dummy Supabase env,
 so the smoke runs with no `.env.local` and no database (the app shows the sign-in form when
-logged out). CI runs this same smoke as a **non-required** job. Full DB-backed E2E (auth → RLS →
-render) is a local exercise against the running `supabase start` stack — see ADR-0011.
+logged out). CI runs this same smoke as a **non-required** job.
+
+**Golden-path suite (DB-backed, local-only — Stage 4.5).** A second config drives the app against
+the **running local Supabase stack** (auth → RLS → render → real drag), with the AI Edge Functions
+mocked (no Anthropic spend). It stays out of CI by design — CI is smoke-only (ADR-0011 / ADR-0018).
+
+```bash
+supabase start                    # the golden suite needs the local stack up (it fails fast if not)
+npm run test:e2e:golden           # seeds a test user, signs in, runs e2e/golden/**
+```
+
+The golden config (`playwright.golden.config.ts`) resolves the real local keys from
+`supabase status -o env`, starts its own dev server on port **5174**, and runs a Playwright **setup
+project** (`e2e/golden/auth.setup.ts`) that creates the fixed test user (`e2e@todoclaw.test`) via
+the admin API, wipes its rows for a clean slate, signs in, and saves the session to
+`e2e/.auth/state.json` (gitignored). Each spec re-wipes the user's rows in `beforeEach` for
+determinism. Add `npx playwright install chromium` if you haven't already.
 
 ## Local Supabase
 

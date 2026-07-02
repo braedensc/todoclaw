@@ -49,7 +49,11 @@ export function GridCard({
 
   // x/y are guaranteed non-null by the caller's filter, but be defensive for the type.
   const rc = recurringStatus(task.recurring)
-  const borderColor = rc ? RC_COLOR[rc.code] : quadrantMeta(task.x ?? 0.5, task.y ?? 0.5).color
+  // Data-space quadrant for this card's (x, y). Drives the border color (when not recurring)
+  // and a `data-quadrant` hook so E2E specs can assert placement without reading pixel styles
+  // (durable across Stage 5's restyle).
+  const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
+  const borderColor = rc ? RC_COLOR[rc.code] : quadrant.color
 
   const showBadge = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
@@ -73,6 +77,7 @@ export function GridCard({
     <div
       data-testid="grid-card"
       data-task-id={task.id}
+      data-quadrant={quadrant.key}
       onPointerDown={editing ? undefined : onPointerDown}
       className="group absolute cursor-grab rounded-lg border border-border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md active:cursor-grabbing"
       style={{ ...style, borderTopWidth: 3, padding: '6px 8px 5px' }}
