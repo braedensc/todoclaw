@@ -6,6 +6,7 @@ import type { History } from '../../types/history'
 // jsdom with no Supabase. Each test overrides the per-hook return below.
 const historyMock = vi.fn()
 const dailyMock = vi.fn()
+const tasksMock = vi.fn()
 const restoreMutate = vi.fn()
 const softDeleteMutate = vi.fn()
 
@@ -21,6 +22,7 @@ vi.mock('../schedule/use-user-schedule', () => ({
 }))
 vi.mock('../tasks/use-tasks', () => ({
   useSoftDeleteTask: () => ({ mutate: softDeleteMutate, isPending: false }),
+  useTasks: () => tasksMock(),
 }))
 
 import { DoneView } from './DoneView'
@@ -41,6 +43,9 @@ function entry(over: Partial<History> = {}): History {
 beforeEach(() => {
   vi.clearAllMocks()
   dailyMock.mockReturnValue({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } })
+  // The default entry's task (t1) is live, so the live-set gate is a no-op for the existing
+  // Restore assertions. The soft-delete regression test overrides this with an empty list.
+  tasksMock.mockReturnValue({ data: [{ id: 't1' }] })
 })
 
 describe('DoneView', () => {
@@ -72,6 +77,19 @@ describe('DoneView', () => {
     const restore = screen.getByRole('button', { name: /Restore/i })
     fireEvent.click(restore)
     expect(restoreMutate).toHaveBeenCalledWith({ taskId: 't1', timeZone: 'America/New_York' })
+  })
+
+  it('hides Restore when the done task has been soft-deleted (absent from live tasks)', () => {
+    // Regression: a task soft-deleted while still marked done today keeps its history row and
+    // its done[id]=true, but set_task_undone never clears deleted_at — so Restore would be a
+    // silent no-op. Once the task drops out of the live set, the button must not render.
+    historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
+    dailyMock.mockReturnValue({
+      data: { done: { t1: true }, done_at: {}, habit_done: {}, subtask_done: {} },
+    })
+    tasksMock.mockReturnValue({ data: [] }) // t1 was soft-deleted → absent from live tasks
+    render(<DoneView />)
+    expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument()
   })
 
   it('soft-deletes the task only after confirm; history row persists conceptually', async () => {
