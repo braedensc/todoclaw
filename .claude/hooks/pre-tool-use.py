@@ -83,17 +83,31 @@ if tool == "Bash" and re.search(r"\bgit\s+commit\b", inp.get("command", "")):
 if tool == "Bash":
     cmd = inp.get("command", "")
 
+    # v2 (retro 2026-07-03): guards must match OPERATIONS, not PROSE. Commit messages
+    # and PR titles/bodies passed inline (-m "drop stale rows") were false-positiving
+    # the destructive-verb patterns below. Strip quoted message payloads before
+    # scanning; long text via `git commit -F` / `--body-file` remains the norm.
+    def _strip_prose(c: str) -> str:
+        # -[a-z]*m catches combined short flags too (git commit -am / -sm "msg").
+        return re.sub(
+            r"(-[a-zA-Z]*m|--message|--title|--body|-t|-b)(\s+|=)(\"(?:[^\"\\]|\\.)*\"|'[^']*')",
+            r"\1\2''",
+            c,
+        )
+
+    scan = _strip_prose(cmd)
+
     # Block rm -rf / rm -fr / rm --recursive --force
-    if re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*r[a-zA-Z]*f", cmd) or \
-       re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*f[a-zA-Z]*r", cmd) or \
-       re.search(r"\brm\b[^#\n;&|]*--recursive", cmd):
+    if re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*r[a-zA-Z]*f", scan) or \
+       re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*f[a-zA-Z]*r", scan) or \
+       re.search(r"\brm\b[^#\n;&|]*--recursive", scan):
         block(
             "rm -rf / rm --recursive detected — use specific paths or ask Braeden to confirm."
         )
 
     # Block curl/wget piped directly to a shell
     if re.search(
-        r"(curl|wget)\s[^|\n]*\|\s*(bash|sh|zsh|fish|python3?|ruby|perl)", cmd
+        r"(curl|wget)\s[^|\n]*\|\s*(bash|sh|zsh|fish|python3?|ruby|perl)", scan
     ):
         block(
             "Piping curl/wget into a shell is a supply-chain risk. "
@@ -101,20 +115,33 @@ if tool == "Bash":
         )
 
     # Block staging planning/ or real .env files
-    if re.search(r"\bgit\s+add\b[^#\n;&|]*(planning/|\.env(?!\.example))", cmd):
+    if re.search(r"\bgit\s+add\b[^#\n;&|]*(planning/|\.env(?!\.example))", scan):
         block(
             "Staging planning/ or .env files is forbidden — "
             "these paths are gitignored to prevent leaks."
         )
 
-    # Block direct commits to main or force-push
-    if re.search(r"\bgit\s+push\b[^#\n;&|]*(\s+--force|\s+-f\s|\s+origin\s+main)", cmd):
-        block("Direct or force-push to main is not allowed. Use a feature branch + PR.")
+    # Push guard v2 (retro 2026-07-03): protect main/master from ANY push; elsewhere
+    # allow the safe `--force-with-lease` (refuses to clobber unseen remote commits)
+    # but block bare `--force`/`-f`. GitHub branch protection is the server-side
+    # backstop for anything this heuristic misses.
+    _push = re.search(r"\bgit\s+push\b([^#\n;&|]*)", scan)
+    if _push:
+        _seg = _push.group(1)
+        if re.search(r"[\s:](main|master)(?![\w./-])", _seg):
+            block("Pushing to main/master is not allowed. Use a feature branch + PR.")
+        if re.search(r"(^|\s)--force(?!-with-lease\b)\b", _seg) or re.search(
+            r"(^|\s)-f\b", _seg
+        ):
+            block(
+                "Bare --force/-f push is blocked — use `git push --force-with-lease`, "
+                "which refuses to overwrite remote commits you haven't seen."
+            )
 
     # Block shell-reading secret files (cat, less, head, etc.)
     if re.search(
         r"\b(cat|less|head|tail|bat|open|more)\b[^#\n;&|]*(\.env(?!\.example)|\.pem\b|\.key\b)",
-        cmd,
+        scan,
     ):
         block(
             "Reading secret files (.env, .pem, .key) via shell is not allowed. "
@@ -129,8 +156,8 @@ if tool == "Bash":
 
     # `supabase db reset` wipes the database. Local is fine; --linked / --db-url
     # target a REMOTE db and would destroy it.
-    if re.search(r"\bsupabase\b[^#\n]*\bdb\s+reset\b", cmd) and \
-       re.search(r"--linked\b|--db-url\b", cmd):
+    if re.search(r"\bsupabase\b[^#\n]*\bdb\s+reset\b", scan) and \
+       re.search(r"--linked\b|--db-url\b", scan):
         block(
             "`supabase db reset` against a linked/remote database wipes it. "
             "Only the local (Docker) reset is allowed; change prod via reviewed, "
@@ -138,15 +165,15 @@ if tool == "Bash":
         )
 
     # Deleting a hosted Supabase project is irreversible.
-    if re.search(r"\bsupabase\b[^#\n]*\bprojects?\s+delete\b", cmd):
+    if re.search(r"\bsupabase\b[^#\n]*\bprojects?\s+delete\b", scan):
         block("`supabase projects delete` is irreversible and is not allowed.")
 
     # Raw destructive SQL (DROP / TRUNCATE / DELETE) aimed at a NON-localhost
     # Postgres host — e.g. psql against a remote connection string. A postgres URL
     # whose host is not localhost/127.0.0.1 alongside a destructive verb is blocked.
-    if re.search(r"\b(drop|truncate|delete)\b", cmd, re.IGNORECASE) and re.search(
+    if re.search(r"\b(drop|truncate|delete)\b", scan, re.IGNORECASE) and re.search(
         r"postgres(?:ql)?://[^\s'\"]*@(?!(?:localhost|127\.0\.0\.1|0\.0\.0\.0))",
-        cmd,
+        scan,
         re.IGNORECASE,
     ):
         block(
