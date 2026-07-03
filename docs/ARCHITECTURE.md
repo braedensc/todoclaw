@@ -253,7 +253,8 @@ the next). CI jobs + branch protection that *enforce* these are a separate PR (#
   secret** (matches none of the hook's secret patterns); it's typed optional in
   `src/vite-env.d.ts`, documented in `.env.example`, and the real value lives in `.env.local`
   (Braeden adds it — the `PreToolUse` hook blocks Claude from writing `.env*`). Full production
-  Sentry — live DSN, source maps, release/alert config — is **Stage 6**.
+  Sentry (live DSN, release tracking, alert rules) is **Stage 6** — see the *Update (Stage 6)*
+  block below, where **source maps are decided off** (not deferred).
 - **Error boundaries.** `src/components/ErrorBoundary.tsx` is a reusable class component
   (`getDerivedStateFromError` + `componentDidCatch` → `Sentry.captureException`, which no-ops
   when Sentry isn't initialized) with an accessible `role="alert"` fallback + a retry button.
@@ -268,6 +269,27 @@ the next). CI jobs + branch protection that *enforce* these are a separate PR (#
   SERVICES.md so it's reproducible; collaborators opt in on their own machines.
 - **Verified.** A test renders a throwing child inside `ErrorBoundary` and asserts the fallback
   shows and `captureException` is called; `lint`/`typecheck`/`test`/`format:check` green.
+
+**Update (Stage 6) — production hardening.** The "dev mode" gate is kept as-is (it's the right
+default); Stage 6 turns Sentry *on in prod* and adds release tracking:
+
+- **Live DSN via Vercel prod env**, not `.env.local` — Braeden sets `VITE_SENTRY_DSN` in the Vercel
+  project's **Production** environment (still a public ingest URL, not a secret). The dev-mode gate
+  is unchanged: no DSN ⇒ no-op, so previews/CI/local stay silent unless a DSN is present.
+- **Release tracking + environment tagging (the code change).** `vite.config.ts` bakes two Vercel
+  build vars into compile-time constants (`define`, declared in `src/vite-env.d.ts`):
+  `__GIT_COMMIT_SHA__` (from `VERCEL_GIT_COMMIT_SHA`) and `__VERCEL_ENV__` (from `VERCEL_ENV`).
+  `main.tsx` passes `release: todoclaw@<sha>` so every event is attributed to the exact deploy, and
+  `environment: __VERCEL_ENV__ || import.meta.env.MODE` so **preview deploys tag as `preview`, not
+  `production`** — without this, `import.meta.env.MODE` is `'production'` for *every* `vite build`
+  (preview and prod alike), so a preview error would masquerade as a prod regression. Both empty
+  off-Vercel ⇒ release omitted, environment falls back to Vite's MODE. Verified: build inlines both
+  constants with **no dangling identifiers** (no runtime `ReferenceError`); the live tagged-event
+  path is confirmed by the prod smoke once the DSN is set.
+- **Source maps: deliberately OFF.** Uploading them needs `@sentry/vite-plugin` + a `SENTRY_AUTH_TOKEN`
+  + org/project config — not worth it for a 2-person app; minified stacks + the release tag suffice.
+  Revisit if triage gets painful. **Alert rules:** the default "new issue" rule is kept; Braeden
+  confirms a delivery channel (email) in the dashboard. All dashboard steps live in SERVICES.md.
 
 ## ADR-0010 — CI quality gate + branch protection (the merge-then-require ordering)
 
@@ -707,9 +729,113 @@ ADR-0013 deferred Supabase Realtime "to Stage 5". Revisited in Stage 5 and **re-
   multi-device concurrency or real multi-tenant sharing (Stage 7) makes it worth the moving part.
 - **Invariant unchanged:** the planner remains fully usable without it.
 
-<!-- ADR-0022 is CI-driven prod deploy (Stage 6, PR #43) — added on that branch. -->
+## ADR-0022 — CI-driven prod deploy: migrations + Edge Functions on merge to main
 
-## ADR-0023 — Backup/restore: in-DB snapshots + INVOKER RPCs + JSON export (Stage 5 PR3)
+**Date:** 2026-07-02 · **Stage:** 6
+
+The hand-run `supabase db push` (the ADR-0006 bootstrap exception) and `supabase functions deploy`
+(deferred here by ADR-0015) become automated. `.github/workflows/deploy.yml` deploys to the ONE
+production project after every green CI on `main`.
+
+- **Trigger = CI success on `main`, not a raw push.** `workflow_run` on the `CI` workflow
+  `completed` + a `gate` job that proceeds only when `conclusion == 'success'` (or a
+  `workflow_dispatch` **from main**). Prod changes only after lint/types/tests/secret-scan pass on
+  the exact merged commit; a semantic-merge conflict that reddens main's CI blocks the deploy.
+  `branches: [main]` filters on the CI run's `head_branch` — for a `pull_request` run that is the
+  PR **source** branch, so PR-branch CI never triggers a deploy; only the push-to-main CI run
+  (`head_branch == main`) matches. Downstream jobs check out `workflow_run.head_sha` (the commit CI
+  validated), not `github.sha` (which is main's tip for a `workflow_run` event).
+- **Sequential, fail-closed.** `migrate` → `deploy-functions` (`needs:`). A failed `db push` fails
+  migrate and **skips** the function deploy — functions never ship against a half-applied schema.
+  No `if: always()` / `continue-on-error` anywhere downstream (either would re-enable deploys after
+  a failed migration or failed CI).
+- **Migrations via the session pooler.** `supabase db push --db-url "$SUPABASE_DB_URL"` where that
+  env var is fed from the **reused `BACKUP_DATABASE_URL`** secret — the IPv4 **session-pooler** string
+  the backup job already uses (migrations write, backups read, but the free pooler forces the same
+  `postgres` user, so one secret serves both; the direct `db.<ref>` host is IPv6-only, unreachable
+  from GitHub runners — the backup lesson). `yes |` forces
+  non-interactive (`db push` has no `--yes` and can hang on a `[Y/n]` prompt, supabase/cli#2238).
+  Idempotent — applies only migrations absent from `schema_migrations`; prod already recorded all 8
+  from the bootstrap, so the first automated run is a clean no-op. A `--dry-run` step logs pending
+  migrations for audit (non-fatal).
+- **Functions deployed with `verify_jwt = false`** (`supabase/config.toml` per-function + a
+  belt-and-suspenders `--no-verify-jwt` on deploy). The platform gateway's JWT check 401s the
+  unauthenticated CORS **OPTIONS preflight** before the function runs, which breaks every in-app AI
+  call. The functions already verify the caller's JWT themselves (`_shared/auth.ts`) and handle
+  OPTIONS (`_shared/cors.ts`), so the gateway check is redundant **and** harmful — turning it off
+  moves the identical check inside the function (no security loss; RLS still isolates data
+  independently). `--use-api` bundles server-side (no Docker → removes a CI failure class). A
+  post-deploy smoke asserts an unauthenticated POST to `ai-status` returns **401** (deployed +
+  reachable + own-auth enforced); a 404/000/5xx fails the deploy.
+- **Careful-gating extras.** `concurrency: prod-deploy` (serialize; never `cancel-in-progress` a
+  live `db push`) + per-job `timeout-minutes` so a hung run can't hold the lock (and a stuck
+  migration aborts, releasing its DB lock); a `github.ref == main` guard on dispatch closes the
+  "deploy any branch via `gh workflow run --ref <x>`" hole; least-privilege `permissions:
+  contents: read` (Supabase auth is via secrets, not `GITHUB_TOKEN`).
+- **Prereqs (human, one-time).** The only new Actions secret is **`SUPABASE_ACCESS_TOKEN`** (function
+  deploy) — the migrate job reuses the existing `BACKUP_DATABASE_URL`, and `SUPABASE_PROJECT_REF`
+  (variable) is already set. Plus **`ANTHROPIC_API_KEY` + `ALLOWED_ORIGIN=https://<prod-domain>`** set
+  as Function Secrets via `supabase secrets set` (or the deployed functions 500 / CORS-block at
+  runtime — the smoke can't see these). Each job preflight-**skips green** until its secrets exist.
+- **Rollback is not `git revert`.** Supabase never auto-runs `down` migrations; reverting a
+  migration file only stops it re-applying. Roll back a schema change by running that migration's
+  hand-written `-- down:` block via `psql "$SESSION_POOLER_URL"`, then deleting its
+  `schema_migrations` row — or restore the daily encrypted backup for a data-lossy change (take an
+  on-demand backup **before** a risky migration). `vercel rollback` reverts the frontend.
+- **Deferred / accepted tradeoffs.** No path-filtering — every green main CI redeploys all three
+  functions (safe version churn, not downtime; `workflow_run` can't use native `paths` filters and a
+  git-diff gate wasn't worth the v1 complexity). No Supabase-in-CI schema validation (ADR-0011
+  stands) — a *semantically* wrong-but-applies migration isn't caught automatically; mitigations are
+  local `supabase db reset` before the PR + the `--dry-run` audit + the daily backup. A
+  migration-safety lint (block unmarked `drop`/`truncate`) and an `environment: production`
+  required-reviewer are noted as future hardening.
+
+**Verified:** `deploy.yml` parses (YAML); `config.toml` valid TOML; CLI flags (`setup-cli@v2`,
+`db push --db-url`/`--dry-run`, `functions deploy --use-api --no-verify-jwt`) confirmed against CLI
+v2.107 via a three-lens adversarial review (Supabase-CLI correctness, GitHub-Actions semantics,
+prod-safety) whose findings are folded in above. First live run is gated behind the human prereqs.
+
+## ADR-0023 — Stage 6 production cutover: verified live + external billing posture
+
+**Date:** 2026-07-02 · **Stage:** 6
+
+The finishing stage. Most of Stage 6 was pulled forward "skeleton-first" (encrypted backups → ADR-0006,
+Sentry code → ADR-0009, CI gate → ADR-0010, keep-alive cron, security headers/CSP → ADR-0006); this
+entry records the last mile — the deploy pipeline proven in prod, the smoke, and the cost posture.
+
+**Deploy pipeline proven end-to-end (ADR-0022).** Merging #43 auto-triggered `deploy.yml` via
+`workflow_run` on the green push-to-main CI — no manual dispatch. The migrate job was an idempotent
+no-op (schema bootstrapped earlier), and all three Edge Functions (`ai-status` / `plan-my-day` /
+`ai-chat`) deployed to the prod project. **The prior "functions list is empty" gap is closed.**
+
+**Prod smoke (2026-07-02) — passed.** Against the deployed `ai-status`: allowed-origin OPTIONS → `204`
+echoing `access-control-allow-origin: https://todoclaw-psi.vercel.app`; a disallowed origin → `204`
+with **no** ACAO header (browser blocks); unauth `POST` → `401` (own-auth enforced under the gateway
+`verify_jwt=false`); the app root → `200` HTML. This **resolves the ADR-0015 CORS caveat** — the
+origin-lock, unverifiable under local `functions serve` (permissive `*`), is confirmed on the real
+deployment. The one **live model call** (a single Plan My Day, ≈2¢) is left for the owner to fire from
+the signed-in app — it doubles as the sign-in-renders check.
+
+**Billing/cost posture (the "billing alerts" gap).** Research (3-provider sweep) surfaced that **only
+Anthropic bills per use** on the owner's key; **Supabase Free and Vercel Hobby cannot charge** — they
+pause the resource at a free-tier limit, never invoice. So budget risk is Anthropic-only and already
+bounded by the in-app **$20/month kill-switch** (ADR-0015). External alerts (SERVICES.md → *Billing &
+cost alerts*): Anthropic Console **email alerts at $10 / $15** (Workspace → Limits → Add notification),
+**no** $25 hard cap (it would sit below the kill-switch — pointless). **Caveat:** those notifications
+require a *named* Workspace; if the key is in the Default Workspace, enabling them means a new Workspace
++ key rotation — an owner call, since the kill-switch already bounds spend. Supabase/Vercel need only a
+confirm of default free-tier usage notifications.
+
+**Deferred (deliberately).** Backup least-privilege (`backup_ro` via a static-IP/self-hosted runner or
+the Supabase IPv4 add-on — ADR-0006) stays future hardening, not worth the cost for a 2-person app.
+`deploy.yml` redeploys all three functions on every main merge (idempotent, harmless); path-filtering
+to functions-only changes is a cheap future optimization. A migration-safety lint and an
+`environment: production` required-reviewer (ADR-0022) remain noted-but-unbuilt.
+
+**Verified.** Deploy run `success`; the four smoke checks above; `docs/SERVICES.md` billing + smoke
+records updated in the same PR.
+
+## ADR-0024 — Backup/restore: in-DB snapshots + INVOKER RPCs + JSON export (Stage 5 PR3)
 
 **Date:** 2026-07-02 · **Stage:** 5 (PR3)
 
@@ -746,7 +872,7 @@ soft-deleted-then-snapshotted task comes back live, a post-snapshot task is soft
 confirm) + typecheck/lint/format green. A `backups.golden.spec.ts` round-trip covers the UI against
 the real stack (local, sequenced golden run — shares the one test user).
 
-**Merge note.** This PR is **ADR-0023**, leaving **0022** for the open Stage 6 deploy PR (#43); both
-append to this file's tail, so #43 should merge first and this PR rebases the tail (0021 → 0022 →
-0023). The migration deploys to prod via #43's CI-driven pipeline once both are merged (additive —
-a new table + two functions).
+**Merge note.** Renumbered to **ADR-0024** after Stage 6's PR #43 (0022, CI deploy) and PR #47
+(0023, production cutover) landed 0022/0023 on main first; this PR merged origin/main and appended
+its ADR at the tail. The migration is additive (a new table + two functions) and deploys to prod via
+the ADR-0022 CI pipeline on merge.

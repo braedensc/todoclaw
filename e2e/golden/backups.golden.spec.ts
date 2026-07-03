@@ -4,7 +4,7 @@ import { placeTask } from '../helpers/ui'
 // Golden path: snapshot the planner, add a task AFTER the snapshot, then restore — the
 // post-snapshot task is soft-deleted (leaves the grid) while the snapshotted task stays. Proves
 // the create_backup → restore_backup round-trip end-to-end against the real local stack, and the
-// content-restore semantics (ADR-0023: soft-delete of items not in the snapshot; history kept).
+// content-restore semantics (ADR-0024: soft-delete of items not in the snapshot; history kept).
 
 test('create a backup, then restore it — a task added after the snapshot is removed', async ({
   page,

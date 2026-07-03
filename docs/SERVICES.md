@@ -53,16 +53,19 @@ hooks + git pre-commit hooks) live in the repo and run locally — see [CLAUDE.m
   where applicable, no client hard-delete (see ADR-0005, ADR-0007). `supabase db reset`
   re-applies migrations to the **local** DB only.
 
-**Cloud (Stage 1 PR #3) — code ready, awaiting provisioning.** One production project. The
-PR #3 code (`vercel.json`, `.github/workflows/backup.yml`, the `backup_role` migration) is
-merged-ready; it activates once you provision the accounts and set the secrets below.
+**Cloud — LIVE (provisioned 2026-07-02).** One production project (`hknmhkzumkjhylxclrcy`): schema
+applied, Vercel + backups active, and the CI-driven deploy pipeline (ADR-0022) deploying Edge
+Functions on merge — smoke-verified in prod (see **Production deploy pipeline** below). The
+checklist that follows is the original Stage 1 PR #3 provisioning record; the remaining open items
+are the deliberately-deferred backup least-privilege hardening (ADR-0006/ADR-0023).
 
 ---
 
 ## Production deploy & backups — Stage 1 PR #3
 
-> One production Supabase project = prod; local Docker = dev. No staging (zero cost). The
-> code is written; this is the **human provisioning checklist** (accounts, OAuth, secrets).
+> One production Supabase project = prod; local Docker = dev. No staging (zero cost). **Status
+> 2026-07-02: provisioning DONE** — project live, secrets set, backups verified. The checklist
+> below is the historical record + the deferred backup-hardening items.
 
 ### Provisioning checklist (you, in dashboards)
 
@@ -167,13 +170,77 @@ returns a `200`/`401` (both mean the project is awake).
 
 ---
 
-## Sentry — error monitoring (Stage 2 PR #3, dev mode)
+## Production deploy pipeline — Stage 6 (ADR-0022)
+
+`.github/workflows/deploy.yml` applies pending **migrations** and (re)deploys the three **Edge
+Functions** to the prod project after every **green CI run on `main`** (`workflow_run` on `CI` + a
+success gate; `migrate` → `deploy-functions` sequential, so a failed migration blocks the function
+deploy). Replaces the by-hand `supabase db push` / `supabase functions deploy`.
+
+### Config (repo → Settings → Secrets and variables → Actions)
+
+| Name | Kind | Status | Value |
+|---|---|---|---|
+| `BACKUP_DATABASE_URL` | Secret | ✅ already set | **Reused** for migrations (`db push`) — same session-pooler URL the backup job uses (`postgres` user, port 5432, `?sslmode=require`; the free pooler forces one user for read+write). No new secret needed. |
+| `SUPABASE_ACCESS_TOKEN` | Secret | ✅ set 2026-07-02 | a Supabase **personal access token** — dashboard → **Account → Access Tokens → Generate new token**. Authenticates the function deploy (Management API); not a DB credential. |
+| `SUPABASE_PROJECT_REF` | Variable | ✅ already set | the prod project ref (`hknmhkzumkjhylxclrcy`). |
+
+All three are now set, and the pipeline has deployed successfully (functions live 2026-07-02). Before
+that, each job **preflight-skips green** when its secret is missing (mirrors backup.yml / keepalive.yml),
+so the workflow always merges without wedging anything.
+
+### One-time prerequisites before the first function deploy works
+
+- **Function Secrets on the project** (set via CLI, never committed) — **both set 2026-07-02** ✅:
+  ```bash
+  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...                        # owner key ✅ set 2026-06-25
+  supabase secrets set ALLOWED_ORIGIN=https://todoclaw-psi.vercel.app      # CORS lock ✅ set 2026-07-02
+  ```
+  Without `ALLOWED_ORIGIN`, `cors.ts` falls back to `http://localhost:5173` and the prod origin is
+  refused (in-app AI calls CORS-blocked). `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected.
+  **Caveat — Vercel preview deploys can't use AI:** the lock is the single prod origin, and preview
+  URLs are per-deploy hashes (`todoclaw-<hash>-…vercel.app`) that won't match. This is deliberate —
+  previews are for visual/UX review and must not spend the owner's Anthropic budget. The rest of the
+  planner works on previews; only the AI panels CORS-block there.
+- **`verify_jwt = false`** is set per-function in `supabase/config.toml` (+ `--no-verify-jwt` on
+  deploy) so the CORS OPTIONS preflight reaches the function; the functions verify the JWT
+  themselves (`_shared/auth.ts`). Leaving the gateway check on would 401 the preflight and break
+  every AI call.
+
+### First deploy + CORS re-verify — resolved (ADR-0015 caveat closed)
+
+**Done ✅ (2026-07-02).** Merging #43 auto-triggered the pipeline (no manual dispatch needed): the
+migrate job ran as an idempotent no-op and all three functions (`ai-status` / `plan-my-day` /
+`ai-chat`) deployed. **Prod smoke passed** — allowed-origin preflight → `204` echoing
+`access-control-allow-origin: https://todoclaw-psi.vercel.app`; disallowed origin → `204` with **no**
+ACAO header (browser blocks it); unauth `POST` to `ai-status` → `401`; app root → `200` HTML. The
+origin-lock re-verify (the ADR-0015 caveat) is reproducible any time with:
+
+```bash
+# Allowed origin → expect 204 with an Access-Control-Allow-Origin echoing it:
+curl -i -X OPTIONS -H "Origin: https://todoclaw-psi.vercel.app" \
+  https://hknmhkzumkjhylxclrcy.supabase.co/functions/v1/ai-status
+# Disallowed origin → must get NO Access-Control-Allow-Origin header back:
+curl -i -X OPTIONS -H "Origin: https://evil.example" \
+  https://hknmhkzumkjhylxclrcy.supabase.co/functions/v1/ai-status
+```
+
+### Rollback
+
+Supabase does **not** auto-run `down` migrations and `git revert` does not undo applied DDL. Roll a
+schema change back by running that migration's `-- down:` block via `psql "<session-pooler-url>"`,
+then deleting its row from `schema_migrations`; for a data-lossy change, restore the daily encrypted
+backup (take an on-demand backup first). `vercel rollback` reverts the frontend.
+
+---
+
+## Sentry — error monitoring (dev mode Stage 2 PR #3 · prod hardening Stage 6, ADR-0009)
 
 The `@sentry/react` SDK is wired but **DSN-gated**: it only initializes when `VITE_SENTRY_DSN`
-is set, so it's off until you provide a DSN. Error boundaries report crashes to it. Full
-production Sentry (live alerts, source maps, releases) is Stage 6.
+is set, so it's off until you provide a DSN. Error boundaries report crashes to it. Stage 6 turns
+it on in prod + adds release tracking (code done; DSN + dashboard steps are yours).
 
-**Setup (you, in the dashboard + locally):**
+**Local setup (you, in the dashboard + locally):**
 1. Create a project at [sentry.io](https://sentry.io) (platform: React). Copy its **DSN** — a
    DSN is a public ingest URL, not a secret.
 2. Add it to `.env.local` (Claude can't write `.env*`): `VITE_SENTRY_DSN=<your-dsn>`. Restart
@@ -184,8 +251,25 @@ production Sentry (live alerts, source maps, releases) is Stage 6.
    "Needs authentication" until you run `/mcp` in an interactive `claude` session and complete
    the OAuth. Collaborators run the same command on their own machines.
 
+**Production (Stage 6) — you, in dashboards:**
+1. **Vercel → Project → Settings → Environment Variables:** add `VITE_SENTRY_DSN = <your-dsn>`
+   scoped to **Production**. This is the switch that makes prod Sentry live — nothing else is
+   required. Redeploy to pick it up. (Optionally also scope it to **Preview** — safe now, because
+   events are tagged `environment=preview` vs `production`, so you can filter preview noise out of
+   prod alerts.)
+2. **Release + environment tagging is automatic** — no config. The build bakes in Vercel's commit
+   SHA (`VERCEL_GIT_COMMIT_SHA` → `release: todoclaw@<sha>`) and `VERCEL_ENV`
+   (→ `environment: production | preview`), so each issue shows the exact deploy and which
+   environment it came from. (If `VERCEL_GIT_COMMIT_SHA` is ever empty, e.g. a non-git deploy, the
+   release is simply omitted.)
+3. **Alerts → Alert Rules:** confirm the auto-created **"new issue"** rule is enabled and that a
+   **delivery channel** is set (your email, or a Slack integration) so notifications actually reach
+   you. Optionally add a rule for an error-rate spike.
+4. **Source maps: intentionally not uploaded** (ADR-0009) — they'd need `@sentry/vite-plugin` + a
+   `SENTRY_AUTH_TOKEN`; minified stacks + the release tag are enough for a 2-person app.
+
 > Leaving `VITE_SENTRY_DSN` blank disables Sentry entirely (the app no-ops) — the planner works
-> the same without it.
+> the same without it. This is why Vercel **preview** deploys stay silent unless you opt them in.
 
 ---
 
@@ -197,20 +281,25 @@ Edge Functions. The key is never in the frontend bundle or any `VITE_*` var (ADR
 **Provisioning (you, in dashboards/CLI):**
 
 1. **Anthropic Console** ([console.anthropic.com](https://console.anthropic.com)) — create an
-   API key (`sk-ant-…`). Set a **spend limit / billing alert** here — cheap insurance against a
-   runaway loop (the in-app monthly kill-switch is the primary bound; this is the backstop).
-2. **Set the function secrets** (Claude cannot — the hook blocks `.env*` + the `sk-ant-…` value):
+   API key (`sk-ant-…`). Configure **spend alerts** here — see
+   **[Billing & cost alerts](#billing--cost-alerts-stage-6)** below (the in-app monthly kill-switch
+   is the primary bound; Console alerts are the backstop). Anthropic is the **only** service that
+   can actually run up a bill — Supabase Free and Vercel Hobby pause instead of charging.
+2. **Set the function secrets** (Claude cannot — the hook blocks `.env*` + the `sk-ant-…` value) —
+   **both set ✅** (`ANTHROPIC_API_KEY` 2026-06-25, `ALLOWED_ORIGIN` 2026-07-02):
 
    ```bash
-   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...          # the owner key (required)
-   supabase secrets set ALLOWED_ORIGIN=https://<your-vercel-domain>   # CORS lock (prod origin)
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...                       # the owner key (required)
+   supabase secrets set ALLOWED_ORIGIN=https://todoclaw-psi.vercel.app     # CORS lock (prod origin)
    ```
 
    `SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected into functions — no secret needed.
    For **local** serve, pass these via `--env-file` instead (the `ai-status` proof endpoint needs
    no key — it makes no model call).
-3. **Deploy the functions** (manual for Stage 4; CI auto-deploy → Stage 6):
-   `supabase functions deploy ai-status` (and `plan-my-day` / `ai-chat` as they land).
+3. **Deploy the functions** — **automated by CI** (`.github/workflows/deploy.yml`, ADR-0022) and
+   **live in prod since 2026-07-02**: merging #43 auto-triggered the pipeline and deployed
+   `ai-status` / `plan-my-day` / `ai-chat`; the CORS origin-lock re-verify passed against the
+   deployed function. See **Production deploy pipeline** above.
 
 **Cost guardrails** (in-app, ADR-0015): per-user rate limits (chat 30/hr·100/day, Plan My Day
 10/day) + a **global $20/month budget kill-switch**. If the kill-switch trips, every AI endpoint
@@ -218,6 +307,51 @@ refuses until the next month. Tunable via constants in `supabase/functions/_shar
 
 > Treat the Anthropic key like any secret: if exposure is suspected, **rotate it in the Console**
 > and re-run `supabase secrets set ANTHROPIC_API_KEY=…`.
+
+---
+
+## Billing & cost alerts (Stage 6)
+
+Cost posture across the three paid-capable services. **Key finding:** only **Anthropic** bills per
+use (owner's key) — **Supabase Free and Vercel Hobby cannot charge you**; they *pause* the resource
+when a free-tier limit is hit. So real budget risk is Anthropic-only, and it's already bounded by the
+in-app **$20/month kill-switch** (ADR-0015); the Console alerts below are a backstop.
+
+### Anthropic — real spend; email alerts at $10 / $15 (you, in the Console)
+
+The API has **no free tier** — every call costs real money. Two independent controls:
+
+- **Email alerts (what we want):** Console → **Settings → Workspaces → [the app's workspace] →
+  Limits tab → "Add notification"**. Add one at **$10** and one at **$15** (month-to-date spend,
+  non-blocking emails). Repeat "Add notification" per threshold.
+- **Hard cap (deliberately skipped):** Console → **Settings → Limits → Spend limits → "Change
+  Limit"** is a *hard cap that pauses the API*. **Leave it unset** — a $25 cap makes no sense below
+  the $20 in-app kill-switch, which is the authoritative bound.
+
+> ⚠️ **Workspace caveat — may need a key rotation. Decision for you.** Dollar-threshold notifications
+> attach **only** to a **named Workspace**, not the Default Workspace. If the app's
+> `ANTHROPIC_API_KEY` lives in the Default Workspace, you'd have to **create a dedicated Workspace,
+> mint a new key there, and re-run `supabase secrets set ANTHROPIC_API_KEY=…`** (keys can't move
+> between workspaces). If that's more hassle than it's worth, the fallback is fine: rely on the **$20
+> in-app kill-switch** + periodic manual checks at **Settings → Usage / Cost** (view-only). The
+> planner's own guardrails already bound spend; these alerts are insurance, not load-bearing.
+
+### Supabase — Free tier can't bill you (nothing to configure)
+
+"You will not be charged while using the Free Plan" — no payment method, no overage billing; hitting
+a limit makes the project **read-only / paused**, never a charge. There is **no $-threshold alert**
+feature (Spend Cap is an org-level, **Pro-only** setting, effectively $0 on Free). Monitor manually
+at **Dashboard → [org] → Usage**. The keep-alive cron prevents the inactivity pause; the free-tier
+limits are the only "cap", and they pause rather than bill.
+
+### Vercel — Hobby can't bill you either (confirm default alerts)
+
+Hobby is free with **no overage billing** — exceed an included limit and the resource **pauses**
+(wait out the window), never an invoice. Spend Management (dollar caps, %/SMS alerts) is **Pro-only**.
+On Hobby, just confirm the default usage emails are on: **Dashboard → [team] → Settings → My
+Notifications → Usage group** ("Usage increased" + "Usage limit reached"), **Web + Email = on**. See
+consumption at **Dashboard → Usage**. (Out-of-band charges like domain renewals are purchases, not
+compute overage.)
 
 ---
 

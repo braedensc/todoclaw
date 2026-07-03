@@ -385,6 +385,24 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# ── Per-function settings (Stage 6 / ADR-0022) ──────────────────────────────────────────
+# verify_jwt = false turns OFF the platform GATEWAY's JWT check for these functions. They
+# verify the caller's JWT THEMSELVES (_shared/auth.ts → 401 without a valid token) and handle
+# the CORS preflight in-function (_shared/cors.ts). With the gateway check ON, an
+# unauthenticated OPTIONS preflight (which carries no Authorization header) is 401'd BEFORE the
+# function code runs — so the browser's CORS preflight fails and every in-app AI call breaks.
+# Turning it off just moves the (identical) JWT check inside the function: no security loss,
+# and RLS still isolates data independently. The deploy workflow also passes `--no-verify-jwt`
+# as belt-and-suspenders (see .github/workflows/deploy.yml).
+[functions.ai-status]
+verify_jwt = false
+
+[functions.plan-my-day]
+verify_jwt = false
+
+[functions.ai-chat]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
