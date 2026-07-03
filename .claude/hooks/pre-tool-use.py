@@ -88,8 +88,9 @@ if tool == "Bash":
     # the destructive-verb patterns below. Strip quoted message payloads before
     # scanning; long text via `git commit -F` / `--body-file` remains the norm.
     def _strip_prose(c: str) -> str:
+        # -[a-z]*m catches combined short flags too (git commit -am / -sm "msg").
         return re.sub(
-            r"(-m|--message|--title|--body|-t|-b)(\s+|=)(\"(?:[^\"\\]|\\.)*\"|'[^']*')",
+            r"(-[a-zA-Z]*m|--message|--title|--body|-t|-b)(\s+|=)(\"(?:[^\"\\]|\\.)*\"|'[^']*')",
             r"\1\2''",
             c,
         )
