@@ -13,6 +13,7 @@ import type { Tab } from './components/tabs'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { PlanMyDayPanel } from './features/ai/PlanMyDayPanel'
 import { ChatPanel } from './features/ai/ChatPanel'
+import { BackupsPanel } from './features/backups/BackupsPanel'
 import { supabase } from './lib/supabase'
 
 // Renders the active tab's view. Lightweight switch — no router (project convention).
@@ -37,6 +38,7 @@ function AppShell() {
   const [text, setText] = useState('')
   const [showPlan, setShowPlan] = useState(false)
   const [showChat, setShowChat] = useState(false)
+  const [showBackups, setShowBackups] = useState(false)
   const addTask = useAddTask()
   const ensureSchedule = useEnsureUserSchedule()
 
@@ -97,6 +99,14 @@ function AppShell() {
 
           <button
             type="button"
+            onClick={() => setShowBackups(true)}
+            className="flex-1 rounded border border-border-strong px-4 py-2 text-sm font-medium text-ink hover:bg-panel wide:flex-none"
+          >
+            Backups
+          </button>
+
+          <button
+            type="button"
             onClick={() => void supabase.auth.signOut()}
             className="text-sm text-muted underline hover:text-ink"
           >
@@ -121,6 +131,12 @@ function AppShell() {
       {showChat && (
         <ErrorBoundary>
           <ChatPanel onClose={() => setShowChat(false)} />
+        </ErrorBoundary>
+      )}
+
+      {showBackups && (
+        <ErrorBoundary>
+          <BackupsPanel onClose={() => setShowBackups(false)} />
         </ErrorBoundary>
       )}
     </>

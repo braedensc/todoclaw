@@ -24,3 +24,17 @@ export function localDateInTZ(timeZone: string, instant: Date = new Date()): str
 
   return `${get('year')}-${get('month')}-${get('day')}`
 }
+
+/**
+ * Human display of an ISO instant as `"May 19 at 12:18 AM"` (host-locale month/day + time).
+ * Used by the Done tab and the Backups panel for completion/snapshot timestamps. Unlike
+ * `localDateInTZ` (a correctness-critical partition key), this is presentation only — it follows
+ * the browser locale. Returns `''` for an unparseable input.
+ */
+export function formatDateTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const day = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${day} at ${time}`
+}
