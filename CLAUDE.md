@@ -114,7 +114,9 @@ planning/             # Reference only — gitignored, never published
 
 **Commits:** conventional commits — `feat:`, `fix:`, `chore:`, `refactor:`. No direct commits to `main`; all work via feature branches + PR. CI must pass before merge.
 
-**Docs:** updated in the same PR as the code they describe — never "later." Co-located READMEs (features, Edge Functions, hooks) for system-specific notes; `docs/` for cross-cutting concerns.
+**PRs (all future work):** bodies must be scannable in under a minute — 2–3 plain sentences of what/why, one-line bullets for changes, one verification line. Everything deeper (rationale, edge cases, review writeups) goes in a `<details>` block, never the visible body. Target ≤ ~150 visible words.
+
+**Docs (right-sized, post-launch):** fix any doc a change makes **stale** in the same PR — but don't expand docs proactively. A new ADR is warranted only for a decision that changes architecture, a security boundary, or an external service; routine features and fixes need none. (The bootstrap-era "ADR per PR" density was deliberate scaffolding and is retired — 2026-07-03.) Co-located READMEs for system-specific notes; `docs/` for cross-cutting concerns.
 
 ---
 

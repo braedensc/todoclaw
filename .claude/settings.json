@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
+  "env": {
+    "PATH": "/Users/braedencollins/.nvm/versions/node/v22.23.0/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  },
   "hooks": {
     "PreToolUse": [
       {
