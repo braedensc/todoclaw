@@ -99,9 +99,7 @@ export function GridCard({
     ...(stale ? { filter: stale.filter, opacity: stale.opacity } : {}),
     // Dragging treatment overrides glow/staleness opacity+shadow so the card under the pointer
     // always stays clearly visible, and lifts it above every other card while it moves.
-    ...(dragging
-      ? { opacity: 0.85, boxShadow: '0 10px 24px rgba(0,0,0,0.28)', zIndex: 30 }
-      : {}),
+    ...(dragging ? { opacity: 0.85, boxShadow: '0 10px 24px rgba(0,0,0,0.28)', zIndex: 30 } : {}),
   }
 
   function commitRename(): void {
