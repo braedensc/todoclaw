@@ -166,6 +166,9 @@ mirroring the security model in `CLAUDE.md`:
      stops running CI on further pushes to it (learned the hard way 2026-07-03,
      PR #54). Fails open if `gh`/network is unavailable, so it never blocks on
      something it can't verify.
+   - Blocks `gh pr merge` outright, including `--auto` — **merging is Braeden's
+     action only.** Claude opens a PR and stops there. (`--disable-auto` is
+     exempted, since it only undoes an auto-merge, never causes one.)
 2. **Claude Code Stop hook** (`.claude/hooks/stop-pr-check.py`) — runs whenever
    Claude tries to end a turn, and blocks (with a reminder) when:
    - the current branch has pushed commits ahead of `main` with **no PR** at
@@ -184,7 +187,10 @@ mirroring the security model in `CLAUDE.md`:
 
 So in practice: just start working. If you (or Claude) try to edit on `main`, push
 to an already-merged branch, or wrap up with no PR or red CI, you'll be told to
-fix it first — that's the system doing its job, not an error.
+fix it first — that's the system doing its job, not an error. Merging itself stays
+entirely yours: the PreToolUse hook only intercepts Claude's own tool calls, so it
+blocks Claude from running `gh pr merge`, but never blocks you from merging via the
+CLI or the GitHub UI.
 
 ---
 
