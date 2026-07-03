@@ -93,10 +93,7 @@ export async function tapPlaceTask(
 }
 
 /** Switch top-level view via the tab nav and wait for it to become the active tab. */
-export async function switchTab(
-  page: Page,
-  name: 'Grid' | 'List' | 'Done' | 'Habits',
-): Promise<void> {
+export async function switchTab(page: Page, name: 'Grid' | 'List' | 'Done'): Promise<void> {
   const tab = page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name })
   await tab.click()
   await expect(tab).toHaveAttribute('aria-current', 'page')

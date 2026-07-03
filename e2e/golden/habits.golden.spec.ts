@@ -1,14 +1,13 @@
 import { test, expect } from '../helpers/fixtures'
-import { switchTab } from '../helpers/ui'
 
 // Golden path: add a daily habit, check it off for today, add a step (subtask) and check that
 // too — then reload to prove the checks persisted to daily_state (they reset each local day by
 // reading a fresh date-keyed row, so "checked" must survive a reload within the same day).
+// Habits renders on the Grid tab (the default view on load) — no tab switch needed.
 const HABIT = 'Morning stretch'
 const STEP = 'Neck rolls'
 
 test('add a habit, check it and a step for today; checks survive a reload', async ({ page }) => {
-  await switchTab(page, 'Habits')
   const habitsSection = page.getByRole('region', { name: 'Habits' })
 
   // Add the habit — it lands in the active list with an unchecked daily checkbox.
@@ -42,7 +41,6 @@ test('add a habit, check it and a step for today; checks survive a reload', asyn
   // checks — this proves the writes landed server-side, not just in component state.
   // (Locators are lazy queries, so the pre-reload `row`/`habitCheck` re-resolve fine here.)
   await page.reload()
-  await switchTab(page, 'Habits')
   await expect(habitCheck).toBeChecked()
   await row.getByLabel(`Show steps for "${HABIT}"`).click()
   await expect(row.getByLabel(`Mark step "${STEP}" done today`)).toBeChecked()
