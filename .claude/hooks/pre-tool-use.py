@@ -198,6 +198,19 @@ if tool == "Bash":
             if merged:
                 block(MERGED_PR_HELP.format(branch=branch, number=merged["number"]))
 
+    # Merging a PR (with or without --auto) is Braeden's action only — Claude opens
+    # PRs and stops there (2026-07-03: `gh pr merge --auto` was briefly used to
+    # auto-merge Claude-opened PRs before being corrected). `--disable-auto` is
+    # exempted since it only *undoes* an auto-merge, never causes one.
+    _gh_merge = re.search(r"\bgh\s+pr\s+merge\b([^#\n;&|]*)", scan)
+    if _gh_merge and "--disable-auto" not in _gh_merge.group(1):
+        block(
+            "`gh pr merge` (including --auto) is not allowed — merging PRs is "
+            "Braeden's action only. Open the PR (`gh pr create`) and stop there. "
+            "(`gh pr merge --disable-auto` is still allowed, to undo an auto-merge "
+            "that shouldn't have been enabled.)"
+        )
+
     # Block shell-reading secret files (cat, less, head, etc.)
     if re.search(
         r"\b(cat|less|head|tail|bat|open|more)\b[^#\n;&|]*(\.env(?!\.example)|\.pem\b|\.key\b)",
