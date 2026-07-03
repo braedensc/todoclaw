@@ -74,11 +74,23 @@ Why worktrees beat just `git checkout` switching: switching branches mutates the
 give each session its own folder. (Claude Code can also create/enter worktrees
 for you — ask it to "work on X in a new worktree.")
 
-**Caveat:** `node_modules/` and local Supabase state are per-folder. Run
-`npm install` (and point at the same local Supabase, or use separate ports) in
-each worktree. (The pre-commit secret scan is the exception — it falls back to
-the main checkout's `secretlint` via the shared git dir, so commits from a
-worktree are still scanned even before you `npm install` there.)
+**Caveat:** `node_modules/` and `.env.local` are per-folder (both gitignored),
+even though every worktree shares the *same* local Supabase stack — one
+`project_id` (`supabase/config.toml`), one Docker stack, one Postgres DB. Each
+new worktree needs:
+
+```bash
+npm install
+scripts/dev-worktree-login.sh <slug>   # e.g. the worktree/branch name
+```
+
+The script writes that worktree's `.env.local` from the running local stack and
+creates a dedicated `<slug>@todoclaw.local` login — so parallel sessions each get
+their own account instead of sharing (and clobbering) one. Requires `supabase
+start` already running; see [SETUP.md](SETUP.md#local-supabase). (The pre-commit
+secret scan is the exception to the per-folder rule — it falls back to the main
+checkout's `secretlint` via the shared git dir, so commits from a worktree are
+still scanned even before you `npm install` there.)
 
 ---
 
