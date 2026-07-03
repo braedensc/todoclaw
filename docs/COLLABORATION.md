@@ -108,6 +108,28 @@ ordering/timestamps. **Serialize schema changes:**
 2. Don't run two migration-producing branches at once without coordinating.
 3. Get migration PRs reviewed and merged quickly — don't let them sit.
 
+### Parallel-session protocol (learned the hard way, Stage 5 ∥ Stage 6)
+
+Running several Claude sessions at once works well **if** the shared serialized
+resources are handled explicitly. The Stage 5/6 parallel build collided three times
+on ADR numbering and twice on doc-tail merges before these rules existed:
+
+1. **Surface contracts in every kickoff prompt.** Each session gets an explicit
+   "you own these paths; read-only everywhere else" list (feature folders, workflow
+   files, specific docs). Code never collided under this rule — only shared docs did.
+2. **Structurally eliminate shared counters.** ADRs are now one-file-per-decision
+   with date+slug names (see `docs/ARCHITECTURE.md`) — no number to claim, no common
+   tail to conflict. Prefer this shape for any future append-only log.
+3. **The serialized-resources list** — these cannot be parallelized; ask Braeden to
+   sequence: **DB migrations** (timestamp ordering), **golden E2E runs** (one shared
+   test user + port 5174), **near-simultaneous merges to main** (deploy pipeline
+   serializes itself, but doc-tail conflicts don't).
+4. **Before claiming anything ordered** (a migration slot, a numbered artifact),
+   check `origin/main` **and every open PR's diff** (`gh pr diff <n>`) — parallel
+   sessions claim resources before they merge.
+5. **The later-opened PR rebases.** Merge small and fast; the collision window is
+   exactly the open-PR window.
+
 ---
 
 ## Task tracking — who works on what
