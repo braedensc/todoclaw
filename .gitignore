@@ -14,6 +14,10 @@ node_modules/
 # Build output
 dist/
 
+# Stray root deno.lock — the real one lives at supabase/functions/deno.lock;
+# running `deno` from the repo root generates a bogus root-level lockfile.
+/deno.lock
+
 # Playwright (E2E) artifacts
 test-results/
 playwright-report/
