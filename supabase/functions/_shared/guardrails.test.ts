@@ -3,7 +3,7 @@
 import { assertEquals } from 'jsr:@std/assert@1'
 import { costMicros, BUDGET_CAP_MICROS, LIMITS } from './guardrails.ts'
 
-Deno.test('costMicros: Sonnet 4.6 pricing ($3/$15 per 1M) → micro-dollars', () => {
+Deno.test('costMicros: Sonnet 5 standard pricing ($3/$15 per 1M) → micro-dollars', () => {
   // 1M input = $3 = 3,000,000 micros; 1M output = $15 = 15,000,000 micros.
   assertEquals(costMicros(1_000_000, 0), 3_000_000)
   assertEquals(costMicros(0, 1_000_000), 15_000_000)

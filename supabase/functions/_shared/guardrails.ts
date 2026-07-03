@@ -21,8 +21,11 @@ export const LIMITS: Record<Feature, { hour: number; day: number }> = {
 // $20.00/month, in micro-dollars (millionths of a USD).
 export const BUDGET_CAP_MICROS = 20_000_000
 
-// Sonnet 4.6 pricing: $3 / 1M input tokens, $15 / 1M output tokens. Converting to micros:
-//   micros = (input/1e6)*3*1e6 + (output/1e6)*15*1e6 = input*3 + output*15.
+// Sonnet 5 STANDARD pricing: $3 / 1M input tokens, $15 / 1M output tokens (identical to Sonnet 4.6).
+// Converting to micros: micros = (input/1e6)*3*1e6 + (output/1e6)*15*1e6 = input*3 + output*15.
+// Sonnet 5's INTRODUCTORY pricing ($2/$10 through 2026-08-31) is cheaper, so this formula slightly
+// OVER-counts spend until then — a conservative, safe direction for the kill-switch (it can only
+// trip early, never late), and it self-corrects when standard pricing kicks in. No dated code to revert.
 export function costMicros(inputTokens: number, outputTokens: number): number {
   return Math.round(inputTokens * 3 + outputTokens * 15)
 }

@@ -469,9 +469,12 @@ client** in any AI function — a prompt-injected tool can at worst touch the ca
   the function owner). Monthly reset is cron-free — a new month is a new PK row at zero (the same
   "row-existence is the reset" philosophy as `daily_state`, ADR-0007).
 
-**Cost model.** `claude-sonnet-4-6` for both AI features (cost-aware choice). Cost is computed
-from the response `usage` at Sonnet pricing ($3/$15 per 1M in/out) into micro-dollars
-(`input*3 + output*15`) and added to the ledger post-call. **Balanced tier** (chosen 2026-06-24):
+**Cost model.** `claude-sonnet-5` for both AI features (cost-aware choice; originally
+`claude-sonnet-4-6`, switched to **Sonnet 5** on 2026-07-02 — Anthropic's most agentic Sonnet, at the
+same **$3/$15 standard** price, with **$2/$10 introductory** pricing through 2026-08-31). Cost is
+computed from the response `usage` at $3/$15 per 1M in/out into micro-dollars (`input*3 + output*15` —
+which slightly over-counts during the intro window, a safe direction for the kill-switch) and added
+to the ledger post-call. **Balanced tier** (chosen 2026-06-24):
 global cap **$20/month**; per-user **chat 30/hour + 100/day**, **Plan My Day 10/day**. Limits +
 cap are constants in `guardrails.ts` — tunable without a schema change.
 
