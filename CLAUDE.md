@@ -139,6 +139,7 @@ git checkout -b <type>/<short-kebab-desc>
 - **Don't switch branches mid-task** if files are uncommitted. Commit or stash first.
 - **Migrations are serialized:** before adding a `supabase/migrations/` file, pull latest main so your timestamp/order is last. Never generate migrations on two branches in parallel without coordinating.
 - **Open a PR when the task is done** (`gh pr create`); never merge your own work directly to `main`.
+- **After opening or updating a PR, watch CI to green before considering the task done:** `gh pr checks <n> --watch`. If a check fails, read the failing job's log (`gh run view <run-id> --job <job-id> --log`), fix it, push, and re-watch — don't hand a red PR back and call it finished. Running local checks (`npm test`/`typecheck`/`lint`) first is necessary but not sufficient — CI catches things local runs miss (e.g. `format:check`, which isn't part of `npm run lint`), so treat the PR's actual CI status as the source of truth, not your local run.
 
 ---
 
