@@ -1,28 +1,23 @@
+import { useMemo } from 'react'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
-import { useSoftDeleteTask } from '../tasks/use-tasks'
+import { useSoftDeleteTask, useTasks } from '../tasks/use-tasks'
 import { useHistory, useRestoreTask } from './use-history'
+import { formatDateTime } from '../../lib/dates'
 import type { History } from '../../types/history'
 
 // Done tab: the permanent completion history, newest-first. The query already orders by
 // completed_at desc, so we render rows as-is.
 //
-// Restore is shown ONLY while a completion is still in TODAY's daily_state.done map
-// (canRestore) — a permanent history row from a previous day can't be un-done. Restore
+// Restore is shown ONLY while a completion is still in TODAY's daily_state.done map AND its
+// task is still live — see `canRestore`. A previous day's history row can't be un-done; nor
+// can one whose task was soft-deleted, because set_task_undone only flips today's `done` and
+// never clears `deleted_at`, so restoring a deleted task would be a silent no-op. Restore
 // flips today's `done`; it leaves the history row intact (history is append-only).
 //
 // Delete SOFT-deletes the task (useSoftDeleteTask) — the history row PERSISTS (it is the
 // permanent log, denormalized so it survives the task going away). Recurring tasks never
 // reach history (they don't write it), so they never appear here.
-
-// Format an ISO instant for display: "May 19 at 12:18 AM" (matches the EisenClaw Done tab).
-function formatCompletedAt(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  const day = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  return `${day} at ${time}`
-}
 
 interface HistoryRowProps {
   entry: History
@@ -40,7 +35,7 @@ function HistoryRow({ entry, canRestore, onRestore, onDelete, busy }: HistoryRow
       </span>
       <span className="min-w-0 flex-1 truncate text-ink">{entry.text}</span>
       <span className="shrink-0 text-xs text-muted-light">
-        {formatCompletedAt(entry.completed_at)}
+        {formatDateTime(entry.completed_at)}
       </span>
       {canRestore && (
         <button
@@ -77,8 +72,14 @@ export function DoneView() {
   const daily = useDailyState(timeZone)
   const restore = useRestoreTask()
   const softDelete = useSoftDeleteTask()
+  const tasks = useTasks()
 
   const todayDone = daily.data?.done ?? {}
+  // Live task ids — useTasks already filters out soft-deleted rows (deleted_at is null). We
+  // gate Restore on this set: set_task_undone only flips today's `done`, it never clears
+  // `deleted_at`, so a soft-deleted task can't actually come back. Offering Restore for one
+  // would be a silent no-op, so hide it once the task leaves the live set.
+  const liveTaskIds = useMemo(() => new Set((tasks.data ?? []).map((t) => t.id)), [tasks.data])
   const busy = restore.isPending || softDelete.isPending
 
   const handleRestore = (taskId: string | null) => {
@@ -126,7 +127,9 @@ export function DoneView() {
             <HistoryRow
               key={entry.id}
               entry={entry}
-              canRestore={Boolean(entry.task_id && todayDone[entry.task_id])}
+              canRestore={Boolean(
+                entry.task_id && todayDone[entry.task_id] && liveTaskIds.has(entry.task_id),
+              )}
               onRestore={() => handleRestore(entry.task_id)}
               onDelete={() => handleDelete(entry.task_id, entry.text)}
               busy={busy}
