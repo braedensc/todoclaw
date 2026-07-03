@@ -131,6 +131,11 @@ supabase status -o env \
 The anon key is public by design (RLS is the guard). Never put the service-role key in
 `.env.local`.
 
+**Working in multiple worktrees?** Use `scripts/dev-worktree-login.sh <slug>` instead — it
+does the above *and* creates a dedicated `<slug>@todoclaw.local` login for that worktree, so
+parallel sessions don't share one account. See
+[COLLABORATION.md](COLLABORATION.md#running-several-claudes-at-once--git-worktrees).
+
 ### Run the app against it
 
 ```bash
