@@ -52,9 +52,22 @@ export function GridView() {
   const softDelete = useSoftDeleteTask()
   const markDone = useMarkTaskDone()
 
-  // Live "ghost" position for the card under drag, so it tracks the pointer before the write
-  // lands. Keyed by id; cleared on drop.
-  const [ghost, setGhost] = useState<{ id: string; point: NormalizedPoint } | null>(null)
+  // DOM nodes for currently-rendered placed cards, keyed by task id. During a drag we mutate
+  // the dragged card's `left`/`top` style directly on this node (bypassing React) so 60fps
+  // pointermove doesn't pay a full-tree re-render each frame. React state is only touched on
+  // pointerdown/pointerup; on the next real render React re-applies the committed style from
+  // `task.x`/`task.y`, so nothing can drift out of sync with what we mutated imperatively.
+  const cardNodesRef = useRef(new Map<string, HTMLDivElement>())
+  const registerCardNode = useCallback((id: string, node: HTMLDivElement | null) => {
+    if (node) cardNodesRef.current.set(id, node)
+    else cardNodesRef.current.delete(id)
+  }, [])
+  const handleDragMove = useCallback((id: string, point: NormalizedPoint) => {
+    const node = cardNodesRef.current.get(id)
+    if (!node) return
+    node.style.left = `${point.x * 100}%`
+    node.style.top = `${(1 - point.y) * 100}%`
+  }, [])
 
   // Tap-to-place selection (mobile / touch): the tray task awaiting a grid tap.
   const [placingId, setPlacingId] = useState<string | null>(null)
@@ -105,26 +118,21 @@ export function GridView() {
   // --- Reposition (grid card) drag -------------------------------------------------------
   const handleRepositionDrop = useCallback(
     (id: string, point: NormalizedPoint) => {
-      setGhost(null)
       // No collision resolution on drag — overlap is fine (clustering absorbs it).
       updateMutate({ id, patch: { x: point.x, y: point.y } })
     },
     [updateMutate],
   )
-  const handleMoveGhost = useCallback((id: string, point: NormalizedPoint) => {
-    setGhost({ id, point })
-  }, [])
 
   const reposition = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handleRepositionDrop,
-    onMove: handleMoveGhost,
+    onMove: handleDragMove,
   })
 
   // --- Tray → grid drag (desktop) --------------------------------------------------------
   const handleTrayDrop = useCallback(
     (id: string, point: NormalizedPoint) => {
-      setGhost(null)
       updateMutate({ id, patch: { x: point.x, y: point.y, staged: false } })
     },
     [updateMutate],
@@ -132,7 +140,7 @@ export function GridView() {
   const trayDrag = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handleTrayDrop,
-    onMove: handleMoveGhost,
+    onMove: handleDragMove,
   })
 
   // --- Popup row → grid drag-out ---------------------------------------------------------
@@ -140,7 +148,6 @@ export function GridView() {
   // separates from the seed. The popup is closed on pointer-down (handled by startDrag below).
   const handlePopupDrop = useCallback(
     (id: string, point: NormalizedPoint) => {
-      setGhost(null)
       updateMutate({ id, patch: { x: point.x, y: point.y, staged: false } })
     },
     [updateMutate],
@@ -148,7 +155,7 @@ export function GridView() {
   const popupDrag = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handlePopupDrop,
-    onMove: handleMoveGhost,
+    onMove: handleDragMove,
   })
   const startPopupRowDrag = useCallback(
     (task: Task) => (event: PointerEvent) => {
@@ -195,16 +202,16 @@ export function GridView() {
             // A singleton group renders exactly as before — a normal, draggable card.
             if (group.length === 1) {
               const task = group[0]!
-              const live = ghost?.id === task.id ? ghost.point : { x: task.x!, y: task.y! }
               // Data-space → screen: x left→right, y inverted (high importance = top).
               return (
                 <GridCard
                   key={task.id}
                   task={task}
-                  screenX={live.x}
-                  screenY={1 - live.y}
+                  screenX={task.x!}
+                  screenY={1 - task.y!}
                   daysUntilDue={daysUntil(task.due, { timeZone })}
                   dragging={draggingId === task.id}
+                  cardRef={(node) => registerCardNode(task.id, node)}
                   onPointerDown={reposition.startDrag(task.id)}
                   onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
                   onDelete={() => softDeleteMutate(task.id)}
