@@ -16,7 +16,8 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 | `curl/wget \| bash` | Bash | pipe to shell | Supply-chain attack vector |
 | `git add planning/` | Bash | staging forbidden paths | `planning/` is gitignored reference; leaking it would publish EisenClaw source |
 | `git add .env*` (non-example) | Bash | staging real env files | Secrets leak via git |
-| Force-push / push to main | Bash | `git push --force` or `origin main` | Bypasses PR + CI gate |
+| Any push naming `main`/`master` | Bash | `git push … main` (refspec or target) | Bypasses PR + CI gate |
+| Bare `--force` / `-f` push (any branch) | Bash | force flag without `-with-lease` | Can clobber unseen remote commits; `--force-with-lease` is allowed on feature branches |
 | Reading `.env*`, `*.pem`, `*.key` via shell | Bash | `cat`/`less`/`head` on secret files | Secrets entering Claude's context |
 | `supabase db reset --linked` / `--db-url <remote>` | Bash | `db reset` + remote flag | Wipes a **production** database — only the local (Docker) reset is allowed |
 | `supabase projects delete` | Bash | `projects delete` | Irreversible deletion of a hosted project |
@@ -32,13 +33,15 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 | Writing to `.env*` (non-example) | Edit/Write | file_path basename match | Only `.env.example` is committed |
 | Embedding secret values | Edit/Write | regex patterns for `sk-ant-`, DB URLs with passwords, private key blocks, AWS keys, GitHub tokens, raw JWTs | Secrets must never appear in committed files |
 
-> **Gotcha — the destructive-DB guard matches on *mention*, not just execution.** A Bash
-> command that merely contains `supabase db reset --linked`, `projects delete`, or a remote
-> `postgres://…@host` + `DROP/DELETE` is blocked — including a `git commit -m "…"` or
-> `gh pr create --body "…"` whose **text** describes those commands. Workaround: put the
-> message in a file and use `git commit -F <file>` / `gh pr create --body-file <file>` (the
-> hook scans the command string, not file contents). This false-positive is the safe default —
-> we'd rather block a commit message than risk a real prod wipe.
+> **v2 (2026-07-03) — guards match operations, not prose.** Quoted payloads of
+> `-m/--message/--title/--body/-t/-b` are stripped before the danger patterns run, so a
+> `git commit -m "drop stale rows"` or a PR body that *describes* `rm -rf` no longer
+> false-positives (v1 blocked these). Message text is inert prose — it is never executed —
+> so stripping it loses no protection; every real operation string still hits the scanners.
+> `git commit -F <file>` / `--body-file` remain the norm for long text. Also in v2: the push
+> guard is branch-scoped — `--force-with-lease` is allowed on feature branches; anything
+> naming `main`/`master`, and bare `--force`/`-f` anywhere, still block. Verified by an
+> 18-case block/allow battery (see PR).
 
 ---
 
