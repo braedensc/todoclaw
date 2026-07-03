@@ -135,10 +135,12 @@ git checkout -b <type>/<short-kebab-desc>
 
 - **Branch name:** `<type>/<short-kebab-desc>`, type ∈ `feat | fix | chore | refactor | docs` — same set as commit prefixes. Examples: `feat/grid-drag`, `fix/cluster-overlap`, `docs/collaboration`.
 - **One task = one branch = one PR.** Keep branches small and short-lived — they merge cleanly; long-lived branches collide.
-- **The PreToolUse hook enforces this:** `Edit`/`Write`/`git commit` are *blocked* while on `main`. If you see that block, branch and retry — do not try to work around it.
+- **The PreToolUse hook enforces this:** `Edit`/`Write`/`git commit` are *blocked* while on `main`. It also blocks `git commit`/`git push` on a branch whose PR is already merged (see below). If you see either block, it isn't a bug — branch fresh and retry, do not try to work around it.
 - **Don't switch branches mid-task** if files are uncommitted. Commit or stash first.
 - **Migrations are serialized:** before adding a `supabase/migrations/` file, pull latest main so your timestamp/order is last. Never generate migrations on two branches in parallel without coordinating.
-- **Open a PR when the task is done** (`gh pr create`); never merge your own work directly to `main`.
+- **Open a PR when the task is done** (`gh pr create`); never merge your own work directly to `main`. *(Also enforced by a Stop hook, `.claude/hooks/stop-pr-check.py` — it blocks ending a turn on a pushed branch with no PR. See docs/COLLABORATION.md's "What's automatic" section.)*
+- **After opening or updating a PR, watch CI to green before considering the task done:** `gh pr checks <n> --watch`. If a check fails, read the failing job's log (`gh run view <run-id> --job <job-id> --log`), fix it, push, and re-watch — don't hand a red PR back and call it finished. Running local checks (`npm test`/`typecheck`/`lint`) first is necessary but not sufficient — CI catches things local runs miss (e.g. `format:check`, which isn't part of `npm run lint`), so treat the PR's actual CI status as the source of truth, not your local run. *(Also enforced by the same Stop hook — it blocks ending a turn while the branch's open PR has a failing check.)*
+- **Before pushing a follow-up commit to an already-open PR, confirm it's still open** (`gh pr view <n> --json state`) — a PR can merge between your last check and your next push. A commit pushed to a merged PR's branch is silently orphaned: no CI runs, GitHub stops syncing the PR's head, and the content never reaches `main`. If it's merged, branch fresh off the new `main` instead. *(Also enforced deterministically by the PreToolUse hook — it blocks the commit/push outright once a branch's PR is MERGED, not just a written reminder.)*
 
 ---
 
