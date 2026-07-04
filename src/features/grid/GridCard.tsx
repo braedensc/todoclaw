@@ -118,23 +118,23 @@ export function GridCard({
       className="group absolute cursor-grab rounded-lg border border-border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md active:cursor-grabbing"
       style={{ ...style, borderTopWidth: 3, padding: '6px 8px 5px' }}
     >
-      {/* Recurring status badge (mirrors EisenClaw's overdue/due/soon line). */}
+      {/* Recurring status badge: a full-width colored block, status on line 1 (+ doneCount
+          once >= 3) and cadence stacked as line 2 inside the same block — mirrors EisenClaw's
+          two-line badge (html:569/587) rather than a single row of separate chips. */}
       {rc && (
-        <div className="mb-1 flex items-center gap-1">
-          <span
-            className="rounded px-1 py-0.5 text-[10px] font-semibold uppercase text-white"
-            style={{ backgroundColor: RC_COLOR[rc.code] }}
-          >
-            ↻ {rc.label}
-          </span>
-          {task.recurring && (
-            <span className="text-[10px] text-muted">
-              {fmtFrequency(task.recurring.frequencyDays)}
+        <div
+          className="mb-1 block rounded px-1.5 py-1 text-[10px] font-semibold uppercase leading-tight text-white"
+          style={{ backgroundColor: RC_COLOR[rc.code] }}
+        >
+          <span>↻ {rc.label}</span>
+          {showBadge && (
+            <span className="ml-1 font-normal normal-case opacity-75">
+              {task.recurring?.doneCount}×
             </span>
           )}
-          {showBadge && (
-            <span className="ml-auto text-[10px] font-semibold text-muted">
-              ×{task.recurring?.doneCount}
+          {task.recurring && (
+            <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-wide opacity-80">
+              {fmtFrequency(task.recurring.frequencyDays)}
             </span>
           )}
         </div>
@@ -174,29 +174,45 @@ export function GridCard({
         </span>
       )}
 
-      {/* Action buttons. Desktop: hidden until hover. Mobile (< 720px, no hover): always shown,
-          so a placed card stays actionable by touch — gated on the same `wide` breakpoint that
-          switches the grid to tap-to-place. Each stops propagation so a tap isn't a drag. */}
+      {/* Action row — inline at the bottom of the card, not a floating overlay, so its height
+          is always reserved (mirrors EisenClaw's `.card-actions`, html:591/906-907, which hides
+          via opacity rather than display for the same reason). Desktop: invisible + inert until
+          hover. Mobile (< 720px, no hover): always visible, gated on the same `wide` breakpoint
+          that switches the grid to tap-to-place. Each control stops propagation so a tap/click
+          isn't a drag. */}
       {!editing && (
-        <div className="absolute -top-2 right-1 flex gap-1 wide:hidden wide:group-hover:flex">
-          <ActionButton label={task.recurring ? 'Done (resets cycle)' : 'Done'} onClick={onDone}>
-            ✓
-          </ActionButton>
-          <ActionButton
-            label="Edit task"
-            onClick={() => {
-              setDraft(task.text)
-              setEditing(true)
-            }}
+        <div className="pointer-events-auto mt-1 flex items-center gap-1 border-t border-border pt-1 text-muted opacity-100 transition-opacity wide:pointer-events-none wide:opacity-0 wide:group-hover:pointer-events-auto wide:group-hover:opacity-100">
+          <label
+            className="flex cursor-pointer items-center gap-1 text-[9.5px]"
+            onPointerDown={(e) => e.stopPropagation()}
           >
-            ✎
-          </ActionButton>
-          <ActionButton label="Back to tray" onClick={onBackToTray}>
-            ⤓
-          </ActionButton>
-          <ActionButton label="Delete task" onClick={onDelete}>
-            ×
-          </ActionButton>
+            <input
+              type="checkbox"
+              className="h-3 w-3"
+              aria-label={task.recurring ? 'Done (resets cycle)' : 'Done'}
+              checked={false}
+              onClick={(e) => e.stopPropagation()}
+              onChange={onDone}
+            />
+            <span>{task.recurring ? 'done ↻' : 'done'}</span>
+          </label>
+          <div className="ml-auto flex gap-1">
+            <ActionButton
+              label="Edit task"
+              onClick={() => {
+                setDraft(task.text)
+                setEditing(true)
+              }}
+            >
+              ✎
+            </ActionButton>
+            <ActionButton label="Back to tray" onClick={onBackToTray}>
+              ⤓
+            </ActionButton>
+            <ActionButton label="Delete task" onClick={onDelete}>
+              ×
+            </ActionButton>
+          </div>
         </div>
       )}
     </div>

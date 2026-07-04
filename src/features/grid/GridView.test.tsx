@@ -150,7 +150,7 @@ describe('GridView card visuals', () => {
     expect(card.style.top).toBe('25%')
   })
 
-  it('renders the ×N recurring badge once doneCount >= 3', () => {
+  it('renders the N× recurring badge once doneCount >= 3', () => {
     const recent = new Date(Date.now() - 86_400_000).toISOString()
     tasksFixture = [
       makeTask({
@@ -159,7 +159,7 @@ describe('GridView card visuals', () => {
       }),
     ]
     render(<GridView />)
-    expect(screen.getByText('×4')).toBeInTheDocument()
+    expect(screen.getByText('4×')).toBeInTheDocument()
   })
 
   // Visual urgency wired end-to-end onto the real card (the constant tiers themselves are pinned

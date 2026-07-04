@@ -164,7 +164,7 @@ export default function App() {
   const { session, loading } = useSession()
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl p-6">
+    <main className="mx-auto min-h-screen max-w-3xl p-6 wide:max-w-[1600px]">
       {loading ? (
         <p className="text-muted">Loading…</p>
       ) : session ? (

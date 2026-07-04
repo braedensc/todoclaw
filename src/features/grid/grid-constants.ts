@@ -4,7 +4,12 @@
 
 import type { QuadrantKey } from '../../lib/quadrants'
 
-/** Grid surface height on desktop (px). Mobile shrinks via Tailwind class on the canvas. */
+/**
+ * Floor for the desktop grid surface height (px) — GridCanvas grows past this with the
+ * viewport (`clamp(640px, 78vh, 1000px)`) so the grid stays the dominant element on tall
+ * desktop windows instead of sitting at a fixed size. Mobile keeps a fixed height via a
+ * separate Tailwind class on the canvas.
+ */
 export const GRID_HEIGHT_DESKTOP = 640
 
 /** Placed-card width (px). Single-card clusters render at this width too. */
