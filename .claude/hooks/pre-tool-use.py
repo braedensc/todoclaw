@@ -45,6 +45,22 @@ BRANCH_HELP = (
 )
 
 
+# ── Branch naming guard: work only happens on a properly-named branch ──────────
+# CLAUDE.md's convention: <type>/<short-kebab-desc>, type in feat|fix|chore|refactor|docs.
+# A new worktree session defaults to an auto-generated `claude/<random-codename>`
+# branch (e.g. claude/cool-jones-ca5bef) — this landed unrenamed in a real PR (#55).
+# Blocks Edit/Write/commit the same way the main/master guard above does, so a
+# session is forced to rename before any work happens, not just reminded to.
+BRANCH_NAME_RE = re.compile(r"^(feat|fix|chore|refactor|docs)/[a-z0-9][a-z0-9-]*$")
+BRANCH_NAME_HELP = (
+    "Branch `{branch}` doesn't match this repo's naming convention "
+    "(`<type>/<short-kebab-desc>`, type = feat|fix|chore|refactor|docs — see "
+    "CLAUDE.md). Rename it before continuing, so an auto-generated worktree "
+    "codename never lands in a real PR:\n"
+    "  git branch -m <type>/<short-kebab-desc>"
+)
+
+
 def _current_branch() -> str:
     try:
         r = subprocess.run(
@@ -123,11 +139,15 @@ if tool in ("Edit", "Write") and _in_project(inp.get("file_path", "")):
     branch = _current_branch()
     if branch in PROTECTED_BRANCHES:
         block(BRANCH_HELP.format(branch=branch))
+    elif branch and not BRANCH_NAME_RE.match(branch):
+        block(BRANCH_NAME_HELP.format(branch=branch))
 
 if tool == "Bash" and re.search(r"\bgit\s+commit\b", inp.get("command", "")):
     branch = _current_branch()
     if branch in PROTECTED_BRANCHES:
         block(BRANCH_HELP.format(branch=branch))
+    elif branch and not BRANCH_NAME_RE.match(branch):
+        block(BRANCH_NAME_HELP.format(branch=branch))
     elif _has_upstream():
         merged = _merged_pr_info(branch)
         if merged:

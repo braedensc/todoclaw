@@ -172,6 +172,10 @@ mirroring the security model in `CLAUDE.md`:
    - Blocks `Edit`/`Write`/`git commit` while on `main`/`master`, forcing a new
      task onto a branch before it starts. `CLAUDE.md` also tells Claude to
      branch *proactively* before it ever hits this block.
+   - Blocks `Edit`/`Write`/`git commit` on any branch whose name doesn't match
+     `<type>/<short-kebab-desc>` — catches a new worktree session that starts
+     work without renaming its auto-generated `claude/<random-codename>` branch
+     (this landed unrenamed in a real PR, #55, before this guard existed).
    - Blocks `git commit`/`git push` on a branch whose PR is already **merged**
      (checks `gh pr view <branch> --json state`) — a branch pushed after its PR
      merges is silently stranded, since GitHub stops syncing that PR's head and
