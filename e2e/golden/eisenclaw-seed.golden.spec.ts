@@ -30,7 +30,9 @@ test('seeded EisenClaw data renders: tasks, a recurring badge, and habits with s
   await expect(laundryRow).toBeVisible()
   await expect(laundryRow.getByText('↻', { exact: false })).toBeVisible()
 
-  await switchTab(page, 'Habits')
+  // Habits has no tab of its own — it renders as a section on the Grid tab (App.tsx),
+  // so switch to Grid to reach it, not a (nonexistent) "Habits" tab.
+  await switchTab(page, 'Grid')
   const habitsSection = page.getByRole('region', { name: 'Habits' })
   await expect(
     habitsSection.getByRole('listitem').filter({ hasText: 'Wrist strengthening routine' }),
