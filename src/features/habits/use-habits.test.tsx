@@ -71,6 +71,36 @@ describe('useToggleDailyFlag (optimistic)', () => {
     await waitFor(() => expect(read().subtask_done['h1:s1']).toBe(true))
   })
 
+  it('seeds a full, correctly-shaped row and flips instantly when the cache is cold (not yet loaded)', async () => {
+    const { result, read } = setup()
+    // No qc.setQueryData: daily_state is a separate query and may not have populated the cache
+    // yet when the user clicks — the previously-buggy path that skipped the optimistic write.
+    let release!: () => void
+    rpc.mockReturnValue(new Promise((res) => (release = () => res({ error: null }))))
+
+    result.current.mutate({ map: 'habit_done', key: 'h1', value: true, timeZone: TZ })
+
+    // Optimistic flip happens despite the empty cache...
+    await waitFor(() => expect(read().habit_done.h1).toBe(true))
+    // ...and the seeded row is complete, never partial (guards a malformed-shape regression).
+    expect(read()).toEqual(maps({ habit_done: { h1: true } }))
+    expect(result.current.isPending).toBe(true)
+
+    release()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('drops the optimistic seed on error when the cache started cold', async () => {
+    const { qc, result } = setup()
+    rpc.mockResolvedValue({ error: { message: 'boom' } })
+
+    result.current.mutate({ map: 'habit_done', key: 'h1', value: true, timeZone: TZ })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    // Restored to the pre-click state (no cached row) — the seed is removed, not left stuck true.
+    expect(qc.getQueryData<DailyStateMaps>(KEY)).toBeUndefined()
+  })
+
   it('rolls the checkbox back to the snapshot when the RPC errors', async () => {
     const { qc, result, read } = setup()
     qc.setQueryData<DailyStateMaps>(KEY, maps({ habit_done: { h1: false } }))
