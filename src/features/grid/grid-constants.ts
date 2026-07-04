@@ -4,16 +4,6 @@
 
 import type { QuadrantKey } from '../../lib/quadrants'
 
-/**
- * Floor for the desktop grid surface height (px) — GridCanvas grows past this with the
- * viewport (`clamp(640px, 82vh, 1100px)`) so the grid stays the dominant element on tall
- * desktop windows instead of sitting at a fixed size. Mobile keeps a fixed height via a
- * separate Tailwind class on the canvas. (EisenClaw used a flat 640px desktop grid,
- * html:537 — todoclaw grows it for a more dominant desktop canvas; the final aspect is
- * pinned by the clustering task B4.)
- */
-export const GRID_HEIGHT_DESKTOP = 640
-
 /** Placed-card width (px). Single-card clusters render at this width too. */
 export const CARD_WIDTH = 112
 

@@ -42,11 +42,19 @@ export interface GridCanvasProps {
  */
 export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: GridCanvasProps) {
   return (
+    // Sizing controls clustering feel. Clusters fire in NORMALIZED space (CX=0.09, CY=0.07 in
+    // lib/clustering), so a threshold's on-screen footprint = threshold × canvas px. EisenClaw's
+    // grid was a fixed 1046×640 (html:537), which put CY at ~45px — about a card height, so cards
+    // clustered only on genuine vertical overlap. We reproduce that FEEL by locking the desktop
+    // canvas to the same 1046/640 aspect: width fills the column (dominant), height follows, so
+    // CY stays proportional to EisenClaw instead of ballooning on tall viewports (a flat height
+    // clamp let CY reach ~77px > card height, clustering cards that weren't even touching). Mobile
+    // keeps its own fixed height; `wide:h-auto` releases that so the aspect-ratio can drive height.
     <div
       ref={surfaceRef}
       data-testid="grid-canvas"
       onPointerDown={onBackgroundPointerDown}
-      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card wide:h-[clamp(640px,82vh,1100px)]"
+      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card wide:h-auto wide:aspect-[1046/640]"
       style={PAPER_STYLE}
     >
       {/* Quadrant background tints (under the graph-paper lines is fine; they're translucent). */}
