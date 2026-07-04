@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import type { DayPlan } from './use-plan-my-day'
 
 // Stub the data hooks (no network) and the AI hooks we control per test.
@@ -45,11 +45,12 @@ beforeEach(() => {
 })
 
 describe('PlanMyDayPanel', () => {
-  it('auto-generates on open and renders the structured plan', () => {
+  it('auto-generates on open and renders the structured plan', async () => {
     planMock.mockReturnValue({ mutate, isPending: false, isError: false, data: PLAN })
     render(<PlanMyDayPanel onClose={vi.fn()} />)
 
-    expect(mutate).toHaveBeenCalledTimes(1) // auto-generate fired
+    // Auto-generate is deferred a tick (StrictMode-safety — see the panel), so await it.
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1))
     expect(screen.getByText('A focused but gentle day.')).toBeInTheDocument()
     expect(screen.getByText('File taxes')).toBeInTheDocument()
     expect(screen.getByText('Big rock')).toBeInTheDocument()

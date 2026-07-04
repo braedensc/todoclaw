@@ -27,9 +27,10 @@ test('bottom tab bar: nav sits at the bottom and completing a card flows through
   expect(navBox.y).toBeGreaterThan(viewport.height / 2)
 
   // Place a task by tap, then complete it from the card. On mobile the card actions are always
-  // visible (no hover), so the Done button is tappable. `exact` avoids the "Done" tab button.
+  // visible (no hover), so the Done checkbox is tappable. `exact` avoids the "Done" tab button
+  // (and a recurring card's "Done (resets cycle)" control).
   const card = await tapPlaceTask(page, 'Water the plants', 0.75, 0.25)
-  await card.getByRole('button', { name: 'Done', exact: true }).tap()
+  await card.getByRole('checkbox', { name: 'Done', exact: true }).tap()
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
   // Navigate to the Done tab via the bottom bar; the completion is listed there.
