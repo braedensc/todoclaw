@@ -177,7 +177,7 @@ export function ListRow({
           onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
           aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
           title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
-          className="shrink-0 rounded border border-border-strong px-2 py-1 text-sm text-muted hover:bg-bg hover:text-ink"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-strong text-sm text-muted hover:bg-bg hover:text-ink"
         >
           ✓
         </button>
@@ -187,7 +187,7 @@ export function ListRow({
           onClick={() => setExpanded((v) => !v)}
           aria-label={expanded ? 'Collapse row' : 'Expand row'}
           aria-expanded={expanded}
-          className="shrink-0 rounded px-2 py-1 text-sm text-muted hover:bg-bg"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-strong text-sm text-muted hover:bg-bg hover:text-ink"
         >
           {expanded ? '▲' : '▸'}
         </button>
@@ -196,7 +196,7 @@ export function ListRow({
           type="button"
           onClick={() => onDelete(task.id)}
           aria-label="Delete task"
-          className="shrink-0 rounded px-2 py-1 text-sm text-muted hover:bg-bg hover:text-accent"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-strong text-sm text-muted hover:bg-bg hover:text-accent"
         >
           ×
         </button>
