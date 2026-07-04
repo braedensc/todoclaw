@@ -12,6 +12,7 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 |---|---|---|---|
 | Edit/Write while on `main`/`master` | Edit/Write | repo branch is protected + file is inside the project | Forces the feature-branch workflow automatically (`docs/COLLABORATION.md`) — keeps `main` clean for collaborators |
 | `git commit` while on `main`/`master` | Bash | `git commit` + protected branch | Same — no direct commits to `main` |
+| Edit/Write into a **different worktree** | Edit/Write | target's owning worktree (via `git worktree list`) ≠ this session's | A write to another checkout (classically the main checkout, reached via a persisted `cd`) skips every branch guard and lands there **silently** — tests here still pass against the unmodified files. The block message prints the corrected in-worktree path. Fails open; same-worktree writes and paths outside the repo (scratchpad, `~/.claude`, `/tmp`) are unaffected |
 | `rm -rf` / `rm --recursive` | Bash | `rm` with recursive+force flags | Accidental mass deletion |
 | `curl/wget \| bash` | Bash | pipe to shell | Supply-chain attack vector |
 | `git add planning/` | Bash | staging forbidden paths | `planning/` is gitignored reference; leaking it would publish EisenClaw source |
@@ -55,6 +56,20 @@ Runs after every `Bash`, `Edit`, and `Write` call. Appends a one-line timestampe
 ```
 
 Use this to review what Claude did in a session, especially before a commit.
+
+---
+
+## Stop — `stop-pr-check.py`
+
+Runs when Claude tries to end a turn. Blocks (with a reason Claude must address) on a **pushed** branch that is ahead of `main` when any of these hold — so "open a PR and watch CI to green" isn't just a written rule that gets skipped across parallel sessions:
+
+| Blocks ending the turn when | Why |
+|---|---|
+| The branch has **no PR** yet | CLAUDE.md expects a PR once a task is done (`gh pr create`) |
+| The open PR has **failing CI** (`FAILURE`/`CANCELLED`/`TIMED_OUT`/…) | CI must be watched to green before a task is "done" |
+| The open PR is **`DIRTY`** (merge conflicts) | GitHub can't build the merge ref, so the required CI (Lint/Typecheck/Test/E2E) **never runs** — only side checks (CodeQL/Vercel) report and can look green. A conflicted PR must be rebased, not mistaken for passing (2026-07-03 near-miss). Fires only on explicit `DIRTY`, never the transient `UNKNOWN` right after a push |
+
+Fires once per `(branch, HEAD commit, reason)` — deduped in `.claude/.stop-pr-nag/` (gitignored) — so explaining instead of acting can't trap the session in a loop. Fails open on any `git`/`gh`/network error (never blocks on what it can't verify).
 
 ---
 
