@@ -36,3 +36,25 @@
     animation: none !important;
   }
 }
+
+/* Merge preview (net-new; EisenClaw had none). While a card is dragged over another within the
+   cluster thresholds (CX/CY), the under-card is flagged `data-merge-target` from GridView's
+   per-frame drag handler (a plain DOM attribute — no React re-render) to preview the merge-on-
+   drop: it grows + darkens. The card's transform/box-shadow are set inline, so these must win
+   with !important. Kept deliberately subtle. */
+[data-merge-target] {
+  transform: translate(-50%, -50%) scale(1.08) !important;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.3),
+    0 0 0 2px rgba(46, 42, 36, 0.35) !important;
+  filter: brightness(0.96);
+  z-index: 20;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-merge-target] {
+    transition: none;
+  }
+}
