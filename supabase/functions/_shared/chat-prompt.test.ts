@@ -26,6 +26,11 @@ Deno.test('persona introduces BabyClaw by name and stays concise', () => {
   assertStringIncludes(SYSTEM_PREFIX, 'ALWAYS concise')
 })
 
+Deno.test('persona carries the subtle 🐾 paw-print signature (used sparingly)', () => {
+  assertStringIncludes(SYSTEM_PREFIX, '🐾')
+  assertStringIncludes(SYSTEM_PREFIX, 'sparingly')
+})
+
 Deno.test(
   'security: scope refusal, prompt-injection resistance, and no-disclosure are stated',
   () => {
