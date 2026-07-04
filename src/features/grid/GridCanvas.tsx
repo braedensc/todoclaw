@@ -46,7 +46,7 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
       ref={surfaceRef}
       data-testid="grid-canvas"
       onPointerDown={onBackgroundPointerDown}
-      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card wide:h-[clamp(640px,78vh,1000px)]"
+      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card wide:h-[clamp(640px,82vh,1100px)]"
       style={PAPER_STYLE}
     >
       {/* Quadrant background tints (under the graph-paper lines is fine; they're translucent). */}

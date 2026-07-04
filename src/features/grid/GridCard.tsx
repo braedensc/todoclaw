@@ -9,7 +9,7 @@ import {
   stalenessStyle,
   urgencyGlowStyle,
 } from '../../lib/visual-urgency'
-import { CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
+import { BUCKET_DOT, CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
 export interface GridCardProps {
   task: Task
@@ -42,6 +42,9 @@ export interface GridCardProps {
 /**
  * A single placed task card on the grid. The 3px top border encodes status: a recurring
  * task uses its RC_COLOR (overdue/due/soon/ok), otherwise the quadrant color for its (x,y).
+ * The other three sides carry the bucket accent (BUCKET_DOT) — EisenClaw's per-bucket card
+ * color, now uniform terracotta since only `oneoff` survives. Set as three long-hand colors
+ * (not the `borderColor` shorthand) so a drag can imperatively override just `borderTopColor`.
  * Hover reveals done / edit / delete / back-to-tray. The whole card is the drag handle; the
  * action buttons stopPropagation so clicking them never starts a drag. Done marks a normal
  * task complete for today (it leaves the grid) or resets a recurring task's cycle.
@@ -74,6 +77,9 @@ export function GridCard({
   // (durable across Stage 5's restyle).
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
   const borderColor = rc ? RC_COLOR[rc.code] : quadrant.color
+  // Side/bottom accent = the task's bucket dot. Only the `oneoff` bucket exists, so this is a
+  // uniform terracotta (getBucket() collapses null/unknown to oneoff too) — see BUCKET_DOT.
+  const bucketColor = BUCKET_DOT
 
   const showBadge = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
@@ -88,6 +94,9 @@ export function GridCard({
     width: CARD_WIDTH,
     transform: dragging ? 'translate(-50%, -50%) scale(1.06)' : 'translate(-50%, -50%)',
     borderTopColor: borderColor,
+    borderRightColor: bucketColor,
+    borderBottomColor: bucketColor,
+    borderLeftColor: bucketColor,
     touchAction: 'none',
     transition: dragging ? 'none' : 'box-shadow 120ms ease',
     // Glow overrides the resting shadow (its string carries its own drop-shadow layer). Overdue
@@ -115,7 +124,7 @@ export function GridCard({
       data-task-id={task.id}
       data-quadrant={quadrant.key}
       onPointerDown={editing ? undefined : onPointerDown}
-      className="group absolute cursor-grab rounded-lg border border-border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md active:cursor-grabbing"
+      className="group absolute cursor-grab rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md active:cursor-grabbing"
       style={{ ...style, borderTopWidth: 3, padding: '6px 8px 5px' }}
     >
       {/* Recurring status badge: a full-width colored block, status on line 1 (+ doneCount
@@ -123,17 +132,17 @@ export function GridCard({
           two-line badge (html:569/587) rather than a single row of separate chips. */}
       {rc && (
         <div
-          className="mb-1 block rounded px-1.5 py-1 text-[10px] font-semibold uppercase leading-tight text-white"
+          className="mb-0.5 block rounded-[3px] px-1 py-px text-[8.5px] font-bold leading-tight text-white"
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
           <span>↻ {rc.label}</span>
           {showBadge && (
-            <span className="ml-1 font-normal normal-case opacity-75">
+            <span className="ml-[3px] text-[7.5px] font-normal opacity-75">
               {task.recurring?.doneCount}×
             </span>
           )}
           {task.recurring && (
-            <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-wide opacity-80">
+            <span className="block text-[7px] font-normal tracking-[0.03em] opacity-80">
               {fmtFrequency(task.recurring.frequencyDays)}
             </span>
           )}
@@ -159,7 +168,7 @@ export function GridCard({
           className="w-full rounded border border-border-strong bg-card px-1 py-0.5 text-xs"
         />
       ) : (
-        <p className="break-words leading-snug">{task.text}</p>
+        <p className="break-words text-[10.5px] font-medium leading-[1.35]">{task.text}</p>
       )}
 
       {/* Non-recurring due badge — the textual half of the urgency layer (html:590). Terracotta
@@ -167,7 +176,7 @@ export function GridCard({
           above instead, so this is suppressed when `rc` is set. */}
       {!editing && !rc && daysUntilDue !== null && (
         <span
-          className="mt-1 inline-block rounded px-1.5 py-0.5 text-[9px] font-bold text-white"
+          className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold text-white"
           style={{ backgroundColor: daysUntilDue <= 2 ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
         >
           {daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'today' : `${daysUntilDue}d`}
