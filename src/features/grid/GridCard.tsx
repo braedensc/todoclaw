@@ -24,6 +24,12 @@ export interface GridCardProps {
   daysUntilDue: number | null
   /** True while this card is the one being dragged (so we can suppress its transition). */
   dragging: boolean
+  /**
+   * Registers this card's root DOM node with the caller (GridView), which mutates its
+   * `left`/`top` style directly during a drag instead of going through React state —
+   * see the comment on `cardNodesRef` in GridView for why.
+   */
+  cardRef?: (node: HTMLDivElement | null) => void
   /** Pointer-down handler from useFreeDrag.startDrag(task.id) — begins a reposition drag. */
   onPointerDown: (event: PointerEvent) => void
   onRename: (text: string) => void
@@ -46,6 +52,7 @@ export function GridCard({
   screenY,
   daysUntilDue,
   dragging,
+  cardRef,
   onPointerDown,
   onRename,
   onDelete,
@@ -79,7 +86,7 @@ export function GridCard({
     left: `${screenX * 100}%`,
     top: `${screenY * 100}%`,
     width: CARD_WIDTH,
-    transform: 'translate(-50%, -50%)',
+    transform: dragging ? 'translate(-50%, -50%) scale(1.06)' : 'translate(-50%, -50%)',
     borderTopColor: borderColor,
     touchAction: 'none',
     transition: dragging ? 'none' : 'box-shadow 120ms ease',
@@ -90,6 +97,9 @@ export function GridCard({
       ? { boxShadow: glow.boxShadow, ...(glow.animation ? { animation: glow.animation } : {}) }
       : {}),
     ...(stale ? { filter: stale.filter, opacity: stale.opacity } : {}),
+    // Dragging treatment overrides glow/staleness opacity+shadow so the card under the pointer
+    // always stays clearly visible, and lifts it above every other card while it moves.
+    ...(dragging ? { opacity: 0.85, boxShadow: '0 10px 24px rgba(0,0,0,0.28)', zIndex: 30 } : {}),
   }
 
   function commitRename(): void {
@@ -100,6 +110,7 @@ export function GridCard({
 
   return (
     <div
+      ref={cardRef}
       data-testid="grid-card"
       data-task-id={task.id}
       data-quadrant={quadrant.key}
