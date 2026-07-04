@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ComponentPropsWithoutRef } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { daysUntil } from '../../lib/scoring'
@@ -89,7 +90,9 @@ export function ListRow({
       className="overflow-hidden rounded-lg border border-border bg-card"
       style={{ borderLeft: `4px solid ${quadrant.color}` }}
     >
-      <div className="flex items-center gap-3 px-4 py-3">
+      {/* Tighter gap on mobile (gap-2) so the fixed-width rank/badges/status + the 3 action
+          buttons still fit a ~375px row without clipping the delete ×; roomier gap-3 ≥720px. */}
+      <div className="flex items-center gap-2 px-4 py-3 wide:gap-3">
         <span
           className="w-8 shrink-0 text-sm font-semibold tabular-nums"
           style={{ color: quadrant.color }}
@@ -172,34 +175,25 @@ export function ListRow({
 
         {/* Done control. Branches on recurring: a normal task is archived (Done tab + history),
             a recurring task instead resets its clock (no history). Both go through ListView. */}
-        <button
-          type="button"
+        <RowAction
           onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
           aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
           title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-strong text-sm text-muted hover:bg-bg hover:text-ink"
         >
           ✓
-        </button>
+        </RowAction>
 
-        <button
-          type="button"
+        <RowAction
           onClick={() => setExpanded((v) => !v)}
           aria-label={expanded ? 'Collapse row' : 'Expand row'}
           aria-expanded={expanded}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-strong text-sm text-muted hover:bg-bg hover:text-ink"
         >
           {expanded ? '▲' : '▸'}
-        </button>
+        </RowAction>
 
-        <button
-          type="button"
-          onClick={() => onDelete(task.id)}
-          aria-label="Delete task"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border-strong text-sm text-muted hover:bg-bg hover:text-accent"
-        >
+        <RowAction danger onClick={() => onDelete(task.id)} aria-label="Delete task">
           ×
-        </button>
+        </RowAction>
       </div>
 
       {expanded && (
@@ -216,6 +210,29 @@ export function ListRow({
         />
       )}
     </li>
+  )
+}
+
+// A fixed 32px (h-8 w-8) square icon button for the row's action affordances (done / expand /
+// delete). Routing all three through one shape guarantees they stay the same size, border, and
+// alignment — no per-button drift — and keeps the glyph (text-base) centered with no layout
+// shift on hover, which only recolors. `danger` swaps the hover accent for the delete control.
+// Mirrors GridCard's ActionButton pattern. Extra props (onClick, aria-*, title) pass through.
+function RowAction({
+  danger = false,
+  children,
+  ...rest
+}: ComponentPropsWithoutRef<'button'> & { danger?: boolean }) {
+  return (
+    <button
+      {...rest}
+      type="button"
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border-strong text-base leading-none text-muted hover:bg-bg ${
+        danger ? 'hover:text-accent' : 'hover:text-ink'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
