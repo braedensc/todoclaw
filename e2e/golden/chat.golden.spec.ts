@@ -1,4 +1,5 @@
 import { test, expect } from '../helpers/fixtures'
+import { openChat } from '../helpers/ui'
 import { detectEscapes, mockAiChat, mockAiStatus, sse } from '../mocks/ai'
 
 // Golden paths: streaming chat with the model MOCKED via canned SSE bodies (zero Anthropic
@@ -33,9 +34,8 @@ test('a streamed reply renders token-by-token into one assistant bubble', async 
     ),
   ])
 
-  await page.getByRole('button', { name: 'Chat' }).click()
+  await openChat(page)
   const panel = page.getByRole('complementary', { name: 'Chat' })
-  await expect(panel).toBeVisible()
 
   await panel.getByLabel('Message').fill('add a task to call mom')
   await panel.getByRole('button', { name: 'Send' }).click()
@@ -106,7 +106,7 @@ test('a destructive tool pauses for confirmation; Confirm re-sends with the appr
     ),
   ])
 
-  await page.getByRole('button', { name: 'Chat' }).click()
+  await openChat(page)
   const panel = page.getByRole('complementary', { name: 'Chat' })
   await panel.getByLabel('Message').fill('complete the plants task')
   await panel.getByRole('button', { name: 'Send' }).click()

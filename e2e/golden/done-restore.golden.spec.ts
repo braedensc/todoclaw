@@ -1,5 +1,5 @@
 import { test, expect } from '../helpers/fixtures'
-import { placeTask, switchTab } from '../helpers/ui'
+import { placeTask, openDone, closeDone } from '../helpers/ui'
 
 // Golden path: mark a placed task done from the grid → it leaves the grid and appears in the
 // Done tab (permanent history row with a timestamp) → Restore (offered while the completion is
@@ -18,9 +18,9 @@ test('mark done → Done tab shows the completion → restore returns it to the 
   await card.getByRole('checkbox', { name: 'Done', exact: true }).click()
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
-  // Done tab: the completion is listed with its timestamp and a Restore control (it is still
-  // in today's done map). Scope to the Done section — the tab button is also named "Done".
-  await switchTab(page, 'Done')
+  // Done panel: the completion is listed with its timestamp and a Restore control (it is still
+  // in today's done map). Scope to the Done region — the header link is also named "Done".
+  await openDone(page)
   const doneSection = page.getByRole('region', { name: 'Done' })
   const row = doneSection.getByRole('listitem').filter({ hasText: TASK })
   await expect(row).toBeVisible()
@@ -32,7 +32,7 @@ test('mark done → Done tab shows the completion → restore returns it to the 
   await expect(row.getByRole('button', { name: `Restore "${TASK}"` })).toHaveCount(0)
   await expect(row).toBeVisible()
 
-  // Back on the grid, the task is live again at its old spot.
-  await switchTab(page, 'Grid')
+  // Close the Done panel — back on the grid, the task is live again at its old spot.
+  await closeDone(page)
   await expect(page.getByTestId('grid-card').filter({ hasText: TASK })).toBeVisible()
 })

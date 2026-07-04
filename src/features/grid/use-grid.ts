@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent } from 'react'
+import type { PointerEvent, RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { recurringStatus } from '../../lib/recurring'
-import { daysUntil } from '../../lib/scoring'
 import { quadrantMeta } from '../../lib/quadrants'
 import { urgencyGlowStyle } from '../../lib/visual-urgency'
 import {
@@ -19,11 +18,6 @@ import {
 } from '../../lib/clustering'
 import { useFreeDrag, toNormalized, type NormalizedPoint } from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
-import { GridCanvas } from './GridCanvas'
-import { GridCard } from './GridCard'
-import { StagingTray } from './StagingTray'
-import { ClusterBubble } from '../clustering/ClusterBubble'
-import { ClusterPopup } from '../clustering/ClusterPopup'
 
 /**
  * Which tasks render on the grid: active (not soft-deleted — already excluded by useTasks),
@@ -42,8 +36,14 @@ function isPlaced(
   return true
 }
 
-export function GridView() {
-  const gridRef = useRef<HTMLDivElement>(null)
+/**
+ * The grid's data + interaction orchestration, lifted out of GridView so BOTH the canvas
+ * (GridSurface) and the staging chips (StagingBar, which live in the input widget above the
+ * grid — B8) can share one set of drag/placement state. The caller creates `gridRef` (the
+ * canvas surface) and hands it in; the drag hooks bind to it. All the intricate per-frame
+ * imperative drag machinery moved here verbatim from the old GridView.
+ */
+export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   const isMobile = useIsMobile()
 
   const { data: tasks = [] } = useTasks()
@@ -262,7 +262,7 @@ export function GridView() {
       }
       popupDrag.startDrag(task.id)(event)
     },
-    [popupDrag, updateMutate],
+    [popupDrag, updateMutate, gridRef],
   )
 
   // --- Tap-to-place (mobile / touch) + background click (close popup) ---------------------
@@ -277,7 +277,7 @@ export function GridView() {
       updateMutate({ id: placingId, patch: { x: point.x, y: point.y, staged: false } })
       setPlacingId(null)
     },
-    [isMobile, placingId, updateMutate],
+    [isMobile, placingId, updateMutate, gridRef],
   )
 
   const togglePlacing = useCallback((id: string) => {
@@ -297,96 +297,36 @@ export function GridView() {
   )
   const draggedTask = draggingId ? placedTasks.find((t) => t.id === draggingId) : undefined
 
-  // One placed card. Shared by the singleton-cluster render and the standalone dragged-card
-  // render so both stay byte-for-byte identical (same handlers, same node registration).
-  const renderGridCard = (task: Task & { x: number; y: number }) => (
-    <GridCard
-      key={task.id}
-      task={task}
-      screenX={task.x}
-      screenY={1 - task.y}
-      daysUntilDue={daysUntil(task.due, { timeZone })}
-      dragging={draggingId === task.id}
-      cardRef={(node) => registerCardNode(task.id, node)}
-      onPointerDown={reposition.startDrag(task.id)}
-      onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
-      onDelete={() => softDeleteMutate(task.id)}
-      onBackToTray={() => updateMutate({ id: task.id, patch: { staged: true } })}
-      onDone={() => handleDone(task)}
-    />
-  )
-
-  return (
-    <section aria-label="Grid" className="flex flex-col gap-4 lg:flex-row lg:items-start">
-      <div className="min-w-0 flex-1">
-        <GridCanvas surfaceRef={gridRef} onBackgroundPointerDown={handleGridPointerDown}>
-          {placedTasks.length === 0 && (
-            <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted">
-              No tasks placed — drag one from the tray.
-            </p>
-          )}
-
-          {clusters.map((group) => {
-            // A singleton group renders as a normal, draggable card.
-            if (group.length === 1) {
-              // Non-null by construction (placedTasks filter); render via the shared helper.
-              return renderGridCard(group[0] as Task & { x: number; y: number })
-            }
-
-            // Overlapping group → a single bubble at the dominant task's coords, with the
-            // expandable popup. Accent/dominant come from lib/clustering (recurring-aware).
-            const dominant = clusterDominant(group, { timeZone })
-            const accentColor = clusterAccentColor(group, { timeZone })
-            // The bubble glows for its most-urgent member: the nearest due date among the
-            // group's non-recurring tasks (recurring tasks carry their own status).
-            const clusterMinD = clusterNearestDue(group, { timeZone })
-            const open = openClusterId === dominant.id
-            return (
-              <ClusterBubble
-                key={dominant.id}
-                group={group}
-                accentColor={accentColor}
-                screenX={dominant.x ?? 0.5}
-                screenY={1 - (dominant.y ?? 0.5)}
-                glow={urgencyGlowStyle(clusterMinD)}
-                open={open}
-                onToggle={() => setOpenClusterId(open ? null : dominant.id)}
-              >
-                {open && (
-                  <ClusterPopup
-                    group={group}
-                    accentColor={accentColor}
-                    dominantY={dominant.y ?? 0.5}
-                    timeZone={timeZone}
-                    onDone={handleDone}
-                    onEdit={() => setOpenClusterId(null)}
-                    onDelete={(task) => {
-                      softDeleteMutate(task.id)
-                      setOpenClusterId(null)
-                    }}
-                    onRowPointerDown={startPopupRowDrag}
-                  />
-                )}
-              </ClusterBubble>
-            )
-          })}
-
-          {/* The dragged card, rendered standalone and on top so it always has a live DOM node to
-              move (never absorbed into a bubble). It's a tray card once it materializes, a card
-              pulled out of a cluster, or a repositioned singleton — all via the same helper. */}
-          {draggedTask && renderGridCard(draggedTask)}
-        </GridCanvas>
-      </div>
-
-      <div className="lg:w-64 lg:flex-shrink-0">
-        <StagingTray
-          tasks={stagedTasks}
-          tapToPlace={isMobile}
-          placingId={placingId}
-          onCardPointerDown={(id) => trayDrag.startDrag(id)}
-          onSelectForPlacement={togglePlacing}
-        />
-      </div>
-    </section>
-  )
+  return {
+    // Data
+    timeZone,
+    placedTasks,
+    stagedTasks,
+    clusters,
+    draggedTask,
+    draggingId,
+    // Placed-card render wiring
+    registerCardNode,
+    startReposition: reposition.startDrag,
+    updateMutate,
+    softDeleteMutate,
+    handleDone,
+    // Cluster popup + background
+    openClusterId,
+    setOpenClusterId,
+    startPopupRowDrag,
+    handleGridPointerDown,
+    // Clustering helpers (recurring-aware) for the bubble render
+    clusterDominant,
+    clusterAccentColor,
+    clusterNearestDue,
+    urgencyGlowStyle,
+    // Staging (folded into the input widget's Manual mode)
+    isMobile,
+    placingId,
+    togglePlacing,
+    startTrayDrag: trayDrag.startDrag,
+  }
 }
+
+export type GridApi = ReturnType<typeof useGrid>

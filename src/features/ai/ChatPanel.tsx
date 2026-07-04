@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { useAiStatus } from './use-ai-status'
-import { useAiChat, type ChatItem } from './use-ai-chat'
+import type { ChatItem } from './use-ai-chat'
+import type { ChatController } from './use-chat-controller'
 import { AiPrivacyNote } from './AiPrivacyNote'
 
-// Chat — a right slide-over (stays open while you work the grid/list). Streams the assistant's
-// reply token-by-token and pauses for confirmation before any destructive tool runs. The model
-// call is server-side (owner key); tools are user-scoped (RLS) — see ADR-0017.
-export function ChatPanel({ onClose }: { onClose: () => void }) {
-  const status = useAiStatus()
-  const { items, busy, pending, error, send, confirm, deny } = useAiChat()
+// Chat popup — the full BabyClaw conversation history (B8). Opened from the input widget's
+// BabyClaw mode ("Open chat"); on desktop it's a right slide-over, on mobile a bottom sheet. It
+// streams the assistant's reply token-by-token and pauses for confirmation before any destructive
+// tool runs. The conversation is OWNED by the shell (useChatController) and passed in, so the
+// inline one-line reply and this popup are the same conversation. The model call is server-side
+// (owner key); tools are user-scoped (RLS) — see ADR-0017.
+export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: () => void }) {
+  const { items, busy, pending, error, send, confirm, deny, paused } = chat
   const [text, setText] = useState('')
   const listRef = useRef<HTMLUListElement>(null)
-  const paused = status.data?.paused ?? false
 
   // Keep the latest message in view as things stream in.
   useEffect(() => {
@@ -29,10 +30,9 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
   return (
     <aside
       aria-label="Chat"
-      // Mobile: full-screen drawer (z-50 so it covers the fixed bottom tab bar, which is z-40 —
-      // otherwise a 384px-wide drawer would leave the bar's tabs half-covered and untappable).
-      // Desktop (wide:): the original right slide-over, capped at max-w-sm.
-      className="fixed right-0 top-0 z-50 flex h-screen w-full flex-col border-l border-border-strong bg-panel wide:max-w-sm"
+      // Mobile: a bottom sheet (rounded top, capped height) that covers the lower screen; z-50 so
+      // it sits above everything. Desktop (wide:): the original right slide-over, capped max-w-sm.
+      className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col rounded-t-2xl border border-border-strong bg-panel shadow-xl wide:inset-y-0 wide:left-auto wide:right-0 wide:max-h-none wide:max-w-sm wide:rounded-none wide:border-l"
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="font-serif text-lg font-semibold text-ink">BabyClaw</h2>
