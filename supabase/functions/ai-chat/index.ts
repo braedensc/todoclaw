@@ -19,9 +19,13 @@ import {
   type ToolContext,
 } from '../_shared/chat-tools.ts'
 import { buildSystem } from '../_shared/chat-prompt.ts'
+import { loadChatContext } from '../_shared/chat-context.ts'
+import { runPlanForUser } from '../_shared/run-plan.ts'
 
 const MAX_TOOL_ITERATIONS = 8 // per HTTP request — bounds runaway tool loops (and budget burn)
 const MAX_MESSAGES = 100 // cap client-held history growth
+const MAX_USER_MESSAGE_CHARS = 4000 // cap a single user turn (bounds token cost + abuse)
+const MAX_TOTAL_CHARS = 60_000 // cap the whole client-held history size per request
 
 const BodySchema = z.object({
   messages: z.array(z.any()).min(1).max(MAX_MESSAGES),
@@ -59,23 +63,40 @@ Deno.serve(async (req) => {
     return jsonErr({ error: 'invalid_request' }, 400)
   }
 
+  // Input caps (server-side, BEFORE the model call): bound token cost + abuse. Reject oversized
+  // payloads with a clear error rather than paying to process them. The whole client-held history
+  // is capped, and any single user turn is capped (a wall of pasted text can't run up the bill).
+  if (JSON.stringify(body.messages).length > MAX_TOTAL_CHARS) {
+    return jsonErr({ error: 'message_too_long' }, 413)
+  }
+  const oversizeUser = body.messages.some((m) => {
+    const msg = m as { role?: string; content?: unknown }
+    return (
+      msg.role === 'user' &&
+      typeof msg.content === 'string' &&
+      msg.content.length > MAX_USER_MESSAGE_CHARS
+    )
+  })
+  if (oversizeUser) return jsonErr({ error: 'message_too_long' }, 413)
+
   // One rate-limit unit per HTTP request; budget kill-switch first.
   const gate = await precheck(client, 'chat')
   if (!gate.ok)
     return jsonErr({ error: gate.reason }, gate.reason === 'budget-exhausted' ? 503 : 429)
 
-  // Timezone (for complete_task) + a seeded grid snapshot for the system prompt.
-  const { data: sched } = await client.from('user_schedule').select('timezone').maybeSingle()
-  const timeZone = (sched?.timezone as string) ?? 'UTC'
-  const { data: gridTasks } = await client
-    .from('tasks')
-    .select('id, text, staged, due')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-  const system = buildSystem(gridTasks ?? [])
-  const textById = new Map((gridTasks ?? []).map((t) => [t.id as string, t.text as string]))
+  // Rich per-request context (active + done-today tasks with grid position, habits with today's
+  // check state, schedule summary, per-user assistant config) for the system prompt, plus a label
+  // map (task/habit id → text) for the destructive-confirmation summaries.
+  const { context, timeZone, labelById } = await loadChatContext(client)
+  const system = buildSystem(context)
 
-  const toolCtx: ToolContext = { client, timeZone }
+  // The capability layer stays transport-agnostic; the Anthropic-backed Plan My Day path is
+  // injected as a service. runPlanForUser carries its OWN plan_my_day rate-limit + budget gate.
+  const toolCtx: ToolContext = {
+    client,
+    timeZone,
+    services: { generatePlan: () => runPlanForUser(client, timeZone) },
+  }
   const messages = body.messages as Msg[]
   const approved = new Set(body.approvedToolUseIds)
 
@@ -143,7 +164,11 @@ Deno.serve(async (req) => {
               summary: destructiveSummary(
                 needsConfirm.name,
                 needsConfirm.input,
-                textById.get((needsConfirm.input as { task_id?: string })?.task_id ?? ''),
+                labelById.get(
+                  (needsConfirm.input as { task_id?: string; habit_id?: string })?.task_id ??
+                    (needsConfirm.input as { habit_id?: string })?.habit_id ??
+                    '',
+                ),
               ),
               messages,
             })
@@ -162,6 +187,7 @@ Deno.serve(async (req) => {
               name: tu.name,
               ok: !res.is_error,
               summary: res.content,
+              mutated: res.mutated ?? [], // which data domains changed → client live-refresh
             })
             results.push({
               type: 'tool_result',
