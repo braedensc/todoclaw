@@ -12,7 +12,10 @@ import { expect, type Locator, type Page } from '@playwright/test'
 /** Add a task via the header form and wait for it to appear in the staging tray. */
 export async function addTask(page: Page, text: string): Promise<void> {
   await page.getByPlaceholder('Add a task…').fill(text)
-  await page.getByRole('button', { name: /^Add$/ }).click()
+  // Scope to the header capture form: the shell has other "Add" buttons (e.g. the Habits panel),
+  // so an unscoped name match is ambiguous. The form is the one holding the capture input.
+  const captureForm = page.locator('form', { has: page.getByPlaceholder('Add a task…') })
+  await captureForm.getByRole('button', { name: /^Add$/ }).click()
   await expect(page.getByTestId('tray-card').filter({ hasText: text })).toBeVisible()
 }
 
