@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { localDateInTZ } from '../../lib/dates'
 import { HabitSchema, type Habit } from '../../types/habit'
+import type { DailyStateMaps } from '../daily-state/use-daily-state'
 
 // The Daily Habits data layer. Mirrors src/features/tasks/use-tasks.ts:
 //   - habits live in their own table; subtasks are an EMBEDDED jsonb array on the row
@@ -90,22 +91,24 @@ export function useSoftDeleteHabit() {
 //   map  = 'subtask_done' → key is the COMPOSITE "habitId:subtaskId"
 //
 // p_date is the USER's local calendar day (localDateInTZ), mirroring daily_state.date — never
-// server-UTC. Invalidates today's daily_state query (same date key the read hook uses) so the
-// checkboxes reflect the new state.
+// server-UTC.
+//
+// OPTIMISTIC: onMutate flips the cached daily_state map[key] IMMEDIATELY so the checkbox reflects
+// the new state the instant you click — no wait for the RPC + refetch, which is what caused the
+// visible check/uncheck flicker. onError rolls the snapshot back; onSettled invalidates today's
+// daily_state (same date key the read hook uses) to reconcile with the server. The atomic
+// server-side merge in set_daily_flag is preserved — we never client read-modify-write the jsonb.
+type ToggleFlagVars = {
+  map: 'habit_done' | 'subtask_done'
+  key: string
+  value: boolean
+  timeZone: string
+}
+
 export function useToggleDailyFlag() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({
-      map,
-      key,
-      value,
-      timeZone,
-    }: {
-      map: 'habit_done' | 'subtask_done'
-      key: string
-      value: boolean
-      timeZone: string
-    }) => {
+    mutationFn: async ({ map, key, value, timeZone }: ToggleFlagVars) => {
       const date = localDateInTZ(timeZone)
       const { error } = await supabase.rpc('set_daily_flag', {
         p_date: date,
@@ -116,8 +119,26 @@ export function useToggleDailyFlag() {
       if (error) throw error
       return date
     },
-    onSuccess: (date) => {
-      qc.invalidateQueries({ queryKey: ['daily_state', date] })
+    onMutate: async ({ map, key, value, timeZone }: ToggleFlagVars) => {
+      const queryKey = ['daily_state', localDateInTZ(timeZone)] as const
+      // Stop any in-flight refetch from clobbering the optimistic write.
+      await qc.cancelQueries({ queryKey })
+      const previous = qc.getQueryData<DailyStateMaps>(queryKey)
+      // Only patch when the day's row is already cached (the read hook populates it on mount);
+      // otherwise leave it for the onSettled refetch rather than seed a partial shape.
+      if (previous) {
+        qc.setQueryData<DailyStateMaps>(queryKey, {
+          ...previous,
+          [map]: { ...previous[map], [key]: value },
+        })
+      }
+      return { queryKey, previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(context.queryKey, context.previous)
+    },
+    onSettled: (_date, _err, _vars, context) => {
+      if (context) qc.invalidateQueries({ queryKey: context.queryKey })
     },
   })
 }

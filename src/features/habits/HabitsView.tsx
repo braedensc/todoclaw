@@ -36,7 +36,12 @@ export function HabitsView() {
 
   const [habitText, setHabitText] = useState('')
 
-  const busy = toggleFlag.isPending || updateHabit.isPending || softDelete.isPending
+  // Structural edits (add/remove step, activate, delete) each hit ONE habit — track WHICH so a
+  // mutation on one row doesn't disable every other row's controls. Toggling checked-for-today is
+  // optimistic (instant, see useToggleDailyFlag), so checkboxes are never disabled at all.
+  const pendingHabitId =
+    (updateHabit.isPending ? updateHabit.variables?.id : undefined) ??
+    (softDelete.isPending ? softDelete.variables : undefined)
 
   function handleAddHabit(e: FormEvent) {
     e.preventDefault()
@@ -47,16 +52,16 @@ export function HabitsView() {
 
   if (isLoading) {
     return (
-      <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-8">
-        <p className="text-muted">Loading…</p>
+      <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-5">
+        <p className="text-sm text-muted">Loading…</p>
       </section>
     )
   }
 
   if (isError || !habits) {
     return (
-      <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-8">
-        <p className="text-accent">Could not load habits.</p>
+      <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-5">
+        <p className="text-sm text-accent">Could not load habits.</p>
       </section>
     )
   }
@@ -89,24 +94,25 @@ export function HabitsView() {
   }
 
   return (
-    <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-6">
-      <header className="mb-4">
-        <h2 className="font-serif text-2xl font-semibold text-ink">Daily habits</h2>
+    <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-4">
+      <header className="mb-3 flex items-baseline gap-2">
+        <h2 className="font-serif text-xl font-semibold text-ink">Daily habits</h2>
+        <span className="text-xs text-muted">▸ expand to add steps</span>
       </header>
 
       {active.length === 0 && queued.length === 0 ? (
-        <p className="text-muted">No habits yet — add one below.</p>
+        <p className="mb-3 text-sm text-muted">No habits yet — add one below.</p>
       ) : (
         <>
           {active.length > 0 && (
-            <ul className="mb-4 space-y-3">
+            <ul className="mb-3 space-y-1.5">
               {active.map((habit) => (
                 <HabitRow
                   key={habit.id}
                   habit={habit}
                   habitChecked={Boolean(habitDone[habit.id])}
                   subtaskDone={subtaskDone}
-                  busy={busy}
+                  busy={pendingHabitId === habit.id}
                   onToggleHabit={(checked) => toggleHabit(habit, checked)}
                   onToggleSubtask={(subtaskId, checked) => toggleSubtask(habit, subtaskId, checked)}
                   onSubtasksChange={(next) => changeSubtasks(habit, next)}
@@ -117,25 +123,27 @@ export function HabitsView() {
           )}
 
           {queued.length > 0 && (
-            <div className="mb-4">
-              <h3 className="mb-2 text-sm font-medium text-muted">Queued</h3>
+            <div className="mb-3">
+              <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted">
+                Queued
+              </h3>
               <ul className="flex flex-wrap gap-2">
                 {queued.map((habit) => (
                   <li key={habit.id} className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => activate(habit)}
-                      disabled={busy}
+                      disabled={pendingHabitId === habit.id}
                       aria-label={`Activate habit "${habit.text}"`}
                       title="Activate this habit"
-                      className="rounded-lg border border-dashed border-border-strong bg-card px-3 py-2 text-sm text-muted hover:border-primary hover:text-primary disabled:opacity-50"
+                      className="rounded-lg border border-dashed border-border-strong bg-card px-2.5 py-1 text-sm text-muted hover:border-primary hover:text-primary disabled:opacity-50"
                     >
                       + {habit.text}
                     </button>
                     <button
                       type="button"
                       onClick={() => deleteHabit(habit)}
-                      disabled={busy}
+                      disabled={pendingHabitId === habit.id}
                       aria-label={`Delete habit "${habit.text}"`}
                       title="Delete this habit"
                       className="rounded px-1 text-sm text-muted hover:text-accent disabled:opacity-50"
@@ -156,12 +164,12 @@ export function HabitsView() {
           onChange={(e) => setHabitText(e.target.value)}
           placeholder="Add a habit…"
           aria-label="Add a habit"
-          className="flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm"
+          className="flex-1 rounded border border-border-strong bg-card px-3 py-1.5 text-sm"
         />
         <button
           type="submit"
           disabled={addHabit.isPending}
-          className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
           Add
         </button>

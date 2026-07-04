@@ -48,16 +48,17 @@ export function HabitRow({
 
   return (
     <li className="rounded-lg border border-border bg-card">
-      <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex items-center gap-2.5 px-3 py-2">
         <input
           type="checkbox"
           checked={habitChecked}
-          disabled={busy}
           onChange={(e) => onToggleHabit(e.target.checked)}
           aria-label={`Mark "${habit.text}" done today`}
-          className="h-5 w-5 shrink-0 accent-primary"
+          className="h-4 w-4 shrink-0 accent-primary"
         />
-        <span className="min-w-0 flex-1 truncate text-lg font-semibold text-ink">{habit.text}</span>
+        <span className="min-w-0 flex-1 truncate text-base font-semibold text-ink">
+          {habit.text}
+        </span>
 
         <button
           type="button"
@@ -66,7 +67,7 @@ export function HabitRow({
           aria-label={
             expanded ? `Hide steps for "${habit.text}"` : `Show steps for "${habit.text}"`
           }
-          className={`shrink-0 rounded border px-2 py-1 text-sm ${
+          className={`shrink-0 rounded border px-2 py-0.5 text-xs ${
             expanded
               ? 'border-primary bg-primary/10 text-primary'
               : 'border-border-strong text-muted hover:text-ink'
@@ -82,31 +83,30 @@ export function HabitRow({
           disabled={busy}
           aria-label={`Delete habit "${habit.text}"`}
           title="Delete this habit"
-          className="shrink-0 rounded px-2 py-1 text-sm text-muted hover:bg-bg hover:text-accent disabled:opacity-50"
+          className="shrink-0 rounded px-1.5 py-0.5 text-sm text-muted hover:bg-bg hover:text-accent disabled:opacity-50"
         >
           ×
         </button>
       </div>
 
       {expanded && (
-        <div className="border-t border-border px-4 py-3">
+        <div className="border-t border-border px-3 py-2">
           {stepCount === 0 ? (
             <p className="mb-2 text-sm text-muted">No steps yet — add one below.</p>
           ) : (
-            <ul className="mb-2 space-y-1">
+            <ul className="mb-2 space-y-0.5">
               {habit.subtasks.map((subtask) => {
                 const checked = Boolean(subtaskDone[subtaskKey(habit.id, subtask.id)])
                 return (
-                  <li key={subtask.id} className="flex items-center gap-3 py-1">
+                  <li key={subtask.id} className="flex items-center gap-2.5 py-0.5">
                     <input
                       type="checkbox"
                       checked={checked}
-                      disabled={busy}
                       onChange={(e) => onToggleSubtask(subtask.id, e.target.checked)}
                       aria-label={`Mark step "${subtask.text}" done today`}
                       className="h-4 w-4 shrink-0 accent-primary"
                     />
-                    <span className="min-w-0 flex-1 truncate text-ink">{subtask.text}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-ink">{subtask.text}</span>
                     <button
                       type="button"
                       onClick={() => onSubtasksChange(removeSubtask(habit.subtasks, subtask.id))}
@@ -129,12 +129,12 @@ export function HabitRow({
               onChange={(e) => setStepText(e.target.value)}
               placeholder="Add a step…"
               aria-label={`Add a step to "${habit.text}"`}
-              className="flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm"
+              className="flex-1 rounded border border-border-strong bg-card px-3 py-1.5 text-sm"
             />
             <button
               type="submit"
               disabled={busy}
-              className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
             >
               Add
             </button>

@@ -12,11 +12,27 @@ const updateMutate = vi.fn()
 const deleteMutate = vi.fn()
 const toggleMutate = vi.fn()
 
+// Structural mutations expose isPending + variables so HabitsView can derive a PER-ROW busy
+// (the pending habit id) — a mutation on one habit must not disable every other row. Tests flip
+// these to simulate an in-flight edit; beforeEach resets them.
+let updatePending = false
+let updateVariables: { id: string } | undefined
+let deletePending = false
+let deleteVariables: string | undefined
+
 vi.mock('./use-habits', () => ({
   useHabits: () => habitsMock(),
   useAddHabit: () => ({ mutate: addMutate, isPending: false }),
-  useUpdateHabit: () => ({ mutate: updateMutate, isPending: false }),
-  useSoftDeleteHabit: () => ({ mutate: deleteMutate, isPending: false }),
+  useUpdateHabit: () => ({
+    mutate: updateMutate,
+    isPending: updatePending,
+    variables: updateVariables,
+  }),
+  useSoftDeleteHabit: () => ({
+    mutate: deleteMutate,
+    isPending: deletePending,
+    variables: deleteVariables,
+  }),
   useToggleDailyFlag: () => ({ mutate: toggleMutate, isPending: false }),
 }))
 vi.mock('../daily-state/use-daily-state', () => ({
@@ -47,6 +63,10 @@ function setHabits(habits: Habit[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  updatePending = false
+  updateVariables = undefined
+  deletePending = false
+  deleteVariables = undefined
   dailyMock.mockReturnValue({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } })
 })
 
@@ -221,5 +241,21 @@ describe('HabitsView', () => {
       patch: { subtasks: Habit['subtasks'] }
     }
     expect(arg.patch.subtasks).toHaveLength(0)
+  })
+
+  it('scopes busy to the mutating row — an in-flight edit never disables other rows or any checkbox', () => {
+    setHabits([habit({ id: 'h1', text: 'Alpha' }), habit({ id: 'h2', text: 'Beta' })])
+    // An edit is in flight on h1 only.
+    updatePending = true
+    updateVariables = { id: 'h1' }
+    render(<HabitsView />)
+
+    // h1's structural control (delete) is disabled while its edit lands…
+    expect(screen.getByRole('button', { name: /Delete habit "Alpha"/i })).toBeDisabled()
+    // …but h2's is untouched (per-row busy, not a global freeze).
+    expect(screen.getByRole('button', { name: /Delete habit "Beta"/i })).not.toBeDisabled()
+    // Checkboxes are NEVER disabled — toggling is optimistic, so it stays clickable throughout.
+    expect(screen.getByRole('checkbox', { name: /Mark "Alpha" done today/i })).not.toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: /Mark "Beta" done today/i })).not.toBeDisabled()
   })
 })
