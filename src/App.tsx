@@ -17,16 +17,21 @@ import { BackupsPanel } from './features/backups/BackupsPanel'
 import { supabase } from './lib/supabase'
 
 // Renders the active tab's view. Lightweight switch — no router (project convention).
+// Habits has no tab of its own (parity: eisenclaw.md ~L234-241, pics/Todopic3.jpeg) — it
+// renders as a section below the grid, on the same page, whenever Grid is active.
 function ActiveView({ tab }: { tab: Tab }) {
   switch (tab) {
     case 'grid':
-      return <GridView />
+      return (
+        <div className="flex flex-col gap-6">
+          <GridView />
+          <HabitsView />
+        </div>
+      )
     case 'list':
       return <ListView />
     case 'done':
       return <DoneView />
-    case 'habits':
-      return <HabitsView />
   }
 }
 
@@ -58,60 +63,72 @@ function AppShell() {
 
   return (
     <>
-      <header className="mb-6 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-center wide:justify-between">
-        <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
+      <header className="mb-6 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
+        <div>
+          <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
+          <p className="text-sm text-muted">Place tasks by urgency &amp; importance.</p>
+        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Add-task form: full-width on mobile so the input is comfortably tappable. */}
-          <form onSubmit={handleAdd} className="flex w-full gap-2 wide:w-auto">
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Add a task…"
-              aria-label="Add a task"
-              className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm wide:flex-none"
-            />
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 wide:w-auto">
+            {/* Add-task form: full-width on mobile so the input is comfortably tappable. */}
+            <form onSubmit={handleAdd} className="flex w-full gap-2 wide:w-auto">
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Add a task…"
+                aria-label="Add a task"
+                className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm wide:flex-none"
+              />
+              <button
+                type="submit"
+                disabled={addTask.isPending}
+                className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              >
+                Add
+              </button>
+            </form>
+
+            {/* AI actions, paired together on their own row (for now — Braeden is weighing
+                folding these into the Add flow directly, see chat). */}
+            <div className="flex flex-1 gap-2 wide:flex-none">
+              <button
+                type="button"
+                onClick={() => setShowPlan(true)}
+                className="flex-1 whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
+              >
+                <span aria-hidden>✦</span> Plan My Day
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowChat((v) => !v)}
+                className="flex-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
+              >
+                Chat
+              </button>
+            </div>
+          </div>
+
+          {/* Secondary/utility actions — deliberately smaller and less prominent than the
+              AI actions above (Backups is used far less often). */}
+          <div className="flex items-center gap-3">
             <button
-              type="submit"
-              disabled={addTask.isPending}
-              className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              type="button"
+              onClick={() => setShowBackups(true)}
+              className="text-sm text-muted underline hover:text-ink"
             >
-              Add
+              <span aria-hidden>↻</span> Backups
             </button>
-          </form>
 
-          {/* Action buttons share the row on mobile (flex-1), natural width on desktop. */}
-          <button
-            type="button"
-            onClick={() => setShowPlan(true)}
-            className="flex-1 whitespace-nowrap rounded bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
-          >
-            Plan My Day
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowChat((v) => !v)}
-            className="flex-1 rounded bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
-          >
-            Chat
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowBackups(true)}
-            className="flex-1 rounded border border-border-strong px-4 py-2 text-sm font-medium text-ink hover:bg-panel wide:flex-none"
-          >
-            Backups
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void supabase.auth.signOut()}
-            className="text-sm text-muted underline hover:text-ink"
-          >
-            Sign out
-          </button>
+            <button
+              type="button"
+              onClick={() => void supabase.auth.signOut()}
+              className="text-sm text-muted underline hover:text-ink"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 

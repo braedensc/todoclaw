@@ -2,11 +2,12 @@
 // TabNav.tsx) so that component file exports only a component — required for React Fast
 // Refresh (react-refresh/only-export-components).
 
-export type Tab = 'grid' | 'list' | 'done' | 'habits'
+export type Tab = 'grid' | 'list' | 'done'
 
-export const TABS: { id: Tab; label: string }[] = [
-  { id: 'grid', label: 'Grid' },
-  { id: 'list', label: 'List' },
-  { id: 'done', label: 'Done' },
-  { id: 'habits', label: 'Habits' },
+// Icons are decorative unicode glyphs (aria-hidden in TabNav), matching the original's
+// icon + label tab treatment (pics/Todopic1.jpeg) — no icon library in this project.
+export const TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'grid', label: 'Grid', icon: '⊞' },
+  { id: 'list', label: 'List', icon: '☰' },
+  { id: 'done', label: 'Done', icon: '✓' },
 ]

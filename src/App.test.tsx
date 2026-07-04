@@ -32,6 +32,15 @@ vi.mock('./features/schedule/use-user-schedule', () => ({
 vi.mock('./features/daily-state/use-daily-state', () => ({
   useDailyState: () => ({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } }),
 }))
+// HabitsView now renders alongside GridView on the Grid tab (no separate Habits tab); stub
+// its data layer so the shell renders without a QueryClientProvider / network.
+vi.mock('./features/habits/use-habits', () => ({
+  useHabits: () => ({ data: [], isLoading: false, isError: false }),
+  useAddHabit: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateHabit: () => ({ mutate: vi.fn(), isPending: false }),
+  useSoftDeleteHabit: () => ({ mutate: vi.fn(), isPending: false }),
+  useToggleDailyFlag: () => ({ mutate: vi.fn(), isPending: false }),
+}))
 
 describe('App shell', () => {
   it('renders the sign-in form when logged out', () => {
@@ -40,11 +49,12 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
   })
 
-  it('renders the tab nav when logged in', () => {
+  it('renders the tab nav and habits section when logged in', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     render(<App />)
-    for (const label of ['Grid', 'List', 'Done', 'Habits']) {
-      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    for (const label of ['Grid', 'List', 'Done']) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
     }
+    expect(screen.getByRole('region', { name: 'Habits' })).toBeInTheDocument()
   })
 })
