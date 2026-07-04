@@ -1,6 +1,6 @@
 import type { CSSProperties, PointerEvent, ReactNode, RefObject } from 'react'
 import { quadrantMeta } from '../../lib/quadrants'
-import { AXIS_COLOR, GRIDLINE_COLOR, QUADRANT_TINT } from './grid-constants'
+import { AXIS_COLOR, AXIS_LABEL_COLOR, GRIDLINE_COLOR, QUADRANT_TINT } from './grid-constants'
 
 // Corner quadrant labels. Each rendered in its quadrantMeta color. The grid is y-inverted on
 // screen, so the high-importance quadrants (Schedule / Do Now) sit at the top.
@@ -115,6 +115,27 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
         style={{ color: ERRANDS.color }}
       >
         {ERRANDS.label}
+      </span>
+
+      {/* Edge axis labels (html:535-536). Additive absolute spans, vertically/horizontally
+          centered so they clear the corner quadrant labels. The y-axis label reads bottom-to-top
+          (rotate -90°) so its arrow points up. */}
+      <span
+        className="pointer-events-none absolute top-1/2 z-[3] whitespace-nowrap text-[10.5px] font-bold uppercase tracking-[0.1em]"
+        style={{
+          left: 6,
+          color: AXIS_LABEL_COLOR,
+          transform: 'rotate(-90deg) translateX(50%)',
+          transformOrigin: 'left center',
+        }}
+      >
+        Importance →
+      </span>
+      <span
+        className="pointer-events-none absolute bottom-1 left-1/2 z-[3] -translate-x-1/2 text-[10.5px] font-bold uppercase tracking-[0.1em]"
+        style={{ color: AXIS_LABEL_COLOR }}
+      >
+        Urgency →
       </span>
 
       {children}

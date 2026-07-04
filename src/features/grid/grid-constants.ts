@@ -35,3 +35,6 @@ export const GRIDLINE_COLOR = 'rgba(148,136,116,.12)'
 
 /** Center axis (x=0.5 / y=0.5) line color (html:548). */
 export const AXIS_COLOR = 'rgba(0,0,0,.11)'
+
+/** Muted color for the URGENCY / IMPORTANCE edge axis labels (html:535-536). */
+export const AXIS_LABEL_COLOR = '#a59c88'

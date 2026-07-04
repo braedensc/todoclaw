@@ -92,10 +92,6 @@ export function HabitsView() {
     <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-6">
       <header className="mb-4">
         <h2 className="font-serif text-2xl font-semibold text-ink">Daily habits</h2>
-        <p className="text-sm text-muted">
-          Check them off as you go — resets each morning. <span aria-hidden>▸</span> expand to add
-          steps.
-        </p>
       </header>
 
       {active.length === 0 && queued.length === 0 ? (

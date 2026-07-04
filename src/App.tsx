@@ -65,8 +65,17 @@ function AppShell() {
     <>
       <header className="mb-6 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
         <div>
-          <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
-          <p className="text-sm text-muted">Place tasks by urgency &amp; importance.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
+            <button
+              type="button"
+              onClick={() => setShowPlan(true)}
+              className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            >
+              <span aria-hidden>✦</span> Plan My Day
+            </button>
+          </div>
+          <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
         </div>
 
         <div className="flex flex-col items-end gap-2">
@@ -89,17 +98,8 @@ function AppShell() {
               </button>
             </form>
 
-            {/* AI actions, paired together on their own row (for now — Braeden is weighing
-                folding these into the Add flow directly, see chat). */}
+            {/* Chat action. Plan My Day now lives beside the wordmark in the left header block. */}
             <div className="flex flex-1 gap-2 wide:flex-none">
-              <button
-                type="button"
-                onClick={() => setShowPlan(true)}
-                className="flex-1 whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
-              >
-                <span aria-hidden>✦</span> Plan My Day
-              </button>
-
               <button
                 type="button"
                 onClick={() => setShowChat((v) => !v)}
