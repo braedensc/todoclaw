@@ -1,5 +1,17 @@
 import { useCallback, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+
+// A mutating tool reports which data DOMAINS it changed; each maps to the TanStack Query key that
+// owns that data, so acting in chat refreshes the grid / list / habits / Done tab INSTANTLY (no
+// reload, no realtime round-trip). daily_state queries are keyed ['daily_state', date]; the bare
+// ['daily_state'] prefix invalidates them all. Unknown domains are ignored.
+const DOMAIN_QUERY_KEYS: Record<string, readonly unknown[]> = {
+  tasks: ['tasks'],
+  habits: ['habits'],
+  daily_state: ['daily_state'],
+  history: ['history'],
+}
 
 // Streaming chat over the ai-chat Edge Function. functions.invoke() doesn't expose streams, so
 // we fetch() directly with the user's access token and read the SSE body. The conversation is
@@ -65,6 +77,7 @@ function withToolResult(
 }
 
 export function useAiChat() {
+  const queryClient = useQueryClient()
   const [items, setItems] = useState<ChatItem[]>([])
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<PendingConfirm | null>(null)
@@ -92,14 +105,17 @@ export function useAiChat() {
         body: JSON.stringify({ messages: history.current, approvedToolUseIds: approved.current }),
       })
       if (!res.ok || !res.body) {
-        // Guardrail rejections arrive PRE-STREAM as HTTP statuses (precheck in ai-chat):
-        // 503 = monthly budget kill-switch, 429 = rate limit. Neither is sent in-band.
+        // Guardrail + input-cap rejections arrive PRE-STREAM as HTTP statuses (ai-chat): 503 =
+        // monthly budget kill-switch, 429 = rate limit, 413 = message/history too large. None
+        // are sent in-band.
         setError(
           res.status === 503
             ? 'AI is paused for this month (budget cap reached).'
             : res.status === 429
               ? 'Slow down a moment — rate limit reached.'
-              : 'Chat failed.',
+              : res.status === 413
+                ? 'That message is too long — please shorten it.'
+                : 'Chat failed.',
         )
         setBusy(false)
         return
@@ -151,6 +167,14 @@ export function useAiChat() {
           ...xs,
           { id: nextId(), role: 'tool', text: ev.summary as string, ok: ev.ok as boolean },
         ])
+        // Live-refresh: a successful mutating tool tells us which data domains changed — invalidate
+        // the matching queries so the grid/list/habits/Done update the instant the tool runs.
+        if (ev.ok !== false && Array.isArray(ev.mutated)) {
+          for (const domain of ev.mutated as string[]) {
+            const key = DOMAIN_QUERY_KEYS[domain]
+            if (key) void queryClient.invalidateQueries({ queryKey: key })
+          }
+        }
         break
       case 'tool-pending-confirmation':
         history.current = ev.messages as AnyMsg[] // includes the halting assistant turn

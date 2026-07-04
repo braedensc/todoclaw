@@ -14,16 +14,24 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   guardrails.ts  # per-user rate limits + global budget kill-switch + cost math
   weather.ts     # wttr.in summary, cached ~30min via weather_cache (DEFINER get/put)
   plan-prompt.ts # Plan My Day prompt builder + emit_plan tool (structured output)
+  plan-inputs.ts # server-side buildPlanRequest (task/habit selection + date math, ported from src/lib)
+  run-plan.ts    # in-process Plan My Day path (own plan_my_day gate); injected into BabyClaw's generate_plan
   placement.ts   # due-date → x/y/staged auto-placement table (Discrepancy #5)
-  chat-tools.ts  # chat tools: defs + Zod input + executors + the destructive set
-  chat-prompt.ts # chat system prompt (trust-boundary framing) + grid seeding
+  capabilities/  # BabyClaw's transport-agnostic capability registry (~20 tools) — see its README
+  chat-tools.ts  # thin ANTHROPIC ADAPTER over the registry (TOOL_DEFS + executeTool + confirm summary)
+  chat-prompt.ts # BabyClaw persona + security rules + grid primer; renders the live context
+  chat-context.ts# loads the per-request context (tasks + habits + today's completion + schedule + config)
   sse.ts         # Server-Sent Events encoder for the streaming chat
-  dates.ts       # localDateInTZ port (for complete_task's user-local date)
-  *.test.ts      # deno unit tests for the pure logic (cors, cost, prompt, placement, tools, dates)
+  dates.ts       # localDateInTZ port (for user-local date math)
+  *.test.ts      # deno unit tests for the pure logic (cors, cost, prompt, placement, registry, dates)
 ai-status/       # PR2 proof endpoint: returns the caller's budget/rate-limit state (no model call)
 plan-my-day/     # PR3: schedule + weather-aware daily plan (forced emit_plan tool → structured JSON)
-ai-chat/         # PR4: streaming chat with user-scoped tools; confirm before destructive ops (ADR-0017)
+ai-chat/         # BabyClaw: streaming chat over the capability registry; confirm before destructive ops (ADR-0017)
 ```
+
+BabyClaw's tool surface lives in `_shared/capabilities/` (a registry meant to be reused by a future
+MCP server, deferred); `chat-tools.ts` is just the Anthropic adapter. See `capabilities/README.md`
+for the layer + the threat model.
 
 ## Guardrails (protect the owner's key — ADR-0015)
 

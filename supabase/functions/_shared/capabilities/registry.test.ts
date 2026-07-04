@@ -1,0 +1,233 @@
+// Tests for the transport-agnostic capability registry, exercised through the Anthropic adapter's
+// executeTool (validate → run). DB writes hit a tiny FAKE Supabase client that records calls and
+// returns canned rows — so we prove the validation gate, input caps, the mutated-domain reporting
+// (which drives live-refresh), destructive classification, a representative habit tool, and the
+// injected Plan My Day service, all without a real DB or any Anthropic spend.
+//
+// Run: deno test --no-check supabase/functions/_shared/capabilities/registry.test.ts
+import { assert, assertEquals } from 'jsr:@std/assert@1'
+import { z } from 'npm:zod@4.4.3'
+import { CAPABILITIES, capabilityByName } from './registry.ts'
+import { TOOL_DEFS, DESTRUCTIVE, executeTool, destructiveSummary } from '../chat-tools.ts'
+import type { ToolContext } from '../chat-tools.ts'
+
+const UUID = '123e4567-e89b-42d3-a456-426614174000'
+
+// ---- a minimal chainable fake Supabase client ------------------------------------------------
+interface Result {
+  data?: unknown
+  error?: unknown
+}
+interface Handlers {
+  onSelect?: (table: string) => Result
+  onInsert?: (table: string, row: unknown) => Result
+  onUpdate?: (table: string, patch: unknown) => Result
+  onRpc?: (name: string, args: Record<string, unknown>) => Result
+}
+
+class Q {
+  private mode: 'select' | 'insert' | 'update' = 'select'
+  private patch: unknown
+  private row: unknown
+  constructor(
+    private table: string,
+    private h: Handlers,
+  ) {}
+  select() {
+    return this
+  }
+  insert(row: unknown) {
+    this.mode = 'insert'
+    this.row = row
+    return this
+  }
+  update(patch: unknown) {
+    this.mode = 'update'
+    this.patch = patch
+    return this
+  }
+  eq() {
+    return this
+  }
+  is() {
+    return this
+  }
+  order() {
+    return this
+  }
+  private result(): Result {
+    if (this.mode === 'insert') {
+      return this.h.onInsert?.(this.table, this.row) ?? { data: { id: 'new' }, error: null }
+    }
+    if (this.mode === 'update') {
+      return this.h.onUpdate?.(this.table, this.patch) ?? { data: { text: 'row' }, error: null }
+    }
+    return this.h.onSelect?.(this.table) ?? { data: [], error: null }
+  }
+  maybeSingle() {
+    return Promise.resolve(this.result())
+  }
+  single() {
+    return Promise.resolve(this.result())
+  }
+  then<T>(onF: (r: Result) => T) {
+    return Promise.resolve(this.result()).then(onF)
+  }
+}
+
+const rpcCalls: { name: string; args: Record<string, unknown> }[] = []
+function ctx(h: Handlers = {}, services?: ToolContext['services']): ToolContext {
+  const client = {
+    from: (table: string) => new Q(table, h),
+    rpc: (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args })
+      return Promise.resolve(h.onRpc?.(name, args) ?? { data: null, error: null })
+    },
+  } as unknown as ToolContext['client']
+  return { client, timeZone: 'America/New_York', now: new Date('2026-07-04T12:00:00Z'), services }
+}
+
+// ---- registry composition --------------------------------------------------------------------
+Deno.test(
+  'registry exposes the full ~20-capability set (and NO set_bucket — buckets skipped)',
+  () => {
+    const names = new Set(CAPABILITIES.map((c) => c.name))
+    const expected = [
+      'list_tasks',
+      'create_task',
+      'edit_task_text',
+      'move_task',
+      'set_due_date',
+      'make_recurring',
+      'clear_recurring',
+      'restore_task',
+      'complete_task',
+      'delete_task',
+      'list_habits',
+      'create_habit',
+      'rename_habit',
+      'set_habit_active',
+      'set_habit_done',
+      'add_habit_step',
+      'rename_habit_step',
+      'remove_habit_step',
+      'set_habit_step_done',
+      'delete_habit',
+      'generate_plan',
+    ]
+    for (const n of expected) assert(names.has(n), `missing capability: ${n}`)
+    assertEquals(names.size, expected.length)
+    assert(!names.has('set_bucket'))
+  },
+)
+
+Deno.test('exactly complete_task, delete_task, delete_habit are destructive', () => {
+  assertEquals([...DESTRUCTIVE].sort(), ['complete_task', 'delete_habit', 'delete_task'])
+  for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
+})
+
+Deno.test('every capability derives a valid object JSON schema (no leaked $schema)', () => {
+  for (const t of TOOL_DEFS) {
+    const s = t.input_schema as Record<string, unknown>
+    assertEquals(s.type, 'object')
+    assert(!('$schema' in s), `${t.name} leaked $schema`)
+    assert(t.description.length > 0)
+  }
+})
+
+// ---- validation gate + input caps ------------------------------------------------------------
+Deno.test('validation rejects bad input BEFORE any DB call (is_error)', async () => {
+  assert((await executeTool('create_task', { text: '' }, ctx())).is_error)
+  assert((await executeTool('delete_habit', { habit_id: 'not-a-uuid' }, ctx())).is_error)
+  assert((await executeTool('rename_habit_step', { habit_id: UUID, step_id: 's' }, ctx())).is_error)
+  assert((await executeTool('does_not_exist', {}, ctx())).is_error)
+})
+
+Deno.test('input cap: oversized text is rejected at the validation gate', async () => {
+  const huge = 'a'.repeat(2001)
+  assert((await executeTool('create_habit', { text: huge }, ctx())).is_error)
+})
+
+// ---- a representative habit tool round-trip --------------------------------------------------
+Deno.test('create_habit inserts and reports the habits domain mutated', async () => {
+  const res = await executeTool(
+    'create_habit',
+    { text: 'Meditate' },
+    ctx({ onInsert: () => ({ data: null, error: null }) }),
+  )
+  assert(!res.is_error)
+  assert(res.content.includes('Meditate'))
+  assertEquals(res.mutated, ['habits'])
+})
+
+Deno.test('add_habit_step read-modify-writes the subtasks array', async () => {
+  let written: { id: string; text: string }[] | undefined
+  const res = await executeTool(
+    'add_habit_step',
+    { habit_id: UUID, text: 'Warm up' },
+    ctx({
+      onSelect: () => ({ data: { text: 'Stretch', subtasks: [] }, error: null }),
+      onUpdate: (_t, patch) => {
+        written = (patch as { subtasks: { id: string; text: string }[] }).subtasks
+        return { data: { text: 'Stretch' }, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(res.mutated, ['habits'])
+  assertEquals(written?.length, 1)
+  assertEquals(written?.[0]?.text, 'Warm up')
+  assert(typeof written?.[0]?.id === 'string' && written[0].id.length > 0)
+})
+
+Deno.test(
+  'set_habit_done routes through set_daily_flag (habit_done) and touches daily_state',
+  async () => {
+    rpcCalls.length = 0
+    const res = await executeTool(
+      'set_habit_done',
+      { habit_id: UUID, done: true },
+      ctx({ onSelect: () => ({ data: { text: 'Meditate', subtasks: [] }, error: null }) }),
+    )
+    assert(!res.is_error)
+    assertEquals(res.mutated, ['daily_state'])
+    const flag = rpcCalls.find((c) => c.name === 'set_daily_flag')
+    assertEquals(flag?.args.p_map, 'habit_done')
+    assertEquals(flag?.args.p_key, UUID)
+    assertEquals(flag?.args.p_value, true)
+  },
+)
+
+// ---- destructive-confirm surface -------------------------------------------------------------
+Deno.test('delete_habit is destructive and its confirm summary names the habit', () => {
+  assert(DESTRUCTIVE.has('delete_habit'))
+  assertEquals(
+    destructiveSummary('delete_habit', { habit_id: 'h1' }, 'Meditate'),
+    'Delete the habit "Meditate"',
+  )
+})
+
+// ---- the injected Plan My Day service --------------------------------------------------------
+Deno.test('generate_plan uses the injected service, else degrades gracefully', async () => {
+  const withSvc = ctx(
+    {},
+    { generatePlan: () => Promise.resolve({ ok: true, headline: 'Focus day' }) },
+  )
+  const ok = await executeTool('generate_plan', {}, withSvc)
+  assert(!ok.is_error)
+  assert(ok.content.includes('Focus day'))
+  assertEquals(ok.mutated, ['daily_state'])
+
+  const noSvc = await executeTool('generate_plan', {}, ctx())
+  assert(noSvc.is_error)
+})
+
+// ---- a sanity check that toJSONSchema is what the adapter ships -------------------------------
+Deno.test('create_task tool schema exposes the text property', () => {
+  const def = TOOL_DEFS.find((t) => t.name === 'create_task')!
+  const schema = def.input_schema as { properties?: Record<string, unknown>; type?: string }
+  assertEquals(schema.type, 'object')
+  assert(schema.properties && 'text' in schema.properties)
+  // The zod schema is the single source of truth for both validation and this wire schema.
+  assert(z.toJSONSchema)
+})

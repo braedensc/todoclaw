@@ -35,7 +35,7 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
       className="fixed right-0 top-0 z-50 flex h-screen w-full flex-col border-l border-border-strong bg-panel wide:max-w-sm"
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="font-serif text-lg font-semibold text-ink">Chat</h2>
+        <h2 className="font-serif text-lg font-semibold text-ink">BabyClaw</h2>
         <button
           type="button"
           onClick={onClose}
@@ -53,8 +53,10 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
       <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto p-4">
         {items.length === 0 && !paused && (
           <li className="text-sm text-muted">
-            Ask me to add, move, schedule, complete, or remove tasks — e.g. “add ‘book dentist’ due
-            Friday”.
+            Meet <span className="font-medium text-ink">BabyClaw</span> — your personal planning
+            assistant. Tell him what you need in plain English and he’ll add, schedule, move,
+            complete, or clear tasks and habits, or plan your day. Try: “add book dentist, due
+            Friday, high importance.”
           </li>
         )}
         {paused && (
