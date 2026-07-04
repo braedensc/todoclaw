@@ -91,8 +91,12 @@ export function ListRow({
       style={{ borderLeft: `4px solid ${quadrant.color}` }}
     >
       {/* Tighter gap on mobile (gap-2) so the fixed-width rank/badges/status + the 3 action
-          buttons still fit a ~375px row without clipping the delete ×; roomier gap-3 ≥720px. */}
-      <div className="flex items-center gap-2 px-4 py-3 wide:gap-3">
+          buttons still fit a ~375px row without clipping the delete ×; roomier gap-3 ≥720px.
+          The heaviest recurring rows (↻ + ×N badge + a long "overdue Nd" status) can still
+          exceed a ~320px row even with the text truncated to zero, so on mobile we let the
+          action-button cluster wrap to a second line (flex-wrap); desktop stays single-line
+          (wide:flex-nowrap), pixel-identical to before. */}
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 wide:flex-nowrap wide:gap-3">
         <span
           className="w-8 shrink-0 text-sm font-semibold tabular-nums"
           style={{ color: quadrant.color }}
@@ -137,7 +141,7 @@ export function ListRow({
                 setEditing(false)
               }
             }}
-            className="flex-1 rounded border border-border-strong bg-card px-2 py-1 text-sm"
+            className="min-w-0 flex-1 rounded border border-border-strong bg-card px-2 py-1 text-sm"
           />
         ) : (
           <button
@@ -146,7 +150,7 @@ export function ListRow({
               setDraft(task.text)
               setEditing(true)
             }}
-            className="flex-1 truncate text-left text-sm text-ink hover:underline"
+            className="min-w-0 flex-1 truncate text-left text-sm text-ink hover:underline"
             title="Click to edit"
           >
             {task.text}
@@ -173,27 +177,34 @@ export function ListRow({
           )
         )}
 
-        {/* Done control. Branches on recurring: a normal task is archived (Done tab + history),
-            a recurring task instead resets its clock (no history). Both go through ListView. */}
-        <RowAction
-          onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
-          aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
-          title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
-        >
-          ✓
-        </RowAction>
+        {/* The three action controls travel as one atomic cluster: on a narrow mobile row the
+            whole group wraps to a second line together (ml-auto keeps it right-aligned there)
+            rather than the trailing × clipping. On desktop the text button's flex-grow consumes
+            all free space, so ml-auto resolves to 0 and the cluster's gap-2/wide:gap-3 matches
+            the row — pixel-identical to before. Mirrors GridCard's ActionButton group. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2 wide:gap-3">
+          {/* Done control. Branches on recurring: a normal task is archived (Done tab + history),
+              a recurring task instead resets its clock (no history). Both go through ListView. */}
+          <RowAction
+            onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
+            aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
+            title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
+          >
+            ✓
+          </RowAction>
 
-        <RowAction
-          onClick={() => setExpanded((v) => !v)}
-          aria-label={expanded ? 'Collapse row' : 'Expand row'}
-          aria-expanded={expanded}
-        >
-          {expanded ? '▲' : '▸'}
-        </RowAction>
+          <RowAction
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? 'Collapse row' : 'Expand row'}
+            aria-expanded={expanded}
+          >
+            {expanded ? '▲' : '▸'}
+          </RowAction>
 
-        <RowAction danger onClick={() => onDelete(task.id)} aria-label="Delete task">
-          ×
-        </RowAction>
+          <RowAction danger onClick={() => onDelete(task.id)} aria-label="Delete task">
+            ×
+          </RowAction>
+        </div>
       </div>
 
       {expanded && (
