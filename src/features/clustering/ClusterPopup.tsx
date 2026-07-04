@@ -34,8 +34,8 @@ export interface ClusterPopupProps {
 
 /**
  * The floating panel that opens when a cluster bubble is clicked. Lists each task as a
- * card-style row with: done ✓, text, status badge (recurring ↻ or a due-day chip), edit ↗,
- * delete ×. Pressing-and-dragging a row pulls that task out of the cluster and drops it
+ * card-style row with: done checkbox, text, status badge (recurring ↻ or a due-day chip),
+ * edit ↗, delete ×. Pressing-and-dragging a row pulls that task out of the cluster and drops it
  * freely on the grid. Ported from EisenClaw (html:616-639).
  */
 export function ClusterPopup({
@@ -124,13 +124,20 @@ function ClusterPopupRow({
       className="mx-2 my-1.5 flex cursor-grab items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-2 text-ink shadow-sm active:cursor-grabbing"
       style={{ borderLeft: `3px solid ${accent}`, touchAction: 'none' }}
     >
-      <RowButton
-        label="Mark done"
-        onClick={onDone}
+      <label
+        className="flex flex-shrink-0 cursor-pointer items-center"
         title={task.recurring ? 'Done (resets)' : 'Done'}
+        onPointerDown={(e) => e.stopPropagation()}
       >
-        ✓
-      </RowButton>
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5"
+          aria-label="Mark done"
+          checked={false}
+          onClick={(e) => e.stopPropagation()}
+          onChange={onDone}
+        />
+      </label>
 
       <span className="min-w-0 flex-1 break-words text-[13px] font-medium leading-snug">
         {task.text}
