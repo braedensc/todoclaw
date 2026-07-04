@@ -1,0 +1,51 @@
+import { useTasks } from '../tasks/use-tasks'
+import { useHabits } from '../habits/use-habits'
+import { useDailyState } from '../daily-state/use-daily-state'
+import { useAiStatus } from './use-ai-status'
+import { usePlanMyDay, buildPlanRequest } from './use-plan-my-day'
+import type { DayPlan } from '../../types/plan'
+
+export interface PlanController {
+  // The plan to show in the inline card: the fresh mutation result when just generated, otherwise
+  // today's persisted plan (daily_state.plan) hydrated on load; null before the first plan.
+  displayPlan: DayPlan | null
+  paused: boolean
+  isPending: boolean
+  isError: boolean
+  // Whether the header button can fire: data loaded, AI not paused, not already generating.
+  canGenerate: boolean
+  generate: () => void
+}
+
+// Wires the "Plan My Day" concern for the shell: it pulls the same tasks/habits/daily-state the
+// grid uses (react-query dedupes the cache), builds the request with the shared buildPlanRequest,
+// and exposes a single generate() for the header button plus the resolved plan/status for the
+// inline PlanBox. Generation is user-triggered (no auto-run) — the card shows its empty state
+// until the button is tapped, and rehydrates a same-day plan from daily_state on reload.
+export function usePlanController(timeZone: string): PlanController {
+  const tasksQ = useTasks()
+  const habitsQ = useHabits()
+  const dailyQ = useDailyState(timeZone)
+  const status = useAiStatus()
+  const plan = usePlanMyDay(timeZone)
+
+  const paused = status.data?.paused ?? false
+  const dataReady = !tasksQ.isLoading && !habitsQ.isLoading && !dailyQ.isLoading
+  const canGenerate = dataReady && !paused && !plan.isPending
+
+  const generate = () => {
+    if (!canGenerate) return
+    plan.mutate(
+      buildPlanRequest(tasksQ.data ?? [], habitsQ.data ?? [], dailyQ.data?.done ?? {}, timeZone),
+    )
+  }
+
+  return {
+    displayPlan: plan.data ?? dailyQ.data?.plan ?? null,
+    paused,
+    isPending: plan.isPending,
+    isError: plan.isError,
+    canGenerate,
+    generate,
+  }
+}

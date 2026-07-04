@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DayPlanSchema } from './plan'
 
 // One source of truth: this Zod schema validates `daily_state` rows at the Supabase
 // boundary and its inferred type IS the app's DailyState type. Mirrors
@@ -15,6 +16,11 @@ export const DailyStateSchema = z.object({
   done_at: z.record(z.string(), z.string()), // { taskId: ISO instant }
   habit_done: z.record(z.string(), z.boolean()), // { habitId: true }
   subtask_done: z.record(z.string(), z.boolean()), // { "habitId:subtaskId": true }
+  // Today's persisted Plan My Day result, or null/absent if not planned today (new column,
+  // 20260703000000_daily_plan.sql). `.catch(null)` makes a malformed stored plan degrade to
+  // "no plan" instead of failing the whole row parse — a bad plan must never break the
+  // completion maps this row primarily carries.
+  plan: DayPlanSchema.nullable().optional().catch(null),
 })
 
 export type DailyState = z.infer<typeof DailyStateSchema>

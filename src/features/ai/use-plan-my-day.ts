@@ -1,25 +1,16 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { daysUntil } from '../../lib/scoring'
 import { recurringStatus } from '../../lib/recurring'
+import { localDateInTZ } from '../../lib/dates'
 import type { Task } from '../../types/task'
 import type { Habit } from '../../types/habit'
 
 // The structured plan the plan-my-day Edge Function returns (mirrors EMIT_PLAN_TOOL there).
-export type PlanWhen = 'morning' | 'lunch' | 'afternoon' | 'evening'
-export interface PlanRock {
-  task: string
-  why: string
-  duration: string
-  when: PlanWhen
-}
-export interface DayPlan {
-  headline: string
-  availableTime: string
-  bigRock: PlanRock | null
-  smallRocks: PlanRock[]
-  habitNote: string
-}
+// The shape + its Zod validator live in src/types/plan.ts (one source of truth, reused by the
+// persisted-plan read boundary too); re-exported here so existing importers keep working.
+export type { PlanWhen, PlanRock, DayPlan } from '../../types/plan'
+import type { DayPlan } from '../../types/plan'
 
 export interface PlanRequest {
   today: string
@@ -80,7 +71,15 @@ export function buildPlanRequest(
 // Calls the plan-my-day Edge Function (server-side Anthropic, owner key). invoke() attaches the
 // user's JWT automatically. Throws on any non-2xx (rate-limited / budget-exhausted / failure) —
 // the panel reads useAiStatus().paused to show the "AI paused this month" notice proactively.
-export function usePlanMyDay() {
+//
+// On success it PERSISTS the plan onto today's daily_state row (via save_daily_plan, keyed by the
+// user's LOCAL date) so the inline plan card survives a reload and auto-clears at local midnight,
+// then invalidates the daily-state query so the card hydrates from the stored copy. The edge
+// function stays stateless — storage is a client-side RPC, mirroring set_daily_flag/set_task_done.
+// Persistence is best-effort: if the RPC fails the plan still renders this session (it just won't
+// survive a reload), so a storage error is logged, not surfaced as a plan failure.
+export function usePlanMyDay(timeZone: string) {
+  const queryClient = useQueryClient()
   return useMutation<DayPlan, Error, PlanRequest>({
     mutationFn: async (body) => {
       const { data, error } = await supabase.functions.invoke<{ plan: DayPlan }>('plan-my-day', {
@@ -89,6 +88,15 @@ export function usePlanMyDay() {
       if (error) throw error
       if (!data?.plan) throw new Error('No plan returned')
       return data.plan
+    },
+    onSuccess: async (plan) => {
+      const today = localDateInTZ(timeZone)
+      const { error } = await supabase.rpc('save_daily_plan', { p_date: today, p_plan: plan })
+      if (error) {
+        console.warn('save_daily_plan failed; plan will not survive a reload', error)
+        return
+      }
+      await queryClient.invalidateQueries({ queryKey: ['daily_state', today] })
     },
   })
 }

@@ -2,8 +2,10 @@ import { test, expect } from '../helpers/fixtures'
 import { detectEscapes, mockAiStatus, mockPlanMyDay } from '../mocks/ai'
 
 // Golden path: Plan My Day with the model call MOCKED (zero Anthropic spend, deterministic —
-// ADR-0018). The panel auto-generates once its data queries settle, renders the structured
-// plan (headline, big rock, small rocks, habit note), and Regenerate fetches a fresh one.
+// ADR-0018). The header button generates the plan into a PERSISTENT inline card above the grid
+// (not a modal); before generating, the card shows its empty state, and clicking the header
+// button again regenerates. (The card also hydrates from daily_state.plan on load — persistence
+// is covered by the unit tests; here we exercise the inline generate/regenerate flow.)
 const PLAN = {
   headline: 'One big rock, then coast.',
   availableTime: '~4.5h of personal time',
@@ -20,33 +22,35 @@ const PLAN = {
 }
 const REGENERATED = { ...PLAN, headline: 'Regenerated: a lighter day.' }
 
-test('renders a mocked plan and regenerates on demand — no real function calls', async ({
+test('generates a mocked plan into the inline card and regenerates on demand — no real function calls', async ({
   page,
 }) => {
   const escapes = await detectEscapes(page)
   await mockAiStatus(page)
   const planRoute = await mockPlanMyDay(page, [PLAN, REGENERATED])
 
+  // The inline card is always present (no modal); before generating it shows the empty state.
+  const card = page.getByRole('region', { name: 'Plan My Day' })
+  await expect(card).toBeVisible()
+  await expect(card.getByText(/reads your grid, recurring chores, and habits/i)).toBeVisible()
+
+  // The header button triggers generation → the canned plan renders inline in the card.
   await page.getByRole('button', { name: 'Plan My Day' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Plan My Day' })
-  await expect(dialog).toBeVisible()
-
-  // Auto-generate fires once the task/habit/daily queries settle → the canned plan renders.
-  await expect(dialog.getByText(PLAN.headline)).toBeVisible()
-  await expect(dialog.getByText(PLAN.availableTime)).toBeVisible()
+  await expect(card.getByText(PLAN.headline)).toBeVisible()
+  await expect(card.getByText(PLAN.availableTime)).toBeVisible()
   // exact: true — getByText is case-insensitive substring by default, and the canned headline
-  // ("One big rock, …") would also match the 'Big rock' section label.
-  await expect(dialog.getByText('Big rock', { exact: true })).toBeVisible()
-  await expect(dialog.getByText(PLAN.bigRock.task)).toBeVisible()
-  await expect(dialog.getByText(`${PLAN.bigRock.when} · ${PLAN.bigRock.duration}`)).toBeVisible()
-  await expect(dialog.getByText('Small rocks', { exact: true })).toBeVisible()
-  await expect(dialog.getByText(PLAN.smallRocks[0].task)).toBeVisible()
-  await expect(dialog.getByText(PLAN.habitNote)).toBeVisible()
+  // ("One big rock, …") would also match the 'Big rock' pill label.
+  await expect(card.getByText('Big rock', { exact: true })).toBeVisible()
+  await expect(card.getByText(PLAN.bigRock.task)).toBeVisible()
+  await expect(card.getByText(`⏱ ${PLAN.bigRock.duration}`)).toBeVisible()
+  await expect(card.getByText(`◎ ${PLAN.bigRock.when}`)).toBeVisible()
+  await expect(card.getByText(PLAN.smallRocks[0].task)).toBeVisible()
+  await expect(card.getByText(`↻ ${PLAN.habitNote}`)).toBeVisible()
 
-  // Regenerate → a second (different) plan replaces the first.
-  await dialog.getByRole('button', { name: 'Regenerate' }).click()
-  await expect(dialog.getByText(REGENERATED.headline)).toBeVisible()
-  await expect(dialog.getByText(PLAN.headline)).toHaveCount(0)
+  // Regenerate via the same header button → a second (different) plan replaces the first.
+  await page.getByRole('button', { name: 'Plan My Day' }).click()
+  await expect(card.getByText(REGENERATED.headline)).toBeVisible()
+  await expect(card.getByText(PLAN.headline)).toHaveCount(0)
 
   // Exactly two POSTs, both served by the mock; the payload is the client-built PlanRequest
   // (clean slate → empty task list); nothing escaped to a real endpoint.

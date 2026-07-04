@@ -8,11 +8,16 @@ Functions (`supabase/functions/`).
 - **`use-ai-status.ts`** — `useAiStatus()`: queries the `ai-status` Edge Function for the
   caller's budget/rate-limit state. The panels use `paused` to show an "AI paused this month"
   notice when the global budget kill-switch has tripped.
-- **`PlanMyDayPanel.tsx`** + **`use-plan-my-day.ts`** — Plan My Day (PR3). A transient modal off
-  the header button that generates today's schedule-aware plan. `buildPlanRequest` (pure, tested)
-  assembles the day's tasks/recurring/habits from the existing hooks + `src/lib` scoring/recurring;
-  `usePlanMyDay` calls the `plan-my-day` Edge Function; the panel renders the structured
-  `{headline, availableTime, bigRock, smallRocks, habitNote}`.
+- **`PlanBox.tsx`** + **`use-plan-controller.ts`** + **`use-plan-my-day.ts`** — Plan My Day. A
+  **persistent inline card** above the grid (not a modal), closely mirroring EisenClaw's parchment
+  plan card. `buildPlanRequest` (pure, tested) assembles the day's tasks/recurring/habits from the
+  existing hooks + `src/lib` scoring/recurring; `usePlanMyDay` calls the `plan-my-day` Edge Function
+  and, on success, **persists** the plan onto today's `daily_state` row via the `save_daily_plan`
+  RPC (keyed by the user's local date). `usePlanController` wires the header "Plan My Day" button
+  (the generate trigger) to `PlanBox`, which renders the structured
+  `{headline, availableTime, bigRock, smallRocks, habitNote}` and **hydrates from `daily_state.plan`
+  on load** — so the plan survives reloads and auto-clears at local midnight (a new day reads a
+  different date's row). The plan shape + its Zod validator live in `src/types/plan.ts`.
 
 - **`ChatPanel.tsx`** + **`use-ai-chat.ts`** — Chat (PR4). A right slide-over that streams the
   assistant's reply token-by-token and pauses for **confirmation before any destructive action**
