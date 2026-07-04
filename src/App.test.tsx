@@ -30,7 +30,22 @@ vi.mock('./features/schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
 }))
 vi.mock('./features/daily-state/use-daily-state', () => ({
-  useDailyState: () => ({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } }),
+  useDailyState: () => ({
+    data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {}, plan: null },
+  }),
+}))
+// The header "Plan My Day" button + inline PlanBox are driven by usePlanController, which reads
+// the AI status / plan mutation (useQuery/useMutation). Stub it so the shell renders without a
+// QueryClientProvider; PlanBox itself is pure and renders its empty state from displayPlan=null.
+vi.mock('./features/ai/use-plan-controller', () => ({
+  usePlanController: () => ({
+    displayPlan: null,
+    paused: false,
+    isPending: false,
+    isError: false,
+    canGenerate: true,
+    generate: vi.fn(),
+  }),
 }))
 // HabitsView now renders alongside GridView on the Grid tab (no separate Habits tab); stub
 // its data layer so the shell renders without a QueryClientProvider / network.

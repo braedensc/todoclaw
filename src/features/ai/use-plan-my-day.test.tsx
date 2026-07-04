@@ -7,8 +7,12 @@ import type { Habit } from '../../types/habit'
 import { daysUntil } from '../../lib/scoring'
 
 const invoke = vi.fn<(name: string, opts: unknown) => unknown>()
+const rpc = vi.fn<(name: string, args: unknown) => unknown>()
 vi.mock('../../lib/supabase', () => ({
-  supabase: { functions: { invoke: (name: string, opts: unknown) => invoke(name, opts) } },
+  supabase: {
+    functions: { invoke: (name: string, opts: unknown) => invoke(name, opts) },
+    rpc: (name: string, args: unknown) => rpc(name, args),
+  },
 }))
 
 import { buildPlanRequest, usePlanMyDay } from './use-plan-my-day'
@@ -92,32 +96,58 @@ function wrapper() {
   )
 }
 
-describe('usePlanMyDay', () => {
-  beforeEach(() => vi.clearAllMocks())
+const PLAN_RESULT = {
+  headline: 'Go',
+  availableTime: '~4h',
+  bigRock: null,
+  smallRocks: [],
+  habitNote: 'nice',
+}
 
-  it('invokes plan-my-day with the request body and returns the plan', async () => {
-    const planResult = {
-      headline: 'Go',
-      availableTime: '~4h',
-      bigRock: null,
-      smallRocks: [],
-      habitNote: 'nice',
-    }
-    invoke.mockResolvedValue({ data: { plan: planResult }, error: null })
-    const { result } = renderHook(() => usePlanMyDay(), { wrapper: wrapper() })
+describe('usePlanMyDay', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    rpc.mockResolvedValue({ error: null })
+  })
+
+  it('invokes plan-my-day, returns the plan, and persists it via save_daily_plan', async () => {
+    invoke.mockResolvedValue({ data: { plan: PLAN_RESULT }, error: null })
+    const { result } = renderHook(() => usePlanMyDay(TZ), { wrapper: wrapper() })
 
     const body = buildPlanRequest([], [], {}, TZ, NOW)
     result.current.mutate(body)
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(invoke).toHaveBeenCalledWith('plan-my-day', { body })
-    expect(result.current.data).toEqual(planResult)
+    expect(result.current.data).toEqual(PLAN_RESULT)
+
+    // onSuccess persists the plan onto today's daily_state row (local-date keyed).
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    const [fn, arg] = rpc.mock.calls[0] as [string, { p_date: string; p_plan: unknown }]
+    expect(fn).toBe('save_daily_plan')
+    expect(arg.p_plan).toEqual(PLAN_RESULT)
+    expect(arg.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
-  it('errors when the function errors', async () => {
+  it('still succeeds (plan stays visible) when persistence fails — best effort', async () => {
+    invoke.mockResolvedValue({ data: { plan: PLAN_RESULT }, error: null })
+    rpc.mockResolvedValue({ error: { message: 'nope' } })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { result } = renderHook(() => usePlanMyDay(TZ), { wrapper: wrapper() })
+
+    result.current.mutate(buildPlanRequest([], [], {}, TZ, NOW))
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual(PLAN_RESULT)
+    await waitFor(() => expect(warn).toHaveBeenCalled())
+    warn.mockRestore()
+  })
+
+  it('errors when the function errors and does not persist', async () => {
     invoke.mockResolvedValue({ data: null, error: { message: 'rate-limited' } })
-    const { result } = renderHook(() => usePlanMyDay(), { wrapper: wrapper() })
+    const { result } = renderHook(() => usePlanMyDay(TZ), { wrapper: wrapper() })
     result.current.mutate(buildPlanRequest([], [], {}, TZ, NOW))
     await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(rpc).not.toHaveBeenCalled()
   })
 })

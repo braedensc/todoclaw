@@ -15,9 +15,13 @@ const EMPTY_DAILY_STATE = {
   done_at: {},
   habit_done: {},
   subtask_done: {},
+  plan: null,
 } as const
 
-export type DailyStateMaps = Pick<DailyState, 'done' | 'done_at' | 'habit_done' | 'subtask_done'>
+export type DailyStateMaps = Pick<
+  DailyState,
+  'done' | 'done_at' | 'habit_done' | 'subtask_done'
+> & { plan: DailyState['plan'] }
 
 async function fetchDailyState(today: string): Promise<DailyStateMaps> {
   const { data, error } = await supabase
@@ -35,6 +39,8 @@ async function fetchDailyState(today: string): Promise<DailyStateMaps> {
     done_at: parsed.done_at,
     habit_done: parsed.habit_done,
     subtask_done: parsed.subtask_done,
+    // Today's persisted plan (the inline plan card hydrates from this on load); null when unset.
+    plan: parsed.plan ?? null,
   }
 }
 

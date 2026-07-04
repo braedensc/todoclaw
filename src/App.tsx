@@ -11,7 +11,9 @@ import { HabitsView } from './features/habits/HabitsView'
 import { TabNav } from './components/TabNav'
 import type { Tab } from './components/tabs'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { PlanMyDayPanel } from './features/ai/PlanMyDayPanel'
+import { PlanBox } from './features/ai/PlanBox'
+import { usePlanController } from './features/ai/use-plan-controller'
+import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { BackupsPanel } from './features/backups/BackupsPanel'
 import { supabase } from './lib/supabase'
@@ -41,11 +43,12 @@ function ActiveView({ tab }: { tab: Tab }) {
 function AppShell() {
   const [tab, setTab] = useState<Tab>('grid')
   const [text, setText] = useState('')
-  const [showPlan, setShowPlan] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const addTask = useAddTask()
   const ensureSchedule = useEnsureUserSchedule()
+  const timeZone = useTimeZone()
+  const planner = usePlanController(timeZone)
 
   // Guarantee a user_schedule row exists on first authenticated load — the daily reset
   // depends on its timezone. Idempotent (upsert ignoreDuplicates); runs once on mount.
@@ -69,10 +72,12 @@ function AppShell() {
             <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
             <button
               type="button"
-              onClick={() => setShowPlan(true)}
-              className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              onClick={planner.generate}
+              disabled={!planner.canGenerate}
+              title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+              className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
             >
-              <span aria-hidden>✦</span> Plan My Day
+              <span aria-hidden>✦</span> {planner.isPending ? 'Thinking…' : 'Plan My Day'}
             </button>
           </div>
           <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
@@ -134,16 +139,25 @@ function AppShell() {
 
       <TabNav active={tab} onChange={setTab} />
 
+      {/* Plan My Day — a persistent inline card (not a modal): it hydrates from today's
+          daily_state.plan, survives reloads, and auto-clears at local midnight. Rendered above
+          the tab content for now; a later shell re-layout (B8) reconciles exact placement. */}
+      <div className="mt-6">
+        <ErrorBoundary>
+          <PlanBox
+            plan={planner.displayPlan}
+            paused={planner.paused}
+            isPending={planner.isPending}
+            isError={planner.isError}
+            onRetry={planner.generate}
+          />
+        </ErrorBoundary>
+      </div>
+
       {/* pb clears the fixed mobile bottom bar; the desktop top-nav needs no extra space. */}
       <div className="mt-6 pb-24 wide:pb-0">
         <ActiveView tab={tab} />
       </div>
-
-      {showPlan && (
-        <ErrorBoundary>
-          <PlanMyDayPanel onClose={() => setShowPlan(false)} />
-        </ErrorBoundary>
-      )}
 
       {showChat && (
         <ErrorBoundary>
