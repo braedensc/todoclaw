@@ -51,7 +51,10 @@ npm run format       # Prettier — rewrite files
 npm run format:check # Prettier — check only (what CI runs)
 npm test             # Vitest (unit + component) once
 npm run test:watch   # Vitest in watch mode
+npm run legacy-ui    # run the ORIGINAL EisenClaw app → http://localhost:3333 (Plan My Day = local mock)
 ```
+
+> `npm run legacy-ui` is a porting aid — it launches the gitignored reference app (`planning/eisenclaw-export/`) so you can view the old UI directly. Plan My Day is stubbed with a deterministic local mock (no Anthropic key needed); everything else is the real app and edits mutate the seed JSON. See `scripts/legacy-ui.ts`.
 
 ## Testing
 
