@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
-import { UserScheduleSchema, type UserSchedule } from '../../types/user-schedule'
+import {
+  UserScheduleSchema,
+  ScheduleConfigSchema,
+  type UserSchedule,
+  type ScheduleConfig,
+} from '../../types/user-schedule'
 
 const SCHEDULE_KEY = ['user_schedule'] as const
 
@@ -34,6 +39,26 @@ export function useEnsureUserSchedule() {
         .from('user_schedule')
         .upsert({ timezone, config: {} }, { onConflict: 'user_id', ignoreDuplicates: true })
       if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: SCHEDULE_KEY }),
+  })
+}
+
+// Persist the user's edited schedule config (the Settings editor is the only writer). The plan
+// prompt reads `config` server-side, so saving a filled schedule immediately personalizes future
+// plans. RLS scopes the write to the caller's own row; upsert (update on the user_id conflict)
+// preserves the one-row-per-user invariant and re-writes the existing timezone unchanged.
+export function useSaveScheduleConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ config, timezone }: { config: ScheduleConfig; timezone: string }) => {
+      // Validate + length-cap one more time server-bound (defense-in-depth); the form caps too.
+      const clean = ScheduleConfigSchema.parse(config)
+      const { error } = await supabase
+        .from('user_schedule')
+        .upsert({ timezone, config: clean }, { onConflict: 'user_id' })
+      if (error) throw error
+      return clean
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: SCHEDULE_KEY }),
   })

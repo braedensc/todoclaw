@@ -12,16 +12,18 @@ import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { BackupsPanel } from './features/backups/BackupsPanel'
 import { DonePanel } from './features/done/DonePanel'
+import { SettingsPanel } from './features/settings/SettingsPanel'
 import { supabase } from './lib/supabase'
 
-// The signed-in app shell (B8 layout): header (wordmark + Plan My Day + quiet Done/Backups/Sign
-// out links), the persistent Plan card top-center, the work region (one input widget + the Grid⇄
-// List swap with its embedded toggle), and the daily-habits strip below both views. Kept separate
-// from App so the ensure-schedule effect only runs once a session exists.
+// The signed-in app shell (B8 layout): header (wordmark + Plan My Day + quiet Settings/Done/
+// Backups/Sign out links), the persistent Plan card top-center, the work region (one input widget
+// + the Grid⇄List swap with its embedded toggle), and the daily-habits strip below both views.
+// Kept separate from App so the ensure-schedule effect only runs once a session exists.
 function AppShell() {
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const [showDone, setShowDone] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
@@ -54,8 +56,11 @@ function AppShell() {
           <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
         </div>
 
-        {/* Quiet utility links — Done + Backups open header panels; Sign out ends the session. */}
+        {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
         <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
+          <button type="button" onClick={() => setShowSettings(true)} className="hover:text-ink">
+            <span aria-hidden>⚙</span> Settings
+          </button>
           <button type="button" onClick={() => setShowDone(true)} className="hover:text-ink">
             <span aria-hidden>✓</span> Done
           </button>
@@ -113,6 +118,12 @@ function AppShell() {
       {showDone && (
         <ErrorBoundary>
           <DonePanel onClose={() => setShowDone(false)} />
+        </ErrorBoundary>
+      )}
+
+      {showSettings && (
+        <ErrorBoundary>
+          <SettingsPanel onClose={() => setShowSettings(false)} />
         </ErrorBoundary>
       )}
     </>
