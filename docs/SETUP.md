@@ -96,6 +96,10 @@ specs (`*.mobile.golden.spec.ts` — tap-to-place and the bottom tab bar). Both 
 seeded session; the per-test wipe keeps them independent despite sharing the user. Run one project
 with `npm run test:e2e:golden -- --project chromium-mobile`.
 
+One golden spec (`e2e/golden/eisenclaw-seed.golden.spec.ts`) opts into realistic seeded data
+(Braeden's real EisenClaw tasks/habits) instead of the empty slate — see
+`scripts/eisenclaw-seed/README.md`.
+
 ## Local Supabase
 
 Development runs against a local Supabase stack in Docker — free, offline, disposable.
@@ -145,6 +149,9 @@ nvm use && npm run dev          # http://localhost:5173
 The app is **sign-in-only** (invite-only — ADR-0014). Create a local user in Studio
 (`http://127.0.0.1:54323` → Authentication → Add user; local email confirmation is off), then
 sign in, add a task, and it renders from Postgres through RLS.
+
+To populate that user with realistic data instead of starting blank, run
+`npm run seed:eisenclaw -- --email <that user's email>` — see `scripts/eisenclaw-seed/README.md`.
 
 ### Schema / migrations
 

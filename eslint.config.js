@@ -54,5 +54,11 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: { 'react-hooks/rules-of-hooks': 'off' },
   },
+  // Standalone dev scripts (Node CLIs, no React) — see scripts/eisenclaw-seed/README.md.
+  {
+    files: ['scripts/**/*.ts'],
+    languageOptions: { globals: globals.node },
+    rules: { 'react-hooks/rules-of-hooks': 'off' },
+  },
   prettier,
 )
