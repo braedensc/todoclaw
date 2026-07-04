@@ -135,6 +135,83 @@ def _in_project(path: str) -> bool:
         return False
 
 
+# ── Cross-worktree write guard: never write into a DIFFERENT checkout ───────────
+# The branch guards above only fire for paths INSIDE this worktree (_in_project).
+# A write whose path belongs to a SIBLING/PARENT worktree — classically the main
+# checkout (on `main`), reached via a persisted `cd` into it — skips every guard and
+# lands there SILENTLY: tests/typecheck here still pass against the unmodified files,
+# so a whole session's edits can go to the wrong checkout unnoticed (2026-07-03 retro,
+# see todoclaw-cross-worktree-write-gotcha). Resolve the target's OWNING worktree via
+# `git worktree list` (the most-specific/longest root that contains it); if that isn't
+# THIS session's worktree, block. Fails open (no git / not a worktree → owner None →
+# allow), and same-worktree writes are untouched (owner == PROJECT_ROOT), so paths
+# outside the repo (scratchpad, ~/.claude memory, /tmp) and normal edits are unaffected
+# — the guard cannot lock the session out of its own worktree.
+CROSS_WORKTREE_HELP = (
+    "Cross-worktree write blocked — this path is in a DIFFERENT checkout than your session:\n"
+    "  target worktree: {owner}\n"
+    "  your session:    {here}\n"
+    "Writing into another worktree (especially the MAIN checkout, usually on `main`) lands "
+    "there SILENTLY: the branch guard only protects your own worktree, and your tests/typecheck "
+    "would still pass against the unmodified files here. Use your OWN worktree's path instead:\n"
+    "  {suggested}\n"
+    "(Usual cause: a persisted `cd` into another checkout — prefer absolute worktree paths and "
+    "`git -C <dir>` over `cd`. If you genuinely must edit the other worktree, do it from a "
+    "session rooted there.)"
+)
+
+
+def _worktree_roots():
+    """Absolute roots of every git worktree for this repo, or [] on any failure."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", PROJECT_ROOT, "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if r.returncode != 0:
+            return []
+        return [
+            os.path.abspath(line[len("worktree ") :].strip())
+            for line in r.stdout.splitlines()
+            if line.startswith("worktree ")
+        ]
+    except Exception:
+        return []
+
+
+def _owning_worktree(path: str, roots):
+    """The most-specific (longest) worktree root that contains `path`, or None."""
+    try:
+        ap = os.path.abspath(path)
+    except Exception:
+        return None
+    best = None
+    for root in roots:
+        try:
+            if os.path.commonpath([ap, root]) == root and (
+                best is None or len(root) > len(best)
+            ):
+                best = root
+        except Exception:
+            continue
+    return best
+
+
+if tool in ("Edit", "Write"):
+    _fp = inp.get("file_path", "")
+    _owner = _owning_worktree(_fp, _worktree_roots()) if _fp else None
+    if _owner and os.path.abspath(_owner) != os.path.abspath(PROJECT_ROOT):
+        try:
+            _suggested = os.path.join(
+                PROJECT_ROOT, os.path.relpath(os.path.abspath(_fp), _owner)
+            )
+        except Exception:
+            _suggested = os.path.join(PROJECT_ROOT, "<same-relative-path>")
+        block(CROSS_WORKTREE_HELP.format(owner=_owner, here=PROJECT_ROOT, suggested=_suggested))
+
+
 if tool in ("Edit", "Write") and _in_project(inp.get("file_path", "")):
     branch = _current_branch()
     if branch in PROTECTED_BRANCHES:
