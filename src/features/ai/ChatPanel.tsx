@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { type ChatItem } from './use-ai-chat'
+import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
 import { AiPrivacyNote } from './AiPrivacyNote'
 
