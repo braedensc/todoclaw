@@ -34,7 +34,6 @@ export interface GridCardProps {
   onPointerDown: (event: PointerEvent) => void
   onRename: (text: string) => void
   onDelete: () => void
-  onBackToTray: () => void
   /** Mark this task done — caller branches recurring (reset cycle) vs normal (write history). */
   onDone: () => void
 }
@@ -45,9 +44,10 @@ export interface GridCardProps {
  * The other three sides carry the bucket accent (BUCKET_DOT) — EisenClaw's per-bucket card
  * color, now uniform terracotta since only `oneoff` survives. Set as three long-hand colors
  * (not the `borderColor` shorthand) so a drag can imperatively override just `borderTopColor`.
- * Hover reveals done / edit / delete / back-to-tray. The whole card is the drag handle; the
- * action buttons stopPropagation so clicking them never starts a drag. Done marks a normal
- * task complete for today (it leaves the grid) or resets a recurring task's cycle.
+ * Hover reveals done / edit / delete. The whole card is the drag handle; the action buttons
+ * stopPropagation so clicking them never starts a drag. Once placed, a card is only done /
+ * moved / edited / deleted — never returned to staging (B8). Done marks a normal task complete
+ * for today (it leaves the grid) or resets a recurring task's cycle.
  */
 export function GridCard({
   task,
@@ -59,7 +59,6 @@ export function GridCard({
   onPointerDown,
   onRename,
   onDelete,
-  onBackToTray,
   onDone,
 }: GridCardProps) {
   const [editing, setEditing] = useState(false)
@@ -214,9 +213,6 @@ export function GridCard({
               }}
             >
               ✎
-            </ActionButton>
-            <ActionButton label="Back to tray" onClick={onBackToTray}>
-              ⤓
             </ActionButton>
             <ActionButton label="Delete task" onClick={onDelete}>
               ×

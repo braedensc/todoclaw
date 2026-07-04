@@ -1,6 +1,6 @@
 import type { CSSProperties, PointerEvent, ReactNode, RefObject } from 'react'
 import { quadrantMeta } from '../../lib/quadrants'
-import { AXIS_COLOR, AXIS_LABEL_COLOR, GRIDLINE_COLOR, QUADRANT_TINT } from './grid-constants'
+import { AXIS_COLOR, GRIDLINE_COLOR, QUADRANT_TINT } from './grid-constants'
 
 // Corner quadrant labels. Each rendered in its quadrantMeta color. The grid is y-inverted on
 // screen, so the high-importance quadrants (Schedule / Do Now) sit at the top.
@@ -99,52 +99,36 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
         }}
       />
 
-      {/* Corner quadrant labels (each in its own color). */}
+      {/* Corner quadrant labels (each in its own color). The TOP pair sits lower (top-7) so it
+          clears the embedded Grid/List toggle and the Expand control that straddle / hug the top
+          edge (B8); the bottom pair is nudged up to match. */}
       <span
-        className="pointer-events-none absolute left-3 top-2 text-xs font-semibold uppercase tracking-wide"
+        className="pointer-events-none absolute left-3 top-7 text-xs font-semibold uppercase tracking-wide"
         style={{ color: SCHEDULE.color }}
       >
         {SCHEDULE.label}
       </span>
       <span
-        className="pointer-events-none absolute right-3 top-2 text-xs font-semibold uppercase tracking-wide"
+        className="pointer-events-none absolute right-3 top-7 text-xs font-semibold uppercase tracking-wide"
         style={{ color: DO_NOW.color }}
       >
         {DO_NOW.label}
       </span>
       <span
-        className="pointer-events-none absolute bottom-2 left-3 text-xs font-semibold uppercase tracking-wide"
+        className="pointer-events-none absolute bottom-4 left-3 text-xs font-semibold uppercase tracking-wide"
         style={{ color: SOMEDAY.color }}
       >
         {SOMEDAY.label}
       </span>
       <span
-        className="pointer-events-none absolute bottom-2 right-3 text-xs font-semibold uppercase tracking-wide"
+        className="pointer-events-none absolute bottom-4 right-3 text-xs font-semibold uppercase tracking-wide"
         style={{ color: ERRANDS.color }}
       >
         {ERRANDS.label}
       </span>
 
-      {/* Edge axis labels (html:535-536). Additive absolute spans, vertically/horizontally
-          centered so they clear the corner quadrant labels. The y-axis label reads bottom-to-top
-          (rotate -90°) so its arrow points up. */}
-      <span
-        className="pointer-events-none absolute top-1/2 z-[3] whitespace-nowrap text-[10.5px] font-bold uppercase tracking-[0.1em]"
-        style={{
-          left: 6,
-          color: AXIS_LABEL_COLOR,
-          transform: 'rotate(-90deg) translateX(50%)',
-          transformOrigin: 'left center',
-        }}
-      >
-        Importance →
-      </span>
-      <span
-        className="pointer-events-none absolute bottom-1 left-1/2 z-[3] -translate-x-1/2 text-[10.5px] font-bold uppercase tracking-[0.1em]"
-        style={{ color: AXIS_LABEL_COLOR }}
-      >
-        Urgency →
-      </span>
+      {/* Axis arrows now live OUTSIDE the canvas edges — rendered by GridAxes in GridSurface so
+          they never overlap cards or the corner quadrant labels (B8, item 4). */}
 
       {children}
     </div>

@@ -1,6 +1,6 @@
-// Tests for the chat tools' pure surface: which tools exist, which are destructive, input
-// validation, and the confirmation summary. The DB-mutating executors are exercised by the
-// function integration test (curl) — here we prove the validation gate + classification.
+// Tests for the Anthropic adapter over the capability registry: which tools are advertised, the
+// destructive classification, the validation gate, and the confirmation summary. The DB-mutating
+// executors + per-capability behavior are covered in ./capabilities/registry.test.ts.
 // Run: deno test --no-check supabase/functions/_shared/chat-tools.test.ts
 import { assert, assertEquals } from 'jsr:@std/assert@1'
 import {
@@ -11,21 +11,32 @@ import {
   type ToolContext,
 } from './chat-tools.ts'
 
-Deno.test('exactly complete_task + delete_task are destructive', () => {
-  assertEquals([...DESTRUCTIVE].sort(), ['complete_task', 'delete_task'])
+Deno.test('complete_task, delete_task, delete_habit are the destructive tools', () => {
+  assertEquals([...DESTRUCTIVE].sort(), ['complete_task', 'delete_habit', 'delete_task'])
 })
 
-Deno.test('all destructive tools are real tools', () => {
+Deno.test('all destructive tools are real, advertised tools', () => {
   const names = new Set(TOOL_DEFS.map((t) => t.name))
   for (const d of DESTRUCTIVE) assert(names.has(d))
 })
 
-Deno.test('confirmation summary prefers the task text, falls back to the id', () => {
+Deno.test('every advertised tool has an object input_schema and a description', () => {
+  for (const t of TOOL_DEFS) {
+    assertEquals((t.input_schema as { type?: string }).type, 'object')
+    assert(typeof t.description === 'string' && t.description.length > 0)
+  }
+})
+
+Deno.test('confirmation summary prefers the label, falls back to the id (tasks + habits)', () => {
   assertEquals(
     destructiveSummary('delete_task', { task_id: 'abc' }, 'Call dentist'),
     'Move "Call dentist" to the trash',
   )
   assert(destructiveSummary('complete_task', { task_id: 'abc' }).includes('abc'))
+  assertEquals(
+    destructiveSummary('delete_habit', { habit_id: 'h1' }, 'Meditate'),
+    'Delete the habit "Meditate"',
+  )
 })
 
 Deno.test('invalid input is rejected before any DB call (is_error)', async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import type { ReactNode } from 'react'
 import { renderHook, act, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // Mock the Supabase client (session token only; the function is mocked via fetch).
 vi.mock('../../lib/supabase', () => ({
@@ -7,6 +9,14 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 import { useAiChat } from './use-ai-chat'
+
+// useAiChat reads a QueryClient (for live-refresh invalidation), so every render needs a provider.
+// A fresh client per test keeps invalidation-spy assertions isolated.
+let queryClient: QueryClient
+let invalidateSpy: ReturnType<typeof vi.fn>
+function wrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+}
 
 // Build a fetch Response whose body streams the given SSE events.
 function sseResponse(events: object[], status = 200) {
@@ -31,6 +41,9 @@ const sentBody = (call: number) =>
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   fetchMock.mockReset()
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  invalidateSpy = vi.fn()
+  queryClient.invalidateQueries = invalidateSpy as unknown as typeof queryClient.invalidateQueries
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -45,7 +58,7 @@ describe('useAiChat', () => {
       ]),
     )
 
-    const { result } = renderHook(() => useAiChat())
+    const { result } = renderHook(() => useAiChat(), { wrapper })
     act(() => result.current.send('add a task'))
 
     await waitFor(() => expect(result.current.busy).toBe(false))
@@ -107,7 +120,7 @@ describe('useAiChat', () => {
         ]),
       )
 
-    const { result } = renderHook(() => useAiChat())
+    const { result } = renderHook(() => useAiChat(), { wrapper })
     act(() => result.current.send('remove dentist'))
 
     await waitFor(() =>
@@ -209,7 +222,7 @@ describe('useAiChat', () => {
         ]),
       )
 
-    const { result } = renderHook(() => useAiChat())
+    const { result } = renderHook(() => useAiChat(), { wrapper })
     act(() => result.current.send('clean up'))
     await waitFor(() => expect(result.current.pending).not.toBeNull())
     act(() => result.current.confirm())
@@ -266,7 +279,7 @@ describe('useAiChat', () => {
         ]),
       )
 
-    const { result } = renderHook(() => useAiChat())
+    const { result } = renderHook(() => useAiChat(), { wrapper })
     act(() => result.current.send('what do I have?'))
     await waitFor(() => expect(result.current.busy).toBe(false))
     expect(result.current.items.some((i) => i.role === 'tool')).toBe(true)
@@ -278,14 +291,14 @@ describe('useAiChat', () => {
 
   it('maps the pre-stream budget kill-switch (HTTP 503) to the paused message', async () => {
     fetchMock.mockResolvedValueOnce(sseResponse([], 503))
-    const { result } = renderHook(() => useAiChat())
+    const { result } = renderHook(() => useAiChat(), { wrapper })
     act(() => result.current.send('hi'))
     await waitFor(() => expect(result.current.error).toMatch(/paused for this month/i))
   })
 
   it('maps the pre-stream rate limit (HTTP 429) to the slow-down message', async () => {
     fetchMock.mockResolvedValueOnce(sseResponse([], 429))
-    const { result } = renderHook(() => useAiChat())
+    const { result } = renderHook(() => useAiChat(), { wrapper })
     act(() => result.current.send('hi'))
     await waitFor(() => expect(result.current.error).toMatch(/rate limit/i))
   })
@@ -294,8 +307,61 @@ describe('useAiChat', () => {
     // The only codes the server emits in-band are 'tool-loop-cap' and 'chat_failed' — budget
     // and rate-limit rejections arrive pre-stream as HTTP statuses (tested above).
     fetchMock.mockResolvedValueOnce(sseResponse([{ type: 'error', code: 'tool-loop-cap' }]))
-    const { result } = renderHook(() => useAiChat())
+    const { result } = renderHook(() => useAiChat(), { wrapper })
     act(() => result.current.send('hi'))
     await waitFor(() => expect(result.current.error).toBe('Chat failed.'))
+  })
+
+  it('maps the pre-stream input cap (HTTP 413) to the too-long message', async () => {
+    fetchMock.mockResolvedValueOnce(sseResponse([], 413))
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('hi'))
+    await waitFor(() => expect(result.current.error).toMatch(/too long/i))
+  })
+
+  it('live-refresh: invalidates the mutated data domains on a successful tool-result', async () => {
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        {
+          type: 'tool-result',
+          tool_use_id: 't1',
+          name: 'create_task',
+          ok: true,
+          summary: 'Created "x".',
+          mutated: ['tasks', 'daily_state'],
+        },
+        { type: 'text-delta', text: 'Added it.' },
+        { type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Added it.' }] },
+        { type: 'done', stop_reason: 'end_turn' },
+      ]),
+    )
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('add x'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+
+    const keys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] })?.queryKey)
+    expect(keys).toContainEqual(['tasks'])
+    expect(keys).toContainEqual(['daily_state'])
+  })
+
+  it('live-refresh: does NOT invalidate on a FAILED tool-result', async () => {
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        {
+          type: 'tool-result',
+          tool_use_id: 't1',
+          name: 'delete_task',
+          ok: false,
+          summary: "I couldn't find that task.",
+          mutated: ['tasks'],
+        },
+        { type: 'message', role: 'assistant', content: [] },
+        { type: 'done', stop_reason: 'end_turn' },
+      ]),
+    )
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('delete y'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+    expect(invalidateSpy).not.toHaveBeenCalled()
   })
 })

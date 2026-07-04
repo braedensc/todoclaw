@@ -1,5 +1,5 @@
 import { test, expect } from '../helpers/fixtures'
-import { placeTask, switchTab } from '../helpers/ui'
+import { placeTask, switchTab, openDone } from '../helpers/ui'
 
 // Golden path: make a task recurring, then mark it done — a cycle-done RESETS the clock
 // (lastDoneAt = now → status "ok") instead of archiving: the task stays in the list, leaves
@@ -39,6 +39,6 @@ test('set recurring → cycle-done resets the clock instead of archiving', async
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
   // …and recurring completions never reach the permanent history.
-  await switchTab(page, 'Done')
+  await openDone(page)
   await expect(page.getByText('Nothing done yet — completed tasks land here.')).toBeVisible()
 })

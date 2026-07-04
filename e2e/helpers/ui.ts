@@ -9,12 +9,12 @@ import { expect, type Locator, type Page } from '@playwright/test'
 // Data-space y is inverted from screen y (top of the canvas = high importance), so callers
 // pick screen spots: e.g. (0.75, 0.25) lands in data-space (0.75, 0.75) = "Do Now".
 
-/** Add a task via the header form and wait for it to appear in the staging tray. */
+/** Add a task via the Manual input widget and wait for it to appear as a staging chip. */
 export async function addTask(page: Page, text: string): Promise<void> {
-  await page.getByPlaceholder('Add a task…').fill(text)
-  // Scope to the header capture form: the shell has other "Add" buttons (e.g. the Habits panel),
-  // so an unscoped name match is ambiguous. The form is the one holding the capture input.
-  const captureForm = page.locator('form', { has: page.getByPlaceholder('Add a task…') })
+  await page.getByPlaceholder('manually add task…').fill(text)
+  // Scope to the Manual add form: the shell has other "Add" buttons (e.g. the Habits panel),
+  // so an unscoped name match is ambiguous. The form is the one holding the Manual input.
+  const captureForm = page.locator('form', { has: page.getByPlaceholder('manually add task…') })
   await captureForm.getByRole('button', { name: /^Add$/ }).click()
   await expect(page.getByTestId('tray-card').filter({ hasText: text })).toBeVisible()
 }
@@ -95,9 +95,37 @@ export async function tapPlaceTask(
   return card
 }
 
-/** Switch top-level view via the tab nav and wait for it to become the active tab. */
-export async function switchTab(page: Page, name: 'Grid' | 'List' | 'Done'): Promise<void> {
+/**
+ * Switch the work view via the embedded Grid⇄List toggle and wait for it to become active.
+ * Done is no longer a view (B8) — use `openDone` / `closeDone` for the history panel.
+ */
+export async function switchTab(page: Page, name: 'Grid' | 'List'): Promise<void> {
   const tab = page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name })
   await tab.click()
   await expect(tab).toHaveAttribute('aria-current', 'page')
+}
+
+/** Open the Done history panel from the header (B8: Done is a header link, not a view). */
+export async function openDone(page: Page): Promise<void> {
+  await page
+    .getByRole('navigation', { name: 'Account' })
+    .getByRole('button', { name: 'Done' })
+    .click()
+  await expect(page.getByRole('region', { name: 'Done' })).toBeVisible()
+}
+
+/** Close the Done history panel, returning to the view underneath. */
+export async function closeDone(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Close done' }).click()
+  await expect(page.getByRole('region', { name: 'Done' })).toHaveCount(0)
+}
+
+/** Open the full chat popup: switch the input widget to BabyClaw, then "Open chat". */
+export async function openChat(page: Page): Promise<void> {
+  await page
+    .getByRole('group', { name: 'Add mode' })
+    .getByRole('button', { name: 'BabyClaw' })
+    .click()
+  await page.getByRole('button', { name: /Open chat/ }).click()
+  await expect(page.getByRole('complementary', { name: 'Chat' })).toBeVisible()
 }

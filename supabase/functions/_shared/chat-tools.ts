@@ -1,291 +1,75 @@
-// chat-tools.ts — the chat's user-scoped tools: definitions (sent to Anthropic), Zod input
-// validation (defense-in-depth at execution), and executors. EVERY DB write goes through the
-// CALLER's JWT client (ctx.client), so RLS applies and the model never supplies user_id — a
-// prompt-injected instruction can at worst touch the caller's own rows. Destructive tools
-// (complete_task, delete_task) are gated by a SERVER-SIDE set, never trusted from the model.
+// chat-tools.ts — the thin ANTHROPIC ADAPTER over the transport-agnostic capability registry
+// (./capabilities/). It does three things and nothing else:
+//   1. TOOL_DEFS — turn each capability into an Anthropic tool (JSON Schema derived from the
+//      capability's zod schema via z.toJSONSchema, so there is no second hand-kept schema to drift).
+//   2. executeTool — validate input against the zod schema (defense-in-depth at execution) and run
+//      the capability, returning the model-facing text + which data domains it mutated.
+//   3. destructiveSummary — the human confirmation label for a destructive tool.
+// EVERY DB write still goes through the caller's JWT client (ctx.client) → RLS applies and the
+// model never supplies user_id. A future MCP server consumes the SAME registry via its own adapter.
 
+import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { z } from 'npm:zod@4.4.3'
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
-import { localDateInTZ } from './dates.ts'
-import { placeByDue, urgencyToX, importanceToY } from './placement.ts'
+import { CAPABILITIES, capabilityByName, DESTRUCTIVE } from './capabilities/registry.ts'
+import type { CapabilityContext, MutationDomain } from './capabilities/types.ts'
 
-export interface ToolContext {
-  client: SupabaseClient // caller-JWT-scoped → RLS applies
-  timeZone: string // for complete_task's user-local date
-  now?: Date
-}
+// Re-exported so ai-chat's imports are stable across the refactor.
+export type ToolContext = CapabilityContext
+export { DESTRUCTIVE }
 
 export interface ToolResult {
   content: string // narratable text fed back to the model as the tool_result
   is_error: boolean
+  mutated?: MutationDomain[] // domains changed → drives the client's live-refresh
 }
 
-// Destructive tools require explicit user confirmation before they execute. This is a
-// SERVER-SIDE classification — the model's belief about it is irrelevant.
-export const DESTRUCTIVE = new Set(['complete_task', 'delete_task'])
+// Derive an Anthropic input_schema from a capability's zod schema. z.toJSONSchema emits a
+// draft-07 document; Anthropic wants the bare object schema, so drop the top-level $schema key.
+function toInputSchema(schema: z.ZodType): Record<string, unknown> {
+  const js = z.toJSONSchema(schema, { target: 'draft-7' }) as Record<string, unknown>
+  delete js.$schema
+  return js
+}
 
-// ---- tool definitions (Anthropic input_schema) ----------------------------------------------
-export const TOOL_DEFS = [
-  {
-    name: 'list_tasks',
-    description:
-      "List the user's current tasks (id, text, grid position, due date, staged, recurring). Use to refresh context before editing.",
-    input_schema: { type: 'object', additionalProperties: false, properties: {} },
-  },
-  {
-    name: 'create_task',
-    description:
-      'Create a new task. If a due date is given, the grid position is computed automatically; if not, the task is staged at the center for the user to place.',
-    input_schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        text: { type: 'string', description: 'The task text.' },
-        due: { type: ['string', 'null'], description: 'ISO 8601 date (e.g. 2026-07-01) or null.' },
-        recurring_frequency_days: {
-          type: ['integer', 'null'],
-          description: 'If it recurs, the cadence in days; else null.',
-        },
-      },
-      required: ['text'],
-    },
-  },
-  {
-    name: 'move_task',
-    description:
-      'Reposition a task on the urgency (x) / importance (y) grid. Provide EITHER x and y (0..1) OR the word-based urgency/importance.',
-    input_schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        task_id: { type: 'string', description: 'The task id (UUID).' },
-        x: { type: ['number', 'null'], minimum: 0, maximum: 1 },
-        y: { type: ['number', 'null'], minimum: 0, maximum: 1 },
-        urgency: { type: ['string', 'null'], enum: ['low', 'medium', 'high', null] },
-        importance: { type: ['string', 'null'], enum: ['low', 'high', null] },
-      },
-      required: ['task_id'],
-    },
-  },
-  {
-    name: 'set_due_date',
-    description: "Set or clear a task's due date; the grid position follows the new due date.",
-    input_schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        task_id: { type: 'string' },
-        due: { type: ['string', 'null'], description: 'ISO 8601 date, or null to clear.' },
-      },
-      required: ['task_id', 'due'],
-    },
-  },
-  {
-    name: 'make_recurring',
-    description: 'Make a task recurring with a cadence in days.',
-    input_schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        task_id: { type: 'string' },
-        frequency_days: { type: 'integer', minimum: 1 },
-      },
-      required: ['task_id', 'frequency_days'],
-    },
-  },
-  {
-    name: 'complete_task',
-    description:
-      'Mark a task done for today. Destructive — the user is asked to confirm before it runs.',
-    input_schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: { task_id: { type: 'string' } },
-      required: ['task_id'],
-    },
-  },
-  {
-    name: 'delete_task',
-    description:
-      'Move a task to the trash (soft-delete). Destructive — the user is asked to confirm before it runs.',
-    input_schema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: { task_id: { type: 'string' } },
-      required: ['task_id'],
-    },
-  },
-] as const
+export const TOOL_DEFS = CAPABILITIES.map((c) => ({
+  name: c.name,
+  description: c.description,
+  input_schema: toInputSchema(c.schema),
+})) as unknown as Anthropic.Tool[]
 
-// ---- Zod input schemas (validated before any DB write) --------------------------------------
-const uuid = z.string().uuid()
-const SCHEMAS = {
-  list_tasks: z.object({}).strict(),
-  create_task: z.object({
-    text: z.string().min(1),
-    due: z.string().nullish(),
-    recurring_frequency_days: z.number().int().positive().nullish(),
-  }),
-  move_task: z.object({
-    task_id: uuid,
-    x: z.number().min(0).max(1).nullish(),
-    y: z.number().min(0).max(1).nullish(),
-    urgency: z.enum(['low', 'medium', 'high']).nullish(),
-    importance: z.enum(['low', 'high']).nullish(),
-  }),
-  set_due_date: z.object({ task_id: uuid, due: z.string().nullable() }),
-  make_recurring: z.object({ task_id: uuid, frequency_days: z.number().int().positive() }),
-  complete_task: z.object({ task_id: uuid }),
-  delete_task: z.object({ task_id: uuid }),
-} as const
-
-// ---- executor -------------------------------------------------------------------------------
+// Validate then execute. Unknown tool or invalid arguments fail here, BEFORE any DB call, and are
+// surfaced to the model as an error tool_result (never a throw).
 export async function executeTool(
   name: string,
   rawInput: unknown,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  const schema = (SCHEMAS as Record<string, z.ZodTypeAny>)[name]
-  if (!schema) return err(`Unknown tool: ${name}`)
+  const cap = capabilityByName.get(name)
+  if (!cap) return { content: `Unknown tool: ${name}`, is_error: true }
 
-  const parsed = schema.safeParse(rawInput ?? {})
-  if (!parsed.success) return err(`Invalid arguments for ${name}: ${parsed.error.message}`)
-  const input = parsed.data
-  const now = ctx.now ?? new Date()
+  const parsed = cap.schema.safeParse(rawInput ?? {})
+  if (!parsed.success) {
+    return { content: `Invalid arguments for ${name}: ${parsed.error.message}`, is_error: true }
+  }
 
   try {
-    switch (name) {
-      case 'list_tasks': {
-        const { data, error } = await ctx.client
-          .from('tasks')
-          .select('id, text, x, y, due, staged, recurring')
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false })
-        if (error) return err(error.message)
-        return ok(JSON.stringify(data ?? []))
-      }
-      case 'create_task': {
-        const i = input as z.infer<typeof SCHEMAS.create_task>
-        const place = placeByDue(i.due ?? null, ctx.timeZone, now)
-        const row: Record<string, unknown> = {
-          text: i.text,
-          x: place.x,
-          y: place.y,
-          staged: place.staged,
-          due: i.due ?? null,
-        }
-        if (i.recurring_frequency_days) {
-          row.recurring = {
-            frequencyDays: i.recurring_frequency_days,
-            lastDoneAt: null,
-            doneCount: 0,
-          }
-        }
-        const { data, error } = await ctx.client.from('tasks').insert(row).select('id').single()
-        if (error) return err(error.message)
-        return ok(
-          `Created "${i.text}"${place.staged ? ' in the staging tray' : ' on the grid'} (id ${
-            data.id
-          }).`,
-        )
-      }
-      case 'move_task': {
-        const i = input as z.infer<typeof SCHEMAS.move_task>
-        const x = i.x ?? (i.urgency ? urgencyToX(i.urgency) : undefined)
-        const y = i.y ?? (i.importance ? importanceToY(i.importance) : undefined)
-        if (x === undefined && y === undefined) {
-          return err('Specify a position: x/y, or an urgency/importance word.')
-        }
-        const patch: Record<string, number | boolean> = { staged: false }
-        if (x !== undefined) patch.x = x
-        if (y !== undefined) patch.y = y
-        return updateTask(ctx.client, i.task_id, patch, 'Moved')
-      }
-      case 'set_due_date': {
-        const i = input as z.infer<typeof SCHEMAS.set_due_date>
-        const place = placeByDue(i.due, ctx.timeZone, now)
-        return updateTask(
-          ctx.client,
-          i.task_id,
-          { due: i.due, x: place.x, y: place.y, staged: place.staged },
-          i.due ? 'Set the due date for' : 'Cleared the due date for',
-        )
-      }
-      case 'make_recurring': {
-        const i = input as z.infer<typeof SCHEMAS.make_recurring>
-        return updateTask(
-          ctx.client,
-          i.task_id,
-          { recurring: { frequencyDays: i.frequency_days, lastDoneAt: null, doneCount: 0 } },
-          'Made recurring',
-        )
-      }
-      case 'complete_task': {
-        const i = input as z.infer<typeof SCHEMAS.complete_task>
-        const { data: task, error: selErr } = await ctx.client
-          .from('tasks')
-          .select('text, bucket')
-          .eq('id', i.task_id)
-          .is('deleted_at', null)
-          .maybeSingle()
-        if (selErr) return err(selErr.message)
-        if (!task) return err('That task no longer exists.')
-        const { error } = await ctx.client.rpc('set_task_done', {
-          p_date: localDateInTZ(ctx.timeZone, now),
-          p_task_id: i.task_id,
-          p_text: task.text,
-          p_bucket: task.bucket ?? null,
-        })
-        if (error) return err(error.message)
-        return ok(`Marked "${task.text}" done for today.`)
-      }
-      case 'delete_task': {
-        const i = input as z.infer<typeof SCHEMAS.delete_task>
-        return updateTask(
-          ctx.client,
-          i.task_id,
-          { deleted_at: new Date().toISOString() },
-          'Moved to the trash',
-        )
-      }
-      default:
-        return err(`Unhandled tool: ${name}`)
-    }
+    const res = await cap.execute(ctx, parsed.data)
+    return { content: res.content, is_error: res.isError, mutated: res.mutated }
   } catch (e) {
-    return err(e instanceof Error ? e.message : 'tool failed')
+    return { content: e instanceof Error ? e.message : 'tool failed', is_error: true }
   }
 }
 
-// Update a task by id under RLS; .select() confirms a row actually matched (a hallucinated id
-// touches zero rows → a clear "not found" rather than a silent no-op).
-async function updateTask(
-  client: SupabaseClient,
-  id: string,
-  patch: Record<string, unknown>,
-  verb: string,
-): Promise<ToolResult> {
-  const { data, error } = await client
-    .from('tasks')
-    .update(patch)
-    .eq('id', id)
-    .is('deleted_at', null)
-    .select('text')
-    .maybeSingle()
-  if (error) return err(error.message)
-  if (!data) return err("I couldn't find that task.")
-  return ok(`${verb} "${data.text}".`)
-}
-
-const ok = (content: string): ToolResult => ({ content, is_error: false })
-const err = (content: string): ToolResult => ({ content, is_error: true })
-
-// A short human summary of a destructive tool call, shown in the confirmation dialog. The caller
-// resolves the task text (from the seeded grid) for a friendly label; falls back to the id.
-export function destructiveSummary(name: string, input: unknown, taskText?: string): string {
-  const label = taskText
-    ? `"${taskText}"`
-    : `task ${(input as { task_id?: string })?.task_id ?? ''}`
-  if (name === 'complete_task') return `Mark ${label} done for today`
-  if (name === 'delete_task') return `Move ${label} to the trash`
+// A short human summary of a destructive tool call, shown in the confirmation dialog. `label`
+// (resolved by the caller from the seeded task/habit snapshot) makes it friendly; falls back to
+// the id. task_id (tasks) and habit_id (habits) are both handled.
+export function destructiveSummary(name: string, input: unknown, label?: string): string {
+  const id =
+    (input as { task_id?: string; habit_id?: string })?.task_id ??
+    (input as { habit_id?: string })?.habit_id ??
+    ''
+  if (name === 'complete_task') return `Mark ${label ? `"${label}"` : `task ${id}`} done for today`
+  if (name === 'delete_task') return `Move ${label ? `"${label}"` : `task ${id}`} to the trash`
+  if (name === 'delete_habit') return `Delete the habit ${label ? `"${label}"` : id}`
   return `Run ${name}`
 }

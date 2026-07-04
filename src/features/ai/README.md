@@ -19,12 +19,22 @@ Functions (`supabase/functions/`).
   on load** — so the plan survives reloads and auto-clears at local midnight (a new day reads a
   different date's row). The plan shape + its Zod validator live in `src/types/plan.ts`.
 
-- **`ChatPanel.tsx`** + **`use-ai-chat.ts`** — Chat (PR4). A right slide-over that streams the
-  assistant's reply token-by-token and pauses for **confirmation before any destructive action**
-  (complete / move-to-trash). `use-ai-chat` fetches the `ai-chat` Edge Function directly (so it can
-  read the SSE stream — `functions.invoke` doesn't stream), holds the conversation client-side, and
-  drives the confirm/decline round-trip. Tools are user-scoped (RLS); the model never sets
-  `user_id`. See ADR-0017 + `supabase/functions/README.md`.
+- **`ChatPanel.tsx`** + **`use-ai-chat.ts`** — **BabyClaw**, the in-app planning assistant. A right
+  slide-over that streams BabyClaw's reply token-by-token and pauses for **confirmation before any
+  destructive action** (complete / delete task / delete habit). It drives the full ~20-capability
+  set — tasks, **habits** (create/rename/steps/check-off), and Plan My Day — via a transport-agnostic
+  capability registry (`supabase/functions/_shared/capabilities/`, MCP-ready). `use-ai-chat` fetches
+  the `ai-chat` Edge Function directly (to read the SSE stream — `functions.invoke` doesn't stream),
+  holds the conversation client-side, and drives the confirm/decline round-trip. On each successful
+  **mutating** tool result the server reports which data domains changed, and `use-ai-chat`
+  **invalidates the matching TanStack Query keys so the grid/list/habits/Done live-refresh instantly**
+  (`DOMAIN_QUERY_KEYS`). Tools are user-scoped (RLS); the model never sets `user_id`. Persona +
+  security rules + the threat model live server-side. See ADR-0017 + `supabase/functions/README.md`
+  + `capabilities/README.md`.
+
+  BabyClaw reads a small per-user config (`user_schedule.config.assistant`: `tone`, `verbosity`,
+  optional `customInstructions`) folded into its prompt with safe defaults; the editor UI is a
+  separate Settings task (custom instructions are treated as preferences and can never widen scope).
 
 - **`AiPrivacyNote.tsx`** — a short, honest disclosure shown in both AI panels: AI runs on the
   owner's Anthropic key, your task/message text is sent to Anthropic, and chat isn't saved. The

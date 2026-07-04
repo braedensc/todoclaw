@@ -5,7 +5,16 @@
 
 export type SseEvent =
   | { type: 'text-delta'; text: string }
-  | { type: 'tool-result'; tool_use_id: string; name: string; ok: boolean; summary: string }
+  | {
+      type: 'tool-result'
+      tool_use_id: string
+      name: string
+      ok: boolean
+      summary: string
+      // Data domains this tool changed ('tasks' | 'habits' | 'daily_state' | 'history'); the
+      // client invalidates the matching TanStack Query keys so the UI live-refreshes.
+      mutated?: string[]
+    }
   | {
       type: 'tool-pending-confirmation'
       tool_use_id: string
