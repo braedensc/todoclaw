@@ -164,20 +164,45 @@ it reads the issue, branches, builds, opens the PR, you review.
 
 ## What's automatic (enforcement)
 
-This repo enforces the workflow at three layers so you don't have to remember it —
+This repo enforces the workflow at four layers so you don't have to remember it —
 mirroring the security model in `CLAUDE.md`:
 
-1. **Claude Code PreToolUse hook** (`.claude/hooks/pre-tool-use.py`) — blocks
-   `Edit`/`Write`/`git commit` while on `main`/`master`. The model **cannot**
-   bypass this, so a new task is forced onto a branch. `CLAUDE.md` also tells
-   Claude to branch *proactively* before it ever hits the block.
-2. **Git pre-commit hook** (`.husky/pre-commit`) — blocks human/CLI commits on
+1. **Claude Code PreToolUse hook** (`.claude/hooks/pre-tool-use.py`) — runs before
+   every tool call, model **cannot** bypass it:
+   - Blocks `Edit`/`Write`/`git commit` while on `main`/`master`, forcing a new
+     task onto a branch before it starts. `CLAUDE.md` also tells Claude to
+     branch *proactively* before it ever hits this block.
+   - Blocks `git commit`/`git push` on a branch whose PR is already **merged**
+     (checks `gh pr view <branch> --json state`) — a branch pushed after its PR
+     merges is silently stranded, since GitHub stops syncing that PR's head and
+     stops running CI on further pushes to it (learned the hard way 2026-07-03,
+     PR #54). Fails open if `gh`/network is unavailable, so it never blocks on
+     something it can't verify.
+   - Blocks `gh pr merge` outright, including `--auto` — **merging is Braeden's
+     action only.** Claude opens a PR and stops there. (`--disable-auto` is
+     exempted, since it only undoes an auto-merge, never causes one.)
+2. **Claude Code Stop hook** (`.claude/hooks/stop-pr-check.py`) — runs whenever
+   Claude tries to end a turn, and blocks (with a reminder) when:
+   - the current branch has pushed commits ahead of `main` with **no PR** at
+     all yet, or
+   - the branch's open PR has **failing CI** (`statusCheckRollup` shows a
+     failing conclusion — this is what CLAUDE.md's "watch CI to green" rule
+     means in practice).
+
+   Dedups per `(branch, reason, commit sha)` so it can't loop even if the
+   harness doesn't honor `stop_hook_active`, and fails open the same way as
+   the PreToolUse hook above.
+3. **Git pre-commit hook** (`.husky/pre-commit`) — blocks human/CLI commits on
    `main`. Bypassable with `--no-verify`, but…
-3. **CI + branch protection** — the unbypassable gate. All changes land via PR
+4. **CI + branch protection** — the unbypassable gate. All changes land via PR
    with passing checks; no direct or force-push to `main`.
 
-So in practice: just start working. If you (or Claude) try to edit on `main`,
-you'll be told to branch first — that's the system doing its job, not an error.
+So in practice: just start working. If you (or Claude) try to edit on `main`, push
+to an already-merged branch, or wrap up with no PR or red CI, you'll be told to
+fix it first — that's the system doing its job, not an error. Merging itself stays
+entirely yours: the PreToolUse hook only intercepts Claude's own tool calls, so it
+blocks Claude from running `gh pr merge`, but never blocks you from merging via the
+CLI or the GitHub UI.
 
 ---
 
