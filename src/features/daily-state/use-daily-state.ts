@@ -10,7 +10,10 @@ import { DailyStateSchema, type DailyState } from '../../types/daily-state'
 // Read-only here. The row is created LAZILY by the first mark-done (a mutation added in a
 // later PR), so "no row" is the normal empty state, NOT an error: we return empty maps.
 
-const EMPTY_DAILY_STATE = {
+// The canonical "nothing recorded today" maps. Exported so an optimistic writer (e.g.
+// useToggleDailyFlag) can seed a correctly-shaped row when the read query hasn't populated
+// the cache yet — never a partial shape.
+export const EMPTY_DAILY_STATE = {
   done: {},
   done_at: {},
   habit_done: {},

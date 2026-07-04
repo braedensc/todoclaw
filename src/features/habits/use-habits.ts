@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { localDateInTZ } from '../../lib/dates'
 import { HabitSchema, type Habit } from '../../types/habit'
-import type { DailyStateMaps } from '../daily-state/use-daily-state'
+import { EMPTY_DAILY_STATE, type DailyStateMaps } from '../daily-state/use-daily-state'
 
 // The Daily Habits data layer. Mirrors src/features/tasks/use-tasks.ts:
 //   - habits live in their own table; subtasks are an EMBEDDED jsonb array on the row
@@ -124,18 +124,24 @@ export function useToggleDailyFlag() {
       // Stop any in-flight refetch from clobbering the optimistic write.
       await qc.cancelQueries({ queryKey })
       const previous = qc.getQueryData<DailyStateMaps>(queryKey)
-      // Only patch when the day's row is already cached (the read hook populates it on mount);
-      // otherwise leave it for the onSettled refetch rather than seed a partial shape.
-      if (previous) {
-        qc.setQueryData<DailyStateMaps>(queryKey, {
-          ...previous,
-          [map]: { ...previous[map], [key]: value },
-        })
-      }
+      // Seed from the canonical empty maps when the read query hasn't populated the cache yet
+      // (daily_state is a separate query from habits, with no ordering guarantee — a click during
+      // that cold-load window would otherwise skip the optimistic write and re-introduce the very
+      // flicker this hook fixes). EMPTY_DAILY_STATE is a full, correctly-shaped row, never partial.
+      const base = previous ?? EMPTY_DAILY_STATE
+      qc.setQueryData<DailyStateMaps>(queryKey, {
+        ...base,
+        [map]: { ...base[map], [key]: value },
+      })
       return { queryKey, previous }
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) qc.setQueryData(context.queryKey, context.previous)
+      if (!context) return
+      // Roll back to the pre-click state. Warm: restore the snapshot. Cold (no prior row): drop
+      // the seed outright — setQueryData(key, undefined) is a no-op in React Query, so removing
+      // the entry is the only way to actually clear an optimistic seed on error.
+      if (context.previous) qc.setQueryData(context.queryKey, context.previous)
+      else qc.removeQueries({ queryKey: context.queryKey })
     },
     onSettled: (_date, _err, _vars, context) => {
       if (context) qc.invalidateQueries({ queryKey: context.queryKey })
