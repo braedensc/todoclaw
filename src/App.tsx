@@ -16,6 +16,7 @@ import { usePlanController } from './features/ai/use-plan-controller'
 import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { BackupsPanel } from './features/backups/BackupsPanel'
+import { SettingsPanel } from './features/settings/SettingsPanel'
 import { supabase } from './lib/supabase'
 
 // Renders the active tab's view. Lightweight switch — no router (project convention).
@@ -45,6 +46,7 @@ function AppShell() {
   const [text, setText] = useState('')
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const addTask = useAddTask()
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
@@ -116,8 +118,16 @@ function AppShell() {
           </div>
 
           {/* Secondary/utility actions — deliberately smaller and less prominent than the
-              AI actions above (Backups is used far less often). */}
+              AI actions above (Settings + Backups are used far less often). */}
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="text-sm text-muted underline hover:text-ink"
+            >
+              <span aria-hidden>⚙</span> Settings
+            </button>
+
             <button
               type="button"
               onClick={() => setShowBackups(true)}
@@ -168,6 +178,12 @@ function AppShell() {
       {showBackups && (
         <ErrorBoundary>
           <BackupsPanel onClose={() => setShowBackups(false)} />
+        </ErrorBoundary>
+      )}
+
+      {showSettings && (
+        <ErrorBoundary>
+          <SettingsPanel onClose={() => setShowSettings(false)} />
         </ErrorBoundary>
       )}
     </>
