@@ -1,7 +1,32 @@
+import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
-import { GridView } from './GridView'
+import { useGrid } from './use-grid'
+import { GridSurface } from './GridSurface'
+import { StagingBar } from './StagingBar'
+
+// The grid was split (B8): the drag/placement orchestration lives in `useGrid`, the canvas render
+// in `GridSurface`, and the staging chips (folded out of the old right-column tray) in `StagingBar`
+// — which now lives in the input widget above the grid. This harness wires the three back together
+// exactly as WorkArea does, so these behavioural tests exercise the same integration.
+function GridHarness() {
+  const gridRef = useRef<HTMLDivElement>(null)
+  const grid = useGrid(gridRef)
+  return (
+    <>
+      <StagingBar grid={grid} canPlace />
+      <GridSurface
+        grid={grid}
+        gridRef={gridRef}
+        view="grid"
+        onSelectView={() => {}}
+        expanded={false}
+        onToggleExpanded={() => {}}
+      />
+    </>
+  )
+}
 
 // Mock the data layer so the grid renders under jsdom with no Supabase/network. Mutations are
 // spies we assert against; the schedule/daily-state hooks return fixtures the tests override.
@@ -69,13 +94,13 @@ describe('GridView placement filter', () => {
       makeTask({ id: 'placed', text: 'On the grid', staged: false }),
       makeTask({ id: 'staged', text: 'In the tray', staged: true }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
 
     const cards = screen.getAllByTestId('grid-card')
     expect(cards).toHaveLength(1)
     expect(within(cards[0]!).getByText('On the grid')).toBeInTheDocument()
 
-    // The staged task shows in the tray, not on the grid.
+    // The staged task shows as a staging chip, not on the grid.
     const trayCards = screen.getAllByTestId('tray-card')
     expect(trayCards).toHaveLength(1)
     expect(within(trayCards[0]!).getByText('In the tray')).toBeInTheDocument()
@@ -84,7 +109,7 @@ describe('GridView placement filter', () => {
   it('hides tasks marked done today', () => {
     tasksFixture = [makeTask({ id: 'done-task', text: 'Already done', staged: false })]
     doneTodayFixture = { 'done-task': true }
-    render(<GridView />)
+    render(<GridHarness />)
 
     expect(screen.queryByTestId('grid-card')).not.toBeInTheDocument()
     expect(screen.getByText('No tasks placed — drag one from the tray.')).toBeInTheDocument()
@@ -104,23 +129,23 @@ describe('GridView placement filter', () => {
         recurring: { frequencyDays: 1, lastDoneAt: null, doneCount: 0 },
       }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
 
     expect(screen.queryByText('Not due yet')).not.toBeInTheDocument()
     expect(screen.getByText('Way overdue')).toBeInTheDocument()
   })
 
-  it('shows the empty-tray state when nothing is staged', () => {
+  it('renders no staging chips when nothing is staged', () => {
     tasksFixture = [makeTask({ staged: false })]
-    render(<GridView />)
-    expect(screen.getByText('Tray empty — add a task above.')).toBeInTheDocument()
+    render(<GridHarness />)
+    expect(screen.queryByTestId('tray-card')).not.toBeInTheDocument()
   })
 })
 
 describe('GridView card visuals', () => {
   it('colors a non-recurring card top border by quadrant (Do Now = amber)', () => {
     tasksFixture = [makeTask({ id: 'donow', x: 0.8, y: 0.8 })]
-    render(<GridView />)
+    render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
     // quadrantMeta(0.8,0.8) → Do Now #bf5e2a → rgb(191, 94, 42)
     expect(card.style.borderTopColor).toBe('rgb(191, 94, 42)')
@@ -135,7 +160,7 @@ describe('GridView card visuals', () => {
         recurring: { frequencyDays: 1, lastDoneAt: null, doneCount: 0 },
       }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
     // RC_COLOR.overdue #c2693f → rgb(194, 105, 63)
     expect(card.style.borderTopColor).toBe('rgb(194, 105, 63)')
@@ -143,7 +168,7 @@ describe('GridView card visuals', () => {
 
   it('positions a card with y inverted (high importance near the top)', () => {
     tasksFixture = [makeTask({ id: 'pos', x: 0.25, y: 0.75 })]
-    render(<GridView />)
+    render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
     expect(card.style.left).toBe('25%')
     // screenY = 1 - y = 0.25
@@ -158,15 +183,15 @@ describe('GridView card visuals', () => {
         recurring: { frequencyDays: 2, lastDoneAt: recent, doneCount: 4 },
       }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
     expect(screen.getByText('4×')).toBeInTheDocument()
   })
 
   // Visual urgency wired end-to-end onto the real card (the constant tiers themselves are pinned
-  // in lib/visual-urgency.test.ts — here we only prove GridView threads them onto the DOM node).
+  // in lib/visual-urgency.test.ts — here we only prove the card threads them onto the DOM node).
   it('shows the overdue due badge + pulse animation for a past-due non-recurring card', () => {
     tasksFixture = [makeTask({ id: 'od', text: 'Ship it', due: '2000-01-01', staged: false })]
-    render(<GridView />)
+    render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
     expect(within(card).getByText('overdue')).toBeInTheDocument()
     // The overdue tier is the only one that animates; the keyframe lives in src/index.css.
@@ -175,7 +200,7 @@ describe('GridView card visuals', () => {
 
   it('desaturates + fades a long-untouched (stale) card', () => {
     tasksFixture = [makeTask({ id: 'old', created_at: '2000-01-01T00:00:00.000Z', staged: false })]
-    render(<GridView />)
+    render(<GridHarness />)
     // > 75 days old → opacity 0.72 (see stalenessStyle).
     expect(screen.getByTestId('grid-card').style.opacity).toBe('0.72')
   })
@@ -188,7 +213,7 @@ describe('GridView card visuals', () => {
         recurring: { frequencyDays: 1, lastDoneAt: null, doneCount: 0 },
       }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
     expect(card.style.animation).toBe('')
     expect(within(card).queryByText('overdue')).not.toBeInTheDocument()
@@ -196,23 +221,16 @@ describe('GridView card visuals', () => {
 })
 
 describe('GridView hover actions', () => {
-  it('back-to-tray sets staged:true', () => {
-    tasksFixture = [makeTask({ id: 'tray-me', staged: false })]
-    render(<GridView />)
-    fireEvent.click(screen.getByLabelText('Back to tray'))
-    expect(updateMutate).toHaveBeenCalledWith({ id: 'tray-me', patch: { staged: true } })
-  })
-
   it('delete soft-deletes the task', () => {
     tasksFixture = [makeTask({ id: 'del-me', staged: false })]
-    render(<GridView />)
+    render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Delete task'))
     expect(softDeleteMutate).toHaveBeenCalledWith('del-me')
   })
 
   it('inline edit commits a rename on Enter', () => {
     tasksFixture = [makeTask({ id: 'edit-me', text: 'Old name', staged: false })]
-    render(<GridView />)
+    render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Edit task'))
     const input = screen.getByLabelText('Edit task') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'New name' } })
@@ -224,7 +242,7 @@ describe('GridView hover actions', () => {
 describe('GridView grid mark-done', () => {
   it('marks a normal card done via the Done data layer (writes history)', () => {
     tasksFixture = [makeTask({ id: 'norm', text: 'Buy milk', bucket: 'oneoff', staged: false })]
-    render(<GridView />)
+    render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Done'))
     expect(markDoneMutate).toHaveBeenCalledWith({
       taskId: 'norm',
@@ -243,7 +261,7 @@ describe('GridView grid mark-done', () => {
         recurring: { frequencyDays: 3, lastDoneAt: null, doneCount: 2 },
       }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Done (resets cycle)'))
     expect(markDoneMutate).not.toHaveBeenCalled()
     expect(updateMutate).toHaveBeenCalledTimes(1)
@@ -265,7 +283,7 @@ describe('GridView clustering', () => {
       makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 }),
       makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
 
     const bubbles = screen.getAllByTestId('cluster-bubble')
     expect(bubbles).toHaveLength(1)
@@ -279,7 +297,7 @@ describe('GridView clustering', () => {
       makeTask({ id: 'a', text: 'Top left', x: 0.1, y: 0.9 }),
       makeTask({ id: 'b', text: 'Bottom right', x: 0.9, y: 0.1 }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
 
     expect(screen.getAllByTestId('grid-card')).toHaveLength(2)
     expect(screen.queryByTestId('cluster-bubble')).not.toBeInTheDocument()
@@ -290,7 +308,7 @@ describe('GridView clustering', () => {
       makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 }),
       makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
 
     expect(screen.queryByTestId('cluster-popup')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
@@ -306,7 +324,7 @@ describe('GridView clustering', () => {
       makeTask({ id: 'a', text: 'Clean kitchen', bucket: 'oneoff', x: 0.5, y: 0.5 }),
       makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
     fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
 
     const popup = screen.getByTestId('cluster-popup')
@@ -332,7 +350,7 @@ describe('GridView clustering', () => {
       }),
       makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
     fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
 
     const popup = screen.getByTestId('cluster-popup')
@@ -351,7 +369,7 @@ describe('GridView clustering', () => {
       makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 }),
       makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
     ]
-    render(<GridView />)
+    render(<GridHarness />)
     fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
     expect(screen.getByTestId('cluster-popup')).toBeInTheDocument()
 

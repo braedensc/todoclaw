@@ -1,72 +1,43 @@
 import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
 import { AuthForm } from './features/auth/AuthForm'
 import { useSession } from './features/auth/use-session'
-import { useAddTask } from './features/tasks/use-tasks'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
-import { GridView } from './features/grid/GridView'
-import { ListView } from './features/list/ListView'
-import { DoneView } from './features/done/DoneView'
 import { HabitsView } from './features/habits/HabitsView'
-import { TabNav } from './components/TabNav'
-import type { Tab } from './components/tabs'
+import { WorkArea } from './features/shell/WorkArea'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { PlanBox } from './features/ai/PlanBox'
 import { usePlanController } from './features/ai/use-plan-controller'
+import { useChatController } from './features/ai/use-chat-controller'
 import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { BackupsPanel } from './features/backups/BackupsPanel'
+import { DonePanel } from './features/done/DonePanel'
 import { supabase } from './lib/supabase'
 
-// Renders the active tab's view. Lightweight switch — no router (project convention).
-// Habits has no tab of its own (parity: eisenclaw.md ~L234-241, pics/Todopic3.jpeg) — it
-// renders as a section below the grid, on the same page, whenever Grid is active.
-function ActiveView({ tab }: { tab: Tab }) {
-  switch (tab) {
-    case 'grid':
-      return (
-        <div className="flex flex-col gap-6">
-          <GridView />
-          <HabitsView />
-        </div>
-      )
-    case 'list':
-      return <ListView />
-    case 'done':
-      return <DoneView />
-  }
-}
-
-// The signed-in app shell: header (add-task + Plan My Day stub + sign-out), tab nav, and the
-// active view. Kept separate from App so the ensure-schedule effect only runs once a session
-// exists. ErrorBoundary wraps the shell in App below.
+// The signed-in app shell (B8 layout): header (wordmark + Plan My Day + quiet Done/Backups/Sign
+// out links), the persistent Plan card top-center, the work region (one input widget + the Grid⇄
+// List swap with its embedded toggle), and the daily-habits strip below both views. Kept separate
+// from App so the ensure-schedule effect only runs once a session exists.
 function AppShell() {
-  const [tab, setTab] = useState<Tab>('grid')
-  const [text, setText] = useState('')
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
-  const addTask = useAddTask()
+  const [showDone, setShowDone] = useState(false)
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
+  // One conversation for the whole shell — shared by the inline BabyClaw reply and the chat popup.
+  const chat = useChatController()
 
-  // Guarantee a user_schedule row exists on first authenticated load — the daily reset
-  // depends on its timezone. Idempotent (upsert ignoreDuplicates); runs once on mount.
+  // Guarantee a user_schedule row exists on first authenticated load — the daily reset depends on
+  // its timezone. Idempotent (upsert ignoreDuplicates); runs once on mount.
   const ensure = ensureSchedule.mutate
   useEffect(() => {
     ensure()
   }, [ensure])
 
-  function handleAdd(e: FormEvent) {
-    e.preventDefault()
-    const trimmed = text.trim()
-    if (!trimmed) return
-    addTask.mutate(trimmed, { onSuccess: () => setText('') })
-  }
-
   return (
     <>
-      <header className="mb-6 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
+      <header className="mb-5 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
@@ -83,66 +54,28 @@ function AppShell() {
           <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
         </div>
 
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex w-full flex-wrap items-center gap-2 wide:w-auto">
-            {/* Add-task form: full-width on mobile so the input is comfortably tappable. */}
-            <form onSubmit={handleAdd} className="flex w-full gap-2 wide:w-auto">
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Add a task…"
-                aria-label="Add a task"
-                className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm wide:flex-none"
-              />
-              <button
-                type="submit"
-                disabled={addTask.isPending}
-                className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                Add
-              </button>
-            </form>
-
-            {/* Chat action. Plan My Day now lives beside the wordmark in the left header block. */}
-            <div className="flex flex-1 gap-2 wide:flex-none">
-              <button
-                type="button"
-                onClick={() => setShowChat((v) => !v)}
-                className="flex-1 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 wide:flex-none"
-              >
-                Chat
-              </button>
-            </div>
-          </div>
-
-          {/* Secondary/utility actions — deliberately smaller and less prominent than the
-              AI actions above (Backups is used far less often). */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setShowBackups(true)}
-              className="text-sm text-muted underline hover:text-ink"
-            >
-              <span aria-hidden>↻</span> Backups
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void supabase.auth.signOut()}
-              className="text-sm text-muted underline hover:text-ink"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
+        {/* Quiet utility links — Done + Backups open header panels; Sign out ends the session. */}
+        <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
+          <button type="button" onClick={() => setShowDone(true)} className="hover:text-ink">
+            <span aria-hidden>✓</span> Done
+          </button>
+          <button type="button" onClick={() => setShowBackups(true)} className="hover:text-ink">
+            <span aria-hidden>↻</span> Backups
+          </button>
+          <button
+            type="button"
+            onClick={() => void supabase.auth.signOut()}
+            className="hover:text-ink"
+          >
+            Sign out
+          </button>
+        </nav>
       </header>
 
-      <TabNav active={tab} onChange={setTab} />
-
-      {/* Plan My Day — a persistent inline card (not a modal): it hydrates from today's
-          daily_state.plan, survives reloads, and auto-clears at local midnight. Rendered above
-          the tab content for now; a later shell re-layout (B8) reconciles exact placement. */}
-      <div className="mt-6">
+      {/* Plan My Day — a persistent inline card (not a modal), now top-center directly under the
+          header. It hydrates from today's daily_state.plan, survives reloads, and auto-clears at
+          local midnight. Placement only (B8); data logic unchanged. */}
+      <div className="mb-5">
         <ErrorBoundary>
           <PlanBox
             plan={planner.displayPlan}
@@ -154,20 +87,32 @@ function AppShell() {
         </ErrorBoundary>
       </div>
 
-      {/* pb clears the fixed mobile bottom bar; the desktop top-nav needs no extra space. */}
-      <div className="mt-6 pb-24 wide:pb-0">
-        <ActiveView tab={tab} />
+      <ErrorBoundary>
+        <WorkArea chat={chat} onOpenChat={() => setShowChat(true)} />
+      </ErrorBoundary>
+
+      {/* Daily habits — a strip below the work region so it shows under BOTH Grid and List. */}
+      <div className="mt-6 pb-10">
+        <ErrorBoundary>
+          <HabitsView />
+        </ErrorBoundary>
       </div>
 
       {showChat && (
         <ErrorBoundary>
-          <ChatPanel onClose={() => setShowChat(false)} />
+          <ChatPanel chat={chat} onClose={() => setShowChat(false)} />
         </ErrorBoundary>
       )}
 
       {showBackups && (
         <ErrorBoundary>
           <BackupsPanel onClose={() => setShowBackups(false)} />
+        </ErrorBoundary>
+      )}
+
+      {showDone && (
+        <ErrorBoundary>
+          <DonePanel onClose={() => setShowDone(false)} />
         </ErrorBoundary>
       )}
     </>
@@ -178,7 +123,10 @@ export default function App() {
   const { session, loading } = useSession()
 
   return (
-    <main className="mx-auto min-h-screen max-w-3xl p-6 wide:max-w-[1600px]">
+    // A focused column (B8): wide enough that the desktop grid lands near EisenClaw's 1046px (so
+    // the aspect-locked canvas ≈ 1046×640 and clustering feel matches — #75), but not so wide the
+    // canvas overflows the viewport height.
+    <main className="mx-auto min-h-screen max-w-3xl p-6 wide:max-w-[1120px]">
       {loading ? (
         <p className="text-muted">Loading…</p>
       ) : session ? (

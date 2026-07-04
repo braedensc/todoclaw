@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
-import { TaskSchema, type Task } from '../../types/task'
+import { TaskSchema, type Recurring, type Task } from '../../types/task'
 
 const TASKS_KEY = ['tasks'] as const
 
@@ -26,6 +26,11 @@ export function useTasks() {
   return useQuery({ queryKey: TASKS_KEY, queryFn: fetchTasks })
 }
 
+// What the Manual add widget can set at creation time: the text plus optional due date and a
+// recurring cadence (B8 — the widget's Due/Repeat controls). A bare string is still accepted for
+// the common "just a title" case.
+export type NewTask = string | { text: string; due?: string | null; recurring?: Recurring | null }
+
 // Insert a task. user_id is NOT sent by the client — the DB default (auth.uid())
 // and RLS WITH CHECK assign and enforce ownership server-side.
 //
@@ -34,8 +39,15 @@ export function useTasks() {
 export function useAddTask() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (text: string) => {
-      const { error } = await supabase.from('tasks').insert({ text, x: 0.5, y: 0.5 })
+    mutationFn: async (input: NewTask) => {
+      const {
+        text,
+        due = null,
+        recurring = null,
+      } = typeof input === 'string' ? { text: input } : input
+      const { error } = await supabase
+        .from('tasks')
+        .insert({ text, x: 0.5, y: 0.5, due, recurring })
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),

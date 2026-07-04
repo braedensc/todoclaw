@@ -10,10 +10,10 @@ import { test, expect } from '../helpers/fixtures'
 const TASK = 'Ship the quarterly review'
 
 test('add a task, drag it from the tray to the grid, and assert its quadrant', async ({ page }) => {
-  // Add a task — new tasks land in the staging tray (staged), not on the grid yet. Scope the
-  // Add click to the header capture form; the shell has other "Add" buttons (e.g. Habits panel).
-  await page.getByPlaceholder('Add a task…').fill(TASK)
-  const captureForm = page.locator('form', { has: page.getByPlaceholder('Add a task…') })
+  // Add a task via the Manual input widget — new tasks land in staging (staged), not on the grid
+  // yet. Scope the Add click to the Manual add form; the shell has other "Add" buttons (Habits).
+  await page.getByPlaceholder('manually add task…').fill(TASK)
+  const captureForm = page.locator('form', { has: page.getByPlaceholder('manually add task…') })
   await captureForm.getByRole('button', { name: /^Add$/ }).click()
 
   const trayCard = page.getByTestId('tray-card').filter({ hasText: TASK })

@@ -47,6 +47,23 @@ vi.mock('./features/ai/use-plan-controller', () => ({
     generate: vi.fn(),
   }),
 }))
+// The shell instantiates one shared chat controller (useChatController = useAiChat + useAiStatus)
+// for the inline BabyClaw reply + the chat popup. useAiStatus uses useQuery, so stub both to keep
+// the shell rendering without a QueryClientProvider / network.
+vi.mock('./features/ai/use-ai-status', () => ({
+  useAiStatus: () => ({ data: { paused: false } }),
+}))
+vi.mock('./features/ai/use-ai-chat', () => ({
+  useAiChat: () => ({
+    items: [],
+    busy: false,
+    pending: null,
+    error: null,
+    send: vi.fn(),
+    confirm: vi.fn(),
+    deny: vi.fn(),
+  }),
+}))
 // HabitsView now renders alongside GridView on the Grid tab (no separate Habits tab); stub
 // its data layer so the shell renders without a QueryClientProvider / network.
 vi.mock('./features/habits/use-habits', () => ({
@@ -64,12 +81,14 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
   })
 
-  it('renders the tab nav and habits section when logged in', () => {
+  it('renders the Grid/List toggle, the Done link, and the habits section when logged in', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     render(<App />)
+    // Grid/List come from the embedded ViewToggle; Done is now a quiet header link (B8).
     for (const label of ['Grid', 'List', 'Done']) {
       expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
     }
+    // Habits now render below the work region so they show under both views.
     expect(screen.getByRole('region', { name: 'Habits' })).toBeInTheDocument()
   })
 })

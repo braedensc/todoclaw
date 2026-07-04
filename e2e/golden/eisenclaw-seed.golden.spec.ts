@@ -1,7 +1,7 @@
 import { test, expect } from '../helpers/fixtures'
 import { seedEisenclawFixtures } from '../helpers/db'
 import { resolveLocalSupabaseEnv } from '../helpers/env'
-import { switchTab } from '../helpers/ui'
+import { switchTab, openDone } from '../helpers/ui'
 
 // Proves the EisenClaw import (scripts/eisenclaw-seed/) round-trips through the real schema:
 // seed Braeden's actual planner data on top of the reset test user, reload, and spot-check that
@@ -30,8 +30,8 @@ test('seeded EisenClaw data renders: tasks, a recurring badge, and habits with s
   await expect(laundryRow).toBeVisible()
   await expect(laundryRow.getByText('↻', { exact: false })).toBeVisible()
 
-  // Habits has no tab of its own — it renders as a section on the Grid tab (App.tsx),
-  // so switch to Grid to reach it, not a (nonexistent) "Habits" tab.
+  // Habits has no view of its own — it renders as a strip below the work region (App.tsx),
+  // shown under both Grid and List. Switch back to Grid and assert it.
   await switchTab(page, 'Grid')
   const habitsSection = page.getByRole('region', { name: 'Habits' })
   await expect(
@@ -41,9 +41,9 @@ test('seeded EisenClaw data renders: tasks, a recurring badge, and habits with s
     habitsSection.getByRole('listitem').filter({ hasText: 'Drink more water' }),
   ).toBeVisible()
 
-  // The one permanent history entry in the source data — Done tab shows full history
+  // The one permanent history entry in the source data — the Done panel shows full history
   // regardless of today's done map (Discrepancy #2, EISENCLAW-LOGIC-TO-PORT.md).
-  await switchTab(page, 'Done')
+  await openDone(page)
   const doneSection = page.getByRole('region', { name: 'Done' })
   await expect(
     doneSection.getByRole('listitem').filter({ hasText: 'Get a backpacking backpack' }),
