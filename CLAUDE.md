@@ -19,6 +19,12 @@ Todoclaw is a ground-up rebuild of EisenClaw — an Eisenhower-matrix task plann
 - `eisenclaw-export/data/user-schedule-braeden.json` — schedule config shape (→ `user_schedule` table)
 - `eisenclaw-export/pics/Todopic{1-6}.jpeg` — screenshots of the original UI (visual parity reference; see `docs/STYLE.md` for what each shows)
 
+**Run the original UI:** `npm run legacy-ui` boots the real EisenClaw app locally at
+http://localhost:3333 (`?user=fan` = empty profile) — handy for eyeballing exact behavior while
+porting. It runs the gitignored reference server via a temp `.cjs` copy (nothing under `planning/`
+is modified). "Plan My Day" is stubbed with a deterministic local **mock** so its UX renders without
+an Anthropic key. See `scripts/legacy-ui.ts` (+ `scripts/legacy-ui-mock-plan.cjs`).
+
 ---
 
 ## Stack
