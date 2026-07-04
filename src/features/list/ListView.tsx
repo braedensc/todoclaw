@@ -103,10 +103,6 @@ export function ListView() {
 
   return (
     <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
-      <p className="mb-3 text-sm text-muted">
-        Ranked by urgency + importance. ↻ = recurring. ▸ to edit values — changes apply on
-        release/blur.
-      </p>
       <ul className="flex flex-col gap-2">
         {ranked.map((task: Task, i) => (
           <ListRow
