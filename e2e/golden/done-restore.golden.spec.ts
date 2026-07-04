@@ -12,9 +12,10 @@ test('mark done → Done tab shows the completion → restore returns it to the 
 }) => {
   const card = await placeTask(page, TASK, 0.75, 0.25)
 
-  // The card's action buttons reveal on hover; "Done" archives a non-recurring task.
+  // The card's action controls reveal on hover; the "Done" checkbox archives a non-recurring
+  // task (a recurring card's control is named "Done (resets cycle)", so exact avoids it).
   await card.hover()
-  await card.getByRole('button', { name: 'Done', exact: true }).click()
+  await card.getByRole('checkbox', { name: 'Done', exact: true }).click()
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
   // Done tab: the completion is listed with its timestamp and a Restore control (it is still

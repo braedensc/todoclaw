@@ -30,8 +30,22 @@ export function PlanMyDayPanel({ onClose }: { onClose: () => void }) {
   }
   useEffect(() => {
     if (started.current || paused || !dataReady) return
-    started.current = true
-    generate()
+    // React 18 StrictMode mounts this panel, unmounts it, then remounts it. A mutation fired
+    // synchronously here runs on the throwaway first mount's observer; the remounted observer
+    // inherits that mutation's "pending" state but never its resolution, so the panel hangs on
+    // "Planning your day…". Defer the trigger to a macrotask and cancel it on the throwaway
+    // unmount, so only the surviving mount actually starts the request. (In production, where
+    // StrictMode is a no-op, this is a harmless one-tick delay.)
+    let cancelled = false
+    const id = setTimeout(() => {
+      if (cancelled || started.current) return
+      started.current = true
+      generate()
+    }, 0)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused, dataReady])
 
