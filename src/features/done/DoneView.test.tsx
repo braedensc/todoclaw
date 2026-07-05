@@ -73,12 +73,21 @@ describe('DoneView', () => {
     expect(screen.getByText('Errands')).toBeInTheDocument()
   })
 
-  it('offers Restore for any completion whose task still exists and calls useRestoreTask', () => {
+  it('restoring returns the task AND drops the record from the list (deletes it on success)', () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
+    // Make the restore mock invoke its onSuccess so we can assert the follow-up delete.
+    restoreMutate.mockImplementation((_vars: unknown, opts?: { onSuccess?: () => void }) =>
+      opts?.onSuccess?.(),
+    )
     renderView()
     const restore = screen.getByRole('button', { name: /Restore/i })
     fireEvent.click(restore)
-    expect(restoreMutate).toHaveBeenCalledWith({ taskId: 't1', timeZone: 'America/New_York' })
+    expect(restoreMutate).toHaveBeenCalledWith(
+      { taskId: 't1', timeZone: 'America/New_York' },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    )
+    // On restore success the completion record is removed from the Done list.
+    expect(deleteEntryMutate).toHaveBeenCalledWith('h1')
   })
 
   it('hides Restore when the underlying task has been soft-deleted (absent from live tasks)', () => {
