@@ -12,6 +12,7 @@ import { usePlanController } from './features/ai/use-plan-controller'
 import { useChatController } from './features/ai/use-chat-controller'
 import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
+import { ChatRail } from './features/ai/ChatRail'
 import { BackupsPanel } from './features/backups/BackupsPanel'
 import { DonePanel } from './features/done/DonePanel'
 import { SettingsPanel } from './features/settings/SettingsPanel'
@@ -43,110 +44,137 @@ function AppShell() {
   }, [ensure])
 
   return (
-    <>
-      <header className="mb-5 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">Todoclaw</h1>
-            <button
-              type="button"
-              onClick={planner.generate}
-              disabled={!planner.canGenerate}
-              title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
-              className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-            >
-              <span aria-hidden>✦</span> {planner.isPending ? 'Thinking…' : 'Plan My Day'}
-            </button>
-          </div>
-          <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
-        </div>
+    // Full-width shell so the desktop chat push-drawer (ChatRail, fixed to the viewport's right
+    // edge) can pair with an animated right-padding on the main content: opening chat pads the
+    // content by the drawer width, shrinking the grid column so the grid reflows left (B2). The
+    // centered, max-width column lives on the INNER wrapper. On mobile the drawer is a covering
+    // bottom-sheet (ChatPanel), so no padding is applied (`wide:` only).
+    <div className="relative min-h-screen w-full">
+      <div
+        className={
+          'min-h-screen transition-[padding] duration-300 ease-out ' +
+          (showChat ? 'wide:pr-[360px]' : '')
+        }
+      >
+        {/* A focused column: wide enough that the desktop grid is dominant (aspect-locked ≈
+            1046/640 so clustering feel matches — #75), centered, with the header/plan/input above
+            it. Raised from 1120 → 1280 to grow the grid into the space the removed habits strip
+            freed (B2). */}
+        <div className="mx-auto max-w-3xl p-6 wide:max-w-[1280px]">
+          <header className="mb-5 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">
+                  Todoclaw
+                </h1>
+                <button
+                  type="button"
+                  onClick={planner.generate}
+                  disabled={!planner.canGenerate}
+                  title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                  className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                >
+                  <span aria-hidden>✦</span> {planner.isPending ? 'Thinking…' : 'Plan My Day'}
+                </button>
+              </div>
+              <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
+            </div>
 
-        {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
-        <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
-          <button
-            type="button"
-            onClick={() => setShowReminders(true)}
-            title="Daily reminders"
-            className="hover:text-ink"
-          >
-            <span aria-hidden>🔔</span> Reminders
-          </button>
-          <button type="button" onClick={() => setShowSettings(true)} className="hover:text-ink">
-            <span aria-hidden>⚙</span> Settings
-          </button>
-          <button type="button" onClick={() => setShowDone(true)} className="hover:text-ink">
-            <span aria-hidden>✓</span> Done
-          </button>
-          <button type="button" onClick={() => setShowBackups(true)} className="hover:text-ink">
-            <span aria-hidden>↻</span> Backups
-          </button>
-          <button
-            type="button"
-            onClick={() => void supabase.auth.signOut()}
-            className="hover:text-ink"
-          >
-            Sign out
-          </button>
-        </nav>
-      </header>
+            {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
+            <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
+              <button
+                type="button"
+                onClick={() => setShowReminders(true)}
+                title="Daily reminders"
+                className="hover:text-ink"
+              >
+                <span aria-hidden>🔔</span> Reminders
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="hover:text-ink"
+              >
+                <span aria-hidden>⚙</span> Settings
+              </button>
+              <button type="button" onClick={() => setShowDone(true)} className="hover:text-ink">
+                <span aria-hidden>✓</span> Done
+              </button>
+              <button type="button" onClick={() => setShowBackups(true)} className="hover:text-ink">
+                <span aria-hidden>↻</span> Backups
+              </button>
+              <button
+                type="button"
+                onClick={() => void supabase.auth.signOut()}
+                className="hover:text-ink"
+              >
+                Sign out
+              </button>
+            </nav>
+          </header>
 
-      {/* Plan My Day — a persistent inline card (not a modal), now top-center directly under the
+          {/* Plan My Day — a persistent inline card (not a modal), now top-center directly under the
           header. It hydrates from today's daily_state.plan, survives reloads, and auto-clears at
           local midnight. Placement only (B8); data logic unchanged. */}
-      <div className="mb-5">
-        <ErrorBoundary>
-          <PlanBox
-            plan={planner.displayPlan}
-            paused={planner.paused}
-            isPending={planner.isPending}
-            isError={planner.isError}
-            onRetry={planner.generate}
-          />
-        </ErrorBoundary>
-      </div>
+          <div className="mb-5">
+            <ErrorBoundary>
+              <PlanBox
+                plan={planner.displayPlan}
+                paused={planner.paused}
+                isPending={planner.isPending}
+                isError={planner.isError}
+                onRetry={planner.generate}
+              />
+            </ErrorBoundary>
+          </div>
 
-      {/* Daily reminders — the minified inline form: a compact row of active reminder names near
+          {/* Daily reminders — the minified inline form: a compact row of active reminder names near
           the top of the work area. Each name opens that reminder's detail card; the full popup is
           the gear-area Reminders button. The old full-width habits strip is gone (B2 owns the grid
           expansion into the freed space). */}
-      <ErrorBoundary>
-        <RemindersInline />
-      </ErrorBoundary>
+          <ErrorBoundary>
+            <RemindersInline />
+          </ErrorBoundary>
 
-      <ErrorBoundary>
-        <WorkArea chat={chat} onOpenChat={() => setShowChat(true)} />
-      </ErrorBoundary>
+          <ErrorBoundary>
+            <WorkArea chat={chat} onOpenChat={() => setShowChat(true)} />
+          </ErrorBoundary>
 
+          {showBackups && (
+            <ErrorBoundary>
+              <BackupsPanel onClose={() => setShowBackups(false)} />
+            </ErrorBoundary>
+          )}
+
+          {showDone && (
+            <ErrorBoundary>
+              <DonePanel onClose={() => setShowDone(false)} />
+            </ErrorBoundary>
+          )}
+
+          {showSettings && (
+            <ErrorBoundary>
+              <SettingsPanel onClose={() => setShowSettings(false)} />
+            </ErrorBoundary>
+          )}
+
+          {showReminders && (
+            <ErrorBoundary>
+              <RemindersModal onClose={() => setShowReminders(false)} />
+            </ErrorBoundary>
+          )}
+        </div>
+      </div>
+
+      {/* Chat — desktop push-drawer (shrinks the grid) + mobile covering bottom-sheet. Both are
+          driven by the same `showChat` flag; only one is visible per breakpoint. */}
+      <ChatRail chat={chat} open={showChat} onClose={() => setShowChat(false)} />
       {showChat && (
         <ErrorBoundary>
           <ChatPanel chat={chat} onClose={() => setShowChat(false)} />
         </ErrorBoundary>
       )}
-
-      {showBackups && (
-        <ErrorBoundary>
-          <BackupsPanel onClose={() => setShowBackups(false)} />
-        </ErrorBoundary>
-      )}
-
-      {showDone && (
-        <ErrorBoundary>
-          <DonePanel onClose={() => setShowDone(false)} />
-        </ErrorBoundary>
-      )}
-
-      {showSettings && (
-        <ErrorBoundary>
-          <SettingsPanel onClose={() => setShowSettings(false)} />
-        </ErrorBoundary>
-      )}
-
-      {showReminders && (
-        <ErrorBoundary>
-          <RemindersModal onClose={() => setShowReminders(false)} />
-        </ErrorBoundary>
-      )}
-    </>
+    </div>
   )
 }
 
@@ -158,23 +186,23 @@ export default function App() {
     // beneath it — replacing bare window.confirm() calls. It wraps the whole shell so any view
     // (signed-in or auth) can gate a destructive action through it.
     <ConfirmProvider>
-      {/* A focused column (B8): wide enough that the desktop grid lands near EisenClaw's 1046px (so
-          the aspect-locked canvas ≈ 1046×640 and clustering feel matches — #75), but not so wide the
-          canvas overflows the viewport height. */}
-      <main className="mx-auto min-h-screen max-w-3xl p-6 wide:max-w-[1120px]">
-        {loading ? (
+      {loading ? (
+        <main className="mx-auto min-h-screen max-w-3xl p-6">
           <p className="text-muted">Loading…</p>
-        ) : session ? (
-          <ErrorBoundary>
-            <AppShell />
-          </ErrorBoundary>
-        ) : (
+        </main>
+      ) : session ? (
+        // AppShell owns the full-width layout (its own centered column + the chat push-drawer).
+        <ErrorBoundary>
+          <AppShell />
+        </ErrorBoundary>
+      ) : (
+        <main className="mx-auto min-h-screen max-w-3xl p-6">
           <div className="mx-auto max-w-sm">
             <h1 className="mb-6 font-serif text-3xl font-semibold text-ink">Todoclaw</h1>
             <AuthForm />
           </div>
-        )}
-      </main>
+        </main>
+      )}
     </ConfirmProvider>
   )
 }

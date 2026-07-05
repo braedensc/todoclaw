@@ -7,7 +7,7 @@ import { tapPlaceTask, openDone } from '../helpers/ui'
 // bar), just compact. The per-test DB wipe (fixtures) keeps these independent of the desktop
 // specs despite the shared user.
 
-test('tap-to-place: select a tray card, tap the grid, the card lands in the right quadrant', async ({
+test('tap-to-place: select a new-item card, tap the grid, the card lands in the right quadrant', async ({
   page,
 }) => {
   // Screen (0.75, 0.25) → data (0.75, 0.75) = Do Now (urgent + important). Upper canvas, well

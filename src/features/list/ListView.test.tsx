@@ -8,7 +8,7 @@ import { resolveCollision } from '../../lib/collision'
 
 // Component tests with all data hooks mocked (no Supabase, no network). We assert the
 // behavior the list OWNS — ranking order, quadrant coloring, the whole-row expand toggle +
-// double-click-to-edit, slider commit wiring, the staging badge, done-today exclusion, the
+// double-click-to-edit, slider commit wiring, the unplaced badge, done-today exclusion, the
 // done control's normal-vs-recurring branch, the confirm-gated delete, and the recurring
 // set/remove controls. The pure logic itself (taskScore, resolveCollision math, recurring
 // thresholds/colors) is covered in src/lib/*.test.ts.
@@ -167,10 +167,10 @@ describe('ListView', () => {
     expect(expected).not.toEqual({ x: 0.9, y: 0.9 })
   })
 
-  it('shows a staging badge for staged tasks', () => {
+  it('shows an "unplaced" badge for not-yet-placed (staged) tasks', () => {
     tasksData = [makeTask({ id: 's', text: 'staged task', staged: true })]
     renderList()
-    expect(screen.getByText('staging')).toBeInTheDocument()
+    expect(screen.getByText('unplaced')).toBeInTheDocument()
   })
 
   it('excludes tasks marked done today', () => {

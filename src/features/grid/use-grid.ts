@@ -38,10 +38,15 @@ function isPlaced(
 
 /**
  * The grid's data + interaction orchestration, lifted out of GridView so BOTH the canvas
- * (GridSurface) and the staging chips (StagingBar, which live in the input widget above the
- * grid — B8) can share one set of drag/placement state. The caller creates `gridRef` (the
- * canvas surface) and hands it in; the drag hooks bind to it. All the intricate per-frame
- * imperative drag machinery moved here verbatim from the old GridView.
+ * (GridSurface) and the new-item card-in-place (rendered in the input widget above the grid —
+ * B2) can share one set of drag/placement state. The caller creates `gridRef` (the canvas
+ * surface) and hands it in; the drag hooks bind to it. All the intricate per-frame imperative
+ * drag machinery moved here verbatim from the old GridView.
+ *
+ * `staged` stays the internal "not placed yet" marker (it also gates collision / visual-urgency /
+ * plan-my-day), but there is no staging TRAY anymore: a freshly added Manual task surfaces as a
+ * draggable card in the widget (see TaskInputWidget) and reaches the grid via `startNewCardDrag`,
+ * which materializes it (flips `staged:false`) exactly like the old tray drag.
  */
 export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   const isMobile = useIsMobile()
@@ -66,8 +71,8 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     else cardNodesRef.current.delete(id)
   }, [])
 
-  // Once a tray card / cluster-popup row is "materialized" (flipped to a placed card so a real
-  // GridCard mounts under the pointer), hold its id here so the move loop commits that flip
+  // Once a new-item card / cluster-popup row is "materialized" (flipped to a placed card so a
+  // real GridCard mounts under the pointer), hold its id here so the move loop commits that flip
   // exactly once instead of on every frame while the mount is in flight.
   const materializedRef = useRef<string | null>(null)
   // The card currently flagged with `data-merge-target` (the merge-preview under-card), so we
@@ -130,8 +135,8 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     [updateMergeTarget],
   )
 
-  // Shared move handler for all three drags (reposition, tray → grid, popup drag-out). If the
-  // dragged task isn't on the grid yet (a still-staged tray card), flip it to placed ONCE so a
+  // Shared move handler for all three drags (reposition, new-item → grid, popup drag-out). If the
+  // dragged task isn't on the grid yet (a still-staged new-item card), flip it to placed ONCE so a
   // real GridCard mounts under the pointer (fix 12) — subsequent frames then move that node
   // directly. A card that already has a node (reposition, or an already-materialized one) paints
   // straight away.
@@ -170,7 +175,9 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   useEffect(() => {
     placedTasksRef.current = placedTasks
   })
-  const stagedTasks = useMemo(() => tasks.filter((t) => t.staged), [tasks])
+  // Tasks not placed on the grid yet (still `staged`). They render as draggable "new item" cards
+  // in the input widget (card-in-place, B2) instead of a separate staging tray.
+  const pendingTasks = useMemo(() => tasks.filter((t) => t.staged), [tasks])
 
   const softDeleteMutate = softDelete.mutate
   const markDoneMutate = markDone.mutate
@@ -216,17 +223,17 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     onMove: handleDragMove,
   })
 
-  // --- Tray → grid drag (desktop) --------------------------------------------------------
-  const handleTrayDrop = useCallback(
+  // --- New-item card → grid drag (desktop) -----------------------------------------------
+  const handleNewCardDrop = useCallback(
     (id: string, point: NormalizedPoint) => {
       updateMutate({ id, patch: { x: point.x, y: point.y, staged: false } })
       endDrag()
     },
     [updateMutate, endDrag],
   )
-  const trayDrag = useFreeDrag({
+  const newCardDrag = useFreeDrag({
     surfaceRef: gridRef,
-    onDrop: handleTrayDrop,
+    onDrop: handleNewCardDrop,
     onMove: handleDragMove,
   })
 
@@ -284,9 +291,9 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     setPlacingId((cur) => (cur === id ? null : id))
   }, [])
 
-  // The id currently being dragged (reposition, tray → grid, or popup drag-out) — suppresses its
-  // transition and lifts it while it moves.
-  const draggingId = reposition.draggingId ?? trayDrag.draggingId ?? popupDrag.draggingId
+  // The id currently being dragged (reposition, new-item → grid, or popup drag-out) — suppresses
+  // its transition and lifts it while it moves.
+  const draggingId = reposition.draggingId ?? newCardDrag.draggingId ?? popupDrag.draggingId
 
   // Cluster over everything EXCEPT the dragged card (mirrors EisenClaw's `staticCards`,
   // planner.html:560). The dragged card renders standalone below so its DOM node stays mounted
@@ -301,7 +308,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     // Data
     timeZone,
     placedTasks,
-    stagedTasks,
+    pendingTasks,
     clusters,
     draggedTask,
     draggingId,
@@ -321,11 +328,11 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     clusterAccentColor,
     clusterNearestDue,
     urgencyGlowStyle,
-    // Staging (folded into the input widget's Manual mode)
+    // New-item card-in-place (rendered in the input widget's Manual mode)
     isMobile,
     placingId,
     togglePlacing,
-    startTrayDrag: trayDrag.startDrag,
+    startNewCardDrag: newCardDrag.startDrag,
   }
 }
 

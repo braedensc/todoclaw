@@ -1,5 +1,5 @@
 import { test, expect } from '../helpers/fixtures'
-import { addTask, dragTrayCardToGrid, placeTask } from '../helpers/ui'
+import { addTask, dragNewCardToGrid, placeTask } from '../helpers/ui'
 import type { Page } from '@playwright/test'
 
 // Golden coverage for the grid-drag interaction bundle (fixes 11, 12, 16, 17, 20). These assert
@@ -16,17 +16,17 @@ async function canvasPoint(page: Page, fx: number, fy: number): Promise<{ x: num
   return { x: box.x + box.width * fx, y: box.y + box.height * fy }
 }
 
-// (12) + (11): a tray card must render a real, pointer-tracking card the moment the drag starts
-// (not on drop), and its top border must recolor live as it crosses the urgency (0.5) axis.
-test('a tray card is visible mid-drag and its top border recolors as it crosses the axis', async ({
+// (12) + (11): a new-item card must render a real, pointer-tracking card the moment the drag
+// starts (not on drop), and its top border must recolor live as it crosses the urgency (0.5) axis.
+test('a new-item card is visible mid-drag and its top border recolors as it crosses the axis', async ({
   page,
 }) => {
   await addTask(page, 'Draft proposal')
-  const tray = page.getByTestId('tray-card').filter({ hasText: 'Draft proposal' })
-  const trayBox = await tray.boundingBox()
-  if (!trayBox) throw new Error('tray card not laid out')
+  const newCard = page.getByTestId('new-item-card').filter({ hasText: 'Draft proposal' })
+  const cardBox = await newCard.boundingBox()
+  if (!cardBox) throw new Error('new-item card not laid out')
 
-  await page.mouse.move(trayBox.x + trayBox.width / 2, trayBox.y + trayBox.height / 2)
+  await page.mouse.move(cardBox.x + cardBox.width / 2, cardBox.y + cardBox.height / 2)
   await page.mouse.down()
 
   // Move onto the top-LEFT (Schedule quadrant). The first move materializes a real GridCard.
@@ -45,9 +45,11 @@ test('a tray card is visible mid-drag and its top border recolors as it crosses 
   await expect(card).toHaveCSS('border-top-color', 'rgb(191, 94, 42)')
 
   await page.mouse.up()
-  // Committed in Do Now; it left the tray.
+  // Committed in Do Now; the new-item card is gone once placed.
   await expect(card).toHaveAttribute('data-quadrant', 'do-now')
-  await expect(page.getByTestId('tray-card').filter({ hasText: 'Draft proposal' })).toHaveCount(0)
+  await expect(page.getByTestId('new-item-card').filter({ hasText: 'Draft proposal' })).toHaveCount(
+    0,
+  )
 })
 
 // Repositioning an already-placed card must still track the pointer and lift (scale 1.06) — the
@@ -84,10 +86,10 @@ test('dragging a card over another flags it as a merge target, cleared when movi
   await expect(page.locator('[data-merge-target]')).toHaveCount(0)
 
   await addTask(page, 'Mover')
-  const tray = page.getByTestId('tray-card').filter({ hasText: 'Mover' })
-  const trayBox = await tray.boundingBox()
-  if (!trayBox) throw new Error('tray card not laid out')
-  await page.mouse.move(trayBox.x + trayBox.width / 2, trayBox.y + trayBox.height / 2)
+  const mover = page.getByTestId('new-item-card').filter({ hasText: 'Mover' })
+  const moverBox = await mover.boundingBox()
+  if (!moverBox) throw new Error('new-item card not laid out')
+  await page.mouse.move(moverBox.x + moverBox.width / 2, moverBox.y + moverBox.height / 2)
   await page.mouse.down()
 
   // Materialize on an empty spot, well clear of the anchor — nothing is a merge target yet.
@@ -115,7 +117,7 @@ test('dragging a task out of a cluster shows the card immediately, before drop',
 }) => {
   await placeTask(page, 'Renew passport', 0.6, 0.3)
   await addTask(page, 'Book flights')
-  await dragTrayCardToGrid(page, 'Book flights', 0.63, 0.33)
+  await dragNewCardToGrid(page, 'Book flights', 0.63, 0.33)
 
   const bubble = page.getByTestId('cluster-bubble')
   await expect(bubble).toBeVisible()
@@ -191,7 +193,7 @@ test('grabbing a cluster popup row by a button does not pull the task onto the g
 }) => {
   await placeTask(page, 'Passport', 0.6, 0.3)
   await addTask(page, 'Flights')
-  await dragTrayCardToGrid(page, 'Flights', 0.63, 0.33)
+  await dragNewCardToGrid(page, 'Flights', 0.63, 0.33)
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
   await page

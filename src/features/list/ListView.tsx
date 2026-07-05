@@ -8,9 +8,9 @@ import type { Task } from '../../types/task'
 import { ListRow } from './ListRow'
 
 // Priority-ranked list view. Rows are the user's active tasks (soft-deleted rows are already
-// excluded by useTasks), MINUS anything marked done today, INCLUDING staged tasks (flagged
-// with a "staging" badge). Rows sort by taskScore DESCENDING — importance (y, 0.55) weighted
-// above urgency (x, 0.45), with a due-soon bonus (see src/lib/scoring.ts).
+// excluded by useTasks), MINUS anything marked done today, INCLUDING not-yet-placed tasks (still
+// `staged`, flagged with an "unplaced" badge). Rows sort by taskScore DESCENDING — importance
+// (y, 0.55) weighted above urgency (x, 0.45), with a due-soon bonus (see src/lib/scoring.ts).
 //
 // All server state comes from the shared hooks; this component owns no task data, only the
 // orchestration (filter → sort → render) and the mutation wiring it hands to each row.

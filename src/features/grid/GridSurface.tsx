@@ -94,8 +94,14 @@ export function GridSurface({
           : 'relative pb-6 pl-5'
       }
     >
+      {/* The canvas is aspect-locked (1046/640), so height follows width. INLINE, the grid is
+          DOMINANT by filling its (now wider, 1280px) column edge-to-edge; the chat push-drawer
+          shrinks that column so the grid reflows smaller with it (B2). A tall grid may run past
+          the fold on short windows (the Expand control gives a fit-to-height fullscreen view) —
+          that's the trade for a big, column-filling grid. EXPANDED is the reverse: a height-driven
+          max-width so the fullscreen canvas fits the viewport height exactly. */}
       <div
-        className="relative w-full"
+        className="relative mx-auto w-full"
         style={expanded ? { maxWidth: 'calc((100vh - 130px) * 1046 / 640)' } : undefined}
       >
         {/* Embedded Grid⇄List toggle — notched into the canvas's top border line. */}
@@ -119,7 +125,7 @@ export function GridSurface({
         <GridCanvas surfaceRef={gridRef} onBackgroundPointerDown={handleGridPointerDown}>
           {placedTasks.length === 0 && (
             <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted">
-              No tasks placed — drag one from the tray.
+              No tasks placed — add one above and drag it here.
             </p>
           )}
 

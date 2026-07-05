@@ -1,20 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAddTask } from '../tasks/use-tasks'
-import { StagingBar } from '../grid/StagingBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
 import type { GridApi } from '../grid/use-grid'
+import { NewItemStrip } from './NewItemStrip'
 import type { ChatController } from '../ai/use-chat-controller'
 import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
 import type { BabyClawTone } from './babyclaw-status'
 
 // The one slim input widget above the grid (B8, items 4/5/7/9). A Manual ⇄ BabyClaw pill toggle
 // swaps between two modes that share the row:
-//  - MANUAL: "manually add task…" + Due + Repeat + Add, with the staging chips folded in below.
-//    Staging is Manual-ONLY.
+//  - MANUAL: "manually add task…" + Due + Repeat + Add. A just-added task materializes IN PLACE
+//    as a draggable "Drag new item to grid" card (B2) that replaces the input; drag it onto the
+//    grid and the input returns. No staging tray.
 //  - BABYCLAW: a natural-language box routed through the EXISTING chat backend (the shared
 //    ChatController). After sending it shows ONLY the latest reply inline; full history opens in
-//    the chat popup via "Open chat".
+//    the chat drawer via "Open chat".
 // It replaces the old header add-form, the standalone Chat button, AND the right-column tray.
 
 type Mode = 'manual' | 'babyclaw'
@@ -22,9 +23,9 @@ type Mode = 'manual' | 'babyclaw'
 interface TaskInputWidgetProps {
   grid: GridApi
   chat: ChatController
-  /** True when the Grid canvas is mounted (Grid view) — staging chips are placeable only then. */
+  /** True when the Grid canvas is mounted (Grid view) — new-item cards are placeable only then. */
   canPlace: boolean
-  /** Open the full chat-history popup (BabyClaw "Open chat"). */
+  /** Open the full chat drawer (BabyClaw "Open chat"). */
   onOpenChat: () => void
 }
 
@@ -33,16 +34,14 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
 
   return (
     <div className="rounded-[10px] border border-border bg-card p-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-start gap-2">
         <ModeToggle mode={mode} onSelect={setMode} />
         {mode === 'manual' ? (
-          <ManualInput />
+          <ManualInput grid={grid} canPlace={canPlace} />
         ) : (
           <BabyClawInput chat={chat} onOpenChat={onOpenChat} />
         )}
       </div>
-
-      {mode === 'manual' && <StagingBar grid={grid} canPlace={canPlace} />}
     </div>
   )
 }
@@ -87,7 +86,7 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
 // --- Manual mode -------------------------------------------------------------------------
 type ChipId = 'due' | 'repeat'
 
-function ManualInput() {
+function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const addTask = useAddTask()
   const [text, setText] = useState('')
   const [due, setDue] = useState<string | null>(null)
@@ -97,6 +96,12 @@ function ManualInput() {
   const [openChip, setOpenChip] = useState<ChipId | null>(null)
   const toggleChip = (id: ChipId) => setOpenChip((cur) => (cur === id ? null : id))
   const closeChips = () => setOpenChip(null)
+
+  // Card-in-place (B2): a just-added task surfaces as a draggable card that REPLACES the input
+  // (the pending strip below). One todo at a time — the input stays hidden until the pending card
+  // is dragged onto the grid, then it returns for the next add.
+  const pending = grid.pendingTasks
+  const showForm = pending.length === 0
 
   function handleAdd(e: FormEvent) {
     e.preventDefault()
@@ -121,36 +126,41 @@ function ManualInput() {
   }
 
   return (
-    <form onSubmit={handleAdd} className="flex min-w-[220px] flex-1 flex-wrap items-center gap-2">
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="manually add task…"
-        aria-label="Add a task"
-        className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm"
-      />
-      <DueControl
-        value={due}
-        onChange={setDue}
-        open={openChip === 'due'}
-        onToggle={() => toggleChip('due')}
-        onClose={closeChips}
-      />
-      <RepeatControl
-        value={repeatDays}
-        onChange={setRepeatDays}
-        open={openChip === 'repeat'}
-        onToggle={() => toggleChip('repeat')}
-        onClose={closeChips}
-      />
-      <button
-        type="submit"
-        disabled={addTask.isPending || !text.trim()}
-        className="rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-      >
-        Add
-      </button>
-    </form>
+    <div className="flex min-w-[220px] flex-1 flex-col gap-2">
+      {pending.length > 0 && <NewItemStrip pending={pending} grid={grid} canPlace={canPlace} />}
+      {showForm && (
+        <form onSubmit={handleAdd} className="flex flex-1 flex-wrap items-center gap-2">
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="manually add task…"
+            aria-label="Add a task"
+            className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm"
+          />
+          <DueControl
+            value={due}
+            onChange={setDue}
+            open={openChip === 'due'}
+            onToggle={() => toggleChip('due')}
+            onClose={closeChips}
+          />
+          <RepeatControl
+            value={repeatDays}
+            onChange={setRepeatDays}
+            open={openChip === 'repeat'}
+            onToggle={() => toggleChip('repeat')}
+            onClose={closeChips}
+          />
+          <button
+            type="submit"
+            disabled={addTask.isPending || !text.trim()}
+            className="rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            Add
+          </button>
+        </form>
+      )}
+    </div>
   )
 }
 
