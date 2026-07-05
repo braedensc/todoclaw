@@ -1,37 +1,45 @@
 import type { ReactNode } from 'react'
-import { AiPrivacyNote } from './AiPrivacyNote'
 import type { DayPlan, PlanRock } from '../../types/plan'
 
 // The inline "Plan My Day" card — a PERSISTENT parchment box above the grid (not a modal). It
 // hydrates from daily_state.plan on load, stays for the whole local day, and disappears after
 // local midnight (a new day reads a different date's row). Closely mirrors EisenClaw's plan card
 // (planning/eisenclaw-export/scripts/planner.html ~L680-717): serif headline, an ⏰ available-time
-// line, an orange BIG ROCK, a then/also small-rocks list, a green ↻ habit note, and a pre-generate
-// empty state.
+// line, an orange BIG ROCK, a then/also small-rocks list, and a green ↻ habit note.
+//
+// The box appears ONLY once a plan exists or one is actively generating (pending) — plus the quiet
+// error/paused notices. With no plan and nothing in flight it renders NOTHING (no placeholder,
+// no border); the header "Plan My Day" button is the sole trigger and owns its own thinking state.
+// A × in the top-right dismisses a shown plan (App clears the persisted row via usePlanController).
 //
 // Purely presentational: App owns the data + mutation (usePlanController) and passes the resolved
-// plan (fresh mutation result OR the persisted copy) plus status in. The header "Plan My Day"
-// button is the (re)generate trigger.
+// plan (fresh mutation result OR the persisted copy) plus status in.
 export function PlanBox({
   plan,
   paused,
   isPending,
   isError,
   onRetry,
+  onDismiss,
 }: {
   plan: DayPlan | null
   paused: boolean
   isPending: boolean
   isError: boolean
   onRetry: () => void
+  onDismiss: () => void
 }) {
+  // Idle with no plan → render nothing at all. App gates the wrapper on the same condition so no
+  // empty margin is left behind.
+  if (!plan && !isPending && !isError && !paused) return null
+
   return (
     <section
       aria-label="Plan My Day"
-      className="rounded-[14px] border border-border bg-panel px-5 py-3.5"
+      className="relative rounded-[14px] border border-border bg-panel px-5 py-3.5"
     >
       {plan ? (
-        <div className="flex flex-col">
+        <div className="flex flex-col pr-6">
           {isError && (
             // A regenerate failed but the saved plan is still shown — offer a quiet retry.
             <p className="mb-2 text-[13px] text-accent">
@@ -43,9 +51,6 @@ export function PlanBox({
             </p>
           )}
           <PlanContent plan={plan} />
-          <div className="mt-4">
-            <AiPrivacyNote compact />
-          </div>
         </div>
       ) : isPending ? (
         <p className="text-[14px] text-muted">Planning your day…</p>
@@ -60,16 +65,26 @@ export function PlanBox({
             Retry
           </button>
         </div>
-      ) : paused ? (
+      ) : (
+        // The only remaining state (guarded above): AI paused for the month, no plan.
         <p className="text-[14px] text-accent">
           AI is paused for this month — the budget cap was reached. The planner still works without
           it.
         </p>
-      ) : (
-        <p className="text-[14px] leading-relaxed text-muted">
-          Tap <em>Plan My Day</em> — reads your grid, recurring chores, and habits for a
-          schedule-aware plan.
-        </p>
+      )}
+
+      {plan && (
+        // Dismiss the plan → clears the persisted row (gone across reloads until regenerated).
+        // focus-visible only, so a mouse click leaves no lingering blue ring; matches the app's
+        // other close buttons (e.g. DoneView).
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss plan"
+          className="absolute right-3 top-3 rounded text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
+        >
+          ✕
+        </button>
       )}
     </section>
   )

@@ -120,20 +120,26 @@ function AppShell() {
             </nav>
           </header>
 
-          {/* Plan My Day — a persistent inline card (not a modal), now top-center directly under the
-          header. It hydrates from today's daily_state.plan, survives reloads, and auto-clears at
-          local midnight. Placement only (B8); data logic unchanged. */}
-          <div className="mb-3">
-            <ErrorBoundary>
-              <PlanBox
-                plan={planner.displayPlan}
-                paused={planner.paused}
-                isPending={planner.isPending}
-                isError={planner.isError}
-                onRetry={planner.generate}
-              />
-            </ErrorBoundary>
-          </div>
+          {/* Plan My Day — a persistent inline card (not a modal), top-center under the header. It
+          hydrates from today's daily_state.plan, survives reloads, and auto-clears at local
+          midnight. The box (and its margin wrapper) only render once there's a plan, a generation
+          in flight, or an error/paused notice — otherwise nothing shows and the header button is
+          the sole trigger. Gate the wrapper on the same condition PlanBox uses to return null so no
+          empty margin is left behind. */}
+          {(planner.displayPlan || planner.isPending || planner.isError || planner.paused) && (
+            <div className="mb-3">
+              <ErrorBoundary>
+                <PlanBox
+                  plan={planner.displayPlan}
+                  paused={planner.paused}
+                  isPending={planner.isPending}
+                  isError={planner.isError}
+                  onRetry={planner.generate}
+                  onDismiss={planner.clear}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
 
           {/* Daily reminders — the minified inline form: a compact row of active reminder names near
           the top of the work area. Each name opens that reminder's detail card; the full popup is

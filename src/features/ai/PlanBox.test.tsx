@@ -17,14 +17,31 @@ const PLAN: DayPlan = {
 const noop = () => {}
 
 describe('PlanBox', () => {
-  it('shows the pre-generate empty state before a plan exists', () => {
-    render(<PlanBox plan={null} paused={false} isPending={false} isError={false} onRetry={noop} />)
-    expect(screen.getByText(/reads your grid, recurring chores, and habits/i)).toBeInTheDocument()
-    expect(screen.getByText('Plan My Day')).toBeInTheDocument() // the <em> prompt
+  it('renders nothing when idle with no plan (no placeholder, no box)', () => {
+    const { container } = render(
+      <PlanBox
+        plan={null}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('renders the full plan: headline, available time, big rock, small rocks, habit note', () => {
-    render(<PlanBox plan={PLAN} paused={false} isPending={false} isError={false} onRetry={noop} />)
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
     expect(screen.getByText('A focused but gentle day.')).toBeInTheDocument()
     expect(screen.getByText(/~4\.5h — lunch \+ evening/)).toBeInTheDocument()
     expect(screen.getByText('Big rock')).toBeInTheDocument()
@@ -37,6 +54,50 @@ describe('PlanBox', () => {
     expect(screen.getByText(/Nice work keeping the streak\./)).toBeInTheDocument()
   })
 
+  it('no longer renders the AI privacy note inside the plan card', () => {
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect(screen.queryByText(/owner's Anthropic key/i)).not.toBeInTheDocument()
+  })
+
+  it('shows a dismiss × on the plan and fires onDismiss when clicked', () => {
+    const onDismiss = vi.fn()
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={onDismiss}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /dismiss plan/i }))
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not show a dismiss × when there is no plan (loading state)', () => {
+    render(
+      <PlanBox
+        plan={null}
+        paused={false}
+        isPending={true}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /dismiss plan/i })).not.toBeInTheDocument()
+  })
+
   it('uses bullets for small rocks when there is no big rock', () => {
     render(
       <PlanBox
@@ -45,6 +106,7 @@ describe('PlanBox', () => {
         isPending={false}
         isError={false}
         onRetry={noop}
+        onDismiss={noop}
       />,
     )
     expect(screen.queryByText('Big rock')).not.toBeInTheDocument()
@@ -52,12 +114,30 @@ describe('PlanBox', () => {
   })
 
   it('shows a loading state while planning with no plan yet', () => {
-    render(<PlanBox plan={null} paused={false} isPending={true} isError={false} onRetry={noop} />)
+    render(
+      <PlanBox
+        plan={null}
+        paused={false}
+        isPending={true}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
     expect(screen.getByText(/Planning your day/i)).toBeInTheDocument()
   })
 
   it('keeps the saved plan visible while regenerating (card does not flip to loading)', () => {
-    render(<PlanBox plan={PLAN} paused={false} isPending={true} isError={false} onRetry={noop} />)
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={true}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
     expect(screen.getByText('A focused but gentle day.')).toBeInTheDocument()
     expect(screen.queryByText(/Planning your day/i)).not.toBeInTheDocument()
   })
@@ -65,7 +145,14 @@ describe('PlanBox', () => {
   it('shows an error with a retry when generation fails and there is no plan', () => {
     const onRetry = vi.fn()
     render(
-      <PlanBox plan={null} paused={false} isPending={false} isError={true} onRetry={onRetry} />,
+      <PlanBox
+        plan={null}
+        paused={false}
+        isPending={false}
+        isError={true}
+        onRetry={onRetry}
+        onDismiss={noop}
+      />,
     )
     expect(screen.getByText(/Couldn't generate a plan/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
@@ -73,7 +160,16 @@ describe('PlanBox', () => {
   })
 
   it('shows the paused notice when AI is paused and no plan exists', () => {
-    render(<PlanBox plan={null} paused={true} isPending={false} isError={false} onRetry={noop} />)
+    render(
+      <PlanBox
+        plan={null}
+        paused={true}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
     expect(screen.getByText(/AI is paused for this month/i)).toBeInTheDocument()
   })
 })
