@@ -6,6 +6,7 @@ import {
   BABYCLAW_VERBOSITY,
   PLAN_NOTES_MAX,
   BABYCLAW_INSTRUCTIONS_MAX,
+  COMMITMENTS_MAX,
 } from '../../types/user-schedule'
 import { EMPTY_DRAFT, configToDraft, draftToConfig, type SettingsDraft } from './settings-form'
 
@@ -162,6 +163,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const set = <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }))
 
+  const addCommitment = () =>
+    setDraft((d) => ({ ...d, commitments: [...d.commitments, { label: '', when: '' }] }))
+  const removeCommitment = (i: number) =>
+    setDraft((d) => ({ ...d, commitments: d.commitments.filter((_, j) => j !== i) }))
+  const updateCommitment = (i: number, key: 'label' | 'when', value: string) =>
+    setDraft((d) => ({
+      ...d,
+      commitments: d.commitments.map((c, j) => (j === i ? { ...c, [key]: value } : c)),
+    }))
+
   function handleSave() {
     const timezone = scheduleQuery.data?.timezone ?? browserZone()
     save.mutate({ config: draftToConfig(draft), timezone }, { onSuccess: onClose })
@@ -292,13 +303,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   step={0.5}
                   placeholder="7"
                 />
-                <TextField
-                  label="Sunday long-run window"
-                  value={draft.sundayLongRun}
-                  onChange={(v) => set('sundayLongRun', v)}
-                  placeholder="8:30am–12:00pm"
-                  maxLength={40}
-                />
               </div>
               <TextField
                 label="Saturday notes"
@@ -311,58 +315,58 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 label="Sunday notes"
                 value={draft.sundayNotes}
                 onChange={(v) => set('sundayNotes', v)}
-                placeholder="Free after the long run."
+                placeholder="Slower start, free most of the day."
                 maxLength={280}
               />
             </Section>
 
             <Section
-              title="Running / training"
-              hint="Optional. Runs are treated as non-negotiable time — the plan never schedules them."
+              title="Recurring commitments"
+              hint="Standing obligations — gym, school pickup, a weekly meeting. Plan My Day treats these as already on the calendar: it plans around them and never suggests them as tasks."
             >
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <TextField
-                  label="Goal race"
-                  value={draft.race}
-                  onChange={(v) => set('race', v)}
-                  placeholder="MDI Marathon — sub-3:00"
-                  maxLength={120}
-                />
-                <TextField
-                  label="Race month"
-                  value={draft.raceMonth}
-                  onChange={(v) => set('raceMonth', v)}
-                  placeholder="October 2026"
-                  maxLength={120}
-                />
-                <TextField
-                  label="Preferred run time"
-                  value={draft.preferredTime}
-                  onChange={(v) => set('preferredTime', v)}
-                  placeholder="morning (before work)"
-                  maxLength={120}
-                />
-                <TextField
-                  label="Current miles/week"
-                  value={draft.currentMPW}
-                  onChange={(v) => set('currentMPW', v)}
-                  type="number"
-                  min={0}
-                  max={300}
-                  step={1}
-                  placeholder="40"
-                />
-                <TextField
-                  label="Peak miles/week"
-                  value={draft.peakMPW}
-                  onChange={(v) => set('peakMPW', v)}
-                  type="number"
-                  min={0}
-                  max={300}
-                  step={1}
-                  placeholder="70"
-                />
-              </div>
+              {draft.commitments.length === 0 && (
+                <p className="text-xs text-muted-light">
+                  None yet. Add anything that regularly claims your time.
+                </p>
+              )}
+              {draft.commitments.map((c, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+                >
+                  <TextField
+                    label="What"
+                    value={c.label}
+                    onChange={(v) => updateCommitment(i, 'label', v)}
+                    placeholder="Gym"
+                    maxLength={120}
+                  />
+                  <TextField
+                    label="When (optional)"
+                    value={c.when}
+                    onChange={(v) => updateCommitment(i, 'when', v)}
+                    placeholder="Tue/Thu 6pm"
+                    maxLength={120}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeCommitment(i)}
+                    aria-label={`Remove commitment ${i + 1}`}
+                    className="rounded-lg border border-border-strong px-3 py-2 text-sm text-muted hover:text-accent"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {draft.commitments.length < COMMITMENTS_MAX && (
+                <button
+                  type="button"
+                  onClick={addCommitment}
+                  className="self-start rounded-full border border-border-strong px-4 py-1.5 text-sm font-medium text-muted hover:text-ink"
+                >
+                  + Add commitment
+                </button>
+              )}
             </Section>
 
             <Section title="Plan My Day preferences">

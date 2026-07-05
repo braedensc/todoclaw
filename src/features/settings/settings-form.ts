@@ -10,6 +10,12 @@ import {
 // the draft back into the nested ScheduleConfig the plan prompt reads, dropping empty fields so
 // the stored config stays minimal, then validates it (caps + ranges) as a server-bound safety net.
 
+// One recurring-commitment row while editing (both fields stay strings; empty rows drop on save).
+export interface CommitmentDraft {
+  label: string
+  when: string
+}
+
 export interface SettingsDraft {
   location: string
   wakeTime: string
@@ -22,13 +28,8 @@ export interface SettingsDraft {
   saturdayFreeHours: string
   saturdayNotes: string
   sundayFreeHours: string
-  sundayLongRun: string
   sundayNotes: string
-  race: string
-  raceMonth: string
-  preferredTime: string
-  currentMPW: string
-  peakMPW: string
+  commitments: CommitmentDraft[]
   planNotes: string
   babyclawTone: '' | BabyclawTone
   babyclawVerbosity: '' | BabyclawVerbosity
@@ -47,13 +48,8 @@ export const EMPTY_DRAFT: SettingsDraft = {
   saturdayFreeHours: '',
   saturdayNotes: '',
   sundayFreeHours: '',
-  sundayLongRun: '',
   sundayNotes: '',
-  race: '',
-  raceMonth: '',
-  preferredTime: '',
-  currentMPW: '',
-  peakMPW: '',
+  commitments: [],
   planNotes: '',
   babyclawTone: '',
   babyclawVerbosity: '',
@@ -67,7 +63,6 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
   const wd = c.weekday ?? {}
   const sat = c.weekend?.saturday ?? {}
   const sun = c.weekend?.sunday ?? {}
-  const run = c.running ?? {}
   const baby = c.babyclaw ?? {}
   return {
     location: c.location ?? '',
@@ -81,13 +76,8 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
     saturdayFreeHours: numToStr(sat.freeTimeEstimateHours),
     saturdayNotes: sat.notes ?? '',
     sundayFreeHours: numToStr(sun.freeTimeEstimateHours),
-    sundayLongRun: sun.longRunWindow ?? '',
     sundayNotes: sun.notes ?? '',
-    race: run.race ?? '',
-    raceMonth: run.raceMonth ?? '',
-    preferredTime: run.preferredTime ?? '',
-    currentMPW: numToStr(run.currentMPW),
-    peakMPW: numToStr(run.peakMPW),
+    commitments: (c.commitments ?? []).map((x) => ({ label: x.label, when: x.when ?? '' })),
     planNotes: c.planNotes ?? '',
     babyclawTone: baby.tone ?? '',
     babyclawVerbosity: baby.verbosity ?? '',
@@ -109,7 +99,6 @@ const clamped =
     return Math.min(max, Math.max(min, n))
   }
 const hours = clamped(0, 24)
-const mpw = clamped(0, 300)
 
 // Drop undefined values; return undefined when the object ends up empty so we never persist `{}`
 // sub-objects (keeps the stored jsonb minimal and the plan prompt's `if (field)` guards simple).
@@ -135,17 +124,14 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
   })
   const sunday = compact({
     freeTimeEstimateHours: hours(draft.sundayFreeHours),
-    longRunWindow: str(draft.sundayLongRun),
     notes: str(draft.sundayNotes),
   })
   const weekend = compact({ saturday, sunday })
-  const running = compact({
-    currentMPW: mpw(draft.currentMPW),
-    peakMPW: mpw(draft.peakMPW),
-    race: str(draft.race),
-    raceMonth: str(draft.raceMonth),
-    preferredTime: str(draft.preferredTime),
-  })
+  // Keep only rows with a real label; carry `when` only when present. Empty rows never persist.
+  const commitments = draft.commitments
+    .map((c) => ({ label: str(c.label), when: str(c.when) }))
+    .filter((c): c is { label: string; when: string | undefined } => c.label !== undefined)
+    .map((c) => (c.when === undefined ? { label: c.label } : { label: c.label, when: c.when }))
   const babyclaw = compact({
     tone: draft.babyclawTone || undefined,
     verbosity: draft.babyclawVerbosity || undefined,
@@ -155,7 +141,7 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     location: str(draft.location),
     weekday,
     weekend,
-    running,
+    commitments: commitments.length ? commitments : undefined,
     planNotes: str(draft.planNotes),
     babyclaw,
   })
