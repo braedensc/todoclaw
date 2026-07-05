@@ -148,9 +148,13 @@ export function DoneView({ onClose }: { onClose?: () => void }) {
   )
   const busy = restore.isPending || deleteEntry.isPending
 
-  const handleRestore = (taskId: string | null) => {
-    if (!taskId) return
-    restore.mutate({ taskId, timeZone })
+  const handleRestore = (entry: History) => {
+    if (!entry.task_id) return
+    const taskId = entry.task_id
+    // Restoring undoes the completion, so the entry should also leave the Done list — drop the
+    // history record once the task is back. Sequenced (delete on restore success) so a restore
+    // failure leaves the row intact rather than silently deleting the record.
+    restore.mutate({ taskId, timeZone }, { onSuccess: () => deleteEntry.mutate(entry.id) })
   }
 
   const handleDelete = async (entry: History) => {
@@ -189,7 +193,7 @@ export function DoneView({ onClose }: { onClose?: () => void }) {
       <>
         <p className="mb-4 text-sm text-muted">
           Your completion history, newest first. <span aria-hidden>↩</span> returns a task to the
-          grid; <span aria-hidden>×</span> removes the record from this list.
+          grid (and off this list); <span aria-hidden>×</span> removes the record from this list.
         </p>
 
         {entries.length === 0 ? (
@@ -205,7 +209,7 @@ export function DoneView({ onClose }: { onClose?: () => void }) {
                   task={task}
                   timeZone={timeZone}
                   canRestore={Boolean(task)}
-                  onRestore={() => handleRestore(entry.task_id)}
+                  onRestore={() => handleRestore(entry)}
                   onDelete={() => handleDelete(entry)}
                   busy={busy}
                 />
