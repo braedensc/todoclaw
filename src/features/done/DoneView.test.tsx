@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { ConfirmProvider } from '../../components/use-confirm'
 import type { History } from '../../types/history'
 
 // Mock the data hooks (mirrors how App.test mocks the data layer) so DoneView renders under
@@ -27,6 +28,15 @@ vi.mock('../tasks/use-tasks', () => ({
 
 import { DoneView } from './DoneView'
 
+// DoneView now calls useConfirm() on every render, so it must be wrapped in a ConfirmProvider.
+function renderView() {
+  return render(
+    <ConfirmProvider>
+      <DoneView />
+    </ConfirmProvider>,
+  )
+}
+
 function entry(over: Partial<History> = {}): History {
   return {
     id: 'h1',
@@ -51,20 +61,20 @@ beforeEach(() => {
 describe('DoneView', () => {
   it('shows the empty state when there is no history', () => {
     historyMock.mockReturnValue({ data: [], isLoading: false, isError: false })
-    render(<DoneView />)
+    renderView()
     expect(screen.getByText(/Nothing done yet/i)).toBeInTheDocument()
   })
 
   it('renders a history row with its text', () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
-    render(<DoneView />)
+    renderView()
     expect(screen.getByText('Ship PR6')).toBeInTheDocument()
   })
 
   it('hides Restore when the task is NOT in today’s done map', () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
     dailyMock.mockReturnValue({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } })
-    render(<DoneView />)
+    renderView()
     expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument()
   })
 
@@ -73,7 +83,7 @@ describe('DoneView', () => {
     dailyMock.mockReturnValue({
       data: { done: { t1: true }, done_at: {}, habit_done: {}, subtask_done: {} },
     })
-    render(<DoneView />)
+    renderView()
     const restore = screen.getByRole('button', { name: /Restore/i })
     fireEvent.click(restore)
     expect(restoreMutate).toHaveBeenCalledWith({ taskId: 't1', timeZone: 'America/New_York' })
@@ -88,26 +98,27 @@ describe('DoneView', () => {
       data: { done: { t1: true }, done_at: {}, habit_done: {}, subtask_done: {} },
     })
     tasksMock.mockReturnValue({ data: [] }) // t1 was soft-deleted → absent from live tasks
-    render(<DoneView />)
+    renderView()
     expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument()
   })
 
-  it('soft-deletes the task only after confirm; history row persists conceptually', async () => {
+  it('soft-deletes the task only after confirming in the dialog; history row persists conceptually', async () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<DoneView />)
-    fireEvent.click(screen.getByRole('button', { name: /Delete/i }))
-    expect(confirmSpy).toHaveBeenCalled()
-    expect(softDeleteMutate).toHaveBeenCalledWith('t1')
-    confirmSpy.mockRestore()
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Delete "Ship PR6"/i }))
+    // The themed confirm dialog appears; deletion fires only after its Delete button is clicked.
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Delete$/ }))
+    await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('t1'))
   })
 
-  it('does NOT delete when the confirm is dismissed', async () => {
+  it('does NOT delete when the confirm dialog is cancelled', async () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    render(<DoneView />)
-    fireEvent.click(screen.getByRole('button', { name: /Delete/i }))
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Delete "Ship PR6"/i }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /Cancel/i }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(softDeleteMutate).not.toHaveBeenCalled()
-    confirmSpy.mockRestore()
   })
 })

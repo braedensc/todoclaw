@@ -5,6 +5,7 @@ import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
 import { HabitsView } from './features/habits/HabitsView'
 import { WorkArea } from './features/shell/WorkArea'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ConfirmProvider } from './components/use-confirm'
 import { PlanBox } from './features/ai/PlanBox'
 import { usePlanController } from './features/ai/use-plan-controller'
 import { useChatController } from './features/ai/use-chat-controller'
@@ -134,22 +135,27 @@ export default function App() {
   const { session, loading } = useSession()
 
   return (
-    // A focused column (B8): wide enough that the desktop grid lands near EisenClaw's 1046px (so
-    // the aspect-locked canvas ≈ 1046×640 and clustering feel matches — #75), but not so wide the
-    // canvas overflows the viewport height.
-    <main className="mx-auto min-h-screen max-w-3xl p-6 wide:max-w-[1120px]">
-      {loading ? (
-        <p className="text-muted">Loading…</p>
-      ) : session ? (
-        <ErrorBoundary>
-          <AppShell />
-        </ErrorBoundary>
-      ) : (
-        <div className="mx-auto max-w-sm">
-          <h1 className="mb-6 font-serif text-3xl font-semibold text-ink">Todoclaw</h1>
-          <AuthForm />
-        </div>
-      )}
-    </main>
+    // ConfirmProvider hosts the single app-themed confirm dialog (useConfirm) for every surface
+    // beneath it — replacing bare window.confirm() calls. It wraps the whole shell so any view
+    // (signed-in or auth) can gate a destructive action through it.
+    <ConfirmProvider>
+      {/* A focused column (B8): wide enough that the desktop grid lands near EisenClaw's 1046px (so
+          the aspect-locked canvas ≈ 1046×640 and clustering feel matches — #75), but not so wide the
+          canvas overflows the viewport height. */}
+      <main className="mx-auto min-h-screen max-w-3xl p-6 wide:max-w-[1120px]">
+        {loading ? (
+          <p className="text-muted">Loading…</p>
+        ) : session ? (
+          <ErrorBoundary>
+            <AppShell />
+          </ErrorBoundary>
+        ) : (
+          <div className="mx-auto max-w-sm">
+            <h1 className="mb-6 font-serif text-3xl font-semibold text-ink">Todoclaw</h1>
+            <AuthForm />
+          </div>
+        )}
+      </main>
+    </ConfirmProvider>
   )
 }
