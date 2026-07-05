@@ -36,13 +36,16 @@ export function GridAxes() {
         />
         {/* label, reading bottom-to-top — a flex box brackets the rail (top/bottom match it) and
             centers the rotated word about its own center, so it stays centered on the rail
-            regardless of the word's width and never overhangs the bottom-left corner. */}
+            regardless of the word's width and never overhangs the bottom-left corner. The word
+            carries a page-colored (bg-bg) background and a little padding so the rail reads as
+            passing BEHIND the glyphs, not through them (px → a small gap at each end after the
+            -90° rotation). Matches the gutter inline and the bg-bg overlay when expanded. */}
         <div
           className="absolute flex items-center justify-center"
           style={{ left: 0, right: 0, top: 7, bottom: 62 }}
         >
           <span
-            className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.12em]"
+            className="whitespace-nowrap bg-bg px-1 text-[9px] font-bold uppercase tracking-[0.12em]"
             style={{ transform: 'rotate(-90deg)', transformOrigin: 'center center', color: C }}
           >
             Importance
