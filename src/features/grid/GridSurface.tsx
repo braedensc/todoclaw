@@ -1,14 +1,19 @@
+import { useRef } from 'react'
 import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
+import { useElementSize } from '../../hooks/use-element-size'
+import { boxClampBounds, clampPoint } from '../../hooks/use-free-drag'
 import { GridCanvas } from './GridCanvas'
 import { GridCard } from './GridCard'
 import { GridAxes } from './GridAxes'
+import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 import { ClusterBubble } from '../clustering/ClusterBubble'
 import { ClusterPopup } from '../clustering/ClusterPopup'
+import { CLUSTER_BUBBLE_HALF } from '../clustering/cluster-constants'
 import type { GridApi } from './use-grid'
 
 interface GridSurfaceProps {
@@ -48,8 +53,11 @@ export function GridSurface({
     softDeleteMutate,
     handleDone,
     openClusterId,
-    setOpenClusterId,
+    selectCluster,
     startPopupRowDrag,
+    editingClusterRowId,
+    startClusterRowEdit,
+    stopClusterRowEdit,
     handleGridPointerDown,
     clusterDominant,
     clusterAccentColor,
@@ -58,6 +66,19 @@ export function GridSurface({
   } = grid
 
   const confirm = useConfirm()
+
+  // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
+  // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
+  // clipped by the canvas's `overflow-hidden` (item 17). Applied at RENDER time (screen coords
+  // only — stored x/y and the clustering thresholds are untouched, so grouping is unchanged) so
+  // even pre-existing edge cards and cluster bubbles are held inside at the current grid width.
+  const gridSize = useElementSize(gridRef)
+  const cardBounds = boxClampBounds(gridSize, CARD_HALF_WIDTH, CARD_HALF_HEIGHT)
+  const bubbleBounds = boxClampBounds(gridSize, CLUSTER_BUBBLE_HALF, CLUSTER_BUBBLE_HALF)
+  const reflowKey = gridSize.width + gridSize.height
+
+  // The open bubble's positioned wrapper node — the portaled popup anchors to its live rect.
+  const anchorRef = useRef<HTMLDivElement | null>(null)
 
   // Delete now confirms first (was a silent soft-delete), mirroring the List/cluster surfaces (B9).
   // The app-themed useConfirm gate names the task so an accidental click can't quietly remove it.
@@ -72,33 +93,41 @@ export function GridSurface({
   // render so both stay byte-for-byte identical (same handlers, same node registration). All of
   // due/recurring/rename reuse the one generic updateMutate({ id, patch }); a due write sets `due`
   // ONLY — it never touches x/y, so setting a due date on a manually-placed card can't move it.
-  const renderGridCard = (task: Task & { x: number; y: number }) => (
-    <GridCard
-      key={task.id}
-      task={task}
-      screenX={task.x}
-      screenY={1 - task.y}
-      daysUntilDue={daysUntil(task.due, { timeZone })}
-      dragging={draggingId === task.id}
-      cardRef={(node) => registerCardNode(task.id, node)}
-      onPointerDown={startReposition(task.id)}
-      onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
-      onDelete={() => handleDelete(task)}
-      onDone={() => handleDone(task)}
-      onSetDue={(due) => updateMutate({ id: task.id, patch: { due } })}
-      onSetRecurring={(frequencyDays) =>
-        updateMutate({
-          id: task.id,
-          patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
-        })
-      }
-      onSetFrequency={(frequencyDays) => {
-        if (task.recurring)
-          updateMutate({ id: task.id, patch: { recurring: { ...task.recurring, frequencyDays } } })
-      }}
-      onRemoveRecurring={() => updateMutate({ id: task.id, patch: { recurring: null } })}
-    />
-  )
+  const renderGridCard = (task: Task & { x: number; y: number }) => {
+    // Re-clamp the stored coords to the card's bounding box at the current grid width (screen
+    // position only — task.x/task.y and clustering are unchanged).
+    const p = clampPoint(task.x, task.y, cardBounds)
+    return (
+      <GridCard
+        key={task.id}
+        task={task}
+        screenX={p.x}
+        screenY={1 - p.y}
+        daysUntilDue={daysUntil(task.due, { timeZone })}
+        dragging={draggingId === task.id}
+        cardRef={(node) => registerCardNode(task.id, node)}
+        onPointerDown={startReposition(task.id)}
+        onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
+        onDelete={() => handleDelete(task)}
+        onDone={() => handleDone(task)}
+        onSetDue={(due) => updateMutate({ id: task.id, patch: { due } })}
+        onSetRecurring={(frequencyDays) =>
+          updateMutate({
+            id: task.id,
+            patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
+          })
+        }
+        onSetFrequency={(frequencyDays) => {
+          if (task.recurring)
+            updateMutate({
+              id: task.id,
+              patch: { recurring: { ...task.recurring, frequencyDays } },
+            })
+        }}
+        onRemoveRecurring={() => updateMutate({ id: task.id, patch: { recurring: null } })}
+      />
+    )
+  }
 
   // Render groups = the clusters (over every card EXCEPT the one being dragged) PLUS the dragged
   // card appended as its own standalone singleton group. Appending it here — rather than in a
@@ -167,32 +196,39 @@ export function GridSurface({
             const accentColor = clusterAccentColor(group, { timeZone })
             const clusterMinD = clusterNearestDue(group, { timeZone })
             const open = openClusterId === dominant.id
+            // Clamp the bubble by its own (wider) half-extent so it stays fully inside the canvas.
+            const bp = clampPoint(dominant.x ?? 0.5, dominant.y ?? 0.5, bubbleBounds)
             return (
               <ClusterBubble
                 key={dominant.id}
                 group={group}
                 accentColor={accentColor}
-                screenX={dominant.x ?? 0.5}
-                screenY={1 - (dominant.y ?? 0.5)}
+                screenX={bp.x}
+                screenY={1 - bp.y}
                 glow={urgencyGlowStyle(clusterMinD)}
                 open={open}
-                onToggle={() => setOpenClusterId(open ? null : dominant.id)}
+                onToggle={() => selectCluster(open ? null : dominant.id)}
                 // Register the bubble node under the dominant id (same key `memberToNodeKey` uses)
-                // so the merge preview can flag this bubble when a drag would merge into it.
-                bubbleRef={(node) => registerCardNode(dominant.id, node)}
+                // so the merge preview can flag this bubble when a drag would merge into it. The
+                // open bubble also feeds `anchorRef` so the portaled popup can anchor to its rect.
+                bubbleRef={(node) => {
+                  registerCardNode(dominant.id, node)
+                  if (open) anchorRef.current = node
+                }}
               >
                 {open && (
                   <ClusterPopup
                     group={group}
                     accentColor={accentColor}
-                    dominantY={dominant.y ?? 0.5}
+                    anchorRef={anchorRef}
+                    reflowKey={reflowKey}
                     timeZone={timeZone}
+                    editingId={editingClusterRowId}
+                    onStartEdit={(task) => startClusterRowEdit(task.id)}
+                    onStopEdit={stopClusterRowEdit}
+                    onRename={(task, text) => updateMutate({ id: task.id, patch: { text } })}
                     onDone={handleDone}
-                    onEdit={() => setOpenClusterId(null)}
-                    onDelete={(task) => {
-                      softDeleteMutate(task.id)
-                      setOpenClusterId(null)
-                    }}
+                    onDelete={handleDelete}
                     onRowPointerDown={startPopupRowDrag}
                   />
                 )}

@@ -8,6 +8,16 @@ import type { QuadrantKey } from '../../lib/quadrants'
 export const CARD_WIDTH = 112
 
 /**
+ * Pixel half-extents of a placed card, used to keep its whole bounding box inside the grid so
+ * `overflow-hidden` can't clip a card near an edge (item 17). Width is exact (half of CARD_WIDTH);
+ * height varies with content, so this is a representative half-height that covers a typical card
+ * (a recurring card with its status badge is the tallest, ~100px) — erring toward a slightly larger
+ * margin (a card pulled a few px in from the top/bottom edge) rather than a clipped one.
+ */
+export const CARD_HALF_WIDTH = CARD_WIDTH / 2
+export const CARD_HALF_HEIGHT = 44
+
+/**
  * Card border accent — EisenClaw colored every card by its bucket dot
  * (`getBucket(t.bucket).dot`, html:20-23/587). In its final state only the `oneoff` bucket
  * survives (dot `#c2693f` = the terracotta accent; `weekly`/`project` were migrated away —
