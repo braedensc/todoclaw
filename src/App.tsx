@@ -8,6 +8,7 @@ import { WorkArea } from './features/shell/WorkArea'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfirmProvider } from './components/use-confirm'
 import { PlanBox } from './features/ai/PlanBox'
+import { Thinking } from './components/Thinking'
 import { usePlanController } from './features/ai/use-plan-controller'
 import { useChatController } from './features/ai/use-chat-controller'
 import { useTimeZone } from './features/schedule/use-time-zone'
@@ -61,7 +62,7 @@ function AppShell() {
             it. Raised from 1120 → 1280 to grow the grid into the space the removed habits strip
             freed (B2). */}
         <div className="mx-auto max-w-3xl p-6 wide:max-w-[1280px]">
-          <header className="mb-5 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
+          <header className="mb-3 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">
@@ -74,7 +75,13 @@ function AppShell() {
                   title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
                   className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
                 >
-                  <span aria-hidden>✦</span> {planner.isPending ? 'Thinking…' : 'Plan My Day'}
+                  {planner.isPending ? (
+                    <Thinking label="Thinking" />
+                  ) : (
+                    <>
+                      <span aria-hidden>✦</span> Plan My Day
+                    </>
+                  )}
                 </button>
               </div>
               <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
@@ -116,7 +123,7 @@ function AppShell() {
           {/* Plan My Day — a persistent inline card (not a modal), now top-center directly under the
           header. It hydrates from today's daily_state.plan, survives reloads, and auto-clears at
           local midnight. Placement only (B8); data logic unchanged. */}
-          <div className="mb-5">
+          <div className="mb-3">
             <ErrorBoundary>
               <PlanBox
                 plan={planner.displayPlan}

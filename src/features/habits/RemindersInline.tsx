@@ -65,15 +65,19 @@ export function RemindersInline() {
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <span className="text-xs font-medium uppercase tracking-wide text-muted">Reminders</span>
+    <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-light">
+        Reminders
+      </span>
       {active.map((habit) => (
         <button
           key={habit.id}
           type="button"
           onClick={() => setSelectedId(habit.id)}
-          className="text-sm text-primary hover:underline"
+          title={`Open reminder: ${habit.text}`}
+          className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:border-primary/60 hover:bg-primary/20"
         >
+          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80" />
           {habit.text}
         </button>
       ))}
