@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAddTask } from '../tasks/use-tasks'
 import { StagingBar } from '../grid/StagingBar'
+import { useClickOutside } from '../../hooks/use-click-outside'
 import type { GridApi } from '../grid/use-grid'
 import type { ChatController } from '../ai/use-chat-controller'
 
@@ -82,11 +83,18 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
 }
 
 // --- Manual mode -------------------------------------------------------------------------
+type ChipId = 'due' | 'repeat'
+
 function ManualInput() {
   const addTask = useAddTask()
   const [text, setText] = useState('')
   const [due, setDue] = useState<string | null>(null)
   const [repeatDays, setRepeatDays] = useState<number | null>(null)
+  // Which chip popover is open — a single value enforces one-open-at-a-time (opening one
+  // closes the other). `null` = both closed.
+  const [openChip, setOpenChip] = useState<ChipId | null>(null)
+  const toggleChip = (id: ChipId) => setOpenChip((cur) => (cur === id ? null : id))
+  const closeChips = () => setOpenChip(null)
 
   function handleAdd(e: FormEvent) {
     e.preventDefault()
@@ -119,8 +127,20 @@ function ManualInput() {
         aria-label="Add a task"
         className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm"
       />
-      <DueControl value={due} onChange={setDue} />
-      <RepeatControl value={repeatDays} onChange={setRepeatDays} />
+      <DueControl
+        value={due}
+        onChange={setDue}
+        open={openChip === 'due'}
+        onToggle={() => toggleChip('due')}
+        onClose={closeChips}
+      />
+      <RepeatControl
+        value={repeatDays}
+        onChange={setRepeatDays}
+        open={openChip === 'repeat'}
+        onToggle={() => toggleChip('repeat')}
+        onClose={closeChips}
+      />
       <button
         type="submit"
         disabled={addTask.isPending || !text.trim()}
@@ -132,73 +152,116 @@ function ManualInput() {
   )
 }
 
-// A compact chip that toggles a small popover. Shared shell for Due / Repeat.
+// A compact chip that toggles a small popover. Shared shell for Due / Repeat. Controlled by the
+// parent (single-open) so it stays a dumb presentational shell; dismissal (outside-click + Esc)
+// lives here since every instance wants it.
 function ChipPopover({
   label,
   icon,
   active,
+  open,
+  onToggle,
+  onClose,
   children,
 }: {
   label: string
   icon: string
   active: boolean
+  open: boolean
+  onToggle: () => void
+  onClose: () => void
   children: (close: () => void) => React.ReactNode
 }) {
-  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  // The ref wraps trigger + panel, so a click on the trigger reads as "inside" and its onClick
+  // owns the toggle without this also firing (which would double-close).
+  useClickOutside(ref, onClose, open)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
   return (
-    <div className="relative">
+    <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         aria-expanded={open}
         className={
           'flex items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] transition-colors ' +
-          (active ? 'border-primary text-ink' : 'border-border-strong text-muted hover:text-ink')
+          (active || open
+            ? 'border-primary bg-primary/5 text-ink'
+            : 'border-border-strong text-muted hover:border-muted-faint hover:text-ink')
         }
       >
         <span aria-hidden>{icon}</span>
         {label}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 rounded-lg border border-border-strong bg-card p-2 shadow-lg">
-          {children(() => setOpen(false))}
+        <div className="absolute left-0 top-full z-30 mt-1.5 min-w-max rounded-xl border border-border-strong bg-card p-3 shadow-xl ring-1 ring-black/5">
+          {children(onClose)}
         </div>
       )}
     </div>
   )
 }
 
+interface ChipControlProps {
+  open: boolean
+  onToggle: () => void
+  onClose: () => void
+}
+
 function DueControl({
   value,
   onChange,
-}: {
+  open,
+  onToggle,
+  onClose,
+}: ChipControlProps & {
   value: string | null
   onChange: (v: string | null) => void
 }) {
   const label = value ? value.slice(5) : 'Due' // MM-DD, compact
   return (
-    <ChipPopover label={label} icon="📅" active={value != null}>
+    <ChipPopover
+      label={label}
+      icon="📅"
+      active={value != null}
+      open={open}
+      onToggle={onToggle}
+      onClose={onClose}
+    >
       {(close) => (
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            aria-label="Due date"
-            value={value ?? ''}
-            onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-            className="rounded border border-border-strong bg-card px-2 py-1 text-sm"
-          />
-          {value && (
-            <button
-              type="button"
-              onClick={() => {
-                onChange(null)
-                close()
-              }}
-              className="rounded border border-border-strong px-2 py-1 text-xs text-muted hover:text-ink"
-            >
-              Clear
-            </button>
-          )}
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
+            Due date
+          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              aria-label="Due date"
+              value={value ?? ''}
+              onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+              className="rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-sm text-ink focus:border-primary focus:outline-none"
+            />
+            {value && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(null)
+                  close()
+                }}
+                className="rounded-md border border-border-strong px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-muted-faint hover:text-ink"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       )}
     </ChipPopover>
@@ -208,52 +271,75 @@ function DueControl({
 function RepeatControl({
   value,
   onChange,
-}: {
+  open,
+  onToggle,
+  onClose,
+}: ChipControlProps & {
   value: number | null
   onChange: (v: number | null) => void
 }) {
   const [draft, setDraft] = useState('')
+  const [wasOpen, setWasOpen] = useState(open)
   const label = value ? `every ${value}d` : 'Repeat'
+  // Seed the input with the current interval each time the popover opens so it reads as an edit
+  // of the existing value, not a blank re-entry. Done as a render-phase adjustment on the
+  // open→ transition (React's sanctioned alternative to a setState-in-effect).
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) setDraft(value ? String(value) : '')
+  }
   return (
-    <ChipPopover label={label} icon="↻" active={value != null}>
+    <ChipPopover
+      label={label}
+      icon="↻"
+      active={value != null}
+      open={open}
+      onToggle={onToggle}
+      onClose={onClose}
+    >
       {(close) => (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted">every</span>
-          <input
-            type="number"
-            min={1}
-            max={365}
-            placeholder="days"
-            aria-label="Repeat every N days"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            className="w-16 rounded border border-border-strong bg-card px-2 py-1 text-center text-sm"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              const n = Number(draft)
-              if (Number.isFinite(n) && n >= 1) onChange(Math.floor(n))
-              close()
-            }}
-            className="rounded border px-2 py-1 text-xs font-semibold text-primary"
-            style={{ borderColor: '#5b8a72' }}
-          >
-            Set
-          </button>
-          {value && (
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
+            Repeat
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted">every</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              placeholder="3"
+              aria-label="Repeat every N days"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="w-14 rounded-md border border-border-strong bg-card px-2 py-1.5 text-center text-sm text-ink focus:border-primary focus:outline-none"
+            />
+            <span className="text-sm text-muted">days</span>
             <button
               type="button"
               onClick={() => {
-                onChange(null)
-                setDraft('')
+                const n = Number(draft)
+                if (Number.isFinite(n) && n >= 1) onChange(Math.floor(n))
                 close()
               }}
-              className="rounded border border-border-strong px-2 py-1 text-xs text-muted hover:text-ink"
+              className="rounded-md border border-primary px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
             >
-              Clear
+              Set
             </button>
-          )}
+            {value && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(null)
+                  setDraft('')
+                  close()
+                }}
+                className="rounded-md border border-border-strong px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-muted-faint hover:text-ink"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
       )}
     </ChipPopover>

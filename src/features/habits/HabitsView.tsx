@@ -9,6 +9,7 @@ import {
   useToggleDailyFlag,
 } from './use-habits'
 import { HabitRow } from './HabitRow'
+import { useConfirm } from '../../components/use-confirm'
 import type { Habit } from '../../types/habit'
 
 // Daily reminders — the body of the "Daily reminders" modal (RemindersModal). UI copy says
@@ -34,6 +35,7 @@ export function HabitsView() {
   const updateHabit = useUpdateHabit()
   const softDelete = useSoftDeleteHabit()
   const toggleFlag = useToggleDailyFlag()
+  const confirm = useConfirm()
 
   const [habitText, setHabitText] = useState('')
 
@@ -89,9 +91,9 @@ export function HabitsView() {
 
   const activate = (habit: Habit) => updateHabit.mutate({ id: habit.id, patch: { active: true } })
 
-  const deleteHabit = (habit: Habit) => {
-    if (!window.confirm(`Delete the reminder "${habit.text}"?`)) return
-    softDelete.mutate(habit.id)
+  const deleteHabit = async (habit: Habit) => {
+    if (await confirm({ title: `Delete the reminder "${habit.text}"?` }))
+      softDelete.mutate(habit.id)
   }
 
   return (

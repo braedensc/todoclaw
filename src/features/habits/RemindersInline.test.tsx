@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { ConfirmProvider } from '../../components/use-confirm'
 import type { Habit } from '../../types/habit'
 
 // Mirrors HabitsView.test's hook mocking so RemindersInline renders under jsdom with no Supabase.
@@ -41,6 +42,16 @@ function setHabits(habits: Habit[]) {
   habitsMock.mockReturnValue({ data: habits, isLoading: false, isError: false })
 }
 
+// The detail modal's delete gates on useConfirm(), so the tree needs a ConfirmProvider (mirrors
+// how AppShell mounts it at the root). The provider adds no DOM of its own until a confirm is open.
+function renderInline() {
+  return render(
+    <ConfirmProvider>
+      <RemindersInline />
+    </ConfirmProvider>,
+  )
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   dailyMock.mockReturnValue({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } })
@@ -49,7 +60,7 @@ beforeEach(() => {
 describe('RemindersInline', () => {
   it('renders nothing when there are no ACTIVE reminders', () => {
     setHabits([habit({ active: false })])
-    const { container } = render(<RemindersInline />)
+    const { container } = renderInline()
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -58,14 +69,14 @@ describe('RemindersInline', () => {
       habit({ id: 'h1', text: 'Alpha' }),
       habit({ id: 'h2', text: 'Queued', active: false }),
     ])
-    render(<RemindersInline />)
+    renderInline()
     expect(screen.getByRole('button', { name: 'Alpha' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Queued' })).not.toBeInTheDocument()
   })
 
   it('opens a per-reminder detail modal (steps expanded) when a name is clicked', () => {
     setHabits([habit()])
-    render(<RemindersInline />)
+    renderInline()
     // No dialog until a name is clicked.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
@@ -77,7 +88,7 @@ describe('RemindersInline', () => {
 
   it('toggles the reminder from inside the detail modal via set_daily_flag', () => {
     setHabits([habit()])
-    render(<RemindersInline />)
+    renderInline()
     fireEvent.click(screen.getByRole('button', { name: 'Wrist strengthening routine' }))
     fireEvent.click(
       screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
@@ -92,9 +103,24 @@ describe('RemindersInline', () => {
 
   it('closes the detail modal via the ✕ button', () => {
     setHabits([habit()])
-    render(<RemindersInline />)
+    renderInline()
     fireEvent.click(screen.getByRole('button', { name: 'Wrist strengthening routine' }))
     fireEvent.click(screen.getByRole('button', { name: /Close reminder/i }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('soft-deletes the reminder from the detail modal only after confirming', async () => {
+    setHabits([habit()])
+    renderInline()
+    fireEvent.click(screen.getByRole('button', { name: 'Wrist strengthening routine' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /Delete reminder "Wrist strengthening routine"/i }),
+    )
+    // The themed confirm dialog appears (distinct from the detail modal); deletion fires only
+    // after its Delete button is clicked.
+    const confirmDialog = await screen.findByRole('dialog', { name: /Delete the reminder/i })
+    fireEvent.click(within(confirmDialog).getByRole('button', { name: /^Delete$/ }))
+    // RemindersInline passes an onSuccess (to close the modal) as the mutate options arg.
+    await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('h1', expect.anything()))
   })
 })

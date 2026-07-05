@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { ConfirmProvider } from '../../components/use-confirm'
 import type { Habit } from '../../types/habit'
 
 // Mock the data hooks (mirrors DoneView.test) so HabitsView renders under jsdom with no
@@ -61,6 +62,15 @@ function setHabits(habits: Habit[]) {
   habitsMock.mockReturnValue({ data: habits, isLoading: false, isError: false })
 }
 
+// HabitsView now calls useConfirm() on every render, so it must be wrapped in a ConfirmProvider.
+function renderView() {
+  return render(
+    <ConfirmProvider>
+      <HabitsView />
+    </ConfirmProvider>,
+  )
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   updatePending = false
@@ -73,13 +83,13 @@ beforeEach(() => {
 describe('HabitsView', () => {
   it('shows the empty state when there are no habits', () => {
     setHabits([])
-    render(<HabitsView />)
+    renderView()
     expect(screen.getByText(/No reminders yet/i)).toBeInTheDocument()
   })
 
   it('renders an active habit with an UNCHECKED checkbox when not in habit_done', () => {
     setHabits([habit()])
-    render(<HabitsView />)
+    renderView()
     const checkbox = screen.getByRole('checkbox', {
       name: /Mark "Wrist strengthening routine" done today/i,
     })
@@ -91,7 +101,7 @@ describe('HabitsView', () => {
     dailyMock.mockReturnValue({
       data: { done: {}, done_at: {}, habit_done: { h1: true }, subtask_done: {} },
     })
-    render(<HabitsView />)
+    renderView()
     const checkbox = screen.getByRole('checkbox', {
       name: /Mark "Wrist strengthening routine" done today/i,
     })
@@ -100,7 +110,7 @@ describe('HabitsView', () => {
 
   it('toggles a habit via set_daily_flag with map=habit_done and the habit id key', () => {
     setHabits([habit()])
-    render(<HabitsView />)
+    renderView()
     fireEvent.click(
       screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
     )
@@ -117,7 +127,7 @@ describe('HabitsView', () => {
     dailyMock.mockReturnValue({
       data: { done: {}, done_at: {}, habit_done: { h1: true }, subtask_done: {} },
     })
-    render(<HabitsView />)
+    renderView()
     fireEvent.click(
       screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
     )
@@ -131,7 +141,7 @@ describe('HabitsView', () => {
 
   it('toggles a subtask with map=subtask_done and the COMPOSITE "habitId:subtaskId" key', () => {
     setHabits([habit()])
-    render(<HabitsView />)
+    renderView()
     // Expand the steps panel first.
     fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
     fireEvent.click(
@@ -152,7 +162,7 @@ describe('HabitsView', () => {
     dailyMock.mockReturnValue({
       data: { done: {}, done_at: {}, habit_done: {}, subtask_done: { 'h1:s1': true } },
     })
-    render(<HabitsView />)
+    renderView()
     fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
     expect(
       screen.getByRole('checkbox', {
@@ -163,7 +173,7 @@ describe('HabitsView', () => {
 
   it('adds a step by appending to the habit subtasks via useUpdateHabit', () => {
     setHabits([habit()])
-    render(<HabitsView />)
+    renderView()
     fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
     const input = screen.getByLabelText(/Add a step to "Wrist strengthening routine"/i)
     fireEvent.change(input, { target: { value: 'Finger extensions' } })
@@ -180,7 +190,7 @@ describe('HabitsView', () => {
 
   it('renders queued (inactive) habits as activate buttons that flip active=true', () => {
     setHabits([habit({ id: 'h2', text: 'Drink more water', active: false, subtasks: [] })])
-    render(<HabitsView />)
+    renderView()
     const activate = screen.getByRole('button', { name: /Activate reminder "Drink more water"/i })
     fireEvent.click(activate)
     expect(updateMutate).toHaveBeenCalledWith({ id: 'h2', patch: { active: true } })
@@ -188,7 +198,7 @@ describe('HabitsView', () => {
 
   it('adds a habit via useAddHabit on submit', () => {
     setHabits([])
-    render(<HabitsView />)
+    renderView()
     const input = screen.getByLabelText(/Add a reminder/i)
     fireEvent.change(input, { target: { value: 'Stretch' } })
     fireEvent.submit(input)
@@ -197,39 +207,40 @@ describe('HabitsView', () => {
 
   it('does NOT add an empty/whitespace habit', () => {
     setHabits([])
-    render(<HabitsView />)
+    renderView()
     const input = screen.getByLabelText(/Add a reminder/i)
     fireEvent.change(input, { target: { value: '   ' } })
     fireEvent.submit(input)
     expect(addMutate).not.toHaveBeenCalled()
   })
 
-  it('soft-deletes a habit only after confirm', () => {
+  it('soft-deletes a habit only after confirming in the dialog', async () => {
     setHabits([habit()])
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    render(<HabitsView />)
+    renderView()
     fireEvent.click(
       screen.getByRole('button', { name: /Delete reminder "Wrist strengthening routine"/i }),
     )
-    expect(confirmSpy).toHaveBeenCalled()
-    expect(deleteMutate).toHaveBeenCalledWith('h1')
-    confirmSpy.mockRestore()
+    // The themed confirm dialog appears; deletion fires only after its Delete button is clicked.
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Delete$/ }))
+    await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('h1'))
   })
 
-  it('does NOT delete when the confirm is dismissed', () => {
+  it('does NOT delete when the confirm dialog is cancelled', async () => {
     setHabits([habit()])
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    render(<HabitsView />)
+    renderView()
     fireEvent.click(
       screen.getByRole('button', { name: /Delete reminder "Wrist strengthening routine"/i }),
     )
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /Cancel/i }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(deleteMutate).not.toHaveBeenCalled()
-    confirmSpy.mockRestore()
   })
 
   it('shows a per-step delete inside the expanded panel', () => {
     setHabits([habit()])
-    render(<HabitsView />)
+    renderView()
     fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
     const stepRow = screen
       .getByText('Rice bucket — 3 sets each direction')
@@ -248,7 +259,7 @@ describe('HabitsView', () => {
     // An edit is in flight on h1 only.
     updatePending = true
     updateVariables = { id: 'h1' }
-    render(<HabitsView />)
+    renderView()
 
     // h1's structural control (delete) is disabled while its edit lands…
     expect(screen.getByRole('button', { name: /Delete reminder "Alpha"/i })).toBeDisabled()

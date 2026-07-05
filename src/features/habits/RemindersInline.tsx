@@ -3,6 +3,7 @@ import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useHabits, useUpdateHabit, useSoftDeleteHabit, useToggleDailyFlag } from './use-habits'
 import { HabitRow } from './HabitRow'
+import { useConfirm } from '../../components/use-confirm'
 import type { Habit } from '../../types/habit'
 
 // The main-page minified form of Daily reminders: a compact inline row of ACTIVE reminder names,
@@ -24,6 +25,7 @@ export function RemindersInline() {
   const updateHabit = useUpdateHabit()
   const softDelete = useSoftDeleteHabit()
   const toggleFlag = useToggleDailyFlag()
+  const confirm = useConfirm()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -57,9 +59,9 @@ export function RemindersInline() {
   const changeSubtasks = (habit: Habit, next: Habit['subtasks']) =>
     updateHabit.mutate({ id: habit.id, patch: { subtasks: next } })
 
-  const deleteHabit = (habit: Habit) => {
-    if (!window.confirm(`Delete the reminder "${habit.text}"?`)) return
-    softDelete.mutate(habit.id, { onSuccess: close })
+  const deleteHabit = async (habit: Habit) => {
+    if (await confirm({ title: `Delete the reminder "${habit.text}"?` }))
+      softDelete.mutate(habit.id, { onSuccess: close })
   }
 
   return (
