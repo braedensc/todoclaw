@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAddTask } from '../tasks/use-tasks'
 import { StagingBar } from '../grid/StagingBar'
 import type { GridApi } from '../grid/use-grid'
 import type { ChatController } from '../ai/use-chat-controller'
+import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
+import type { BabyClawTone } from './babyclaw-status'
 
 // The one slim input widget above the grid (B8, items 4/5/7/9). A Manual ⇄ BabyClaw pill toggle
 // swaps between two modes that share the row:
@@ -261,12 +263,41 @@ function RepeatControl({
 }
 
 // --- BabyClaw mode -----------------------------------------------------------------------
+// Text color per derived tone — the sub-line reads as "working / done / needs-info / error" at a
+// glance without opening the chat drawer.
+const TONE_CLASS: Record<BabyClawTone, string> = {
+  idle: 'text-muted',
+  busy: 'text-primary',
+  pending: 'text-accent',
+  done: 'text-primary',
+  error: 'text-accent',
+  paused: 'text-muted',
+}
+
 function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat: () => void }) {
   const [text, setText] = useState('')
-  const { send, busy, paused, pending, items } = chat
+  const { send, busy, paused, pending, error, items } = chat
 
-  // The latest assistant line (the only history shown inline; full history is the popup).
-  const lastReply = [...items].reverse().find((i) => i.role === 'assistant')
+  // One derived line reflecting BabyClaw's current state (busy / needs-confirmation / done ✓ /
+  // error ✕ / a follow-up question / idle) — see babyclaw-status.ts.
+  const status = deriveBabyClawStatus({ paused, busy, pending, error, items })
+
+  // Transient "what just happened" chip: flash the newest tool outcome for ~2s, then let it fall
+  // back to the resting status line. Keyed on the newest tool item's id so it fires once per
+  // completed action and not for history already present when BabyClaw mode mounts.
+  const lastTool = useMemo(() => [...items].reverse().find((i) => i.role === 'tool'), [items])
+  const flashId = lastTool?.id
+  const flashOk = lastTool?.ok !== false
+  const flashVerb = lastTool ? toolVerb(lastTool.text) : ''
+  const [flash, setFlash] = useState<{ ok: boolean; verb: string } | null>(null)
+  const seenTool = useRef(flashId) // seed with mount-time history so old results don't flash
+  useEffect(() => {
+    if (!flashId || flashId === seenTool.current) return
+    seenTool.current = flashId
+    setFlash({ ok: flashOk, verb: flashVerb })
+    const t = setTimeout(() => setFlash(null), 2000)
+    return () => clearTimeout(t)
+  }, [flashId, flashOk, flashVerb])
 
   function handleSend(e: FormEvent) {
     e.preventDefault()
@@ -274,6 +305,7 @@ function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat:
     if (!trimmed || busy) return
     send(trimmed)
     setText('')
+    setFlash(null) // clear any prior chip so it doesn't linger over the new "Working…" line
   }
 
   return (
@@ -295,18 +327,29 @@ function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat:
           Send
         </button>
       </form>
-      <div className="flex items-center justify-between gap-2 px-1 text-[11px]">
-        <span className="min-w-0 flex-1 truncate text-primary">
-          {paused
-            ? 'AI is paused this month — the planner still works without it.'
-            : pending
-              ? '✦ Needs confirmation — open chat to review.'
-              : busy
-                ? '✦ Thinking…'
-                : lastReply
-                  ? `✦ ${lastReply.text}`
-                  : 'Add tasks in plain language — e.g. “call landlord, urgent”.'}
+      <div className="flex items-center gap-2 px-1 text-[11px]">
+        <span aria-hidden className={TONE_CLASS[status.tone]}>
+          {status.icon}
         </span>
+        <span className={`min-w-0 flex-1 truncate ${TONE_CLASS[status.tone]}`} aria-live="polite">
+          {status.text}
+        </span>
+        {flash && (
+          <span
+            className={
+              'shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 font-medium ' +
+              (flash.ok ? 'text-primary' : 'text-accent')
+            }
+            style={{
+              // Faint tint behind the chip. Tailwind opacity modifiers aren't used in this codebase
+              // (it sets translucent colors inline — see index.css), so do the same here.
+              animation: 'babyclaw-flash 220ms ease-out',
+              backgroundColor: flash.ok ? 'rgba(91, 138, 114, 0.12)' : 'rgba(194, 105, 63, 0.12)',
+            }}
+          >
+            {flash.ok ? `${flash.verb} ✓` : 'error ✕'}
+          </span>
+        )}
         <button
           type="button"
           onClick={onOpenChat}
