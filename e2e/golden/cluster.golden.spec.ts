@@ -1,5 +1,5 @@
 import { test, expect } from '../helpers/fixtures'
-import { addTask, dragTrayCardToGrid, placeTask } from '../helpers/ui'
+import { addTask, dragNewCardToGrid, placeTask } from '../helpers/ui'
 
 // Golden path: overlapping cards collapse into a cluster bubble; clicking it opens the popup
 // listing the stacked tasks; clicking the grid background dismisses it. Placement spots are
@@ -15,7 +15,7 @@ test('overlapping drops cluster into a bubble; the popup lists both tasks', asyn
   // Second drop lands 0.03 away on each axis → clusters with the first; the group renders as
   // ONE bubble (no standalone card), so compose the primitives and assert the bubble.
   await addTask(page, TASK_B)
-  await dragTrayCardToGrid(page, TASK_B, 0.73, 0.33)
+  await dragNewCardToGrid(page, TASK_B, 0.73, 0.33)
 
   // The bubble replaces both cards and shows the stack count.
   const bubble = page.getByTestId('cluster-bubble')

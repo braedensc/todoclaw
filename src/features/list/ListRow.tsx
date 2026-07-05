@@ -72,7 +72,8 @@ export function ListRow({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.text)
 
-  // Null x/y (staged tasks) fall back to grid center for the quadrant color, matching scoring.
+  // Null x/y (not-yet-placed tasks) fall back to grid center for the quadrant color, matching
+  // scoring.
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
   const due = daysUntil(task.due, { timeZone })
   const status = recurringStatus(task.recurring)
@@ -164,10 +165,12 @@ export function ListRow({
   // both layouts.
   const trailing = (
     <>
-      {/* Staged tasks have no grid position yet — flag them so they read as not-yet-placed. */}
+      {/* Not-yet-placed tasks (still `staged`) have no grid position — flag them so they read as
+          unplaced. They surface as a draggable card in the add widget (Grid view); here the sliders
+          in the expanded row are the placement path. */}
       {task.staged && (
         <span className="shrink-0 rounded bg-muted-faint px-2 py-0.5 text-xs font-medium text-ink">
-          staging
+          unplaced
         </span>
       )}
 

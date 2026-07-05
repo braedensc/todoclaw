@@ -1,9 +1,10 @@
 # grid
 
-The free-canvas priority grid (urgency × importance) and its staging tray. This is the app's
-main screen — a 2D matrix where `x` = urgency (0 left → 1 right) and `y` = importance
-(0 bottom → 1 top). **Screen-y is inverted from data-y**: a card at data `(x, y)` renders at
-`left: x*100%`, `top: (1−y)*100%`, so high importance sits at the top.
+The free-canvas priority grid (urgency × importance). This is the app's main screen — a 2D matrix
+where `x` = urgency (0 left → 1 right) and `y` = importance (0 bottom → 1 top). **Screen-y is
+inverted from data-y**: a card at data `(x, y)` renders at `left: x*100%`, `top: (1−y)*100%`, so
+high importance sits at the top. New tasks are added from the widget above the grid and surface as
+draggable **new-item cards** there (card-in-place, B2 — there is no staging tray).
 
 ## Files
 
@@ -19,8 +20,9 @@ main screen — a 2D matrix where `x` = urgency (0 left → 1 right) and `y` = i
   → `RC_COLOR[recurringStatus().code]`, otherwise the quadrant color for its `(x, y)`. Renders
   the recurring status badge + `×N` badge (`doneCount ≥ 3`), the **visual-urgency layer** (glow /
   staleness / due badge — see below), and hover actions.
-- **`StagingTray.tsx`** — lists `staged` tasks; the source of desktop drag-to-grid and mobile
-  tap-select.
+- **`use-grid.ts` / `GridSurface.tsx`** — the drag/placement orchestration (shared state) and the
+  canvas render. `useGrid` also exposes `pendingTasks` (still-`staged` tasks) + `startNewCardDrag`
+  so the add widget's **new-item cards** (`../shell/NewItemStrip.tsx`) drag onto this same canvas.
 - **`grid-constants.ts`** — verbatim EisenClaw visual constants (tints, gridline/axis colors,
   card width, badge threshold).
 
@@ -29,17 +31,19 @@ main screen — a 2D matrix where `x` = urgency (0 left → 1 right) and `y` = i
 A task renders on the canvas when **all** hold: active (soft-deleted rows are already excluded
 by `useTasks`), `!staged`, not in today's `done` map, has non-null `x`/`y`, and — for recurring
 tasks — its status is **not `ok`** (an `ok` recurring task is hidden to keep the grid uncluttered
-between cycles). Everything with `staged === true` shows in the tray instead.
+between cycles). Everything with `staged === true` is a not-yet-placed task and surfaces as a
+draggable new-item card in the add widget instead.
 
 ## Placement & movement
 
 - **Reposition a placed card:** drag it (raw pointer events via `useFreeDrag`). A live "ghost"
   position tracks the pointer; on drop we commit `x`/`y` via `useUpdateTask`. **No collision
   resolution on drag** — overlaps are expected and absorbed by clustering.
-- **Tray → grid (desktop):** drag a tray card onto the canvas → commits `{ x, y, staged: false }`.
-- **Tray → grid (mobile, < 720px):** tap a tray card to select it, then tap a spot on the grid.
-  Coordinates come from `toNormalized(gridRef.getBoundingClientRect(), …)` (clamped, y-inverted).
-  The breakpoint is detected by `useIsMobile`.
+- **New-item card → grid (desktop):** drag a new-item card onto the canvas → it materializes
+  under the pointer and commits `{ x, y, staged: false }` on drop.
+- **New-item card → grid (mobile, < 720px):** tap a new-item card to select it, then tap a spot on
+  the grid. Coordinates come from `toNormalized(gridRef.getBoundingClientRect(), …)` (clamped,
+  y-inverted). The breakpoint is detected by `useIsMobile`.
 
 ## Clustering
 
@@ -65,17 +69,17 @@ ADR-0019.
 - **Pulse** — overdue items animate the global `urgency-pulse` keyframe (`src/index.css`), disabled
   under `prefers-reduced-motion`.
 - **Staleness** — `stalenessStyle(task)` desaturates + fades a card by age (`created_at → now`);
-  staged tray cards are exempt.
+  not-yet-placed (`staged`) tasks are exempt (they aren't on the grid yet).
 - **Due badge** — a small `overdue`/`today`/`Nd` pill (terracotta when due `≤ 2d`, else grey;
   `DUE_BADGE_*` in `src/lib/visual-urgency.ts`, shared with the cluster popup's due chip).
 
 ## Hover actions (placed cards) & mark done
 
-`GridCard` reveals **done ✓**, edit (inline rename — Enter/blur commits `text`), back-to-tray
-(`staged: true`), and delete (soft-delete). On desktop these appear on hover; on mobile (< 720px,
-no hover) they are **always visible** so a placed card stays actionable by touch (gated on the same
-`wide` breakpoint that switches placement to tap-to-place — see `docs/STYLE.md` → _Responsive
-layout_). Each button stops pointer/click propagation so it never starts a drag.
+`GridCard` reveals **done ✓**, edit (inline rename — Enter/blur commits `text`), and delete
+(soft-delete). On desktop these appear on hover; on mobile (< 720px, no hover) they are **always
+visible** so a placed card stays actionable by touch (gated on the same `wide` breakpoint that
+switches placement to tap-to-place — see `docs/STYLE.md` → _Responsive layout_). Each button stops
+pointer/click propagation so it never starts a drag.
 
 **Mark done** (the `✓` on cards _and_ popup rows) goes through one shared handler that branches
 on `task.recurring`:
@@ -86,5 +90,5 @@ on `task.recurring`:
   writes **no** history/`daily_state`. The task re-evaluates to `ok` and is hidden until the next
   cycle, its `×N` badge incremented.
 
-New tasks are created from the header "Add a task" input (seeded `staged: true, x: 0.5, y: 0.5`);
-this feature only displays and places them.
+New tasks are created from the Manual add widget above the grid (seeded `staged: true, x: 0.5,
+y: 0.5`); they surface there as a draggable new-item card and this feature displays + places them.

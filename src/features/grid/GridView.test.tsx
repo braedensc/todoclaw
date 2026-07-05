@@ -4,18 +4,21 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { useGrid } from './use-grid'
 import { GridSurface } from './GridSurface'
-import { StagingBar } from './StagingBar'
+import { NewItemStrip } from '../shell/NewItemStrip'
 
 // The grid was split (B8): the drag/placement orchestration lives in `useGrid`, the canvas render
-// in `GridSurface`, and the staging chips (folded out of the old right-column tray) in `StagingBar`
-// — which now lives in the input widget above the grid. This harness wires the three back together
-// exactly as WorkArea does, so these behavioural tests exercise the same integration.
+// in `GridSurface`, and the not-yet-placed "new item" cards (card-in-place, B2 — replacing the old
+// staging tray) in `NewItemStrip`, which lives in the input widget above the grid. This harness
+// wires them back together exactly as WorkArea does, so these behavioural tests exercise the same
+// integration.
 function GridHarness() {
   const gridRef = useRef<HTMLDivElement>(null)
   const grid = useGrid(gridRef)
   return (
     <>
-      <StagingBar grid={grid} canPlace />
+      {grid.pendingTasks.length > 0 && (
+        <NewItemStrip pending={grid.pendingTasks} grid={grid} canPlace />
+      )}
       <GridSurface
         grid={grid}
         gridRef={gridRef}
@@ -92,7 +95,7 @@ describe('GridView placement filter', () => {
   it('renders placed (non-staged) cards and hides staged ones', () => {
     tasksFixture = [
       makeTask({ id: 'placed', text: 'On the grid', staged: false }),
-      makeTask({ id: 'staged', text: 'In the tray', staged: true }),
+      makeTask({ id: 'staged', text: 'Not placed yet', staged: true }),
     ]
     render(<GridHarness />)
 
@@ -100,10 +103,10 @@ describe('GridView placement filter', () => {
     expect(cards).toHaveLength(1)
     expect(within(cards[0]!).getByText('On the grid')).toBeInTheDocument()
 
-    // The staged task shows as a staging chip, not on the grid.
-    const trayCards = screen.getAllByTestId('tray-card')
-    expect(trayCards).toHaveLength(1)
-    expect(within(trayCards[0]!).getByText('In the tray')).toBeInTheDocument()
+    // The staged task shows as a draggable "new item" card in the widget, not on the grid.
+    const newCards = screen.getAllByTestId('new-item-card')
+    expect(newCards).toHaveLength(1)
+    expect(within(newCards[0]!).getByText('Not placed yet')).toBeInTheDocument()
   })
 
   it('hides tasks marked done today', () => {
@@ -112,7 +115,9 @@ describe('GridView placement filter', () => {
     render(<GridHarness />)
 
     expect(screen.queryByTestId('grid-card')).not.toBeInTheDocument()
-    expect(screen.getByText('No tasks placed — drag one from the tray.')).toBeInTheDocument()
+    expect(
+      screen.getByText('No tasks placed — add one above and drag it here.'),
+    ).toBeInTheDocument()
   })
 
   it('hides recurring tasks whose status is "ok" but shows due/overdue ones', () => {
@@ -135,10 +140,10 @@ describe('GridView placement filter', () => {
     expect(screen.getByText('Way overdue')).toBeInTheDocument()
   })
 
-  it('renders no staging chips when nothing is staged', () => {
+  it('renders no new-item cards when nothing is staged', () => {
     tasksFixture = [makeTask({ staged: false })]
     render(<GridHarness />)
-    expect(screen.queryByTestId('tray-card')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('new-item-card')).not.toBeInTheDocument()
   })
 })
 
