@@ -3,6 +3,7 @@ import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useSoftDeleteTask, useTasks } from '../tasks/use-tasks'
 import { useHistory, useRestoreTask } from './use-history'
+import { useConfirm } from '../../components/use-confirm'
 import { formatDateTime } from '../../lib/dates'
 import type { History } from '../../types/history'
 
@@ -73,6 +74,7 @@ export function DoneView() {
   const restore = useRestoreTask()
   const softDelete = useSoftDeleteTask()
   const tasks = useTasks()
+  const confirm = useConfirm()
 
   const todayDone = daily.data?.done ?? {}
   // Live task ids — useTasks already filters out soft-deleted rows (deleted_at is null). We
@@ -87,11 +89,14 @@ export function DoneView() {
     restore.mutate({ taskId, timeZone })
   }
 
-  const handleDelete = (taskId: string | null, text: string) => {
+  const handleDelete = async (taskId: string | null, text: string) => {
     if (!taskId) return
     // The history record is permanent; this only soft-deletes the task itself.
-    if (!window.confirm(`Delete the task "${text}"? Its completion stays in your history.`)) return
-    softDelete.mutate(taskId)
+    const ok = await confirm({
+      title: `Delete the task "${text}"?`,
+      message: 'Its completion stays in your history.',
+    })
+    if (ok) softDelete.mutate(taskId)
   }
 
   if (history.isLoading) {

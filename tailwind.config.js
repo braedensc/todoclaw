@@ -36,6 +36,11 @@ export default {
         // Brand accents
         primary: '#5b8a72', // green — Add / Set buttons
         accent: '#c2693f', // terracotta — one-time bucket dot, urgency
+        // Warm brick red for destructive/delete affordances (IconButton `danger`, ConfirmDialog).
+        // Distinct from terracotta `accent` (which is orange-leaning) but tuned to the warm-paper
+        // palette; passes AA for white text on the fill and for the glyph on paper/card. See
+        // src/components/IconButton.tsx.
+        danger: '#b3392f',
         // Eisenhower quadrants
         quadrant: {
           'do-now': '#bf5e2a',
