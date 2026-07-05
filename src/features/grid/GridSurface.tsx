@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
+import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
 import { GridCanvas } from './GridCanvas'
@@ -56,8 +57,21 @@ export function GridSurface({
     urgencyGlowStyle,
   } = grid
 
+  const confirm = useConfirm()
+
+  // Delete now confirms first (was a silent soft-delete), mirroring the List/cluster surfaces (B9).
+  // The app-themed useConfirm gate names the task so an accidental click can't quietly remove it.
+  const handleDelete = async (task: Task) => {
+    if (
+      await confirm({ title: `Delete “${task.text}”?`, message: 'This removes it from your grid.' })
+    )
+      softDeleteMutate(task.id)
+  }
+
   // One placed card. Shared by the singleton-cluster render and the standalone dragged-card
-  // render so both stay byte-for-byte identical (same handlers, same node registration).
+  // render so both stay byte-for-byte identical (same handlers, same node registration). All of
+  // due/recurring/rename reuse the one generic updateMutate({ id, patch }); a due write sets `due`
+  // ONLY — it never touches x/y, so setting a due date on a manually-placed card can't move it.
   const renderGridCard = (task: Task & { x: number; y: number }) => (
     <GridCard
       key={task.id}
@@ -69,8 +83,20 @@ export function GridSurface({
       cardRef={(node) => registerCardNode(task.id, node)}
       onPointerDown={startReposition(task.id)}
       onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
-      onDelete={() => softDeleteMutate(task.id)}
+      onDelete={() => handleDelete(task)}
       onDone={() => handleDone(task)}
+      onSetDue={(due) => updateMutate({ id: task.id, patch: { due } })}
+      onSetRecurring={(frequencyDays) =>
+        updateMutate({
+          id: task.id,
+          patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
+        })
+      }
+      onSetFrequency={(frequencyDays) => {
+        if (task.recurring)
+          updateMutate({ id: task.id, patch: { recurring: { ...task.recurring, frequencyDays } } })
+      }}
+      onRemoveRecurring={() => updateMutate({ id: task.id, patch: { recurring: null } })}
     />
   )
 
@@ -151,6 +177,9 @@ export function GridSurface({
                 glow={urgencyGlowStyle(clusterMinD)}
                 open={open}
                 onToggle={() => setOpenClusterId(open ? null : dominant.id)}
+                // Register the bubble node under the dominant id (same key `memberToNodeKey` uses)
+                // so the merge preview can flag this bubble when a drag would merge into it.
+                bubbleRef={(node) => registerCardNode(dominant.id, node)}
               >
                 {open && (
                   <ClusterPopup

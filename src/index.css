@@ -106,12 +106,16 @@
   }
 }
 
-/* Merge preview (net-new; EisenClaw had none). While a card is dragged over another within the
-   cluster thresholds (CX/CY), the under-card is flagged `data-merge-target` from GridView's
-   per-frame drag handler (a plain DOM attribute — no React re-render) to preview the merge-on-
-   drop: it grows + darkens. The card's transform/box-shadow are set inline, so these must win
-   with !important. Kept deliberately subtle. */
-[data-merge-target] {
+/* Merge preview (net-new; EisenClaw had none). While a card is dragged to a spot where releasing
+   would cluster it (the SAME seed-based predicate the drop runs — see useGrid `updateMergeTarget`),
+   every task it would merge with is flagged `data-merge-target` from the per-frame drag handler (a
+   plain DOM attribute — no React re-render): a standalone under-card, and/or the cluster BUBBLE a
+   folded task is drawn inside. The flagged element's transform/box-shadow are set inline, so these
+   must win with !important. Kept deliberately subtle.
+
+   CARD variant — scoped away from the bubble wrapper (which gets its own rule below): the flagged
+   element IS the visible card, so grow + shadow + brightness all land on it. */
+[data-merge-target]:not([data-testid='cluster-bubble']) {
   transform: translate(-50%, -50%) scale(1.08) !important;
   box-shadow:
     0 8px 20px rgba(0, 0, 0, 0.3),
@@ -122,8 +126,26 @@
     transform 120ms ease,
     box-shadow 120ms ease;
 }
+
+/* CLUSTER BUBBLE variant. The flagged node is the positioned WRAPPER, which already carries
+   `translate(-50%, -50%)`, so the same `scale(1.08)` grow works here too. But the visible circle
+   is the inner <button>, so the merge shadow/brightness (tuned for the round bubble, not a card)
+   go there. */
+[data-testid='cluster-bubble'][data-merge-target] {
+  transform: translate(-50%, -50%) scale(1.08) !important;
+  z-index: 20 !important;
+  transition: transform 120ms ease;
+}
+[data-testid='cluster-bubble'][data-merge-target] > button {
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.28),
+    0 0 0 2px rgba(46, 42, 36, 0.3) !important;
+  filter: brightness(0.97);
+  transition: box-shadow 120ms ease;
+}
 @media (prefers-reduced-motion: reduce) {
-  [data-merge-target] {
+  [data-merge-target],
+  [data-testid='cluster-bubble'][data-merge-target] > button {
     transition: none;
   }
 }
