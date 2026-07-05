@@ -151,6 +151,9 @@ export function GridSurface({
                 glow={urgencyGlowStyle(clusterMinD)}
                 open={open}
                 onToggle={() => setOpenClusterId(open ? null : dominant.id)}
+                // Register the bubble node under the dominant id (same key `memberToNodeKey` uses)
+                // so the merge preview can flag this bubble when a drag would merge into it.
+                bubbleRef={(node) => registerCardNode(dominant.id, node)}
               >
                 {open && (
                   <ClusterPopup

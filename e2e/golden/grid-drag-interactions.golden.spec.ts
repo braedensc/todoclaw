@@ -110,6 +110,51 @@ test('dragging a card over another flags it as a merge target, cleared when movi
   await expect(page.locator('[data-merge-target]')).toHaveCount(0)
 })
 
+// (item 15): dragging a card onto a CLUSTER that a release would absorb it into flags the whole
+// BUBBLE as the merge target. The preview now runs the real seed-based clustering (item 14), so a
+// would-merge co-member that has no card node of its own (it is folded into the bubble) is still
+// previewed — via the bubble's node. Guards the false-negative the old nearest-single heuristic
+// had: it skipped folded cards, so hovering a bubble showed no preview yet the drop merged.
+test('dragging a card onto a cluster flags the whole bubble as the merge target', async ({
+  page,
+}) => {
+  // Two overlapping drops collapse into one bubble (no standalone cards).
+  await placeTask(page, 'Passport', 0.6, 0.3)
+  await addTask(page, 'Flights')
+  await dragNewCardToGrid(page, 'Flights', 0.63, 0.33)
+  const bubble = page.getByTestId('cluster-bubble')
+  await expect(bubble).toBeVisible()
+  await expect(page.getByTestId('grid-card')).toHaveCount(0)
+  await expect(page.locator('[data-merge-target]')).toHaveCount(0)
+
+  // A third card to drag toward the bubble.
+  await addTask(page, 'Mover')
+  const mover = page.getByTestId('new-item-card').filter({ hasText: 'Mover' })
+  const moverBox = await mover.boundingBox()
+  if (!moverBox) throw new Error('new-item card not laid out')
+  await page.mouse.move(moverBox.x + moverBox.width / 2, moverBox.y + moverBox.height / 2)
+  await page.mouse.down()
+
+  // Materialize on an empty spot, clear of the bubble — nothing flagged yet.
+  const away = await canvasPoint(page, 0.3, 0.55)
+  await page.mouse.move(away.x, away.y, { steps: 6 })
+  await expect(page.locator('[data-merge-target]')).toHaveCount(0)
+
+  // Hover onto the bubble → the BUBBLE becomes THE (only) merge target — the dragged card is
+  // never its own target, and the folded cards have no nodes, so the bubble stands in for them.
+  const onBubble = await canvasPoint(page, 0.6, 0.3)
+  await page.mouse.move(onBubble.x, onBubble.y, { steps: 6 })
+  await expect(bubble).toHaveAttribute('data-merge-target', '')
+  await expect(page.locator('[data-merge-target]')).toHaveCount(1)
+
+  // Pull away again → the preview clears without a drop.
+  await page.mouse.move(away.x, away.y, { steps: 6 })
+  await expect(page.locator('[data-merge-target]')).toHaveCount(0)
+
+  await page.mouse.up()
+  await expect(page.locator('[data-merge-target]')).toHaveCount(0)
+})
+
 // (16): dragging a row OUT of a cluster must separate + show the card immediately (mid-drag),
 // not leave it folded into the bubble until drop.
 test('dragging a task out of a cluster shows the card immediately, before drop', async ({

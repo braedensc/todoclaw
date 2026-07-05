@@ -20,6 +20,14 @@ export interface ClusterBubbleProps {
   open: boolean
   /** Open / close the popup. */
   onToggle: () => void
+  /**
+   * Registers this bubble's positioned wrapper node with the caller (useGrid), keyed by the
+   * cluster's dominant id, so the merge preview can flag the whole bubble (grow + shadow) when a
+   * dragged card would merge into a task folded inside it — the folded task has no card node of
+   * its own. Attached to the wrapper (not the inner circle) because the wrapper carries the
+   * `translate(-50%, -50%)` the merge-target CSS extends with `scale(...)`.
+   */
+  bubbleRef?: (node: HTMLDivElement | null) => void
   /** The popup, rendered inside the bubble's positioned wrapper so it anchors to the bubble. */
   children?: ReactNode
 }
@@ -41,6 +49,7 @@ export function ClusterBubble({
   glow,
   open,
   onToggle,
+  bubbleRef,
   children,
 }: ClusterBubbleProps) {
   // Behind the bubble: one faint ring per extra task, up to two (slice 1..3 → two rings).
@@ -69,6 +78,7 @@ export function ClusterBubble({
 
   return (
     <div
+      ref={bubbleRef}
       data-testid="cluster-bubble"
       data-task-id={group[0]?.id}
       className="absolute"

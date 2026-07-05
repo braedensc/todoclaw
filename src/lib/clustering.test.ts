@@ -5,6 +5,7 @@ import {
   clusterDominant,
   clusterNearestDue,
   computeClusters,
+  mergePreviewIds,
 } from './clustering'
 
 function makeTask(
@@ -79,6 +80,81 @@ describe('computeClusters', () => {
 
   it('returns an empty array for no tasks', () => {
     expect(computeClusters([])).toEqual([])
+  })
+})
+
+describe('mergePreviewIds', () => {
+  const set = (...ids: string[]): Set<string> => new Set(ids)
+
+  // The drag merge-preview must flag EXACTLY the cards a release would merge into. The oracle is
+  // the drop itself: relocate the dragged card to the point (as the drop mutation does), cluster
+  // the committed set, and read the dragged card's co-members. This is what byte-for-byte means.
+  function dropOracle(
+    placed: Parameters<typeof mergePreviewIds>[0],
+    id: string,
+    x: number,
+    y: number,
+  ) {
+    const committed = placed.map((t) => (t.id === id ? { ...t, x, y } : t))
+    const group = computeClusters(committed).find((g) => g.some((t) => t.id === id))
+    const co = new Set<string>()
+    if (group) for (const t of group) if (t.id !== id) co.add(t.id)
+    return co
+  }
+
+  it('flags the single card a drop would merge into', () => {
+    const d = makeTask('d', 0.9, 0.9)
+    const a = makeTask('a', 0.5, 0.5)
+    // Move d right onto a (dx 0.02, dy 0.01 — well within CX/CY).
+    expect(mergePreviewIds([d, a], 'd', { x: 0.52, y: 0.51 })).toEqual(set('a'))
+  })
+
+  it('flags nothing on a near-miss — close, but outside the thresholds (no false positive)', () => {
+    const d = makeTask('d', 0.9, 0.9)
+    const a = makeTask('a', 0.5, 0.5)
+    // dy 0.08 > CY 0.07 — visually near, but a release here would NOT merge.
+    expect(mergePreviewIds([d, a], 'd', { x: 0.5, y: 0.58 })).toEqual(set())
+    // dx 0.12 > CX 0.09 — same on the urgency axis.
+    expect(mergePreviewIds([d, a], 'd', { x: 0.62, y: 0.5 })).toEqual(set())
+  })
+
+  it('flags EVERY member a drop absorbs when landing on a cluster (bubble), not just one', () => {
+    const d = makeTask('d', 0.9, 0.9)
+    const a = makeTask('a', 0.3, 0.5)
+    const b = makeTask('b', 0.36, 0.5) // a+b already cluster (dx 0.06)
+    // Drop d between them (dx 0.03 to each) → it merges with BOTH — the old nearest-single
+    // heuristic would have flagged only one.
+    expect(mergePreviewIds([d, a, b], 'd', { x: 0.33, y: 0.5 })).toEqual(set('a', 'b'))
+  })
+
+  it('respects seed order at a boundary — matches the committed set exactly, not a symmetric guess', () => {
+    const d = makeTask('d', 0.9, 0.9)
+    const a = makeTask('a', 0.3, 0.5)
+    const b = makeTask('b', 0.38, 0.5) // a+b cluster (dx 0.08)
+    // Point is within CX of b (0.08) but not a (0.16). The outcome hinges on who seeds first:
+    // with d first, d seeds and pulls in b → merges {b}; with a first, a seeds and grabs b before
+    // d is reached, leaving d alone → no merge. The preview mirrors whichever the drop would do.
+    expect(mergePreviewIds([d, a, b], 'd', { x: 0.46, y: 0.5 })).toEqual(set('b'))
+    expect(mergePreviewIds([a, b, d], 'd', { x: 0.46, y: 0.5 })).toEqual(set())
+  })
+
+  it('agrees with the on-drop computeClusters across the canvas (the byte-for-byte contract)', () => {
+    const placed = [
+      makeTask('d', 0.9, 0.9),
+      makeTask('a', 0.3, 0.5),
+      makeTask('b', 0.38, 0.5),
+      makeTask('c', 0.7, 0.2),
+    ]
+    for (let x = 0.05; x < 0.96; x += 0.07) {
+      for (let y = 0.05; y < 0.96; y += 0.07) {
+        expect(mergePreviewIds(placed, 'd', { x, y })).toEqual(dropOracle(placed, 'd', x, y))
+      }
+    }
+  })
+
+  it('flags nothing when the dragged id is not on the grid (materialization in flight)', () => {
+    const a = makeTask('a', 0.5, 0.5)
+    expect(mergePreviewIds([a], 'ghost', { x: 0.5, y: 0.5 })).toEqual(set())
   })
 })
 

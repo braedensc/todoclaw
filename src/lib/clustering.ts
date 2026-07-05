@@ -62,6 +62,30 @@ export function computeClusters(tasks: Task[], cx: number = CX, cy: number = CY)
 }
 
 /**
+ * The merge-preview predicate: the ids a dragged card WOULD cluster with if released at `point`.
+ *
+ * This runs the EXACT clustering the drop runs, so the live drag preview and the on-drop grouping
+ * can never diverge: swap the dragged card's coords for the pointer point IN PLACE (preserving its
+ * position in the array, so seed order matches the committed set), cluster the whole set with
+ * `computeClusters`, then return the ids of the dragged card's co-members. Returns an empty set
+ * when the card lands alone (no merge). `draggedId` is expected to be present in `placed` — once a
+ * card is on the grid it always is; if absent, no group contains it and the result is empty.
+ */
+export function mergePreviewIds(
+  placed: Task[],
+  draggedId: string,
+  point: { x: number; y: number },
+): Set<string> {
+  const candidate = placed.map((t) => (t.id === draggedId ? { ...t, x: point.x, y: point.y } : t))
+  const group = computeClusters(candidate).find((g) => g.some((t) => t.id === draggedId))
+  const ids = new Set<string>()
+  if (group && group.length > 1) {
+    for (const t of group) if (t.id !== draggedId) ids.add(t.id)
+  }
+  return ids
+}
+
+/**
  * The dominant task of a cluster — the one with the highest `taskScore` (html:167-173).
  * Ties resolve to the earliest task in the group.
  */
