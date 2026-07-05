@@ -1,10 +1,11 @@
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { useGrid } from './use-grid'
 import { GridSurface } from './GridSurface'
 import { NewItemStrip } from '../shell/NewItemStrip'
+import { ConfirmProvider } from '../../components/use-confirm'
 
 // The grid was split (B8): the drag/placement orchestration lives in `useGrid`, the canvas render
 // in `GridSurface`, and the not-yet-placed "new item" cards (card-in-place, B2 — replacing the old
@@ -14,8 +15,10 @@ import { NewItemStrip } from '../shell/NewItemStrip'
 function GridHarness() {
   const gridRef = useRef<HTMLDivElement>(null)
   const grid = useGrid(gridRef)
+  // GridSurface calls useConfirm (its delete is now confirm-gated, B9), so the tree needs a real
+  // <ConfirmProvider> — the same provider App mounts at the root, which also hosts the dialog.
   return (
-    <>
+    <ConfirmProvider>
       {grid.pendingTasks.length > 0 && (
         <NewItemStrip pending={grid.pendingTasks} grid={grid} canPlace />
       )}
@@ -27,7 +30,7 @@ function GridHarness() {
         expanded={false}
         onToggleExpanded={() => {}}
       />
-    </>
+    </ConfirmProvider>
   )
 }
 
@@ -226,17 +229,25 @@ describe('GridView card visuals', () => {
 })
 
 describe('GridView hover actions', () => {
-  it('delete soft-deletes the task', () => {
-    tasksFixture = [makeTask({ id: 'del-me', staged: false })]
+  it('delete soft-deletes only after the confirm dialog is accepted', async () => {
+    tasksFixture = [makeTask({ id: 'del-me', text: 'delete me', staged: false })]
     render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Delete task'))
-    expect(softDeleteMutate).toHaveBeenCalledWith('del-me')
+    // The app-themed confirm gate appears; nothing is deleted until it's accepted.
+    const dialog = await screen.findByRole('dialog')
+    expect(softDeleteMutate).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('del-me'))
   })
 
-  it('inline edit commits a rename on Enter', () => {
+  it('double-clicking the text edits it inline and commits a rename on Enter', () => {
     tasksFixture = [makeTask({ id: 'edit-me', text: 'Old name', staged: false })]
     render(<GridHarness />)
-    fireEvent.click(screen.getByLabelText('Edit task'))
+    // No ✎ button anymore — the text itself is the edit trigger (owner's pick, batch-2 item 5).
+    expect(screen.queryByLabelText('Edit task')).not.toBeInTheDocument()
+
+    fireEvent.doubleClick(screen.getByText('Old name'))
     const input = screen.getByLabelText('Edit task') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'New name' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -244,11 +255,74 @@ describe('GridView hover actions', () => {
   })
 })
 
+describe('GridView on-card ⋯ menu (due + recurring)', () => {
+  it('opens the menu with the due picker + recurring controls', () => {
+    tasksFixture = [makeTask({ id: 'm', staged: false })]
+    render(<GridHarness />)
+    // Closed by default.
+    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    expect(screen.getByLabelText('Due date')).toBeInTheDocument()
+    expect(screen.getByText('↻ Recurring')).toBeInTheDocument()
+  })
+
+  it('setting a due date writes `due` ONLY — it never repositions the card', () => {
+    tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false })]
+    render(<GridHarness />)
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-08-01' } })
+
+    expect(updateMutate).toHaveBeenCalledWith({ id: 'm', patch: { due: '2026-08-01' } })
+    // Parity: no patch may carry x/y (that would move a manually-placed card).
+    const patches = updateMutate.mock.calls.map((c) => (c[0] as { patch: object }).patch)
+    expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
+  })
+
+  it('setting recurring from the menu writes a fresh recurring object', () => {
+    tasksFixture = [makeTask({ id: 'm', staged: false })]
+    render(<GridHarness />)
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    fireEvent.change(screen.getByLabelText('Days between repeats'), { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Set' }))
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'm',
+      patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } },
+    })
+  })
+})
+
+describe('GridView recurring indicator', () => {
+  it('marks a recurring card with a ↻ corner chip and dashed accent side borders', () => {
+    tasksFixture = [
+      makeTask({ id: 'rec', recurring: { frequencyDays: 1, lastDoneAt: null, doneCount: 0 } }),
+    ]
+    render(<GridHarness />)
+    const card = screen.getByTestId('grid-card')
+    // Dashed side/bottom borders read as "this repeats"; the top stays solid (status color).
+    expect(card.style.borderRightStyle).toBe('dashed')
+    expect(card.style.borderBottomStyle).toBe('dashed')
+    expect(card.style.borderLeftStyle).toBe('dashed')
+    expect(card.style.borderTopStyle).not.toBe('dashed')
+    // A persistent ↻ corner chip, decoupled from the status badge.
+    expect(within(card).getByTitle('Repeats')).toBeInTheDocument()
+  })
+
+  it('leaves a one-off card with solid sides and no ↻ corner chip', () => {
+    tasksFixture = [makeTask({ id: 'oneoff', staged: false })]
+    render(<GridHarness />)
+    const card = screen.getByTestId('grid-card')
+    expect(card.style.borderRightStyle).not.toBe('dashed')
+    expect(within(card).queryByTitle('Repeats')).not.toBeInTheDocument()
+  })
+})
+
 describe('GridView grid mark-done', () => {
   it('marks a normal card done via the Done data layer (writes history)', () => {
     tasksFixture = [makeTask({ id: 'norm', text: 'Buy milk', bucket: 'oneoff', staged: false })]
     render(<GridHarness />)
-    fireEvent.click(screen.getByLabelText('Done'))
+    fireEvent.click(screen.getByLabelText('Mark done'))
     expect(markDoneMutate).toHaveBeenCalledWith({
       taskId: 'norm',
       text: 'Buy milk',
@@ -267,7 +341,7 @@ describe('GridView grid mark-done', () => {
       }),
     ]
     render(<GridHarness />)
-    fireEvent.click(screen.getByLabelText('Done (resets cycle)'))
+    fireEvent.click(screen.getByLabelText('Mark done (resets clock)'))
     expect(markDoneMutate).not.toHaveBeenCalled()
     expect(updateMutate).toHaveBeenCalledTimes(1)
     const call = updateMutate.mock.calls[0]![0] as {
