@@ -7,6 +7,7 @@ import { NewItemStrip } from './NewItemStrip'
 import type { ChatController } from '../ai/use-chat-controller'
 import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
 import type { BabyClawTone } from './babyclaw-status'
+import { AnimatedDots } from '../../components/Thinking'
 
 // The one slim input widget above the grid (B8, items 4/5/7/9). A Manual ⇄ BabyClaw pill toggle
 // swaps between two modes that share the row:
@@ -424,11 +425,21 @@ function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat:
         </button>
       </form>
       <div className="flex items-center gap-2 px-1 text-[11px]">
-        <span aria-hidden className={TONE_CLASS[status.tone]}>
+        <span
+          aria-hidden
+          className={`${TONE_CLASS[status.tone]} ${status.tone === 'busy' ? 'thinking-sparkle' : ''}`}
+        >
           {status.icon}
         </span>
         <span className={`min-w-0 flex-1 truncate ${TONE_CLASS[status.tone]}`} aria-live="polite">
-          {status.text}
+          {status.tone === 'busy' ? (
+            <>
+              Working
+              <AnimatedDots />
+            </>
+          ) : (
+            status.text
+          )}
         </span>
         {flash && (
           <span

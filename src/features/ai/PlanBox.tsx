@@ -28,7 +28,7 @@ export function PlanBox({
   return (
     <section
       aria-label="Plan My Day"
-      className="rounded-[14px] border border-border bg-panel px-5 py-[18px]"
+      className="rounded-[14px] border border-border bg-panel px-5 py-3.5"
     >
       {plan ? (
         <div className="flex flex-col">
