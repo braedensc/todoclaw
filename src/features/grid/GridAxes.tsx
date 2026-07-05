@@ -3,7 +3,8 @@ import { AXIS_LABEL_COLOR } from './grid-constants'
 // Long, thin axis arrows drawn just OUTSIDE the grid canvas edges (B8, item 4 — replaces the
 // short in-canvas labels from #68). Urgency runs along the BOTTOM pointing RIGHT (low→high);
 // Importance runs up the LEFT pointing UP (low→high — the fix; #68 pointed it the wrong way).
-// Each is a label at the low end, a hairline rail, and an arrowhead at the high end.
+// Each is a hairline rail with the label centered on it (the word floats over the rail on a
+// page-colored background) and an arrowhead at the high end.
 //
 // Rendered by GridSurface inside a `relative` frame whose padding (pl / pb) reserves the outside
 // gutters, so the arrows never overlap cards or the corner quadrant labels. Purely decorative.
@@ -13,7 +14,7 @@ const C = AXIS_LABEL_COLOR
 export function GridAxes() {
   return (
     <div className="pointer-events-none" aria-hidden>
-      {/* Importance — left gutter, vertical, pointing UP. Label at the bottom (low), arrow at top. */}
+      {/* Importance — left gutter, vertical, pointing UP. Label centered on the rail, arrow at top. */}
       <div className="absolute inset-y-0" style={{ left: -20, width: 14 }}>
         {/* rail */}
         <div
@@ -55,18 +56,11 @@ export function GridAxes() {
 
       {/* Urgency — bottom gutter, horizontal, pointing RIGHT. Label at the left (low), arrow at right. */}
       <div className="absolute inset-x-0" style={{ bottom: -18, height: 12 }}>
-        {/* label */}
-        <span
-          className="absolute text-[9px] font-bold uppercase tracking-[0.12em]"
-          style={{ left: 0, top: '50%', transform: 'translateY(-50%)', color: C }}
-        >
-          Urgency
-        </span>
-        {/* rail */}
+        {/* rail — runs the full width behind the centered label; arrowhead at the right (high) end */}
         <div
           className="absolute"
           style={{
-            left: 62,
+            left: 8,
             right: 8,
             top: '50%',
             height: 1.5,
@@ -88,6 +82,20 @@ export function GridAxes() {
             borderLeft: `7px solid ${C}`,
           }}
         />
+        {/* label — centered on the rail (the middle of the arrow), matching Importance. The word
+            carries a page-colored (bg-bg) background + padding so the rail reads as passing BEHIND
+            the glyphs, not through them. */}
+        <div
+          className="absolute flex items-center justify-center"
+          style={{ left: 8, right: 8, top: 0, bottom: 0 }}
+        >
+          <span
+            className="whitespace-nowrap bg-bg px-1 text-[9px] font-bold uppercase tracking-[0.12em]"
+            style={{ color: C }}
+          >
+            Urgency
+          </span>
+        </div>
       </div>
     </div>
   )
