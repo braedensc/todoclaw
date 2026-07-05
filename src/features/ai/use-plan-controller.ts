@@ -2,7 +2,7 @@ import { useTasks } from '../tasks/use-tasks'
 import { useHabits } from '../habits/use-habits'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useAiStatus } from './use-ai-status'
-import { usePlanMyDay, buildPlanRequest } from './use-plan-my-day'
+import { usePlanMyDay, useClearPlan, buildPlanRequest } from './use-plan-my-day'
 import type { DayPlan } from '../../types/plan'
 
 export interface PlanController {
@@ -15,6 +15,9 @@ export interface PlanController {
   // Whether the header button can fire: data loaded, AI not paused, not already generating.
   canGenerate: boolean
   generate: () => void
+  // Dismiss the plan card: persist NULL to today's row (survives reload) and drop any fresh
+  // in-memory result. The card reappears only when the user regenerates via the header button.
+  clear: () => void
 }
 
 // Wires the "Plan My Day" concern for the shell: it pulls the same tasks/habits/daily-state the
@@ -28,6 +31,7 @@ export function usePlanController(timeZone: string): PlanController {
   const dailyQ = useDailyState(timeZone)
   const status = useAiStatus()
   const plan = usePlanMyDay(timeZone)
+  const clearPlan = useClearPlan(timeZone)
 
   const paused = status.data?.paused ?? false
   const dataReady = !tasksQ.isLoading && !habitsQ.isLoading && !dailyQ.isLoading
@@ -40,6 +44,13 @@ export function usePlanController(timeZone: string): PlanController {
     )
   }
 
+  const clear = () => {
+    // Drop the fresh mutation result first so displayPlan can't keep showing it; clearPlan then
+    // nulls the persisted row (optimistically + on the server) so the card stays gone on reload.
+    plan.reset()
+    clearPlan.mutate()
+  }
+
   return {
     displayPlan: plan.data ?? dailyQ.data?.plan ?? null,
     paused,
@@ -47,5 +58,6 @@ export function usePlanController(timeZone: string): PlanController {
     isError: plan.isError,
     canGenerate,
     generate,
+    clear,
   }
 }

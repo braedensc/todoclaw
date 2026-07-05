@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { daysUntil } from '../../lib/scoring'
 import { recurringStatus } from '../../lib/recurring'
 import { localDateInTZ } from '../../lib/dates'
+import type { DailyStateMaps } from '../daily-state/use-daily-state'
 import type { Task } from '../../types/task'
 import type { Habit } from '../../types/habit'
 
@@ -96,6 +97,33 @@ export function usePlanMyDay(timeZone: string) {
         console.warn('save_daily_plan failed; plan will not survive a reload', error)
         return
       }
+      await queryClient.invalidateQueries({ queryKey: ['daily_state', today] })
+    },
+  })
+}
+
+// Clears today's persisted plan: writes NULL to daily_state.plan via the SAME save_daily_plan RPC
+// (opposite payload), so the inline plan card disappears and STAYS gone across reloads — a real
+// clear, not a local hide. onMutate optimistically nulls the cached plan so the card vanishes
+// instantly; onSettled invalidates to reconcile with the server (rolling the card back if the RPC
+// failed). Hitting "Plan My Day" again regenerates and re-persists a plan. The controller pairs
+// this with plan.reset() so a just-generated in-memory result can't out-rank the cleared row.
+export function useClearPlan(timeZone: string) {
+  const queryClient = useQueryClient()
+  return useMutation<void, Error, void>({
+    mutationFn: async () => {
+      const today = localDateInTZ(timeZone)
+      const { error } = await supabase.rpc('save_daily_plan', { p_date: today, p_plan: null })
+      if (error) throw error
+    },
+    onMutate: () => {
+      const today = localDateInTZ(timeZone)
+      queryClient.setQueryData<DailyStateMaps | undefined>(['daily_state', today], (old) =>
+        old ? { ...old, plan: null } : old,
+      )
+    },
+    onSettled: async () => {
+      const today = localDateInTZ(timeZone)
       await queryClient.invalidateQueries({ queryKey: ['daily_state', today] })
     },
   })

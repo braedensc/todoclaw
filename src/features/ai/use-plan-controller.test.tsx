@@ -13,10 +13,14 @@ const statusMock = vi.fn()
 vi.mock('./use-ai-status', () => ({ useAiStatus: () => statusMock() }))
 
 const mutate = vi.fn()
+const reset = vi.fn()
+const clearMutate = vi.fn()
 const planMock = vi.fn()
+const clearMock = vi.fn()
 const buildPlanRequest = vi.fn(() => ({ built: true }))
 vi.mock('./use-plan-my-day', () => ({
   usePlanMyDay: () => planMock(),
+  useClearPlan: () => clearMock(),
   buildPlanRequest: () => buildPlanRequest(),
 }))
 
@@ -34,7 +38,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   statusMock.mockReturnValue({ data: { paused: false } })
   dailyMock.mockReturnValue({ data: { done: {}, plan: null }, isLoading: false })
-  planMock.mockReturnValue({ mutate, isPending: false, isError: false, data: null })
+  planMock.mockReturnValue({ mutate, reset, isPending: false, isError: false, data: null })
+  clearMock.mockReturnValue({ mutate: clearMutate })
 })
 
 describe('usePlanController', () => {
@@ -72,9 +77,16 @@ describe('usePlanController', () => {
 
   it('prefers the fresh mutation result over the persisted plan', () => {
     const fresh = plan('Fresh')
-    planMock.mockReturnValue({ mutate, isPending: false, isError: false, data: fresh })
+    planMock.mockReturnValue({ mutate, reset, isPending: false, isError: false, data: fresh })
     dailyMock.mockReturnValue({ data: { done: {}, plan: plan('Saved') }, isLoading: false })
     const { result } = renderHook(() => usePlanController('America/New_York'))
     expect(result.current.displayPlan).toBe(fresh)
+  })
+
+  it('clear() resets the fresh result and fires the clear mutation', () => {
+    const { result } = renderHook(() => usePlanController('America/New_York'))
+    result.current.clear()
+    expect(reset).toHaveBeenCalledTimes(1)
+    expect(clearMutate).toHaveBeenCalledTimes(1)
   })
 })

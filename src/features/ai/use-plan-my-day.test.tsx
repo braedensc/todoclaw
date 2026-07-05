@@ -15,7 +15,7 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
-import { buildPlanRequest, usePlanMyDay } from './use-plan-my-day'
+import { buildPlanRequest, usePlanMyDay, useClearPlan } from './use-plan-my-day'
 
 function task(over: Partial<Task> = {}): Task {
   return {
@@ -149,5 +149,31 @@ describe('usePlanMyDay', () => {
     result.current.mutate(buildPlanRequest([], [], {}, TZ, NOW))
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('useClearPlan', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    rpc.mockResolvedValue({ error: null })
+  })
+
+  it('clears today’s plan by writing NULL via save_daily_plan (local-date keyed)', async () => {
+    const { result } = renderHook(() => useClearPlan(TZ), { wrapper: wrapper() })
+    result.current.mutate()
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(rpc).toHaveBeenCalledTimes(1)
+    const [fn, arg] = rpc.mock.calls[0] as [string, { p_date: string; p_plan: unknown }]
+    expect(fn).toBe('save_daily_plan')
+    expect(arg.p_plan).toBeNull()
+    expect(arg.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('surfaces an error when the clear RPC fails', async () => {
+    rpc.mockResolvedValue({ error: { message: 'nope' } })
+    const { result } = renderHook(() => useClearPlan(TZ), { wrapper: wrapper() })
+    result.current.mutate()
+    await waitFor(() => expect(result.current.isError).toBe(true))
   })
 })
