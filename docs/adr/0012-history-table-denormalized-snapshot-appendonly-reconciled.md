@@ -2,6 +2,17 @@
 
 **Date:** 2026-06-24 · **Stage:** 3 (PR6)
 
+> **Update (2026-07-05, feat/done-popup-rework):** two of the behaviors below were reverted after
+> owner feedback. **(1) History is no longer append-only** — an owner-scoped `DELETE` policy was
+> added (`20260705000000_history_delete_policy.sql`), and the Done tab's `×` now removes the
+> completion **record** (`useDeleteHistoryEntry`) instead of soft-deleting the task. This restores
+> EisenClaw's original `×` semantics; the old behavior read as a no-op (the done task was already
+> hidden). **(2) Restore is broadened** — it is offered for any completion whose task is still
+> **live** (not just those still in today's `done` map). It still only flips today's
+> `daily_state.done` (the grid hides a task solely via today's map), which is what returns the task
+> to the grid regardless of completion date. The denormalized-snapshot / no-FK decision is
+> unchanged. See CLAUDE.md "Key Design Decisions → History".
+
 The Done tab is backed by a dedicated `public.history` table — the permanent completion log —
 **not** a view over `tasks`/`daily_state`. Three coupled decisions:
 

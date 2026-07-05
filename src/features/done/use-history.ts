@@ -3,15 +3,17 @@ import { supabase } from '../../lib/supabase'
 import { localDateInTZ } from '../../lib/dates'
 import { HistorySchema, type History } from '../../types/history'
 
-// The Done tab's data layer. The permanent completion log (history) plus the two
-// daily_state mutations behind it (mark a task done / restore it). All three go through
-// the server-side merge RPCs from the migration, never a client read-modify-write, so the
-// per-day jsonb maps are updated atomically (no clobber race).
+// The Done tab's data layer. The completion log (history) plus the daily_state mutations
+// behind it (mark a task done / restore it) and a direct delete of a history row. The
+// done/undone writes go through the server-side merge RPCs from the migration, never a
+// client read-modify-write, so the per-day jsonb maps are updated atomically (no clobber
+// race).
 
 const HISTORY_KEY = ['history'] as const
 
-// Fetch the signed-in user's permanent completion log, newest-first. RLS restricts rows to
-// user_id = auth.uid(). History is append-only — there is no soft-delete column to filter.
+// Fetch the signed-in user's completion log, newest-first. RLS restricts rows to
+// user_id = auth.uid(). Rows are hard-deleted (not soft-deleted) from the Done tab, so
+// there is no deleted column to filter — a removed completion is simply gone.
 async function fetchHistory(): Promise<History[]> {
   const { data, error } = await supabase
     .from('history')
@@ -64,9 +66,12 @@ export function useMarkTaskDone() {
   })
 }
 
-// Restore a task marked done today: calls set_task_undone, which flips today's
-// done[id]=false and clears done_at[id]. History is PERMANENT and is NOT touched — so we
-// only invalidate today's daily_state query, never the history query.
+// Restore a completed task: calls set_task_undone, which flips TODAY's done[id]=false and
+// clears done_at[id] — un-marking it done for today so it returns to the grid at its stored
+// x/y. The grid hides a task only via today's `done` map, so clearing today's flag is what
+// brings it back, regardless of which day the completion happened on (a completion from a
+// prior day just makes this a harmless no-op on today's row). The history row is NOT touched
+// by restore (delete is a separate action), so we only invalidate today's daily_state query.
 export function useRestoreTask() {
   const qc = useQueryClient()
   return useMutation({
@@ -81,6 +86,24 @@ export function useRestoreTask() {
     },
     onSuccess: (date) => {
       qc.invalidateQueries({ queryKey: ['daily_state', date] })
+    },
+  })
+}
+
+// Remove a single completion RECORD from the history log (the Done tab's ✕). Deletes the
+// history row by id; RLS (history_delete_own, added in 20260705000000_history_delete_policy)
+// scopes the delete to the owner, so a caller can only remove their own rows. This does NOT
+// touch the task — the task stays live (deleting the record just clears the log entry).
+// Invalidates only the history query.
+export function useDeleteHistoryEntry() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('history').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: HISTORY_KEY })
     },
   })
 }
