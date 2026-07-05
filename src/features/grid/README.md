@@ -19,7 +19,8 @@ draggable **new-item cards** there (card-in-place, B2 — there is no staging tr
 - **`GridCard.tsx`** — one placed card (112px). The 3px top border encodes status: recurring
   → `RC_COLOR[recurringStatus().code]`, otherwise the quadrant color for its `(x, y)`. Renders
   the recurring status badge + `×N` badge (`doneCount ≥ 3`), the **visual-urgency layer** (glow /
-  staleness / due badge — see below), and hover actions.
+  staleness / due badge — see below), the **recurring indicator** (a ↻ corner chip + dashed accent
+  side borders — see below), and the hover action row (done / ⋯ menu / delete).
 - **`use-grid.ts` / `GridSurface.tsx`** — the drag/placement orchestration (shared state) and the
   canvas render. `useGrid` also exposes `pendingTasks` (still-`staged` tasks) + `startNewCardDrag`
   so the add widget's **new-item cards** (`../shell/NewItemStrip.tsx`) drag onto this same canvas.
@@ -73,13 +74,32 @@ ADR-0019.
 - **Due badge** — a small `overdue`/`today`/`Nd` pill (terracotta when due `≤ 2d`, else grey;
   `DUE_BADGE_*` in `src/lib/visual-urgency.ts`, shared with the cluster popup's due chip).
 
+## Recurring indicator (placed cards)
+
+A recurring card is doubly marked so it reads as "repeats" at a glance, independent of the status
+badge: (a) a persistent **↻ chip** overhanging the top-right corner, and (b) **dashed** accent
+side/bottom borders (one-off cards keep thin solid terracotta sides). The solid, status-colored top
+border is untouched, so the two cues never clash with it (batch-2 items 5 + 13).
+
 ## Hover actions (placed cards) & mark done
 
-`GridCard` reveals **done ✓**, edit (inline rename — Enter/blur commits `text`), and delete
-(soft-delete). On desktop these appear on hover; on mobile (< 720px, no hover) they are **always
-visible** so a placed card stays actionable by touch (gated on the same `wide` breakpoint that
-switches placement to tap-to-place — see `docs/STYLE.md` → _Responsive layout_). Each button stops
-pointer/click propagation so it never starts a drag.
+`GridCard` reveals a three-control action row — **done ✓** (green), a **⋯ menu**, and **delete ×**
+(red). Done and delete are the shared `IconButton` (green `success` / red `danger` intents, native
+`title` tooltips); delete is **confirm-gated** (`useConfirm`, wired in `GridSurface`) so an
+accidental click can't silently soft-delete. On desktop the row appears on hover; on mobile
+(< 720px, no hover) it is **always visible** so a placed card stays actionable by touch (gated on
+the same `wide` breakpoint that switches placement to tap-to-place — see `docs/STYLE.md` →
+_Responsive layout_). Each control stops pointer/click propagation so it never starts a drag.
+
+**Inline rename** is triggered by **double-clicking the text** (there is no ✎ button — the whole
+card is the drag handle, and a motionless double-click can't be confused with a drag). Enter/blur
+commits `text`; Escape cancels.
+
+**⋯ menu (due + recurring)** — a small popover (`useClickOutside` to dismiss; flips above / aligns
+to the nearer edge so it stays on-canvas) holding the due-date picker + the shared
+`RecurringSection` (set / edit / remove a repeat schedule). Both commit through the one generic
+`updateMutate({ id, patch })`. Setting a due date writes **`due` only** — unlike BabyClaw's
+`set_due_date`, it never repositions a manually-placed card.
 
 **Mark done** (the `✓` on cards _and_ popup rows) goes through one shared handler that branches
 on `task.recurring`:
