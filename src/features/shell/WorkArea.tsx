@@ -12,8 +12,9 @@ import type { ChatController } from '../ai/use-chat-controller'
 //   - the one input widget (Manual staging chips share the same grid state), which STAYS PUT
 //   - the swapped content below: the Grid canvas OR the List, each with the embedded toggle
 //     notched into its own top border.
-// Habits render BELOW this (in AppShell) so they show under both views. Switching the view swaps
-// ONLY this inner content; header / plan / input / habits are unaffected.
+// A compact Daily-reminders inline list renders ABOVE this (in AppShell); the full reminders popup
+// lives off-page behind the gear-area button. Switching the view swaps ONLY this inner content;
+// header / plan / input / reminders are unaffected.
 export function WorkArea({ chat, onOpenChat }: { chat: ChatController; onOpenChat: () => void }) {
   // The canvas surface ref — created here, shared between useGrid (drag hooks) and GridSurface.
   const gridRef = useRef<HTMLDivElement>(null)

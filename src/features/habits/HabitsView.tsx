@@ -11,8 +11,9 @@ import {
 import { HabitRow } from './HabitRow'
 import type { Habit } from '../../types/habit'
 
-// Daily Habits tab (parity: planning/eisenclaw-export/docs/eisenclaw.md "Daily Habits",
-// pics/Todopic3.jpeg). Two groups:
+// Daily reminders — the body of the "Daily reminders" modal (RemindersModal). UI copy says
+// "reminders"; the code/table/hooks keep the original "habit" identifiers by design. Parity:
+// planning/eisenclaw-export/docs/eisenclaw.md "Daily Habits", pics/Todopic3.jpeg. Two groups:
 //   - ACTIVE habits (active === true): expandable rows with a daily checkbox + a steps panel.
 //   - QUEUED habits (active === false): dashed "activate" buttons you tap when you're ready to
 //     start the habit.
@@ -52,7 +53,7 @@ export function HabitsView() {
 
   if (isLoading) {
     return (
-      <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-5">
+      <section aria-label="Daily reminders">
         <p className="text-sm text-muted">Loading…</p>
       </section>
     )
@@ -60,8 +61,8 @@ export function HabitsView() {
 
   if (isError || !habits) {
     return (
-      <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-5">
-        <p className="text-sm text-accent">Could not load habits.</p>
+      <section aria-label="Daily reminders">
+        <p className="text-sm text-accent">Could not load reminders.</p>
       </section>
     )
   }
@@ -89,19 +90,16 @@ export function HabitsView() {
   const activate = (habit: Habit) => updateHabit.mutate({ id: habit.id, patch: { active: true } })
 
   const deleteHabit = (habit: Habit) => {
-    if (!window.confirm(`Delete the habit "${habit.text}"?`)) return
+    if (!window.confirm(`Delete the reminder "${habit.text}"?`)) return
     softDelete.mutate(habit.id)
   }
 
   return (
-    <section aria-label="Habits" className="rounded-xl border border-border-strong bg-panel p-4">
-      <header className="mb-3 flex items-baseline gap-2">
-        <h2 className="font-serif text-xl font-semibold text-ink">Daily habits</h2>
-        <span className="text-xs text-muted">▸ expand to add steps</span>
-      </header>
-
+    // No panel chrome / heading of its own — this renders inside the "Daily reminders" modal
+    // (RemindersModal), which supplies the surface and the title. Kept a labeled region for a11y.
+    <section aria-label="Daily reminders">
       {active.length === 0 && queued.length === 0 ? (
-        <p className="mb-3 text-sm text-muted">No habits yet — add one below.</p>
+        <p className="mb-3 text-sm text-muted">No reminders yet — add one below.</p>
       ) : (
         <>
           {active.length > 0 && (
@@ -134,8 +132,8 @@ export function HabitsView() {
                       type="button"
                       onClick={() => activate(habit)}
                       disabled={pendingHabitId === habit.id}
-                      aria-label={`Activate habit "${habit.text}"`}
-                      title="Activate this habit"
+                      aria-label={`Activate reminder "${habit.text}"`}
+                      title="Activate this reminder"
                       className="rounded-lg border border-dashed border-border-strong bg-card px-2.5 py-1 text-sm text-muted hover:border-primary hover:text-primary disabled:opacity-50"
                     >
                       + {habit.text}
@@ -144,8 +142,8 @@ export function HabitsView() {
                       type="button"
                       onClick={() => deleteHabit(habit)}
                       disabled={pendingHabitId === habit.id}
-                      aria-label={`Delete habit "${habit.text}"`}
-                      title="Delete this habit"
+                      aria-label={`Delete reminder "${habit.text}"`}
+                      title="Delete this reminder"
                       className="rounded px-1 text-sm text-muted hover:text-accent disabled:opacity-50"
                     >
                       ×
@@ -162,8 +160,8 @@ export function HabitsView() {
         <input
           value={habitText}
           onChange={(e) => setHabitText(e.target.value)}
-          placeholder="Add a habit…"
-          aria-label="Add a habit"
+          placeholder="Add a reminder…"
+          aria-label="Add a reminder"
           className="flex-1 rounded border border-border-strong bg-card px-3 py-1.5 text-sm"
         />
         <button

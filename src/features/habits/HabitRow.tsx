@@ -21,6 +21,10 @@ interface HabitRowProps {
   // Patch the habit's embedded subtasks array (add/remove a step).
   onSubtasksChange: (next: Habit['subtasks']) => void
   onDelete: () => void
+  // Start with the steps panel open — the single-reminder detail modal reuses this row as a
+  // "popup card" and wants the steps/add-step form visible without a click. Defaults to false
+  // (the inline list in HabitsView starts collapsed).
+  defaultExpanded?: boolean
 }
 
 export function HabitRow({
@@ -32,8 +36,9 @@ export function HabitRow({
   onToggleSubtask,
   onSubtasksChange,
   onDelete,
+  defaultExpanded = false,
 }: HabitRowProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const [stepText, setStepText] = useState('')
 
   function handleAddStep(e: FormEvent) {
@@ -81,8 +86,8 @@ export function HabitRow({
           type="button"
           onClick={onDelete}
           disabled={busy}
-          aria-label={`Delete habit "${habit.text}"`}
-          title="Delete this habit"
+          aria-label={`Delete reminder "${habit.text}"`}
+          title="Delete this reminder"
           className="shrink-0 rounded px-1.5 py-0.5 text-sm text-muted hover:bg-bg hover:text-accent disabled:opacity-50"
         >
           ×
