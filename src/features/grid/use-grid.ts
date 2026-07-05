@@ -13,8 +13,7 @@ import {
   clusterDominant,
   clusterNearestDue,
   computeClusters,
-  CX,
-  CY,
+  mergePreviewIds,
 } from '../../lib/clustering'
 import { useFreeDrag, toNormalized, type NormalizedPoint } from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
@@ -65,6 +64,11 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // pointermove doesn't pay a full-tree re-render each frame. React state is only touched on
   // pointerdown/pointerup; on the next real render React re-applies the committed style from
   // `task.x`/`task.y`, so nothing can drift out of sync with what we mutated imperatively.
+  //
+  // A CLUSTER BUBBLE also registers here (GridSurface, keyed by its dominant task id) so the
+  // merge preview can flag a bubble the same way it flags a standalone card — a folded co-member
+  // has no card node of its own, but its bubble does. A dominant id never collides with a
+  // standalone card (a clustered task renders as the bubble, not a card).
   const cardNodesRef = useRef(new Map<string, HTMLDivElement>())
   const registerCardNode = useCallback((id: string, node: HTMLDivElement | null) => {
     if (node) cardNodesRef.current.set(id, node)
@@ -75,47 +79,51 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // real GridCard mounts under the pointer), hold its id here so the move loop commits that flip
   // exactly once instead of on every frame while the mount is in flight.
   const materializedRef = useRef<string | null>(null)
-  // The card currently flagged with `data-merge-target` (the merge-preview under-card), so we
-  // can clear it on the next frame / on drop. A plain DOM attribute, never React state, to keep
-  // the per-frame model fully imperative.
-  const mergeTargetRef = useRef<string | null>(null)
+  // The DOM nodes currently flagged `data-merge-target` (the merge preview): each is a standalone
+  // under-card AND/OR the cluster bubble a folded co-member is drawn inside. A Set of nodes mutated
+  // via plain DOM attributes — never React state — to keep the per-frame model fully imperative.
+  const mergeTargetNodesRef = useRef<Set<HTMLDivElement>>(new Set())
   // Live mirror of `placedTasks` for the per-frame handlers (kept off the callback deps so the
   // handlers stay stable yet always read the latest committed positions).
   const placedTasksRef = useRef<Array<Task & { x: number; y: number }>>([])
+  // Live mirror of `memberToNodeKey` (placed-task id → the id its on-screen node is registered
+  // under) for the per-frame merge preview; updated in an effect so it tracks each committed render.
+  const memberToNodeKeyRef = useRef<Map<string, string>>(new Map())
 
-  // Flag the nearest placed card within the cluster thresholds (CX/CY) as the merge target, so
-  // CSS can grow + darken it as a preview of the merge-on-drop (fix 20). Cards that are part of
-  // a cluster render as a bubble (no individual node), so they are naturally skipped.
-  const updateMergeTarget = useCallback((draggedId: string, point: NormalizedPoint) => {
-    let nearestId: string | null = null
-    let best = Infinity
-    for (const t of placedTasksRef.current) {
-      if (t.id === draggedId) continue
-      if (!cardNodesRef.current.has(t.id)) continue
-      const dx = Math.abs(t.x - point.x)
-      const dy = Math.abs(t.y - point.y)
-      if (dx < CX && dy < CY) {
-        const dist = dx * dx + dy * dy
-        if (dist < best) {
-          best = dist
-          nearestId = t.id
-        }
-      }
-    }
-    if (nearestId === mergeTargetRef.current) return
-    if (mergeTargetRef.current) {
-      cardNodesRef.current.get(mergeTargetRef.current)?.removeAttribute('data-merge-target')
-    }
-    if (nearestId) cardNodesRef.current.get(nearestId)?.setAttribute('data-merge-target', '')
-    mergeTargetRef.current = nearestId
+  // Minimal-mutation apply of the merge-preview flag: diff the incoming node set against the
+  // currently-flagged one, so we only touch the DOM for nodes that actually entered/left the
+  // preview (no per-frame attribute churn that would restart the CSS transition).
+  const applyMergeTargets = useCallback((next: Set<HTMLDivElement>) => {
+    const prev = mergeTargetNodesRef.current
+    for (const node of prev) if (!next.has(node)) node.removeAttribute('data-merge-target')
+    for (const node of next) if (!prev.has(node)) node.setAttribute('data-merge-target', '')
+    mergeTargetNodesRef.current = next
   }, [])
+
+  // Preview the merge-on-drop by running the ACTUAL drop predicate every frame (fix, item 14):
+  // `mergePreviewIds` clusters the live placed set with the dragged card moved to the pointer point
+  // and returns exactly the ids it would merge with on release — the same seed-based `computeClusters`
+  // the drop runs, so the preview can never diverge from what actually happens. Each would-merge id
+  // then resolves to its on-screen node: a standalone card (node under its own id) or the cluster
+  // BUBBLE a folded task is drawn inside (node under the dominant id — see `memberToNodeKey`). This
+  // replaces the old nearest-single-card heuristic, which flagged only one card, skipped folded
+  // cards entirely, and mismatched near cluster boundaries. O(n²) over a handful of cards.
+  const updateMergeTarget = useCallback(
+    (draggedId: string, point: NormalizedPoint) => {
+      const next = new Set<HTMLDivElement>()
+      for (const id of mergePreviewIds(placedTasksRef.current, draggedId, point)) {
+        const key = memberToNodeKeyRef.current.get(id)
+        const node = key ? cardNodesRef.current.get(key) : undefined
+        if (node) next.add(node)
+      }
+      applyMergeTargets(next)
+    },
+    [applyMergeTargets],
+  )
 
   const clearMergeTarget = useCallback(() => {
-    if (mergeTargetRef.current) {
-      cardNodesRef.current.get(mergeTargetRef.current)?.removeAttribute('data-merge-target')
-      mergeTargetRef.current = null
-    }
-  }, [])
+    applyMergeTargets(new Set())
+  }, [applyMergeTargets])
 
   // Per-frame paint for a card whose node is already mounted: move it (direct DOM), recolor its
   // top border by quadrant as it crosses an axis (fix 11 — recurring cards keep their RC_COLOR),
@@ -303,6 +311,24 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     [placedTasks, draggingId],
   )
   const draggedTask = draggingId ? placedTasks.find((t) => t.id === draggingId) : undefined
+
+  // Map each rendered placed-task id → the id its on-screen node is registered under: its own id
+  // when it renders as a standalone card, or the cluster's DOMINANT id when it is folded into a
+  // bubble (GridSurface registers the bubble node under `dominant.id`, computed the SAME way here
+  // so the keys match). The merge preview resolves a would-merge co-member to the actual node to
+  // flag — including a card only visible as part of a bubble. Rebuilt when the clusters change.
+  const memberToNodeKey = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const group of clusters) {
+      const key = group.length === 1 ? group[0]!.id : clusterDominant(group, { timeZone }).id
+      for (const t of group) map.set(t.id, key)
+    }
+    return map
+  }, [clusters, timeZone])
+  // Keep the per-frame merge preview reading a fresh member→node map without re-subscribing.
+  useEffect(() => {
+    memberToNodeKeyRef.current = memberToNodeKey
+  })
 
   return {
     // Data
