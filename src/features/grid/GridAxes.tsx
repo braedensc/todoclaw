@@ -34,19 +34,20 @@ export function GridAxes() {
             borderBottom: `7px solid ${C}`,
           }}
         />
-        {/* label, reading bottom-to-top */}
-        <span
-          className="absolute whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.12em]"
-          style={{
-            left: '50%',
-            bottom: 0,
-            transform: 'translateX(-50%) rotate(-90deg)',
-            transformOrigin: 'center bottom',
-            color: C,
-          }}
+        {/* label, reading bottom-to-top — a flex box brackets the rail (top/bottom match it) and
+            centers the rotated word about its own center, so it stays centered on the rail
+            regardless of the word's width and never overhangs the bottom-left corner. */}
+        <div
+          className="absolute flex items-center justify-center"
+          style={{ left: 0, right: 0, top: 7, bottom: 62 }}
         >
-          Importance
-        </span>
+          <span
+            className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.12em]"
+            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center center', color: C }}
+          >
+            Importance
+          </span>
+        </div>
       </div>
 
       {/* Urgency — bottom gutter, horizontal, pointing RIGHT. Label at the left (low), arrow at right. */}
