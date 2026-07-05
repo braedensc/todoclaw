@@ -2,6 +2,7 @@ import { useTasks, useUpdateTask, useSoftDeleteTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
+import { useConfirm } from '../../components/use-confirm'
 import { taskScore } from '../../lib/scoring'
 import type { Task } from '../../types/task'
 import { ListRow } from './ListRow'
@@ -22,6 +23,7 @@ export function ListView() {
   const updateTask = useUpdateTask()
   const softDelete = useSoftDeleteTask()
   const markDone = useMarkTaskDone()
+  const confirm = useConfirm()
 
   if (isLoading) {
     return (
@@ -61,7 +63,14 @@ export function ListView() {
     updateTask.mutate({ id, patch: { x, y } })
   const handleUpdateDue = (id: string, due: string | null) =>
     updateTask.mutate({ id, patch: { due } })
-  const handleDelete = (id: string) => softDelete.mutate(id)
+  // Delete now confirms first (was a silent soft-delete). The app-themed useConfirm gate names
+  // the task so an accidental click can't quietly remove it; only "Delete" soft-deletes.
+  const handleDelete = async (task: Task) => {
+    if (
+      await confirm({ title: `Delete “${task.text}”?`, message: 'This removes it from your list.' })
+    )
+      softDelete.mutate(task.id)
+  }
 
   // Mark a NORMAL task done: archives it via the Done data-layer RPC (writes today's
   // daily_state.done + appends history in one transaction). It then leaves the list (filtered

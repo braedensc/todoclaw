@@ -1,15 +1,29 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { ListView } from './ListView'
+import { ConfirmProvider } from '../../components/use-confirm'
 import { quadrantMeta } from '../../lib/quadrants'
 import { resolveCollision } from '../../lib/collision'
 
 // Component tests with all data hooks mocked (no Supabase, no network). We assert the
-// behavior the list OWNS — ranking order, quadrant coloring, inline-edit + slider commit
-// wiring, the staging badge, done-today exclusion, the done control's normal-vs-recurring
-// branch, and the recurring set/remove controls. The pure logic itself (taskScore,
-// resolveCollision math, recurring thresholds/colors) is covered in src/lib/*.test.ts.
+// behavior the list OWNS — ranking order, quadrant coloring, the whole-row expand toggle +
+// double-click-to-edit, slider commit wiring, the staging badge, done-today exclusion, the
+// done control's normal-vs-recurring branch, the confirm-gated delete, and the recurring
+// set/remove controls. The pure logic itself (taskScore, resolveCollision math, recurring
+// thresholds/colors) is covered in src/lib/*.test.ts.
+//
+// ListView calls useConfirm, so every render is wrapped in a real <ConfirmProvider> (renderList)
+// — the same provider App mounts at the root — which also hosts the delete confirm dialog.
+
+// Wrap ListView in the confirm provider it depends on (hosts the delete ConfirmDialog).
+function renderList() {
+  return render(
+    <ConfirmProvider>
+      <ListView />
+    </ConfirmProvider>,
+  )
+}
 
 const updateMutate = vi.fn()
 const deleteMutate = vi.fn()
@@ -71,7 +85,7 @@ describe('ListView', () => {
       makeTask({ id: 'low', text: 'low priority', x: 0.1, y: 0.1 }),
       makeTask({ id: 'high', text: 'high priority', x: 0.9, y: 0.9 }),
     ]
-    render(<ListView />)
+    renderList()
 
     const items = screen.getAllByRole('listitem')
     expect(items).toHaveLength(2)
@@ -84,7 +98,7 @@ describe('ListView', () => {
 
   it('colors the rank number and left border by quadrant', () => {
     tasksData = [makeTask({ id: 'a', text: 'do now task', x: 0.9, y: 0.9 })]
-    render(<ListView />)
+    renderList()
 
     const color = quadrantMeta(0.9, 0.9).color // Do Now → #bf5e2a
     const rank = screen.getByLabelText('Rank 1')
@@ -93,11 +107,11 @@ describe('ListView', () => {
     expect(item).toHaveStyle({ borderLeft: `4px solid ${color}` })
   })
 
-  it('commits an inline text edit via useUpdateTask', () => {
+  it('double-clicking the row opens an inline edit that commits via useUpdateTask', () => {
     tasksData = [makeTask({ id: 'edit-me', text: 'old text' })]
-    render(<ListView />)
+    renderList()
 
-    fireEvent.click(screen.getByText('old text'))
+    fireEvent.dblClick(screen.getByText('old text'))
     const input = screen.getByLabelText('Edit task text')
     fireEvent.change(input, { target: { value: 'new text' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -105,16 +119,38 @@ describe('ListView', () => {
     expect(updateMutate).toHaveBeenCalledWith({ id: 'edit-me', patch: { text: 'new text' } })
   })
 
+  it('single-clicking the row body toggles the expanded detail panel', () => {
+    tasksData = [makeTask({ id: 'x', text: 'expand me' })]
+    renderList()
+
+    // Collapsed: the expand button reports aria-expanded=false and no sliders render.
+    const rowButton = screen.getByRole('button', { name: /expand me/ })
+    expect(rowButton).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Urgency slider')).not.toBeInTheDocument()
+
+    // Clicking the row text (inside the row button) opens the panel…
+    fireEvent.click(screen.getByText('expand me'))
+    expect(screen.getByRole('button', { name: /expand me/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByLabelText('Urgency slider')).toBeInTheDocument()
+
+    // …and clicking again collapses it.
+    fireEvent.click(screen.getByText('expand me'))
+    expect(screen.queryByLabelText('Urgency slider')).not.toBeInTheDocument()
+  })
+
   it('runs collision resolution then commits resolved coords on slider commit', () => {
     // Two tasks: target's slider commit must avoid the blocker, so resolveCollision shifts it.
     const blocker = makeTask({ id: 'blocker', text: 'blocker', x: 0.9, y: 0.9 })
     const mover = makeTask({ id: 'mover', text: 'mover', x: 0.1, y: 0.1 })
     tasksData = [blocker, mover]
-    render(<ListView />)
+    renderList()
 
-    // Expand the mover row (#2) and drag its urgency slider to overlap the blocker.
+    // Expand the mover row (#2) by clicking its body, then drag its urgency slider to overlap.
     const moverRow = screen.getByText('mover').closest('li')!
-    fireEvent.click(within(moverRow).getByLabelText('Expand row'))
+    fireEvent.click(within(moverRow).getByText('mover'))
     const urgency = within(moverRow).getByLabelText('Urgency slider')
     fireEvent.change(urgency, { target: { value: '90' } })
     const importance = within(moverRow).getByLabelText('Importance slider')
@@ -133,7 +169,7 @@ describe('ListView', () => {
 
   it('shows a staging badge for staged tasks', () => {
     tasksData = [makeTask({ id: 's', text: 'staged task', staged: true })]
-    render(<ListView />)
+    renderList()
     expect(screen.getByText('staging')).toBeInTheDocument()
   })
 
@@ -143,7 +179,7 @@ describe('ListView', () => {
       makeTask({ id: 'open', text: 'still open' }),
     ]
     doneToday = { done: true }
-    render(<ListView />)
+    renderList()
 
     expect(screen.queryByText('done today')).not.toBeInTheDocument()
     expect(screen.getByText('still open')).toBeInTheDocument()
@@ -151,14 +187,14 @@ describe('ListView', () => {
 
   it('shows the empty state when there are no active tasks', () => {
     tasksData = []
-    render(<ListView />)
+    renderList()
     expect(screen.getByText(/No tasks yet/i)).toBeInTheDocument()
   })
 
   describe('done control', () => {
     it('marks a NORMAL task done via useMarkTaskDone (not useUpdateTask)', () => {
       tasksData = [makeTask({ id: 'n1', text: 'normal', bucket: 'oneoff' })]
-      render(<ListView />)
+      renderList()
 
       fireEvent.click(screen.getByLabelText('Mark done'))
 
@@ -180,7 +216,7 @@ describe('ListView', () => {
           recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 2 },
         }),
       ]
-      render(<ListView />)
+      renderList()
 
       fireEvent.click(screen.getByLabelText('Mark done (resets clock)'))
 
@@ -199,12 +235,40 @@ describe('ListView', () => {
     })
   })
 
+  describe('delete', () => {
+    it('soft-deletes only after the confirm dialog is accepted', async () => {
+      tasksData = [makeTask({ id: 'del', text: 'delete me' })]
+      renderList()
+
+      fireEvent.click(screen.getByLabelText('Delete task'))
+      // The app-themed confirm gate appears; nothing is deleted until it's accepted.
+      const dialog = await screen.findByRole('dialog')
+      expect(deleteMutate).not.toHaveBeenCalled()
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+      await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('del'))
+    })
+
+    it('does not delete when the confirm dialog is cancelled', async () => {
+      tasksData = [makeTask({ id: 'keep', text: 'keep me' })]
+      renderList()
+
+      fireEvent.click(screen.getByLabelText('Delete task'))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+      // Dialog dismisses and no soft-delete fires.
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(deleteMutate).not.toHaveBeenCalled()
+    })
+  })
+
   describe('recurring section (expanded row)', () => {
     it('Set makes a task recurring via useUpdateTask with a fresh recurring object', () => {
       tasksData = [makeTask({ id: 's1', text: 'make me recurring', recurring: null })]
-      render(<ListView />)
+      renderList()
 
-      fireEvent.click(screen.getByLabelText('Expand row'))
+      fireEvent.click(screen.getByText('make me recurring'))
       fireEvent.change(screen.getByLabelText('Days between repeats'), { target: { value: '7' } })
       fireEvent.click(screen.getByText('Set'))
 
@@ -222,9 +286,9 @@ describe('ListView', () => {
           recurring: { frequencyDays: 30, lastDoneAt: RECENT, doneCount: 1 },
         }),
       ]
-      render(<ListView />)
+      renderList()
 
-      fireEvent.click(screen.getByLabelText('Expand row'))
+      fireEvent.click(screen.getByText('stop repeating'))
       fireEvent.click(screen.getByText('Remove'))
 
       expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
@@ -239,9 +303,9 @@ describe('ListView', () => {
           recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 1 },
         }),
       ]
-      render(<ListView />)
+      renderList()
 
-      fireEvent.click(screen.getByLabelText('Expand row'))
+      fireEvent.click(screen.getByText('weekly chore'))
       // fmtFrequency(7) === 'weekly'; the recurring section renders the cadence word.
       expect(screen.getAllByText(/weekly/).length).toBeGreaterThan(0)
       // recurringStatus → "in 6d" (daysLeft 6). The label shows in both the collapsed row's
@@ -259,7 +323,7 @@ describe('ListView', () => {
           recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 4 },
         }),
       ]
-      render(<ListView />)
+      renderList()
       expect(screen.getByLabelText('Completed 4 times')).toHaveTextContent('×4')
     })
 
@@ -271,7 +335,7 @@ describe('ListView', () => {
           recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 2 },
         }),
       ]
-      render(<ListView />)
+      renderList()
       expect(screen.queryByLabelText(/Completed/)).not.toBeInTheDocument()
     })
   })
