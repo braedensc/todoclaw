@@ -4,6 +4,7 @@ import {
   UserScheduleSchema,
   PLAN_NOTES_MAX,
   BABYCLAW_INSTRUCTIONS_MAX,
+  COMMITMENTS_MAX,
 } from './user-schedule'
 
 describe('ScheduleConfigSchema', () => {
@@ -25,9 +26,12 @@ describe('ScheduleConfigSchema', () => {
       },
       weekend: {
         saturday: { freeTimeEstimateHours: 9 },
-        sunday: { freeTimeEstimateHours: 7, longRunWindow: '8:30am–12:00pm' },
+        sunday: { freeTimeEstimateHours: 7 },
       },
-      running: { race: 'MDI Marathon', currentMPW: 40, peakMPW: 70, preferredTime: 'morning' },
+      commitments: [
+        { label: 'Gym', when: 'Tue/Thu 6pm' },
+        { label: 'School pickup', when: 'weekdays 3pm' },
+      ],
       planNotes: 'Front-load deep work.',
       babyclaw: { tone: 'warm', verbosity: 'brief', customInstructions: 'Keep it short.' },
     }
@@ -55,6 +59,25 @@ describe('ScheduleConfigSchema', () => {
 
   it('rejects out-of-range free-time hours', () => {
     expect(() => ScheduleConfigSchema.parse({ weekday: { freeTimeEstimateHours: 30 } })).toThrow()
+  })
+
+  it('rejects a commitment with an empty label', () => {
+    expect(() => ScheduleConfigSchema.parse({ commitments: [{ label: '  ' }] })).toThrow()
+  })
+
+  it('rejects more commitments than the cap', () => {
+    const many = Array.from({ length: COMMITMENTS_MAX + 1 }, (_, i) => ({ label: `c${i}` }))
+    expect(() => ScheduleConfigSchema.parse({ commitments: many })).toThrow()
+  })
+
+  it('strips a legacy running object + longRunWindow instead of failing', () => {
+    // Old rows (e.g. Braeden's) still carry running/longRunWindow — they degrade, never crash.
+    const parsed = ScheduleConfigSchema.parse({
+      location: 'X',
+      weekend: { sunday: { freeTimeEstimateHours: 7, longRunWindow: '8:30am–12pm' } },
+      running: { race: 'MDI Marathon', currentMPW: 40 },
+    } as Record<string, unknown>)
+    expect(parsed).toEqual({ location: 'X', weekend: { sunday: { freeTimeEstimateHours: 7 } } })
   })
 
   it('strips unknown top-level keys rather than failing', () => {

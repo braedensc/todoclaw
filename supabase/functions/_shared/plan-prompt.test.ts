@@ -25,14 +25,13 @@ const schedule: ScheduleConfig = {
   location: 'Atlanta, GA',
   weekday: { workStart: '9:30', workEnd: '17:00', freeTimeEstimateHours: 4.5 },
   weekend: {
-    sunday: {
-      notes: 'free after the run',
-      longRunWindow: '8:30am–12:00pm',
-      freeTimeEstimateHours: 7,
-    },
+    sunday: { notes: 'generally free', freeTimeEstimateHours: 7 },
     saturday: { notes: 'mostly free', freeTimeEstimateHours: 9 },
   },
-  running: { race: 'MDI Marathon' },
+  commitments: [
+    { label: 'Gym', when: 'Tue/Thu 6pm' },
+    { label: 'School pickup', when: 'weekdays 3pm' },
+  ],
 }
 
 Deno.test('PlanRequestSchema accepts a valid payload and rejects a malformed one', () => {
@@ -40,12 +39,16 @@ Deno.test('PlanRequestSchema accepts a valid payload and rejects a malformed one
   assertThrows(() => PlanRequestSchema.parse({ today: 'x' }))
 })
 
-Deno.test('weekday prompt: slots + free-time + running guard + habits + tasks', () => {
+Deno.test('weekday prompt: slots + free-time + fixed commitments + habits + tasks', () => {
   const p = buildUserPrompt(base, schedule, null)
   assert(p.includes('(weekday)'))
   assert(p.includes('Work hours: 9:30–17:00'))
   assert(p.includes('~4.5h'))
-  assert(p.includes('marathon training'))
+  // Commitments are injected as fixed, non-negotiable blocks the plan works around.
+  assert(p.includes('Fixed recurring commitments'))
+  assert(p.includes('never suggest'))
+  assert(p.includes('Gym — Tue/Thu 6pm'))
+  assert(p.includes('School pickup — weekdays 3pm'))
   assert(p.includes('Stretch'))
   assert(p.includes('Water plants (due today)'))
   // task line formatting: overdue, due-in-N, no-due
@@ -54,13 +57,28 @@ Deno.test('weekday prompt: slots + free-time + running guard + habits + tasks', 
   assert(p.includes('no due date'))
 })
 
-Deno.test('Sunday prompt mentions the long-run window; Saturday does not', () => {
+Deno.test('commitments render as fixed blocks; an empty list omits the block entirely', () => {
+  // Commitments show on the weekend branch too (they are day-independent).
   const sun = buildUserPrompt({ ...base, dayOfWeek: 'Sunday' }, schedule, null)
   assert(sun.includes('Sunday'))
-  assert(sun.includes('long run'))
-  const sat = buildUserPrompt({ ...base, dayOfWeek: 'Saturday' }, schedule, null)
-  assert(sat.includes('Saturday'))
-  assert(!sat.includes('long run'))
+  assert(sun.includes('generally free'))
+  assert(sun.includes('Fixed recurring commitments'))
+  assert(sun.includes('Gym'))
+  // No commitments listed → no commitments block at all.
+  const bare: ScheduleConfig = { ...schedule, commitments: [] }
+  assert(!buildUserPrompt(base, bare, null).includes('Fixed recurring commitments'))
+})
+
+Deno.test('a commitment with no "when" still renders its label', () => {
+  const oneOff: ScheduleConfig = { ...schedule, commitments: [{ label: 'Therapy' }] }
+  const p = buildUserPrompt(base, oneOff, null)
+  assert(p.includes('Therapy'))
+  assert(!p.includes('Therapy —')) // no trailing separator when `when` is absent
+})
+
+Deno.test('system prompt drops running and covers recurring commitments generically', () => {
+  assert(!SYSTEM_PROMPT.toLowerCase().includes('running'))
+  assert(SYSTEM_PROMPT.includes('recurring commitments'))
 })
 
 Deno.test('weather block appears only when weather is provided', () => {

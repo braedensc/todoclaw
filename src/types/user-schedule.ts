@@ -18,7 +18,7 @@ import { z } from 'zod'
 // ---- Caps (shared with the editor's maxLength attrs) -----------------------------------------
 export const PLAN_NOTES_MAX = 500
 export const BABYCLAW_INSTRUCTIONS_MAX = 500
-const SHORT_MAX = 120 // location, race, single-line context
+const SHORT_MAX = 120 // location, commitment label/when, single-line context
 const TIME_MAX = 40 // time-of-day strings / ranges, e.g. "9:30", "12:00–1:00pm"
 const NOTES_MAX = 280 // per-day free-text notes
 
@@ -52,17 +52,18 @@ const weekdaySchema = z.object({
 
 const weekendDaySchema = z.object({
   freeTimeEstimateHours: z.number().min(0).max(24).optional(),
-  longRunWindow: timeText.optional(),
   notes: notesText.optional(),
 })
 
-const runningSchema = z.object({
-  currentMPW: z.number().min(0).max(300).optional(),
-  peakMPW: z.number().min(0).max(300).optional(),
-  race: shortText.optional(),
-  raceMonth: shortText.optional(),
-  preferredTime: shortText.optional(),
-  notes: notesText.optional(),
+// ---- Recurring commitments -------------------------------------------------------------------
+// User-listed fixed obligations (gym, school pickup, standing meetings) the planner treats like
+// blocks already on the calendar: it works AROUND them and never proposes one as a task. Replaces
+// the old running/marathon fields with a general, non-personal shape. Length-capped like every
+// other freeform field; the array is length-capped too.
+export const COMMITMENTS_MAX = 12
+const commitmentSchema = z.object({
+  label: z.string().trim().min(1).max(SHORT_MAX), // what it is, e.g. "Gym"
+  when: shortText.optional(), // when it happens, e.g. "Tue/Thu 6pm" (freeform)
 })
 
 export const ScheduleConfigSchema = z.object({
@@ -74,7 +75,7 @@ export const ScheduleConfigSchema = z.object({
       sunday: weekendDaySchema.optional(),
     })
     .optional(),
-  running: runningSchema.optional(),
+  commitments: z.array(commitmentSchema).max(COMMITMENTS_MAX).optional(),
   // Bounded freeform preferences for Plan My Day — layered onto the fixed prompt scaffold.
   planNotes: z.string().trim().max(PLAN_NOTES_MAX).optional(),
   babyclaw: babyclawSchema.optional(),

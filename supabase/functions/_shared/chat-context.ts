@@ -74,9 +74,20 @@ function scheduleSummary(config: Record<string, unknown> | null, dayOfWeek: stri
     : weekday
   const freeHours = ds.freeTimeEstimateHours
   if (typeof freeHours === 'number') bits.push(`~${freeHours}h free today.`)
-  const running = (config.running ?? {}) as Record<string, unknown>
-  if (running.race) {
-    bits.push(`Marathon training (${running.race}) — runs are fixed like work, never a task.`)
+  const commitments = Array.isArray(config.commitments) ? config.commitments : []
+  const fixed = commitments
+    .map((c) => (c && typeof c === 'object' ? (c as Record<string, unknown>) : null))
+    .filter(
+      (c): c is Record<string, unknown> => !!c && typeof c.label === 'string' && !!c.label.trim(),
+    )
+    .map((c) => {
+      const label = (c.label as string).trim()
+      const when =
+        typeof c.when === 'string' && c.when.trim() ? ` (${(c.when as string).trim()})` : ''
+      return `${label}${when}`
+    })
+  if (fixed.length) {
+    bits.push(`Fixed commitments: ${fixed.join(', ')} — already on the calendar, never a task.`)
   }
   return bits.length ? `Schedule: ${bits.join(' ')}` : null
 }
