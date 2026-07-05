@@ -36,24 +36,14 @@ export function WorkArea({ chat, onOpenChat }: { chat: ChatController; onOpenCha
       {/* Work content. mt clears the toggle that straddles the content's top border. */}
       <div className="mt-5">
         {view === 'grid' ? (
-          <>
-            <GridSurface
-              grid={grid}
-              gridRef={gridRef}
-              view={view}
-              onSelectView={selectView}
-              expanded={expanded}
-              onToggleExpanded={() => setExpanded((e) => !e)}
-            />
-            {/* Compact grid-only legend (EisenClaw parity, Todopic3) — quick key to the card
-                semantics. Hidden while expanded (that's a fixed overlay). */}
-            {!expanded && (
-              <p className="mt-2 pl-5 text-xs text-muted">
-                <span aria-hidden>↻</span> recurring cards appear when due · hover a card to act ·
-                BabyClaw can add tasks via chat
-              </p>
-            )}
-          </>
+          <GridSurface
+            grid={grid}
+            gridRef={gridRef}
+            view={view}
+            onSelectView={selectView}
+            expanded={expanded}
+            onToggleExpanded={() => setExpanded((e) => !e)}
+          />
         ) : (
           <div className="relative">
             <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2">
