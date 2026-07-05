@@ -188,6 +188,6 @@ At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw S
 - **Realtime conflict:** higher `_clientRev` (epoch ms) wins. Ignore Realtime events that originated from this client.
 - **Mobile breakpoint:** `< 720px`. Tap-to-place replaces drag on mobile.
 - **Drag/drop implementation:** spike @dnd-kit vs. raw pointer events before committing — the free-canvas model (continuous coords, custom clustering) cuts against @dnd-kit's sortable grain. Touch/mobile is the hard requirement.
-- **History:** permanent log (newest-first). Restore is only available if the task is still in today's `done` map. Recurring tasks do NOT go to history — they reset `lastDoneAt`.
+- **History:** completion log (newest-first). Not append-only: `×` removes a completion record (owner-scoped `DELETE` on `history`, added 2026-07-05). Restore (↩) returns any completion whose task is still live to the grid — it clears today's `done` flag (the only thing hiding a task) so the task reappears at its stored x/y. Recurring tasks do NOT go to history — they reset `lastDoneAt`.
 
 Full decision log with rationale: `docs/ARCHITECTURE.md`.

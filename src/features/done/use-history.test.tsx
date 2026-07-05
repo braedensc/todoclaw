@@ -10,7 +10,9 @@ import type { ReactNode } from 'react'
 const rpc = vi.fn<(name: string, params: unknown) => unknown>()
 const order = vi.fn()
 const select = vi.fn(() => ({ order }))
-const from = vi.fn<(table: string) => unknown>(() => ({ select }))
+const eq = vi.fn()
+const del = vi.fn(() => ({ eq }))
+const from = vi.fn<(table: string) => unknown>(() => ({ select, delete: del }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -24,7 +26,7 @@ vi.mock('../../lib/dates', () => ({
   localDateInTZ: () => '2026-06-23',
 }))
 
-import { useHistory, useMarkTaskDone, useRestoreTask } from './use-history'
+import { useDeleteHistoryEntry, useHistory, useMarkTaskDone, useRestoreTask } from './use-history'
 
 function makeWrapper() {
   const qc = new QueryClient({
@@ -108,5 +110,30 @@ describe('useRestoreTask', () => {
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['daily_state', '2026-06-23'] })
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['history'] })
+  })
+})
+
+describe('useDeleteHistoryEntry', () => {
+  it('hard-deletes the history row by id and invalidates history', async () => {
+    eq.mockResolvedValue({ error: null })
+    const { wrapper, invalidateSpy } = makeWrapper()
+    const { result } = renderHook(() => useDeleteHistoryEntry(), { wrapper })
+
+    result.current.mutate('h1')
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(from).toHaveBeenCalledWith('history')
+    expect(del).toHaveBeenCalled()
+    expect(eq).toHaveBeenCalledWith('id', 'h1')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['history'] })
+  })
+
+  it('throws when the delete errors', async () => {
+    eq.mockResolvedValue({ error: { message: 'boom' } })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useDeleteHistoryEntry(), { wrapper })
+
+    result.current.mutate('h1')
+    await waitFor(() => expect(result.current.isError).toBe(true))
   })
 })

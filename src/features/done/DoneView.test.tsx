@@ -6,29 +6,25 @@ import type { History } from '../../types/history'
 // Mock the data hooks (mirrors how App.test mocks the data layer) so DoneView renders under
 // jsdom with no Supabase. Each test overrides the per-hook return below.
 const historyMock = vi.fn()
-const dailyMock = vi.fn()
 const tasksMock = vi.fn()
 const restoreMutate = vi.fn()
-const softDeleteMutate = vi.fn()
+const deleteEntryMutate = vi.fn()
 
 vi.mock('./use-history', () => ({
   useHistory: () => historyMock(),
   useRestoreTask: () => ({ mutate: restoreMutate, isPending: false }),
-}))
-vi.mock('../daily-state/use-daily-state', () => ({
-  useDailyState: () => dailyMock(),
+  useDeleteHistoryEntry: () => ({ mutate: deleteEntryMutate, isPending: false }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
 }))
 vi.mock('../tasks/use-tasks', () => ({
-  useSoftDeleteTask: () => ({ mutate: softDeleteMutate, isPending: false }),
   useTasks: () => tasksMock(),
 }))
 
 import { DoneView } from './DoneView'
 
-// DoneView now calls useConfirm() on every render, so it must be wrapped in a ConfirmProvider.
+// DoneView calls useConfirm() on every render, so it must be wrapped in a ConfirmProvider.
 function renderView() {
   return render(
     <ConfirmProvider>
@@ -52,10 +48,9 @@ function entry(over: Partial<History> = {}): History {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  dailyMock.mockReturnValue({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } })
-  // The default entry's task (t1) is live, so the live-set gate is a no-op for the existing
-  // Restore assertions. The soft-delete regression test overrides this with an empty list.
-  tasksMock.mockReturnValue({ data: [{ id: 't1' }] })
+  // The default entry's task (t1) is live, so Restore is offered. Tests that need the task to
+  // be gone (soft-deleted) override this with an empty list.
+  tasksMock.mockReturnValue({ data: [{ id: 't1', x: 0.75, y: 0.25, due: null, recurring: null }] })
 })
 
 describe('DoneView', () => {
@@ -71,45 +66,50 @@ describe('DoneView', () => {
     expect(screen.getByText('Ship PR6')).toBeInTheDocument()
   })
 
-  it('hides Restore when the task is NOT in today’s done map', () => {
+  it('shows the mini-card quadrant label from the live task’s x/y', () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
-    dailyMock.mockReturnValue({ data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {} } })
     renderView()
-    expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument()
+    // t1 sits at (0.75, 0.25): x>=0.5, y<0.5 → Errands.
+    expect(screen.getByText('Errands')).toBeInTheDocument()
   })
 
-  it('shows Restore and calls useRestoreTask when the task IS in today’s done map', async () => {
+  it('offers Restore for any completion whose task still exists and calls useRestoreTask', () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
-    dailyMock.mockReturnValue({
-      data: { done: { t1: true }, done_at: {}, habit_done: {}, subtask_done: {} },
-    })
     renderView()
     const restore = screen.getByRole('button', { name: /Restore/i })
     fireEvent.click(restore)
     expect(restoreMutate).toHaveBeenCalledWith({ taskId: 't1', timeZone: 'America/New_York' })
   })
 
-  it('hides Restore when the done task has been soft-deleted (absent from live tasks)', () => {
-    // Regression: a task soft-deleted while still marked done today keeps its history row and
-    // its done[id]=true, but set_task_undone never clears deleted_at — so Restore would be a
-    // silent no-op. Once the task drops out of the live set, the button must not render.
+  it('hides Restore when the underlying task has been soft-deleted (absent from live tasks)', () => {
+    // set_task_undone can't bring back a soft-deleted task, so Restore would be a silent no-op.
+    // Once the task drops out of the live set, the button must not render.
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
-    dailyMock.mockReturnValue({
-      data: { done: { t1: true }, done_at: {}, habit_done: {}, subtask_done: {} },
-    })
-    tasksMock.mockReturnValue({ data: [] }) // t1 was soft-deleted → absent from live tasks
+    tasksMock.mockReturnValue({ data: [] })
     renderView()
     expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument()
   })
 
-  it('soft-deletes the task only after confirming in the dialog; history row persists conceptually', async () => {
+  it('deletes the completion RECORD (not the task) only after confirming in the dialog', async () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
     renderView()
     fireEvent.click(screen.getByRole('button', { name: /Delete "Ship PR6"/i }))
     // The themed confirm dialog appears; deletion fires only after its Delete button is clicked.
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: /^Delete$/ }))
-    await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(deleteEntryMutate).toHaveBeenCalledWith('h1'))
+  })
+
+  it('offers Delete even when the underlying task is gone (record removal is independent)', () => {
+    historyMock.mockReturnValue({
+      data: [entry({ task_id: null })],
+      isLoading: false,
+      isError: false,
+    })
+    tasksMock.mockReturnValue({ data: [] })
+    renderView()
+    expect(screen.getByRole('button', { name: /Delete "Ship PR6"/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument()
   })
 
   it('does NOT delete when the confirm dialog is cancelled', async () => {
@@ -119,6 +119,6 @@ describe('DoneView', () => {
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: /Cancel/i }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(softDeleteMutate).not.toHaveBeenCalled()
+    expect(deleteEntryMutate).not.toHaveBeenCalled()
   })
 })
