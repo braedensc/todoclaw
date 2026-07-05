@@ -456,3 +456,78 @@ describe('GridView clustering', () => {
     expect(screen.queryByTestId('cluster-popup')).not.toBeInTheDocument()
   })
 })
+
+// Item 16: a plain TAP on a popup row opens it for inline editing; only a real DRAG tears the card
+// out onto the grid. Delete is confirm-gated (B9). The popup itself is portaled to <body>.
+describe('GridView cluster popup rework', () => {
+  function openPopup() {
+    tasksFixture = [
+      makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'b', text: 'Clean bedroom', x: 0.52, y: 0.51 }),
+    ]
+    render(<GridHarness />)
+    fireEvent.click(screen.getByRole('button', { name: /tasks stacked here/ }))
+    const popup = screen.getByTestId('cluster-popup')
+    const rowA = within(popup).getByText('Clean kitchen').closest('[data-task-id]') as HTMLElement
+    return { popup, rowA }
+  }
+
+  it('tapping a row (press + release, no move) opens inline editing and never tears it out', () => {
+    const { popup, rowA } = openPopup()
+
+    fireEvent.pointerDown(rowA, { clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(window, { clientX: 100, clientY: 100 })
+
+    // The row swaps to an edit input; nothing was committed to the grid (no drag-out).
+    expect(within(popup).getByLabelText('Edit task name')).toBeInstanceOf(HTMLInputElement)
+    expect(updateMutate).not.toHaveBeenCalled()
+    // The popup stays open while editing.
+    expect(screen.getByTestId('cluster-popup')).toBeInTheDocument()
+  })
+
+  it('committing an inline rename (Enter) writes text only and never moves the card', () => {
+    const { popup, rowA } = openPopup()
+    fireEvent.pointerDown(rowA, { clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(window, { clientX: 100, clientY: 100 })
+
+    const input = within(popup).getByLabelText('Edit task name') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Scrub kitchen' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(updateMutate).toHaveBeenCalledWith({ id: 'a', patch: { text: 'Scrub kitchen' } })
+    const patches = updateMutate.mock.calls.map((c) => (c[0] as { patch: object }).patch)
+    expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
+  })
+
+  it('the ✎ edit button also opens inline editing', () => {
+    const { popup, rowA } = openPopup()
+    fireEvent.click(within(rowA).getByLabelText('Edit task'))
+    expect(within(popup).getByLabelText('Edit task name')).toBeInstanceOf(HTMLInputElement)
+  })
+
+  it('dragging a row past the threshold tears the task out onto the grid and closes the popup', () => {
+    const { rowA } = openPopup()
+
+    fireEvent.pointerDown(rowA, { clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(window, { clientX: 220, clientY: 180 }) // > 4px → a real drag
+    fireEvent.pointerUp(window, { clientX: 220, clientY: 180 })
+
+    // A real drag commits x/y (+ clears staged) — the tear-out — and closes the popup.
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'a', patch: expect.objectContaining({ staged: false }) }),
+    )
+    expect(screen.queryByTestId('cluster-popup')).not.toBeInTheDocument()
+  })
+
+  it('deleting a popup row confirms first, then soft-deletes', async () => {
+    const { rowA } = openPopup()
+
+    fireEvent.click(within(rowA).getByLabelText('Delete task'))
+    // The app-themed confirm gate appears (distinct from the popup's own dialog role by its name).
+    const dialog = await screen.findByRole('dialog', { name: /Delete/ })
+    expect(softDeleteMutate).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('a'))
+  })
+})

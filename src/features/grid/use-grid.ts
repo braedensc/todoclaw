@@ -15,8 +15,16 @@ import {
   computeClusters,
   mergePreviewIds,
 } from '../../lib/clustering'
-import { useFreeDrag, toNormalized, type NormalizedPoint } from '../../hooks/use-free-drag'
+import {
+  useFreeDrag,
+  toNormalized,
+  boxClampBounds,
+  type NormalizedPoint,
+  type SurfaceRect,
+  type ClampBounds,
+} from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 
 /**
  * Which tasks render on the grid: active (not soft-deleted — already excluded by useTasks),
@@ -174,6 +182,27 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // by clicking the grid background, dragging a row out, or marking a recurring task done.
   const [openClusterId, setOpenClusterId] = useState<string | null>(null)
 
+  // The cluster-popup row currently in inline-edit mode (a plain tap opens editing rather than
+  // tearing the card out — item 16).
+  const [editingClusterRowId, setEditingClusterRowId] = useState<string | null>(null)
+  const startClusterRowEdit = useCallback((id: string) => setEditingClusterRowId(id), [])
+  const stopClusterRowEdit = useCallback(() => setEditingClusterRowId(null), [])
+  // Open / close / switch the cluster popup. Always resets the inline editor together with the
+  // popup so a stale row-edit id can never re-open an editor in a reopened or different popup —
+  // done here at the single state transition instead of in a syncing effect.
+  const selectCluster = useCallback((id: string | null) => {
+    setOpenClusterId(id)
+    setEditingClusterRowId(null)
+  }, [])
+
+  // Size-aware drop clamp shared by every grid drag (reposition / new-item / popup drag-out) and
+  // tap-to-place: keeps the CARD's whole bounding box inside the surface, sized to the LIVE grid
+  // rect, so a card never overhangs an edge to be clipped by `overflow-hidden` (item 17).
+  const cardClamp = useCallback(
+    (rect: SurfaceRect): ClampBounds => boxClampBounds(rect, CARD_HALF_WIDTH, CARD_HALF_HEIGHT),
+    [],
+  )
+
   const placedTasks = useMemo(
     () => tasks.filter((t): t is Task & { x: number; y: number } => isPlaced(t, doneToday ?? {})),
     [tasks, doneToday],
@@ -196,7 +225,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // re-evaluates to "ok" and is hidden until the next cycle. Closes any open popup.
   const handleDone = useCallback(
     (task: Task) => {
-      setOpenClusterId(null)
+      selectCluster(null)
       if (task.recurring) {
         updateMutate({
           id: task.id,
@@ -212,7 +241,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
         markDoneMutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
       }
     },
-    [markDoneMutate, updateMutate, timeZone],
+    [markDoneMutate, updateMutate, timeZone, selectCluster],
   )
 
   // --- Reposition (grid card) drag -------------------------------------------------------
@@ -229,6 +258,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     surfaceRef: gridRef,
     onDrop: handleRepositionDrop,
     onMove: handleDragMove,
+    clamp: cardClamp,
   })
 
   // --- New-item card → grid drag (desktop) -----------------------------------------------
@@ -243,6 +273,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     surfaceRef: gridRef,
     onDrop: handleNewCardDrop,
     onMove: handleDragMove,
+    clamp: cardClamp,
   })
 
   // --- Popup row → grid drag-out ---------------------------------------------------------
@@ -255,44 +286,36 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     },
     [updateMutate, endDrag],
   )
+  // A popup row DEFERS its tear-out until the pointer actually moves (item 16): a plain tap opens
+  // the row for inline editing (onTap), while crossing the drag threshold closes the popup
+  // (onDragStart) and hands off to the shared move loop, which materializes a standalone card under
+  // the pointer on the first move. Nothing is committed on a bare tap, so a click can no longer
+  // rip the card out of the cluster.
   const popupDrag = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handlePopupDrop,
     onMove: handleDragMove,
+    onDragStart: () => selectCluster(null),
+    onTap: startClusterRowEdit,
+    clamp: cardClamp,
+    activateOnMove: true,
   })
-  const startPopupRowDrag = useCallback(
-    (task: Task) => (event: PointerEvent) => {
-      // Dragging a row out implicitly closes the popup; the card then tracks the pointer.
-      setOpenClusterId(null)
-      // Separate the card from its cluster IMMEDIATELY (fix 16): commit the pointer's x/y so a
-      // real, standalone GridCard mounts under the pointer before the move loop runs — otherwise
-      // the card is invisible (still folded into the bubble) until drop. Mirrors EisenClaw
-      // (planner.html:624), which commits x/y on the row's pointer-down. Pre-latch materialize so
-      // the first move paints the mounted node instead of re-committing.
-      const rect = gridRef.current?.getBoundingClientRect()
-      if (rect) {
-        const point = toNormalized(rect, event.clientX, event.clientY)
-        materializedRef.current = task.id
-        updateMutate({ id: task.id, patch: { x: point.x, y: point.y, staged: false } })
-      }
-      popupDrag.startDrag(task.id)(event)
-    },
-    [popupDrag, updateMutate, gridRef],
-  )
+  const startPopupRow = popupDrag.startDrag
+  const startPopupRowDrag = useCallback((task: Task) => startPopupRow(task.id), [startPopupRow])
 
   // --- Tap-to-place (mobile / touch) + background click (close popup) ---------------------
   const handleGridPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       // A click on empty canvas always dismisses an open cluster popup.
-      setOpenClusterId(null)
+      selectCluster(null)
       if (!isMobile || !placingId) return
       const rect = gridRef.current?.getBoundingClientRect()
       if (!rect) return
-      const point = toNormalized(rect, event.clientX, event.clientY)
+      const point = toNormalized(rect, event.clientX, event.clientY, cardClamp(rect))
       updateMutate({ id: placingId, patch: { x: point.x, y: point.y, staged: false } })
       setPlacingId(null)
     },
-    [isMobile, placingId, updateMutate, gridRef],
+    [isMobile, placingId, updateMutate, gridRef, cardClamp, selectCluster],
   )
 
   const togglePlacing = useCallback((id: string) => {
@@ -346,8 +369,11 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     handleDone,
     // Cluster popup + background
     openClusterId,
-    setOpenClusterId,
+    selectCluster,
     startPopupRowDrag,
+    editingClusterRowId,
+    startClusterRowEdit,
+    stopClusterRowEdit,
     handleGridPointerDown,
     // Clustering helpers (recurring-aware) for the bubble render
     clusterDominant,

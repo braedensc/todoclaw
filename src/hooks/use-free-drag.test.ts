@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_MAX, DEFAULT_MIN, toNormalized, type SurfaceRect } from './use-free-drag'
+import {
+  boxClampBounds,
+  clampPoint,
+  DEFAULT_MAX,
+  DEFAULT_MIN,
+  toNormalized,
+  type SurfaceRect,
+} from './use-free-drag'
 
 // A 1000×500 surface at the viewport origin makes the arithmetic easy to read:
 // x = (clientX - 0) / 1000, y = 1 - (clientY - 0) / 500.
@@ -32,7 +39,50 @@ describe('toNormalized', () => {
     expect(toNormalized(rect, 4000, -800)).toEqual({ x: DEFAULT_MAX, y: DEFAULT_MAX })
   })
 
-  it('honours custom clamp bounds', () => {
-    expect(toNormalized(rect, 0, 0, 0, 1)).toEqual({ x: 0, y: 1 })
+  it('honours custom per-axis clamp bounds', () => {
+    expect(toNormalized(rect, 0, 0, { minX: 0, maxX: 1, minY: 0, maxY: 1 })).toEqual({ x: 0, y: 1 })
+  })
+})
+
+describe('boxClampBounds', () => {
+  it('makes the margin a half-extent over the dimension (a card near the edge pulls inward)', () => {
+    // A 112px card (56px half-width) on a 1000px-wide, 640px-tall grid → 5.6% x-margin, ~6.9% y.
+    const bounds = boxClampBounds({ width: 1000, height: 640 }, 56, 44)
+    expect(bounds.minX).toBeCloseTo(0.056)
+    expect(bounds.maxX).toBeCloseTo(0.944)
+    expect(bounds.minY).toBeCloseTo(0.06875)
+    expect(bounds.maxY).toBeCloseTo(0.93125)
+  })
+
+  it('scales the margin with the grid: a narrower grid needs a wider proportional margin', () => {
+    const wide = boxClampBounds({ width: 1000, height: 640 }, 56, 44)
+    const narrow = boxClampBounds({ width: 500, height: 320 }, 56, 44)
+    // Halving the width doubles the fractional x-margin (same 56px over half the pixels).
+    expect(narrow.minX).toBeCloseTo(wide.minX * 2)
+  })
+
+  it('falls back to the flat 3% default when the surface is unmeasured (0px)', () => {
+    expect(boxClampBounds({ width: 0, height: 0 }, 56, 44)).toEqual({
+      minX: DEFAULT_MIN,
+      maxX: DEFAULT_MAX,
+      minY: DEFAULT_MIN,
+      maxY: DEFAULT_MAX,
+    })
+  })
+
+  it('caps the margin below 0.5 so a tiny surface can never invert the bounds', () => {
+    const bounds = boxClampBounds({ width: 40, height: 40 }, 56, 44)
+    expect(bounds.minX).toBeLessThan(bounds.maxX)
+    expect(bounds.minX).toBe(0.49)
+  })
+})
+
+describe('clampPoint', () => {
+  it('pulls an out-of-bounds stored point inside; leaves an interior point untouched', () => {
+    const bounds = boxClampBounds({ width: 1000, height: 640 }, 56, 44)
+    // An extreme corner card (0.01, 0.99) is pulled to the box edges.
+    expect(clampPoint(0.01, 0.99, bounds)).toEqual({ x: bounds.minX, y: bounds.maxY })
+    // A centred card is unchanged.
+    expect(clampPoint(0.5, 0.5, bounds)).toEqual({ x: 0.5, y: 0.5 })
   })
 })
