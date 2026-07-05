@@ -37,6 +37,24 @@
   }
 }
 
+/* One-shot pop for the BabyClaw inline "what just happened" chip (TaskInputWidget). Applied via
+   inline `style.animation` so no Tailwind keyframe config is needed; kept short + subtle. */
+@keyframes babyclaw-flash {
+  from {
+    opacity: 0;
+    transform: translateY(1px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*='babyclaw-flash'] {
+    animation: none !important;
+  }
+}
+
 /* Merge preview (net-new; EisenClaw had none). While a card is dragged over another within the
    cluster thresholds (CX/CY), the under-card is flagged `data-merge-target` from GridView's
    per-frame drag handler (a plain DOM attribute — no React re-render) to preview the merge-on-
