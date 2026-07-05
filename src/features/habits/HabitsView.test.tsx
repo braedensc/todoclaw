@@ -84,7 +84,7 @@ describe('HabitsView', () => {
   it('shows the empty state when there are no habits', () => {
     setHabits([])
     renderView()
-    expect(screen.getByText(/No habits yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/No reminders yet/i)).toBeInTheDocument()
   })
 
   it('renders an active habit with an UNCHECKED checkbox when not in habit_done', () => {
@@ -191,7 +191,7 @@ describe('HabitsView', () => {
   it('renders queued (inactive) habits as activate buttons that flip active=true', () => {
     setHabits([habit({ id: 'h2', text: 'Drink more water', active: false, subtasks: [] })])
     renderView()
-    const activate = screen.getByRole('button', { name: /Activate habit "Drink more water"/i })
+    const activate = screen.getByRole('button', { name: /Activate reminder "Drink more water"/i })
     fireEvent.click(activate)
     expect(updateMutate).toHaveBeenCalledWith({ id: 'h2', patch: { active: true } })
   })
@@ -199,7 +199,7 @@ describe('HabitsView', () => {
   it('adds a habit via useAddHabit on submit', () => {
     setHabits([])
     renderView()
-    const input = screen.getByLabelText(/Add a habit/i)
+    const input = screen.getByLabelText(/Add a reminder/i)
     fireEvent.change(input, { target: { value: 'Stretch' } })
     fireEvent.submit(input)
     expect(addMutate).toHaveBeenCalledWith('Stretch', expect.anything())
@@ -208,7 +208,7 @@ describe('HabitsView', () => {
   it('does NOT add an empty/whitespace habit', () => {
     setHabits([])
     renderView()
-    const input = screen.getByLabelText(/Add a habit/i)
+    const input = screen.getByLabelText(/Add a reminder/i)
     fireEvent.change(input, { target: { value: '   ' } })
     fireEvent.submit(input)
     expect(addMutate).not.toHaveBeenCalled()
@@ -218,7 +218,7 @@ describe('HabitsView', () => {
     setHabits([habit()])
     renderView()
     fireEvent.click(
-      screen.getByRole('button', { name: /Delete habit "Wrist strengthening routine"/i }),
+      screen.getByRole('button', { name: /Delete reminder "Wrist strengthening routine"/i }),
     )
     // The themed confirm dialog appears; deletion fires only after its Delete button is clicked.
     const dialog = await screen.findByRole('dialog')
@@ -230,7 +230,7 @@ describe('HabitsView', () => {
     setHabits([habit()])
     renderView()
     fireEvent.click(
-      screen.getByRole('button', { name: /Delete habit "Wrist strengthening routine"/i }),
+      screen.getByRole('button', { name: /Delete reminder "Wrist strengthening routine"/i }),
     )
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: /Cancel/i }))
@@ -262,9 +262,9 @@ describe('HabitsView', () => {
     renderView()
 
     // h1's structural control (delete) is disabled while its edit lands…
-    expect(screen.getByRole('button', { name: /Delete habit "Alpha"/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Delete reminder "Alpha"/i })).toBeDisabled()
     // …but h2's is untouched (per-row busy, not a global freeze).
-    expect(screen.getByRole('button', { name: /Delete habit "Beta"/i })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /Delete reminder "Beta"/i })).not.toBeDisabled()
     // Checkboxes are NEVER disabled — toggling is optimistic, so it stays clickable throughout.
     expect(screen.getByRole('checkbox', { name: /Mark "Alpha" done today/i })).not.toBeDisabled()
     expect(screen.getByRole('checkbox', { name: /Mark "Beta" done today/i })).not.toBeDisabled()

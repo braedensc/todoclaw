@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { AuthForm } from './features/auth/AuthForm'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
-import { HabitsView } from './features/habits/HabitsView'
+import { RemindersInline } from './features/habits/RemindersInline'
+import { RemindersModal } from './features/habits/RemindersModal'
 import { WorkArea } from './features/shell/WorkArea'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfirmProvider } from './components/use-confirm'
@@ -16,15 +17,18 @@ import { DonePanel } from './features/done/DonePanel'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { supabase } from './lib/supabase'
 
-// The signed-in app shell (B8 layout): header (wordmark + Plan My Day + quiet Settings/Done/
-// Backups/Sign out links), the persistent Plan card top-center, the work region (one input widget
-// + the Grid⇄List swap with its embedded toggle), and the daily-habits strip below both views.
-// Kept separate from App so the ensure-schedule effect only runs once a session exists.
+// The signed-in app shell (B8 layout): header (wordmark + Plan My Day + quiet Reminders/Settings/
+// Done/Backups/Sign out links), the persistent Plan card top-center, the work region (a compact
+// inline reminders list + one input widget + the Grid⇄List swap with its embedded toggle). Daily
+// reminders live off the main page now — a gear-area button opens the full popup and the inline
+// names open per-reminder detail cards. Kept separate from App so the ensure-schedule effect only
+// runs once a session exists.
 function AppShell() {
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const [showDone, setShowDone] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showReminders, setShowReminders] = useState(false)
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
@@ -59,6 +63,14 @@ function AppShell() {
 
         {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
         <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
+          <button
+            type="button"
+            onClick={() => setShowReminders(true)}
+            title="Daily reminders"
+            className="hover:text-ink"
+          >
+            <span aria-hidden>🔔</span> Reminders
+          </button>
           <button type="button" onClick={() => setShowSettings(true)} className="hover:text-ink">
             <span aria-hidden>⚙</span> Settings
           </button>
@@ -93,16 +105,17 @@ function AppShell() {
         </ErrorBoundary>
       </div>
 
+      {/* Daily reminders — the minified inline form: a compact row of active reminder names near
+          the top of the work area. Each name opens that reminder's detail card; the full popup is
+          the gear-area Reminders button. The old full-width habits strip is gone (B2 owns the grid
+          expansion into the freed space). */}
+      <ErrorBoundary>
+        <RemindersInline />
+      </ErrorBoundary>
+
       <ErrorBoundary>
         <WorkArea chat={chat} onOpenChat={() => setShowChat(true)} />
       </ErrorBoundary>
-
-      {/* Daily habits — a strip below the work region so it shows under BOTH Grid and List. */}
-      <div className="mt-6 pb-10">
-        <ErrorBoundary>
-          <HabitsView />
-        </ErrorBoundary>
-      </div>
 
       {showChat && (
         <ErrorBoundary>
@@ -125,6 +138,12 @@ function AppShell() {
       {showSettings && (
         <ErrorBoundary>
           <SettingsPanel onClose={() => setShowSettings(false)} />
+        </ErrorBoundary>
+      )}
+
+      {showReminders && (
+        <ErrorBoundary>
+          <RemindersModal onClose={() => setShowReminders(false)} />
         </ErrorBoundary>
       )}
     </>

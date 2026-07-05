@@ -64,8 +64,9 @@ vi.mock('./features/ai/use-ai-chat', () => ({
     deny: vi.fn(),
   }),
 }))
-// HabitsView now renders alongside GridView on the Grid tab (no separate Habits tab); stub
-// its data layer so the shell renders without a QueryClientProvider / network.
+// Daily reminders live off the main page now (a gear-area popup + a compact inline name list).
+// The inline list reads the habits/daily-state hooks; stub them so the shell renders without a
+// QueryClientProvider / network. With no habits, the inline list renders nothing.
 vi.mock('./features/habits/use-habits', () => ({
   useHabits: () => ({ data: [], isLoading: false, isError: false }),
   useAddHabit: () => ({ mutate: vi.fn(), isPending: false }),
@@ -81,14 +82,14 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
   })
 
-  it('renders the Grid/List toggle, the Done link, and the habits section when logged in', () => {
+  it('renders the Grid/List toggle and the quiet header links (incl. Reminders) when logged in', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     render(<App />)
-    // Grid/List come from the embedded ViewToggle; Done is now a quiet header link (B8).
-    for (const label of ['Grid', 'List', 'Done']) {
+    // Grid/List come from the embedded ViewToggle; Done + Reminders are quiet header links (B8).
+    for (const label of ['Grid', 'List', 'Done', 'Reminders']) {
       expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
     }
-    // Habits now render below the work region so they show under both views.
-    expect(screen.getByRole('region', { name: 'Habits' })).toBeInTheDocument()
+    // The full reminders popup is closed until the gear-area button is clicked — no dialog yet.
+    expect(screen.queryByRole('dialog', { name: 'Daily reminders' })).not.toBeInTheDocument()
   })
 })
