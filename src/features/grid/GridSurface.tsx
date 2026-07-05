@@ -145,7 +145,7 @@ export function GridSurface({
     <div
       className={
         expanded
-          ? 'fixed inset-0 z-50 flex flex-col items-center overflow-auto bg-bg py-8 pl-8 pr-4'
+          ? 'fixed inset-0 z-50 flex flex-col items-center justify-center overflow-auto bg-bg pl-8 pr-4'
           : 'relative pb-6 pl-5'
       }
     >
@@ -154,10 +154,14 @@ export function GridSurface({
           shrinks that column so the grid reflows smaller with it (B2). A tall grid may run past
           the fold on short windows (the Expand control gives a fit-to-height fullscreen view) —
           that's the trade for a big, column-filling grid. EXPANDED is the reverse: a height-driven
-          max-width so the fullscreen canvas fits the viewport height exactly. */}
+          max-width so the fullscreen canvas fits the viewport height. The 64px offset is the only
+          chrome outside the canvas — the overlay `justify-center`s the canvas, so that budget
+          splits into ~32px top / ~32px bottom margins, which comfortably clear the toggle that
+          straddles the top edge (~13px above) and the urgency axis arrow just below (~18px). The
+          1046/640 ratio is NEVER distorted (the clustering thresholds CX/CY depend on it). */}
       <div
         className="relative mx-auto w-full"
-        style={expanded ? { maxWidth: 'calc((100vh - 130px) * 1046 / 640)' } : undefined}
+        style={expanded ? { maxWidth: 'calc((100vh - 64px) * 1046 / 640)' } : undefined}
       >
         {/* Embedded Grid⇄List toggle — notched into the canvas's top border line. */}
         <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2">

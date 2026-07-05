@@ -4,6 +4,7 @@ import type { WorkView } from '../../components/tabs'
 import { useGrid } from '../grid/use-grid'
 import { GridSurface } from '../grid/GridSurface'
 import { ListView } from '../list/ListView'
+import { FullscreenList } from './FullscreenList'
 import { TaskInputWidget } from './TaskInputWidget'
 import type { ChatController } from '../ai/use-chat-controller'
 
@@ -22,12 +23,10 @@ export function WorkArea({ chat, onOpenChat }: { chat: ChatController; onOpenCha
   const [view, setView] = useState<WorkView>('grid')
   const [expanded, setExpanded] = useState(false)
 
-  // Selecting a view always drops fullscreen (the List pane is never fullscreen; and returning to
-  // Grid later shouldn't silently re-expand).
-  const selectView = (v: WorkView) => {
-    setView(v)
-    setExpanded(false)
-  }
+  // Switching the view no longer drops fullscreen. In expanded mode the Grid⇄List toggle swaps the
+  // content INSIDE the overlay (fullscreen grid ⇄ fullscreen list, via GridSurface / FullscreenList),
+  // and the dedicated ⤡ control is the only way out. Inline (expanded === false) it's a plain swap.
+  const selectView = (v: WorkView) => setView(v)
 
   return (
     <section aria-label="Workspace" className="flex flex-col">
@@ -43,6 +42,13 @@ export function WorkArea({ chat, onOpenChat }: { chat: ChatController; onOpenCha
             onSelectView={selectView}
             expanded={expanded}
             onToggleExpanded={() => setExpanded((e) => !e)}
+          />
+        ) : expanded ? (
+          // List while fullscreen: full-size list INSIDE the same overlay (keeps the toggle + exit).
+          <FullscreenList
+            view={view}
+            onSelectView={selectView}
+            onExitFullscreen={() => setExpanded(false)}
           />
         ) : (
           <div className="relative">
