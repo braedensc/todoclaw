@@ -35,8 +35,8 @@ if (await confirm({ title: `Delete "${task.text}"?` })) softDelete.mutate(task.i
 Options: `title`, optional `message`, `confirmLabel` / `cancelLabel`, and `tone` (`danger` by
 default → red confirm button). Dismiss via Cancel, the scrim, or Escape (all resolve `false`).
 
-Current adopters: `HabitsView`, `DoneView`. Later delete sites (grid card, list row, cluster
-popup, backups) adopt these as they're reworked.
+Current adopters: `HabitsView`, `DoneView`, `ListView` (list row). Later delete sites (grid card,
+cluster popup, backups) adopt these as they're reworked.
 
 ## Danger token
 
