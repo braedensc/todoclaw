@@ -121,7 +121,7 @@ function AppShell() {
                 title="Daily reminders"
                 className="hover:text-ink"
               >
-                <span aria-hidden>🔔</span> Reminders
+                <span aria-hidden>⚐</span> Reminders
               </button>
               <button
                 type="button"
