@@ -65,12 +65,15 @@ const stopDrag = (e: PointerEvent) => e.stopPropagation()
  * accent side/bottom borders (one-off cards keep thin solid terracotta sides) — see the style
  * object. The solid, status-colored top border is untouched so the two cues don't clash.
  *
- * Interactions: double-click the text to rename inline; hover reveals the action row (done /
- * ⋯ menu / delete). The ⋯ menu is a small popover with the due-date picker + the recurring
- * controls (RecurringSection) — setting a due date writes `due` only and never moves the card.
- * The whole card is the drag handle; every control stopPropagation so clicking it never starts
- * a drag (and double-click, being motionless, can't be confused with one either). Done marks a
- * normal task complete for today (it leaves the grid) or resets a recurring task's cycle.
+ * Interactions: double-click the text to rename inline. A persistent bottom action bar (always
+ * visible, no hover-reveal, on desktop AND mobile) carries the controls: an OUTLINED green "Done"
+ * pill on the left (border + green text + ✓, deliberately not filled so it reads as "mark done",
+ * not "already done") plus small ⋯ menu / × delete icons on the right. The ⋯ menu is a small
+ * popover with the due-date picker + the recurring controls (RecurringSection) — setting a due
+ * date writes `due` only and never moves the card. The whole card is the drag handle; every
+ * control stopPropagation so clicking it never starts a drag (and double-click, being motionless,
+ * can't be confused with one either). Done marks a normal task complete for today (it leaves the
+ * grid) or resets a recurring task's cycle.
  */
 export function GridCard({
   task,
@@ -193,7 +196,7 @@ export function GridCard({
       data-task-id={task.id}
       data-quadrant={quadrant.key}
       onPointerDown={editing ? undefined : onPointerDown}
-      className="group absolute cursor-grab rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md active:cursor-grabbing"
+      className="absolute cursor-grab rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md active:cursor-grabbing"
       style={{ ...style, borderTopWidth: 3, padding: '6px 8px 5px' }}
     >
       {/* Persistent recurring cue: a ↻ chip overhanging the top-right corner, decoupled from the
@@ -275,37 +278,34 @@ export function GridCard({
         </span>
       )}
 
-      {/* Action row — inline at the bottom of the card, not a floating overlay, so its height
-          is always reserved (mirrors EisenClaw's `.card-actions`, html:591/906-907, which hides
-          via opacity rather than display for the same reason). Desktop: invisible + inert until
-          hover, UNLESS the ⋯ menu is open (then it stays visible so the popover doesn't vanish
-          when the pointer leaves). Mobile (< 720px, no hover): always visible. Each control stops
-          propagation so a tap/click isn't a drag. Done = green, delete = red (shared B9
-          IconButtons, tooltips); delete is confirm-gated by the caller. */}
+      {/* Persistent bottom action bar (Option B) — a thin strip separated by a top hairline,
+          ALWAYS visible on desktop AND mobile (no hover-reveal; its height is always reserved).
+          Done is the primary affordance: an OUTLINED green pill (green border + green text + ✓ +
+          the word "Done"), deliberately NOT filled so it reads as "mark done", not "already done";
+          hover deepens it with a faint green wash. ⋯ (due/recurring popover) and × (confirm-gated
+          delete) are small, quiet secondary IconButtons on the right — ⋯ neutral, × red-on-hover.
+          Each control stopPropagation so a tap/click on it never starts a reposition drag. */}
       {!editing && (
-        <div
-          className={
-            menuOpen
-              ? 'pointer-events-auto mt-1 flex items-center gap-1 border-t border-border pt-1 text-muted opacity-100'
-              : 'pointer-events-auto mt-1 flex items-center gap-1 border-t border-border pt-1 text-muted opacity-100 transition-opacity wide:pointer-events-none wide:opacity-0 wide:group-hover:pointer-events-auto wide:group-hover:opacity-100'
-          }
-        >
-          <IconButton
-            variant="success"
-            className="!h-6 !w-6 !text-[13px]"
+        <div className="mt-1 flex items-center gap-0.5 border-t border-border pt-1">
+          <button
+            type="button"
             onPointerDown={stopDrag}
             onClick={onDone}
             aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
             title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
+            className="inline-flex items-center gap-0.5 rounded-full border border-primary px-1.5 py-[3px] text-[10px] font-semibold leading-none text-primary transition-colors hover:bg-primary/10"
           >
-            ✓
-          </IconButton>
+            <span aria-hidden className="text-[11px] leading-none">
+              ✓
+            </span>
+            Done
+          </button>
 
           <div className="relative ml-auto flex items-center gap-1">
             <div className="relative" ref={menuRef}>
               <IconButton
                 variant="neutral"
-                className="!h-6 !w-6 !text-[13px]"
+                className="!h-[18px] !w-[18px] !text-[11px]"
                 onPointerDown={stopDrag}
                 onClick={() => setMenuOpen((o) => !o)}
                 aria-label="Due date and recurring"
@@ -349,7 +349,7 @@ export function GridCard({
 
             <IconButton
               variant="danger"
-              className="!h-6 !w-6 !text-[13px]"
+              className="!h-[18px] !w-[18px] !text-[11px]"
               onPointerDown={stopDrag}
               onClick={onDelete}
               aria-label="Delete task"
