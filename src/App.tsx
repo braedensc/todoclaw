@@ -111,8 +111,8 @@ function AppShell() {
               </div>
               {!gridOnly && (
                 <p className="text-sm text-muted">
-                  A puppy-themed AI planner built on the Eisenhower matrix — sort tasks into
-                  quadrants by urgency and importance.
+                  An AI-enabled planner built on the Eisenhower matrix — sort tasks into quadrants
+                  by urgency and importance.
                 </p>
               )}
             </div>

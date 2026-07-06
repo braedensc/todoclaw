@@ -31,7 +31,7 @@ interface TaskInputWidgetProps {
 }
 
 export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputWidgetProps) {
-  const [mode, setMode] = useState<Mode>('manual')
+  const [mode, setMode] = useState<Mode>('babyclaw')
 
   return (
     <div className="rounded-[10px] border border-border bg-card p-2">
@@ -57,10 +57,11 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
     >
       {(
         [
-          { id: 'manual', label: 'Manual', icon: '✎' },
           // 🐾 is BabyClaw's identity mark (his logo on his own tab) — distinct from the animated
-          // ✦ thinking/working sparkle in babyclaw-status.ts, which stays as-is.
+          // ✦ thinking/working sparkle in babyclaw-status.ts, which stays as-is. BabyClaw is the
+          // default/left-hand option — Manual is the fallback for anyone who wants to skip him.
           { id: 'babyclaw', label: 'BabyClaw', icon: '🐾' },
+          { id: 'manual', label: 'Manual', icon: '✎' },
         ] as const
       ).map((m) => {
         const active = m.id === mode
