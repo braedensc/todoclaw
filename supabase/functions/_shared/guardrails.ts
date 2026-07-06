@@ -21,6 +21,14 @@ export const LIMITS: Record<Feature, { hour: number; day: number }> = {
 // $20.00/month, in micro-dollars (millionths of a USD).
 export const BUDGET_CAP_MICROS = 20_000_000
 
+// Per-user monthly sub-cap, $10.00 (half the global pool) — Issue 3 of the 2026-07-06 audit.
+// The $20 budget is a single GLOBAL pool, so one heavy account could drain it and pause AI for
+// everyone (denial-of-wallet on availability; the rate limits alone don't stop it). This sub-cap,
+// enforced by ai_user_budget_check against a per-user DEFINER ledger, bounds any single account to
+// its own slice so it can't consume the whole pool. Tunable here without a schema change; must stay
+// below BUDGET_CAP_MICROS to mean anything (asserted in guardrails.test.ts).
+export const USER_BUDGET_CAP_MICROS = 10_000_000
+
 // Sonnet 5 STANDARD pricing: $3 / 1M input tokens, $15 / 1M output tokens (identical to Sonnet 4.6).
 // Converting to micros: micros = (input/1e6)*3*1e6 + (output/1e6)*15*1e6 = input*3 + output*15.
 // Sonnet 5's INTRODUCTORY pricing ($2/$10 through 2026-08-31) is cheaper, so this formula slightly
@@ -34,8 +42,9 @@ export type PrecheckResult =
   | { ok: true; usageId: string }
   | { ok: false; reason: 'budget-exhausted' | 'rate-limited'; detail?: string }
 
-// Pre-call gate: budget kill-switch FIRST (cheap, no write — don't charge a rate-limit unit
+// Pre-call gate: budget kill-switches FIRST (cheap, no write — don't charge a rate-limit unit
 // against an already-paused month), then the per-user rate limit (which records the request).
+// Order: global monthly pool → per-user monthly sub-cap → rate limit.
 export async function precheck(client: SupabaseClient, feature: Feature): Promise<PrecheckResult> {
   const { data: remaining, error: budgetErr } = await client.rpc('ai_budget_check', {
     p_cap_micros: BUDGET_CAP_MICROS,
@@ -43,6 +52,14 @@ export async function precheck(client: SupabaseClient, feature: Feature): Promis
   if (budgetErr) return { ok: false, reason: 'budget-exhausted', detail: budgetErr.message }
   if (typeof remaining === 'number' && remaining <= 0)
     return { ok: false, reason: 'budget-exhausted' }
+
+  // Per-user monthly sub-cap: one account can't drain the shared pool (Issue 3, 2026-07-06 audit).
+  const { data: userRemaining, error: userErr } = await client.rpc('ai_user_budget_check', {
+    p_cap_micros: USER_BUDGET_CAP_MICROS,
+  })
+  if (userErr) return { ok: false, reason: 'budget-exhausted', detail: userErr.message }
+  if (typeof userRemaining === 'number' && userRemaining <= 0)
+    return { ok: false, reason: 'budget-exhausted', detail: 'user-monthly-cap' }
 
   const limit = LIMITS[feature]
   const { data: usageId, error: rateErr } = await client.rpc('ai_usage_check_and_record', {
@@ -55,9 +72,11 @@ export async function precheck(client: SupabaseClient, feature: Feature): Promis
   return { ok: true, usageId: usageId as string }
 }
 
-// Post-call: backfill the request row's token counts (observability) and add this call's cost
-// to the global month ledger (the kill-switch input). Best-effort; failures are swallowed so a
-// guardrail-bookkeeping hiccup never fails the user's already-completed request.
+// Post-call: backfill the request row's token counts (observability) and add this call's cost to
+// the month ledgers via ai_budget_add — which now advances BOTH the global pool and the caller's
+// per-user sub-cap, and clamps the amount server-side (rejects negatives, caps at the per-call
+// ceiling). Best-effort; failures are swallowed so a guardrail-bookkeeping hiccup never fails the
+// user's already-completed request.
 export async function recordUsage(
   client: SupabaseClient,
   usageId: string,
@@ -83,10 +102,15 @@ export interface AiStatus {
 // the global budget (DEFINER fn) and the caller's own trailing-window usage counts (RLS-scoped
 // SELECTs on ai_usage). No request is recorded.
 export async function getStatus(client: SupabaseClient): Promise<AiStatus> {
-  const { data: remaining } = await client.rpc('ai_budget_check', {
-    p_cap_micros: BUDGET_CAP_MICROS,
-  })
-  const budgetRemainingMicros = typeof remaining === 'number' ? remaining : 0
+  // The caller's real headroom is the smaller of the global pool and their per-user sub-cap —
+  // report/pause on whichever is tighter so the banner matches what precheck will actually enforce.
+  const [globalRes, userRes] = await Promise.all([
+    client.rpc('ai_budget_check', { p_cap_micros: BUDGET_CAP_MICROS }),
+    client.rpc('ai_user_budget_check', { p_cap_micros: USER_BUDGET_CAP_MICROS }),
+  ])
+  const globalRemaining = typeof globalRes.data === 'number' ? globalRes.data : 0
+  const userRemaining = typeof userRes.data === 'number' ? userRes.data : 0
+  const budgetRemainingMicros = Math.min(globalRemaining, userRemaining)
 
   const sinceHour = new Date(Date.now() - 3_600_000).toISOString()
   const sinceDay = new Date(Date.now() - 86_400_000).toISOString()
