@@ -7,7 +7,7 @@ import { NewItemStrip } from './NewItemStrip'
 import type { ChatController } from '../ai/use-chat-controller'
 import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
 import type { BabyClawTone } from './babyclaw-status'
-import { AnimatedDots } from '../../components/Thinking'
+import { PawSteps } from '../../components/Thinking'
 
 // The one slim input widget above the grid (B8, items 4/5/7/9). A Manual ⇄ BabyClaw pill toggle
 // swaps between two modes that share the row:
@@ -440,7 +440,7 @@ function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat:
           {status.tone === 'busy' ? (
             <>
               Working
-              <AnimatedDots />
+              <PawSteps />
             </>
           ) : (
             status.text

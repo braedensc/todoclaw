@@ -28,3 +28,17 @@ export function Thinking({ label }: { label: string }) {
     </span>
   )
 }
+
+// BabyClaw-specific alternative to AnimatedDots — three paw prints fading in like footsteps
+// instead of plain dots. Used only for his own inline "Working…" status line (TaskInputWidget),
+// so that one spot carries a bit more of his identity; every other in-flight state (Plan My Day's
+// Thinking button, etc.) keeps the neutral ellipsis. Same fade timing + reduced-motion handling.
+export function PawSteps() {
+  return (
+    <span className="paw-steps" aria-hidden>
+      <span>🐾</span>
+      <span>🐾</span>
+      <span>🐾</span>
+    </span>
+  )
+}

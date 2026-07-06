@@ -4,6 +4,7 @@ import { useTasks } from '../tasks/use-tasks'
 import { useDeleteHistoryEntry, useHistory, useRestoreTask } from './use-history'
 import { useConfirm } from '../../components/use-confirm'
 import { IconButton } from '../../components/IconButton'
+import { SleepingPuppy } from '../../components/SleepingPuppy'
 import { formatDateTime } from '../../lib/dates'
 import { daysUntil } from '../../lib/scoring'
 import { quadrantMeta } from '../../lib/quadrants'
@@ -197,7 +198,10 @@ export function DoneView({ onClose }: { onClose?: () => void }) {
         </p>
 
         {entries.length === 0 ? (
-          <p className="text-muted">Nothing done yet — completed tasks land here.</p>
+          <div className="flex flex-col items-center gap-1 py-2 text-center">
+            <SleepingPuppy className="h-16 w-28 text-muted-light" />
+            <p className="text-muted">Nothing done yet — completed tasks land here.</p>
+          </div>
         ) : (
           <ul className="space-y-2">
             {entries.map((entry) => {
