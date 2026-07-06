@@ -38,6 +38,10 @@ describe('ChatPanel', () => {
     expect(screen.getByText('add dentist')).toBeInTheDocument()
     expect(screen.getByText('Added it.')).toBeInTheDocument()
     expect(screen.getByText(/Created "dentist"/)).toBeInTheDocument()
+
+    // BabyClaw's own replies carry his decorative 🐾 mark; the user's messages don't.
+    expect(screen.getByText('Added it.').closest('li')?.textContent).toContain('🐾')
+    expect(screen.getByText('add dentist').closest('li')?.textContent).not.toContain('🐾')
   })
 
   it('shows the confirmation banner and wires Confirm/Cancel', () => {
