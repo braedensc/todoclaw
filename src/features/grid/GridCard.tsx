@@ -9,7 +9,7 @@ import {
   stalenessStyle,
   urgencyGlowStyle,
 } from '../../lib/visual-urgency'
-import { IconButton } from '../../components/IconButton'
+import { CardActionBar } from '../../components/CardActionBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
 import { RecurringSection } from '../recurring/RecurringSection'
 import { BUCKET_DOT, CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
@@ -278,87 +278,52 @@ export function GridCard({
         </span>
       )}
 
-      {/* Persistent bottom action bar (Option B) — a thin strip separated by a top hairline,
-          ALWAYS visible on desktop AND mobile (no hover-reveal; its height is always reserved).
-          Done is the primary affordance: an OUTLINED green pill (green border + green text + ✓ +
-          the word "Done"), deliberately NOT filled so it reads as "mark done", not "already done";
-          hover deepens it with a faint green wash. ⋯ (due/recurring popover) and × (confirm-gated
-          delete) are small, quiet secondary IconButtons on the right — ⋯ neutral, × red-on-hover.
-          Each control stopPropagation so a tap/click on it never starts a reposition drag. */}
+      {/* Persistent bottom action bar (Option B) — the shared <CardActionBar> (also used by each
+          cluster-popup row, so the two can't drift): an OUTLINED green "Done" pill + small ⋯/×.
+          The card supplies its own due/recurring popover as the ⋯ menu content, anchored inside the
+          bar's ⋯ wrapper via `menuRef` and gated on `menuOpen`. Hidden while renaming inline. */}
       {!editing && (
-        <div className="mt-1 flex items-center gap-0.5 border-t border-border pt-1">
-          <button
-            type="button"
-            onPointerDown={stopDrag}
-            onClick={onDone}
-            aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
-            title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
-            className="inline-flex items-center gap-0.5 rounded-full border border-primary px-1.5 py-[3px] text-[10px] font-semibold leading-none text-primary transition-colors hover:bg-primary/10"
-          >
-            <span aria-hidden className="text-[11px] leading-none">
-              ✓
-            </span>
-            Done
-          </button>
-
-          <div className="relative ml-auto flex items-center gap-1">
-            <div className="relative" ref={menuRef}>
-              <IconButton
-                variant="neutral"
-                className="!h-[18px] !w-[18px] !text-[11px]"
-                onPointerDown={stopDrag}
-                onClick={() => setMenuOpen((o) => !o)}
+        <CardActionBar
+          recurring={task.recurring != null}
+          onDone={onDone}
+          onMenu={() => setMenuOpen((o) => !o)}
+          onDelete={onDelete}
+          menuLabel="Due date and recurring"
+          menuTitle="Due date & recurring"
+          menuOpen={menuOpen}
+          menuRef={menuRef}
+          menuContent={
+            menuOpen && (
+              <div
+                role="menu"
                 aria-label="Due date and recurring"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                title="Due date & recurring"
+                className="absolute rounded-lg border border-border-strong bg-panel p-2.5 text-ink shadow-[0_8px_28px_rgba(0,0,0,.18)]"
+                style={menuStyle}
+                // Clicks inside the menu must not start a card drag or bubble to the grid.
+                onPointerDown={stopDrag}
+                onClick={(e) => e.stopPropagation()}
               >
-                ⋯
-              </IconButton>
-
-              {menuOpen && (
-                <div
-                  role="menu"
-                  aria-label="Due date and recurring"
-                  className="absolute rounded-lg border border-border-strong bg-panel p-2.5 text-ink shadow-[0_8px_28px_rgba(0,0,0,.18)]"
-                  style={menuStyle}
-                  // Clicks inside the menu must not start a card drag or bubble to the grid.
-                  onPointerDown={stopDrag}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <label className="flex items-center gap-2 text-xs">
-                    <span className="text-muted">Due</span>
-                    <input
-                      type="date"
-                      aria-label="Due date"
-                      value={dueValue}
-                      onChange={(e) => onSetDue(e.target.value === '' ? null : e.target.value)}
-                      className="flex-1 rounded border border-border-strong bg-card px-2 py-1 text-xs"
-                    />
-                  </label>
-
-                  <RecurringSection
-                    task={task}
-                    onSetRecurring={onSetRecurring}
-                    onSetFrequency={onSetFrequency}
-                    onRemoveRecurring={onRemoveRecurring}
+                <label className="flex items-center gap-2 text-xs">
+                  <span className="text-muted">Due</span>
+                  <input
+                    type="date"
+                    aria-label="Due date"
+                    value={dueValue}
+                    onChange={(e) => onSetDue(e.target.value === '' ? null : e.target.value)}
+                    className="flex-1 rounded border border-border-strong bg-card px-2 py-1 text-xs"
                   />
-                </div>
-              )}
-            </div>
+                </label>
 
-            <IconButton
-              variant="danger"
-              className="!h-[18px] !w-[18px] !text-[11px]"
-              onPointerDown={stopDrag}
-              onClick={onDelete}
-              aria-label="Delete task"
-              title="Delete task"
-            >
-              ×
-            </IconButton>
-          </div>
-        </div>
+                <RecurringSection
+                  task={task}
+                  onSetRecurring={onSetRecurring}
+                  onSetFrequency={onSetFrequency}
+                  onRemoveRecurring={onRemoveRecurring}
+                />
+              </div>
+            )
+          }
+        />
       )}
     </div>
   )

@@ -6,7 +6,7 @@ import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
 import { DUE_BADGE_MUTED, DUE_BADGE_URGENT } from '../../lib/visual-urgency'
-import { IconButton } from '../../components/IconButton'
+import { CardActionBar } from '../../components/CardActionBar'
 import { CLUSTER_POPUP_MAX_HEIGHT, CLUSTER_POPUP_WIDTH } from './cluster-constants'
 
 /** Gap (px) between the bubble and the popup, and min gap from any viewport edge. */
@@ -58,8 +58,9 @@ interface PopupPos {
 
 /**
  * The floating panel that opens when a cluster bubble is clicked. Lists each task as a card-style
- * row (quadrant/recurring accent, done ✓, recurring ↻ or a due chip, edit ✎, delete ×). A plain
- * TAP on a row opens it for inline editing; only a real DRAG pulls that task out of the cluster and
+ * row that mirrors a grid card: quadrant/recurring accent, a recurring ↻ or due chip, and the SAME
+ * shared <CardActionBar> (outlined Done pill + ⋯/×) along the bottom. A plain TAP on a row opens it
+ * for inline editing (as does the bar's ⋯); only a real DRAG pulls that task out of the cluster and
  * onto the grid. Portaled to `document.body` so the grid's `overflow-hidden` never clips it, and
  * repositioned from the bubble's live rect on scroll/resize/reflow (item 16). Ported from EisenClaw
  * (html:616-639), reworked for the portal + tap-to-edit behavior.
@@ -194,10 +195,13 @@ interface ClusterPopupRowProps {
   onPointerDown: (event: PointerEvent) => void
 }
 
-// One card-style task row. A plain tap opens inline editing (handled upstream via the drag's
-// onTap); a press-drag pulls the task out of the cluster; the action buttons stop propagation so a
-// click on them is never read as a drag. Quadrant/recurring accent on the left border, plus a
-// recurring ↻ or due chip, echo the grid card so a folded task reads the same here.
+// One card-style task row, laid out like a mini grid card: the task text (with its status chip) on
+// top, then the SHARED <CardActionBar> (outlined Done pill + ⋯/×) at the bottom — the same bar the
+// grid card renders, so a folded task reads identically here. A plain tap on the row opens inline
+// editing (handled upstream via the drag's onTap); a press-drag pulls the task out of the cluster;
+// every bar control stops propagation so a click on it is never read as a drag. Here ⋯ is the edit
+// trigger (the popup has no on-row due/recurring menu — tapping the row edits it). Quadrant/recurring
+// accent on the left border.
 function ClusterPopupRow({
   task,
   timeZone,
@@ -233,22 +237,11 @@ function ClusterPopupRow({
       data-task-id={task.id}
       // While editing the row is not a drag handle (the input owns its pointer events).
       onPointerDown={editing ? undefined : onPointerDown}
-      className={`mx-2 my-1.5 flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-2 text-ink shadow-sm ${
+      className={`mx-2 my-1.5 flex flex-col rounded-lg border border-border bg-card px-2.5 py-2 text-ink shadow-sm ${
         editing ? '' : 'cursor-grab active:cursor-grabbing'
       }`}
       style={{ borderLeft: `3px solid ${accent}`, touchAction: 'none' }}
     >
-      <IconButton
-        variant="success"
-        className="!h-6 !w-6 !text-[13px]"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={onDone}
-        aria-label="Mark done"
-        title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
-      >
-        ✓
-      </IconButton>
-
       {editing ? (
         <input
           ref={inputRef}
@@ -264,61 +257,48 @@ function ClusterPopupRow({
           className="min-w-0 flex-1 rounded border border-border-strong bg-card px-1 py-0.5 text-[13px]"
         />
       ) : (
-        <span
-          className="min-w-0 flex-1 break-words text-[13px] font-medium leading-snug"
-          title="Tap to edit · drag to place on the grid"
-        >
-          {task.text}
-        </span>
-      )}
-
-      {/* Status chip: recurring marker, or a due-day chip for dated one-offs. Hidden while editing
-          to give the input room. */}
-      {!editing &&
-        (rc ? (
+        <div className="flex items-start gap-1.5">
           <span
-            className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
-            style={{ backgroundColor: RC_COLOR[rc.code] }}
-            title={rc.label}
+            className="min-w-0 flex-1 break-words text-[13px] font-medium leading-snug"
+            title="Tap to edit · drag to place on the grid"
           >
-            ↻
+            {task.text}
           </span>
-        ) : (
-          d !== null && (
+
+          {/* Status chip: recurring marker, or a due-day chip for dated one-offs. */}
+          {rc ? (
             <span
               className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
-              style={{ backgroundColor: urgent ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
+              style={{ backgroundColor: RC_COLOR[rc.code] }}
+              title={rc.label}
             >
-              {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
+              ↻
             </span>
-          )
-        ))}
-
-      {/* Edit ✎ (redundant with tapping the row, but an explicit affordance). Hidden while editing
-          so its label doesn't collide with the input's. */}
-      {!editing && (
-        <IconButton
-          variant="neutral"
-          className="!h-6 !w-6 !text-[13px]"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={onStartEdit}
-          aria-label="Edit task"
-          title="Edit task"
-        >
-          ✎
-        </IconButton>
+          ) : (
+            d !== null && (
+              <span
+                className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
+                style={{ backgroundColor: urgent ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
+              >
+                {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
+              </span>
+            )
+          )}
+        </div>
       )}
 
-      <IconButton
-        variant="danger"
-        className="!h-6 !w-6 !text-[13px]"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={onDelete}
-        aria-label="Delete task"
-        title="Delete task"
-      >
-        ×
-      </IconButton>
+      {/* The same action bar the grid card carries. ⋯ is the edit trigger here (redundant with
+          tapping the row, but an explicit affordance); delete is confirm-gated upstream. Hidden
+          while renaming inline so it doesn't crowd the input. */}
+      {!editing && (
+        <CardActionBar
+          recurring={task.recurring != null}
+          onDone={onDone}
+          onMenu={onStartEdit}
+          onDelete={onDelete}
+          menuLabel="Edit task"
+        />
+      )}
     </div>
   )
 }
