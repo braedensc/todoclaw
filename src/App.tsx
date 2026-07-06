@@ -5,6 +5,9 @@ import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
 import { RemindersInline } from './features/habits/RemindersInline'
 import { RemindersModal } from './features/habits/RemindersModal'
 import { WorkArea } from './features/shell/WorkArea'
+import { MobileBottomNav } from './features/shell/MobileBottomNav'
+import { MoreSheet } from './features/shell/MoreSheet'
+import { useIsMobile } from './hooks/use-is-mobile'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { TodoClawIcon } from './components/TodoClawIcon'
 import { ConfirmProvider } from './components/use-confirm'
@@ -32,9 +35,15 @@ function AppShell() {
   const [showDone, setShowDone] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showReminders, setShowReminders] = useState(false)
+  // The mobile "More" overflow sheet (Settings / Backups / Grid-only / Sign out).
+  const [showMore, setShowMore] = useState(false)
   // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
-  // from the header pill next to Plan My Day; left via the overlay's ✕ pill or Esc.
+  // from the header pill (desktop) or the More sheet (mobile); left via the overlay's ✕ pill or Esc.
   const [gridOnly, setGridOnly] = useState(false)
+  // Below 720px the tall header is replaced by a slim top bar + a thumb-zone bottom nav (Concept D,
+  // ADR-0026). JS-gated (not just CSS) so exactly one Account nav renders per environment — keeping
+  // the golden `openDone` selector unambiguous and desktop untouched.
+  const isMobile = useIsMobile()
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
@@ -58,6 +67,18 @@ function AppShell() {
     return () => window.removeEventListener('keydown', onKey)
   }, [gridOnly])
 
+  // The mobile bottom nav's "+" is a shortcut to the existing capture input: scroll it into view
+  // and focus it (Manual or BabyClaw, whichever is showing). Kept inline rather than moved behind a
+  // sheet so the grid's tap-to-place add flow — and the golden tapPlaceTask helper — are untouched.
+  const focusAddInput = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    document
+      .querySelector<HTMLInputElement>(
+        'input[aria-label="Add a task"], input[aria-label="Tell BabyClaw"]',
+      )
+      ?.focus()
+  }
+
   return (
     // Full-width shell so the desktop chat push-drawer (ChatRail, fixed to the viewport's right
     // edge) can pair with an animated right-padding on the main content: opening chat pads the
@@ -75,12 +96,18 @@ function AppShell() {
             1046/640 so clustering feel matches — #75), centered, with the header/plan/input above
             it. Raised from 1120 → 1280 to grow the grid into the space the removed habits strip
             freed (B2). */}
-        <div className="mx-auto max-w-3xl p-6 wide:max-w-[1280px]">
-          <header className="mb-3 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink wide:text-3xl">
-                  <TodoClawIcon className="h-6 w-6 wide:h-7 wide:w-7" /> Todoclaw
+        <div
+          className={
+            'mx-auto max-w-3xl p-6 wide:max-w-[1280px] ' + (isMobile && !gridOnly ? 'pb-24' : '')
+          }
+        >
+          {isMobile ? (
+            // Mobile (Concept D): a slim top row — wordmark + Plan pill only. The tagline, the
+            // Grid-only pill, and the account links all move off the fold (bottom nav + More sheet).
+            !gridOnly && (
+              <header className="mb-3 flex items-center justify-between gap-3">
+                <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink">
+                  <TodoClawIcon className="h-6 w-6" /> Todoclaw
                 </h1>
                 <button
                   type="button"
@@ -97,58 +124,87 @@ function AppShell() {
                     </>
                   )}
                 </button>
-                {/* Grid-only view — a large pill matching Plan My Day's size, in the app's brand
-                    green (the same fill as Add / Set / Save actions). Enters a fullscreen,
-                    grid-alone mode (tagline / plan / reminders / input / toggle all hidden). */}
+              </header>
+            )
+          ) : (
+            <header className="mb-3 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink wide:text-3xl">
+                    <TodoClawIcon className="h-6 w-6 wide:h-7 wide:w-7" /> Todoclaw
+                  </h1>
+                  <button
+                    type="button"
+                    onClick={planner.generate}
+                    disabled={!planner.canGenerate}
+                    title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                    className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                  >
+                    {planner.isPending ? (
+                      <Thinking label="Thinking" />
+                    ) : (
+                      <>
+                        <span aria-hidden>✦</span> Plan My Day
+                      </>
+                    )}
+                  </button>
+                  {/* Grid-only view — a large pill matching Plan My Day's size, in the app's brand
+                      green (the same fill as Add / Set / Save actions). Enters a fullscreen,
+                      grid-alone mode (tagline / plan / reminders / input / toggle all hidden). */}
+                  <button
+                    type="button"
+                    onClick={() => setGridOnly(true)}
+                    title="Fill the screen with just the grid — hide everything else"
+                    className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  >
+                    <span aria-hidden>▦</span> Grid-only view
+                  </button>
+                </div>
+                {!gridOnly && (
+                  <p className="text-sm text-muted">
+                    An AI-enabled planner built on the Eisenhower matrix — sort tasks into quadrants
+                    by urgency and importance.
+                  </p>
+                )}
+              </div>
+
+              {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
+              <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
                 <button
                   type="button"
-                  onClick={() => setGridOnly(true)}
-                  title="Fill the screen with just the grid — hide everything else"
-                  className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  onClick={() => setShowReminders(true)}
+                  title="Daily reminders"
+                  className="hover:text-ink"
                 >
-                  <span aria-hidden>▦</span> Grid-only view
+                  <span aria-hidden>⚐</span> Reminders
                 </button>
-              </div>
-              {!gridOnly && (
-                <p className="text-sm text-muted">
-                  An AI-enabled planner built on the Eisenhower matrix — sort tasks into quadrants
-                  by urgency and importance.
-                </p>
-              )}
-            </div>
-
-            {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
-            <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
-              <button
-                type="button"
-                onClick={() => setShowReminders(true)}
-                title="Daily reminders"
-                className="hover:text-ink"
-              >
-                <span aria-hidden>⚐</span> Reminders
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSettings(true)}
-                className="hover:text-ink"
-              >
-                <span aria-hidden>⚙</span> Settings
-              </button>
-              <button type="button" onClick={() => setShowDone(true)} className="hover:text-ink">
-                <span aria-hidden>✓</span> Done
-              </button>
-              <button type="button" onClick={() => setShowBackups(true)} className="hover:text-ink">
-                <span aria-hidden>↻</span> Backups
-              </button>
-              <button
-                type="button"
-                onClick={() => void supabase.auth.signOut()}
-                className="hover:text-ink"
-              >
-                Sign out
-              </button>
-            </nav>
-          </header>
+                <button
+                  type="button"
+                  onClick={() => setShowSettings(true)}
+                  className="hover:text-ink"
+                >
+                  <span aria-hidden>⚙</span> Settings
+                </button>
+                <button type="button" onClick={() => setShowDone(true)} className="hover:text-ink">
+                  <span aria-hidden>✓</span> Done
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBackups(true)}
+                  className="hover:text-ink"
+                >
+                  <span aria-hidden>↻</span> Backups
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void supabase.auth.signOut()}
+                  className="hover:text-ink"
+                >
+                  Sign out
+                </button>
+              </nav>
+            </header>
+          )}
 
           {/* Plan My Day — a persistent inline card (not a modal), top-center under the header. It
           hydrates from today's daily_state.plan, survives reloads, and auto-clears at local
@@ -213,6 +269,27 @@ function AppShell() {
             <ErrorBoundary>
               <RemindersModal onClose={() => setShowReminders(false)} />
             </ErrorBoundary>
+          )}
+
+          {/* Mobile chrome (Concept D): the thumb-zone bottom nav + its "More" overflow sheet.
+              Hidden in grid-only mode (the fullscreen grid owns the screen). */}
+          {isMobile && !gridOnly && (
+            <>
+              <MobileBottomNav
+                onAdd={focusAddInput}
+                onReminders={() => setShowReminders(true)}
+                onDone={() => setShowDone(true)}
+                onMore={() => setShowMore(true)}
+              />
+              <MoreSheet
+                open={showMore}
+                onSettings={() => setShowSettings(true)}
+                onBackups={() => setShowBackups(true)}
+                onGridOnly={() => setGridOnly(true)}
+                onSignOut={() => void supabase.auth.signOut()}
+                onClose={() => setShowMore(false)}
+              />
+            </>
           )}
         </div>
       </div>
