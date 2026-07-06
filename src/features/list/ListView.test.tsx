@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
-import { ListView } from './ListView'
+import { ListView, type ListViewProps } from './ListView'
 import { ConfirmProvider } from '../../components/use-confirm'
 import { quadrantMeta } from '../../lib/quadrants'
 import { resolveCollision } from '../../lib/collision'
@@ -17,10 +17,10 @@ import { resolveCollision } from '../../lib/collision'
 // — the same provider App mounts at the root — which also hosts the delete confirm dialog.
 
 // Wrap ListView in the confirm provider it depends on (hosts the delete ConfirmDialog).
-function renderList() {
+function renderList(props: ListViewProps = {}) {
   return render(
     <ConfirmProvider>
-      <ListView />
+      <ListView {...props} />
     </ConfirmProvider>,
   )
 }
@@ -338,5 +338,71 @@ describe('ListView', () => {
       renderList()
       expect(screen.queryByLabelText(/Completed/)).not.toBeInTheDocument()
     })
+  })
+})
+
+// The per-quadrant focus scope behind the mobile overview→focus flow. One placed task per
+// quadrant lets us assert that `quadrantFilter` renders exactly its quadrant (split at 0.5,
+// boundary on the HIGH side) and nothing else, while leaving the unfiltered list unchanged.
+describe('ListView quadrantFilter', () => {
+  const quadrantTasks: Task[] = [
+    makeTask({ id: 'dn', text: 'do now task', x: 0.9, y: 0.9 }), // urgent + important
+    makeTask({ id: 'sc', text: 'schedule task', x: 0.1, y: 0.9 }), // important, not urgent
+    makeTask({ id: 'er', text: 'errand task', x: 0.9, y: 0.1 }), // urgent, not important
+    makeTask({ id: 'sd', text: 'someday task', x: 0.1, y: 0.1 }), // neither
+  ]
+
+  it('renders only tasks in the given quadrant', () => {
+    tasksData = quadrantTasks
+    renderList({ quadrantFilter: 'schedule' })
+
+    expect(screen.getByText('schedule task')).toBeInTheDocument()
+    expect(screen.queryByText('do now task')).not.toBeInTheDocument()
+    expect(screen.queryByText('errand task')).not.toBeInTheDocument()
+    expect(screen.queryByText('someday task')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+  })
+
+  it('leaves the unfiltered list showing every quadrant (default behavior unchanged)', () => {
+    tasksData = quadrantTasks
+    renderList()
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+  })
+
+  it('ranks within the filtered quadrant by score descending', () => {
+    // Two Do Now tasks; the higher-scoring one ranks first WITHIN the quadrant (rank restarts at 1).
+    tasksData = [
+      makeTask({ id: 'dn-lo', text: 'do now lower', x: 0.55, y: 0.55 }),
+      makeTask({ id: 'dn-hi', text: 'do now higher', x: 0.99, y: 0.99 }),
+      makeTask({ id: 'sc', text: 'schedule task', x: 0.1, y: 0.9 }),
+    ]
+    renderList({ quadrantFilter: 'do-now' })
+
+    const items = screen.getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    expect(within(items[0]!).getByText('do now higher')).toBeInTheDocument()
+    expect(within(items[0]!).getByLabelText('Rank 1')).toBeInTheDocument()
+    expect(within(items[1]!).getByText('do now lower')).toBeInTheDocument()
+    expect(within(items[1]!).getByLabelText('Rank 2')).toBeInTheDocument()
+  })
+
+  it('excludes staged (unplaced) tasks from a quadrant-scoped view', () => {
+    // A staged task has no real quadrant even though its default (0.5, 0.5) would fall in Do Now.
+    tasksData = [
+      makeTask({ id: 'placed', text: 'placed do-now', x: 0.9, y: 0.9 }),
+      makeTask({ id: 'staged', text: 'staged task', x: null, y: null, staged: true }),
+    ]
+    renderList({ quadrantFilter: 'do-now' })
+
+    expect(screen.getByText('placed do-now')).toBeInTheDocument()
+    expect(screen.queryByText('staged task')).not.toBeInTheDocument()
+  })
+
+  it('shows a quadrant-scoped empty state when the quadrant has no tasks', () => {
+    tasksData = [makeTask({ id: 'dn', text: 'do now task', x: 0.9, y: 0.9 })]
+    renderList({ quadrantFilter: 'someday' })
+
+    expect(screen.getByText(/Nothing in this quadrant yet/i)).toBeInTheDocument()
+    expect(screen.queryByText('do now task')).not.toBeInTheDocument()
   })
 })
