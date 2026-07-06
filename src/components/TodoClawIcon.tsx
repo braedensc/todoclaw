@@ -1,10 +1,10 @@
-// BabyClaw's actual likeness — a simple flat icon based on his real-life namesake (cream curly
-// fur, one floppy tan ear, pale blue eyes). Unlike the app's themed icons (which use `currentColor`
-// so they follow text-color utilities), this one carries its own fixed portrait colors — it's a
-// picture of a specific dog, not a UI accent, so it doesn't reduce to a single hue. Used wherever
-// there's room to render it clearly (chat header, favicon); the plain 🐾 emoji stays for tiny
-// inline spots (mode toggle tab, message-bubble marker) where this much detail wouldn't read.
-export function BabyClawIcon({ className }: { className?: string }) {
+// TodoClaw's own mark — a simple flat icon based on the real dog behind the name (cream curly
+// fur, one floppy tan ear, pale blue eyes). This represents the APP (wordmark, favicon); BabyClaw
+// the in-app AI assistant keeps his own 🐾 identity mark everywhere (mode toggle, chat header,
+// message bubbles) — the two are deliberately kept visually distinct. Unlike the app's themed
+// icons (which use `currentColor` so they follow text-color utilities), this one carries its own
+// fixed portrait colors — it's a picture of a specific dog, not a UI accent.
+export function TodoClawIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden className={className}>
       {/* Floppy ears, tan/grey like his real ears — outlined + sized to still read as ears at
@@ -37,6 +37,22 @@ export function BabyClawIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         fill="none"
       />
+      {/* A pair of paws with sharp claws reaching up beside the face — the "claw" in TodoClaw,
+          posed like he's jumping up at you rather than just sitting still. Each is one <g> (pad +
+          3 pointed nails) rotated outward around its own pad center, so both sides reuse the same
+          local shape instead of hand-plotting mirrored coordinates. */}
+      <g transform="translate(9,46) rotate(-25)">
+        <ellipse cx="0" cy="0" rx="7" ry="6" fill="#f8f2e6" stroke="#2e2a24" strokeWidth="1.5" />
+        <path d="M-5,-5 L-4,-15 L-2,-5 Z" fill="#2e2a24" />
+        <path d="M-1,-6 L0,-16 L1,-6 Z" fill="#2e2a24" />
+        <path d="M2,-5 L4,-15 L5,-5 Z" fill="#2e2a24" />
+      </g>
+      <g transform="translate(55,46) rotate(25)">
+        <ellipse cx="0" cy="0" rx="7" ry="6" fill="#f8f2e6" stroke="#2e2a24" strokeWidth="1.5" />
+        <path d="M-5,-5 L-4,-15 L-2,-5 Z" fill="#2e2a24" />
+        <path d="M-1,-6 L0,-16 L1,-6 Z" fill="#2e2a24" />
+        <path d="M2,-5 L4,-15 L5,-5 Z" fill="#2e2a24" />
+      </g>
     </svg>
   )
 }
