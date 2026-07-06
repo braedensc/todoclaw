@@ -204,11 +204,14 @@ Deno.serve(async (req) => {
         sse.send({ type: 'error', code: 'tool-loop-cap', message: 'Too many tool steps.' })
         sse.close()
       } catch (e) {
+        // Log the real error server-side; the client still needs an error event to stop the
+        // stream, but the human-readable text stays generic (no internal detail disclosure).
+        console.error('ai-chat failed:', e)
         await flushUsage()
         sse.send({
           type: 'error',
           code: 'chat_failed',
-          message: e instanceof Error ? e.message : 'unknown',
+          message: 'Chat failed, please retry.',
         })
         sse.close()
       }
