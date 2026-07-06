@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Tooltip } from './Tooltip'
 
 // IconButton — the shared icon-only action affordance the app-wide polish items standardize on
 // (tooltips #10, green-done / red-delete #12). Every icon control routes through this so size,
@@ -12,9 +13,14 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 //            red glyph + faint red wash on hover
 //
 // The resting border already carries the variant's hue, so success/danger buttons read as
-// green/red at a glance ("matching borders"); hover only intensifies. `title` (native tooltip)
-// and `aria-label` (screen-reader name) are REQUIRED — an icon glyph carries no text, so omitting
+// green/red at a glance ("matching borders"); hover only intensifies. `title` (tooltip text) and
+// `aria-label` (screen-reader name) are REQUIRED — an icon glyph carries no text, so omitting
 // either would ship an unlabeled control; TypeScript enforces both at the call site.
+//
+// `title` is NOT passed to the DOM button (that would summon the OS-default native tooltip —
+// unstyleable and ~1s slow). Instead it renders through the custom <Tooltip> (Tooltip.tsx): a
+// warm-paper bubble that pops in ~180ms, on hover AND keyboard focus, portaled so it is never
+// clipped inside the cluster popup or Done modal. `aria-label` still names the button for AT.
 //
 // Sizing defaults to a 32px (h-8 w-8) square. Pass `className` to extend or override layout for a
 // specific surface (e.g. "h-5 w-5 text-xs" for a compact row); every other <button> prop
@@ -27,7 +33,8 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 export type IconButtonVariant = 'neutral' | 'success' | 'danger'
 
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Native tooltip shown on hover. Required — icon-only controls must be labeled. */
+  /** Tooltip text shown on hover/focus (via the custom <Tooltip>, not the native browser one).
+   *  Required — icon-only controls must be labeled. */
   title: string
   /** Accessible name announced by screen readers. Required — the glyph carries no text. */
   'aria-label': string
@@ -50,16 +57,21 @@ export function IconButton({
   variant = 'neutral',
   className = '',
   type,
+  title,
   children,
   ...rest
 }: IconButtonProps) {
+  // `title` drives the custom Tooltip and is deliberately NOT spread onto the <button>, so no
+  // native OS tooltip is summoned. `aria-label` stays in `...rest` → the button keeps its name.
   return (
-    <button
-      type={type ?? 'button'}
-      className={`${BASE} ${VARIANTS[variant]} ${className}`.trim()}
-      {...rest}
-    >
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button
+        type={type ?? 'button'}
+        className={`${BASE} ${VARIANTS[variant]} ${className}`.trim()}
+        {...rest}
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }
