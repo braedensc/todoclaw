@@ -561,7 +561,7 @@ def _dispatch(data):
 
         # Block embedding secret values in any file content
         content = inp.get("new_string", "") or inp.get("content", "")
-        SECRET_PATTERNS = [
+        BANNED_VALUE_PATTERNS = [
             (r"sk-ant-[a-zA-Z0-9\-_]{20,}", "Anthropic API key (sk-ant-…)"),
             (r"(?:supabase|postgres)://[^:@\s]+:[^@\s]{8,}@", "DB connection string with password"),
             (r"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----", "Private key block"),
@@ -569,10 +569,10 @@ def _dispatch(data):
             (r"gh[pousr]_[A-Za-z0-9_]{36,}", "GitHub personal access token"),
             (r"eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}", "JWT token value"),
         ]
-        for pattern, label in SECRET_PATTERNS:
+        for pattern, kind in BANNED_VALUE_PATTERNS:
             if re.search(pattern, content):
                 block(
-                    f"Secret value pattern detected in file content ({label}). "
+                    f"Secret value pattern detected in file content ({kind}). "
                     "Reference secrets by env var name only — never embed values."
                 )
 
