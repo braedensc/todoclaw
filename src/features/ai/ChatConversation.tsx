@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
 import { AiPrivacyNote } from './AiPrivacyNote'
+import { BabyClawIcon } from '../../components/BabyClawIcon'
 
 // The full BabyClaw conversation UI (header + privacy note + streamed history + confirm gate +
 // input), factored out of ChatPanel so BOTH chat shells render the same thing:
@@ -33,9 +34,7 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="flex items-center gap-1.5 font-serif text-lg font-semibold text-ink">
-          <span aria-hidden className="text-base">
-            🐾
-          </span>
+          <BabyClawIcon className="h-6 w-6" />
           BabyClaw
         </h2>
         <button
