@@ -20,10 +20,12 @@ function renderMatrix() {
 let tasksData: Task[] = []
 let doneToday: Record<string, true> = {}
 const updateMutate = vi.fn()
+const addMutate = vi.fn()
 
 vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksData, isLoading: false, isError: false }),
   useUpdateTask: () => ({ mutate: updateMutate }),
+  useAddTask: () => ({ mutate: addMutate }),
   useSoftDeleteTask: () => ({ mutate: vi.fn() }),
 }))
 vi.mock('../done/use-history', () => ({
@@ -59,6 +61,7 @@ beforeEach(() => {
   tasksData = []
   doneToday = {}
   updateMutate.mockClear()
+  addMutate.mockClear()
 })
 
 // One placed task per quadrant, plus a second Do Now task so its count reads 2.
@@ -166,6 +169,54 @@ describe('MobileMatrix', () => {
       expect(quadrantMeta(arg.patch.x, arg.patch.y).key).toBe('errands')
       // Sheet dismissed.
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('create into quadrant', () => {
+    it('from the overview: requires a quadrant, then inserts a placed task there', () => {
+      tasksData = onerPerQuadrant()
+      renderMatrix()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+      const dialog = screen.getByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Task text'), {
+        target: { value: 'file taxes' },
+      })
+      // No quadrant is pre-selected from the overview → the submit is disabled until one is picked.
+      expect(within(dialog).getByRole('button', { name: 'Add task' })).toBeDisabled()
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Schedule' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add task' }))
+
+      expect(addMutate).toHaveBeenCalledTimes(1)
+      const arg = addMutate.mock.calls[0]![0] as {
+        text: string
+        x: number
+        y: number
+        staged: boolean
+      }
+      expect(arg.text).toBe('file taxes')
+      expect(arg.staged).toBe(false)
+      expect(quadrantMeta(arg.x, arg.y).key).toBe('schedule')
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('from a focus view: pre-selects the focused quadrant so text alone can be added', () => {
+      tasksData = onerPerQuadrant()
+      renderMatrix()
+      fireEvent.click(screen.getByLabelText('Do Now, 2 tasks'))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add to Do Now' }))
+      const dialog = screen.getByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Task text'), {
+        target: { value: 'urgent thing' },
+      })
+      // Do Now is pre-selected, so the submit is enabled with just text.
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add task' }))
+
+      expect(addMutate).toHaveBeenCalledTimes(1)
+      const arg = addMutate.mock.calls[0]![0] as { x: number; y: number }
+      expect(quadrantMeta(arg.x, arg.y).key).toBe('do-now')
     })
   })
 })
