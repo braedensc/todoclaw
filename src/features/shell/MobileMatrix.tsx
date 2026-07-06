@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import type { Task } from '../../types/task'
-import { useTasks, useUpdateTask } from '../tasks/use-tasks'
+import { useTasks, useUpdateTask, useAddTask } from '../tasks/use-tasks'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
   summarizeQuadrants,
   moveToQuadrant,
+  placeInQuadrant,
   QUADRANT_ORDER,
   QUADRANT_CENTER,
   QUADRANT_SUBTITLE,
@@ -14,6 +15,7 @@ import {
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import { ListView } from '../list/ListView'
 import { MoveToQuadrantSheet } from './MoveToQuadrantSheet'
+import { AddTaskSheet } from './AddTaskSheet'
 
 // MobileMatrix — the phone (< 720px) reinterpretation of the priority matrix (Concept C, ADR-0025).
 // A pixel-drag grid is a poor fit for a thumb, so on mobile the two jobs the matrix does are split
@@ -22,9 +24,10 @@ import { MoveToQuadrantSheet } from './MoveToQuadrantSheet'
 // real work happens — the existing ListView, scoped by `quadrantFilter`).
 //
 // Rows keep every ListView interaction (complete / edit / delete / expand / recurring), plus a
-// tap-based "Move to quadrant" picker (MoveToQuadrantSheet) — the no-drag reposition path. Adding
-// still happens in the Grid view (kept intact on mobile) until the create-into-quadrant sheet
-// lands. Desktop never mounts this — WorkArea renders it only below the breakpoint (useIsMobile).
+// tap-based "Move to quadrant" picker (MoveToQuadrantSheet) — the no-drag reposition path — and an
+// "Add task" sheet (AddTaskSheet) that creates a task already placed in a quadrant, so a phone user
+// never has to switch to the Grid view to add. Desktop never mounts this — WorkArea renders it only
+// below the breakpoint (useIsMobile).
 
 // Label + color for a quadrant, read from the canonical quadrantMeta at its band center.
 function meta(key: QuadrantKey) {
@@ -34,14 +37,21 @@ function meta(key: QuadrantKey) {
 
 const shell = 'rounded-xl border border-border-strong bg-panel p-4'
 
+// The dashed "+ Add" affordance, shared by overview and focus.
+const addButtonClass =
+  'flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong bg-panel py-3 text-sm font-semibold text-primary transition-colors hover:bg-bg'
+
 export function MobileMatrix() {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
   const updateTask = useUpdateTask()
+  const addTask = useAddTask()
   const [focus, setFocus] = useState<QuadrantKey | null>(null)
   // The task whose quadrant is being changed via the tap picker (null = sheet closed).
   const [moveTask, setMoveTask] = useState<Task | null>(null)
+  // Whether the create-into-quadrant "Add task" sheet is open.
+  const [adding, setAdding] = useState(false)
 
   if (isLoading) {
     return (
@@ -71,13 +81,30 @@ export function MobileMatrix() {
     setMoveTask(null)
   }
 
-  // The move picker — shared across overview/focus; open while a task is selected.
+  // Create a task already placed in the chosen quadrant (center → collision-resolve), staged:false,
+  // then close the sheet. The overview count / focus list pick it up on the next fetch.
+  const handleAdd = (text: string, dest: QuadrantKey) => {
+    const { x, y } = placeInQuadrant(dest, active)
+    addTask.mutate({ text, x, y, staged: false })
+    setAdding(false)
+  }
+
+  // The move + add sheets — shared across overview/focus; each open while its state is set. The add
+  // sheet pre-selects the focused quadrant (null in the overview → the user picks).
   const moveSheet = (
     <MoveToQuadrantSheet
       task={moveTask}
       currentKey={moveTask ? quadrantMeta(moveTask.x ?? 0.5, moveTask.y ?? 0.5).key : null}
       onPick={handleMove}
       onClose={() => setMoveTask(null)}
+    />
+  )
+  const addSheet = (
+    <AddTaskSheet
+      open={adding}
+      defaultQuadrant={focus}
+      onAdd={handleAdd}
+      onClose={() => setAdding(false)}
     />
   )
 
@@ -135,7 +162,15 @@ export function MobileMatrix() {
         </nav>
 
         <ListView quadrantFilter={focus} onMoveToQuadrant={setMoveTask} />
+
+        <button type="button" onClick={() => setAdding(true)} className={addButtonClass}>
+          <span aria-hidden className="text-base leading-none">
+            +
+          </span>
+          Add to {m.label}
+        </button>
         {moveSheet}
+        {addSheet}
       </section>
     )
   }
@@ -191,6 +226,14 @@ export function MobileMatrix() {
           )
         })}
       </div>
+
+      <button type="button" onClick={() => setAdding(true)} className={`mt-2.5 ${addButtonClass}`}>
+        <span aria-hidden className="text-base leading-none">
+          +
+        </span>
+        Add task
+      </button>
+      {addSheet}
     </section>
   )
 }

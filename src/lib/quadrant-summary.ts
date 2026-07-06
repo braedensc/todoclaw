@@ -84,3 +84,14 @@ export function moveToQuadrant(
   const center = QUADRANT_CENTER[dest]
   return resolveCollision(center.x, center.y, allTasks, task.id)
 }
+
+/**
+ * Coordinates for CREATING a task into a quadrant (mobile create-into-quadrant). Same band-center
+ * snap + collision spiral as {@link moveToQuadrant}, but there is no existing task to exclude, so
+ * it resolves against every active card. The caller writes these as the new task's x/y with
+ * staged=false (already placed).
+ */
+export function placeInQuadrant(dest: QuadrantKey, allTasks: Task[]): { x: number; y: number } {
+  const center = QUADRANT_CENTER[dest]
+  return resolveCollision(center.x, center.y, allTasks, '')
+}

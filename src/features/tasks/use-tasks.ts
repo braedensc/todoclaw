@@ -26,28 +26,45 @@ export function useTasks() {
   return useQuery({ queryKey: TASKS_KEY, queryFn: fetchTasks })
 }
 
-// What the Manual add widget can set at creation time: the text plus optional due date and a
-// recurring cadence (B8 — the widget's Due/Repeat controls). A bare string is still accepted for
-// the common "just a title" case.
-export type NewTask = string | { text: string; due?: string | null; recurring?: Recurring | null }
+// What can be set at creation time: the text plus optional due date and recurring cadence (B8 —
+// the Manual widget's Due/Repeat controls), plus optional placement (x/y + staged) for the mobile
+// create-into-quadrant flow, which inserts an already-PLACED task instead of a staged one. A bare
+// string is still accepted for the common "just a title" case.
+export type NewTask =
+  | string
+  | {
+      text: string
+      due?: string | null
+      recurring?: Recurring | null
+      x?: number
+      y?: number
+      staged?: boolean
+    }
 
 // Insert a task. user_id is NOT sent by the client — the DB default (auth.uid())
 // and RLS WITH CHECK assign and enforce ownership server-side.
 //
-// x/y seed at 0.5 (grid center), matching EisenClaw: new tasks default staged:true (DB
-// default) but must have non-null x/y or the priority score computes NaN downstream.
+// x/y seed at 0.5 (grid center) unless the caller places the task, matching EisenClaw: new tasks
+// default staged:true (DB default) but must have non-null x/y or the priority score computes NaN
+// downstream. Create-into-quadrant passes x/y + staged:false to insert a placed task directly.
 export function useAddTask() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (input: NewTask) => {
-      const {
-        text,
-        due = null,
-        recurring = null,
+      const parsed: {
+        text: string
+        due?: string | null
+        recurring?: Recurring | null
+        x?: number
+        y?: number
+        staged?: boolean
       } = typeof input === 'string' ? { text: input } : input
+      const { text, due = null, recurring = null, x = 0.5, y = 0.5, staged } = parsed
       const { error } = await supabase
         .from('tasks')
-        .insert({ text, x: 0.5, y: 0.5, due, recurring })
+        // `staged` is omitted unless provided, so it keeps its DB default (true) for the widget's
+        // staged-then-place flow; create-into-quadrant sends staged:false for a placed task.
+        .insert({ text, x, y, due, recurring, ...(staged === undefined ? {} : { staged }) })
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),

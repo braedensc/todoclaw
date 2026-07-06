@@ -3,6 +3,7 @@ import type { Task } from '../types/task'
 import {
   summarizeQuadrants,
   moveToQuadrant,
+  placeInQuadrant,
   QUADRANT_ORDER,
   QUADRANT_CENTER,
 } from './quadrant-summary'
@@ -119,5 +120,25 @@ describe('moveToQuadrant', () => {
     expect(result).toEqual(resolveCollision(center.x, center.y, [task, blocker], 'm'))
     expect(result).not.toEqual({ x: center.x, y: center.y })
     expect(quadrantMeta(result.x, result.y).key).toBe('schedule')
+  })
+})
+
+describe('placeInQuadrant', () => {
+  it('lands a new task in the destination quadrant, excluding nothing', () => {
+    const existing = makeTask({ id: 'e', x: 0.9, y: 0.9 })
+    for (const dest of QUADRANT_ORDER) {
+      const { x, y } = placeInQuadrant(dest, [existing])
+      expect(quadrantMeta(x, y).key).toBe(dest)
+    }
+  })
+
+  it('spirals off an occupied quadrant center so the new task never overlaps', () => {
+    const center = QUADRANT_CENTER['do-now']
+    const blocker = makeTask({ id: 'b', x: center.x, y: center.y })
+    const result = placeInQuadrant('do-now', [blocker])
+
+    expect(result).toEqual(resolveCollision(center.x, center.y, [blocker], ''))
+    expect(result).not.toEqual({ x: center.x, y: center.y })
+    expect(quadrantMeta(result.x, result.y).key).toBe('do-now')
   })
 })
