@@ -96,13 +96,14 @@ function AppShell() {
                     </>
                   )}
                 </button>
-                {/* Grid-only view — a large pill matching Plan My Day's size. Enters a fullscreen,
+                {/* Grid-only view — a large pill matching Plan My Day's size, in the app's brand
+                    green (the same fill as Add / Set / Save actions). Enters a fullscreen,
                     grid-alone mode (tagline / plan / reminders / input / toggle all hidden). */}
                 <button
                   type="button"
                   onClick={() => setGridOnly(true)}
                   title="Fill the screen with just the grid — hide everything else"
-                  className="whitespace-nowrap rounded-full border border-border-strong bg-panel px-4 py-2 text-sm font-medium text-ink hover:bg-card"
+                  className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
                 >
                   <span aria-hidden>▦</span> Grid-only view
                 </button>

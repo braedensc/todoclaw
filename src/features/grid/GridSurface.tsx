@@ -156,14 +156,15 @@ export function GridSurface({
       }
     >
       {/* Grid-only exit — the fullscreen overlay covers the header (and its entry pill), so this
-          labelled ✕ pill pinned to the viewport corner, plus Esc, are the ways back. */}
+          labelled ✕ pill pinned to the viewport corner, plus Esc, are the ways back. Tinted in the
+          same brand green as the entry pill (soft fill so it stays legible over the grid cards). */}
       {gridOnly && (
         <button
           type="button"
           onClick={onExitGridOnly}
           aria-label="Exit grid-only view"
           title="Exit grid-only view (Esc)"
-          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border-strong bg-panel px-4 py-2 text-sm font-medium text-ink shadow-sm hover:bg-card"
+          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary shadow-sm hover:bg-primary/20"
         >
           <span aria-hidden>✕</span> Exit grid-only
         </button>
