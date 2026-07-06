@@ -4,6 +4,7 @@ import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useConfirm } from '../../components/use-confirm'
 import { taskScore } from '../../lib/scoring'
+import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import type { Task } from '../../types/task'
 import { ListRow } from './ListRow'
 
@@ -12,10 +13,26 @@ import { ListRow } from './ListRow'
 // `staged`, flagged with an "unplaced" badge). Rows sort by taskScore DESCENDING — importance
 // (y, 0.55) weighted above urgency (x, 0.45), with a due-soon bonus (see src/lib/scoring.ts).
 //
+// With `quadrantFilter` set, the SAME machinery renders one Eisenhower quadrant instead of the
+// whole list — the per-quadrant "focus" view behind the mobile dual-mode redesign. It scopes only
+// which rows RENDER; the collision-context set (`allTasks`) and recurring lookups stay the full
+// active set, so a slider commit still avoids every card, not just this quadrant's.
+//
 // All server state comes from the shared hooks; this component owns no task data, only the
 // orchestration (filter → sort → render) and the mutation wiring it hands to each row.
 
-export function ListView() {
+export interface ListViewProps {
+  /**
+   * When set, render only PLACED tasks whose Eisenhower quadrant (quadrantMeta(x, y).key) matches
+   * — the per-quadrant focus list for the mobile overview→focus flow. A staged/unplaced task has
+   * no real quadrant, so it is never bucketed here (the mobile overview surfaces those separately).
+   * Unset (the default, and the only shape desktop uses) leaves behavior byte-for-byte unchanged:
+   * the full ranked list, staged tasks included with their "unplaced" badge.
+   */
+  quadrantFilter?: QuadrantKey
+}
+
+export function ListView({ quadrantFilter }: ListViewProps = {}) {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
@@ -46,14 +63,28 @@ export function ListView() {
   const doneToday = daily?.done ?? {}
   const active = tasks.filter((t) => !doneToday[t.id])
 
+  // Optional per-quadrant scoping (mobile focus view). Only PLACED tasks carry a real quadrant,
+  // so a staged task (null x/y) is never bucketed into one — the mobile overview handles unplaced
+  // tasks on its own. Unset → `active` unchanged, so the default list is exactly as before.
+  const scoped = quadrantFilter
+    ? active.filter(
+        (t) =>
+          !t.staged && t.x != null && t.y != null && quadrantMeta(t.x, t.y).key === quadrantFilter,
+      )
+    : active
+
   // Rank by score descending. taskScore treats null x/y as 0.5 internally, so staged tasks
   // sort safely. Sort a copy — never mutate the query cache array.
-  const ranked = [...active].sort((a, b) => taskScore(b, { timeZone }) - taskScore(a, { timeZone }))
+  const ranked = [...scoped].sort((a, b) => taskScore(b, { timeZone }) - taskScore(a, { timeZone }))
 
   if (ranked.length === 0) {
     return (
       <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-8">
-        <p className="text-muted">No tasks yet — add one from the header.</p>
+        <p className="text-muted">
+          {quadrantFilter
+            ? 'Nothing in this quadrant yet.'
+            : 'No tasks yet — add one from the header.'}
+        </p>
       </section>
     )
   }
