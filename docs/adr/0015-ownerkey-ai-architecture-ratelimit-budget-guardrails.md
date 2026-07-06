@@ -44,6 +44,18 @@ to the ledger post-call. **Balanced tier** (chosen 2026-06-24):
 global cap **$20/month**; per-user **chat 30/hour + 100/day**, **Plan My Day 10/day**. Limits +
 cap are constants in `guardrails.ts` — tunable without a schema change.
 
+**Hardening (2026-07-06 security audit).** The guardrail RPCs/tables are reachable directly via
+PostgREST with the public anon key (outside the Edge Functions). Migration
+`20260706000000_ai_guardrail_rpc_hardening.sql` closes three bypasses: (1) `ai_budget_add` now
+rejects negative amounts and clamps positives to a per-call ceiling (a negative would have driven
+the ledger negative and uncapped the kill-switch; a huge positive would have paused AI for everyone
+— a monthly DoS); (2) the `ai_usage` UPDATE grant is narrowed from table-wide to the two
+token-backfill columns, so a user can no longer PATCH `called_at` to slide rows out of the
+rate-limit window; (3) a **per-user monthly sub-cap** (`ai_user_budget_ledger` +
+`ai_user_budget_check`, checked in `precheck`; cap `USER_BUDGET_CAP_MICROS = $10` in `guardrails.ts`)
+stops one heavy account draining the global $20 pool and pausing AI for everyone. No service-role
+client was introduced — the new ledger uses the same DEFINER-only pattern as `ai_budget_ledger`.
+
 **Verified.** `supabase db reset` applies the migration; a psql proof confirms the rate-limit
 raises after N, the kill-switch returns negative remaining once over cap, `ai_budget_ledger` is
 `permission denied` for `authenticated`, and the DEFINER functions raise for an anon caller.
