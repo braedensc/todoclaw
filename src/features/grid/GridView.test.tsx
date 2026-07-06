@@ -228,7 +228,26 @@ describe('GridView card visuals', () => {
   })
 })
 
-describe('GridView hover actions', () => {
+describe('GridView card action bar', () => {
+  it('shows a persistent OUTLINED "Done" pill (label + green border/text, not filled) plus ⋯/× on every card', () => {
+    tasksFixture = [makeTask({ id: 'x', text: 'Do a thing', staged: false })]
+    render(<GridHarness />)
+    const card = screen.getByTestId('grid-card')
+
+    // Primary affordance is a LABELLED pill (not an icon-only ✓) carrying the visible word "Done".
+    const done = within(card).getByRole('button', { name: 'Mark done' })
+    expect(done).toHaveTextContent('Done')
+    // …styled as an OUTLINED green pill — green border + green text, deliberately NOT filled solid
+    // (a solid green pill would misread as "already completed"). The hover wash is allowed.
+    expect(done.className).toContain('border-primary')
+    expect(done.className).toContain('text-primary')
+    expect(done.className).not.toMatch(/(^|\s)bg-primary(\s|$)/) // no solid green fill
+
+    // Secondary actions live in the same bar and are always present (no hover-reveal anymore).
+    expect(within(card).getByRole('button', { name: 'Due date and recurring' })).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
+  })
+
   it('delete soft-deletes only after the confirm dialog is accepted', async () => {
     tasksFixture = [makeTask({ id: 'del-me', text: 'delete me', staged: false })]
     render(<GridHarness />)
