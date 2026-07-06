@@ -58,7 +58,9 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
       {(
         [
           { id: 'manual', label: 'Manual', icon: '✎' },
-          { id: 'babyclaw', label: 'BabyClaw', icon: '✦' },
+          // 🐾 is BabyClaw's identity mark (his logo on his own tab) — distinct from the animated
+          // ✦ thinking/working sparkle in babyclaw-status.ts, which stays as-is.
+          { id: 'babyclaw', label: 'BabyClaw', icon: '🐾' },
         ] as const
       ).map((m) => {
         const active = m.id === mode

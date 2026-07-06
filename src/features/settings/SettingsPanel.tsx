@@ -134,10 +134,28 @@ function SelectField({
   )
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+function Section({
+  title,
+  hint,
+  icon,
+  children,
+}: {
+  title: string
+  hint?: string
+  /** Optional decorative leading glyph (e.g. BabyClaw's 🐾 mark) — aria-hidden. */
+  icon?: string
+  children: ReactNode
+}) {
   return (
     <section className="border-t border-border pt-4">
-      <h3 className="font-serif text-base font-semibold text-ink">{title}</h3>
+      <h3 className="font-serif text-base font-semibold text-ink">
+        {icon && (
+          <span aria-hidden className="mr-1.5">
+            {icon}
+          </span>
+        )}
+        {title}
+      </h3>
       {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
       <div className="mt-3 flex flex-col gap-3">{children}</div>
     </section>
@@ -380,7 +398,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               />
             </Section>
 
-            <Section title="BabyClaw assistant">
+            <Section title="BabyClaw assistant" icon="🐾">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <SelectField
                   label="Tone"

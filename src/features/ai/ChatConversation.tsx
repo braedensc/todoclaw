@@ -32,7 +32,12 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="font-serif text-lg font-semibold text-ink">BabyClaw</h2>
+        <h2 className="flex items-center gap-1.5 font-serif text-lg font-semibold text-ink">
+          <span aria-hidden className="text-base">
+            🐾
+          </span>
+          BabyClaw
+        </h2>
         <button
           type="button"
           onClick={onClose}
@@ -50,10 +55,10 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
       <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto p-4">
         {items.length === 0 && !paused && (
           <li className="text-sm text-muted">
-            Meet <span className="font-medium text-ink">BabyClaw</span> — your personal planning
-            assistant. Tell him what you need in plain English and he’ll add, schedule, move,
-            complete, or clear tasks and habits, or plan your day. Try: “add book dentist, due
-            Friday, high importance.”
+            Meet <span className="font-medium text-ink">BabyClaw</span> <span aria-hidden>🐾</span>{' '}
+            — your personal planning assistant. Tell him what you need in plain English and he’ll
+            add, schedule, move, complete, or clear tasks and habits, or plan your day. Try: “add
+            book dentist, due Friday, high importance.”
           </li>
         )}
         {paused && (
@@ -128,6 +133,12 @@ function Bubble({ item }: { item: ChatItem }) {
   const isUser = item.role === 'user'
   return (
     <li className={isUser ? 'text-right' : 'text-left'}>
+      {/* A small 🐾 marks BabyClaw's own replies (assistant only — never the user's). Decorative. */}
+      {!isUser && (
+        <span aria-hidden className="mr-1 select-none text-xs">
+          🐾
+        </span>
+      )}
       <span
         className={`inline-block whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
           isUser ? 'bg-ink text-white' : 'bg-card text-ink'
