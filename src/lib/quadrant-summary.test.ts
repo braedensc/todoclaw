@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from '../types/task'
-import { summarizeQuadrants, QUADRANT_ORDER, QUADRANT_CENTER } from './quadrant-summary'
+import {
+  summarizeQuadrants,
+  moveToQuadrant,
+  QUADRANT_ORDER,
+  QUADRANT_CENTER,
+} from './quadrant-summary'
 import { quadrantMeta } from './quadrants'
+import { resolveCollision } from './collision'
 
 function makeTask(over: Partial<Task>): Task {
   return {
@@ -90,5 +96,28 @@ describe('summarizeQuadrants', () => {
       const c = QUADRANT_CENTER[key]
       expect(quadrantMeta(c.x, c.y).key).toBe(key)
     }
+  })
+})
+
+describe('moveToQuadrant', () => {
+  it('lands the task in the destination quadrant', () => {
+    const task = makeTask({ id: 'm', x: 0.9, y: 0.9 }) // currently Do Now
+    for (const dest of QUADRANT_ORDER) {
+      const { x, y } = moveToQuadrant(task, dest, [task])
+      expect(quadrantMeta(x, y).key).toBe(dest)
+    }
+  })
+
+  it('runs the collision spiral off the quadrant center so it never overlaps another card', () => {
+    const task = makeTask({ id: 'm', x: 0.1, y: 0.1 }) // Someday
+    // A blocker already sitting exactly on the Schedule center.
+    const center = QUADRANT_CENTER.schedule
+    const blocker = makeTask({ id: 'b', x: center.x, y: center.y })
+    const result = moveToQuadrant(task, 'schedule', [task, blocker])
+
+    // Matches resolveCollision run against the same inputs, and is NOT the raw (occupied) center.
+    expect(result).toEqual(resolveCollision(center.x, center.y, [task, blocker], 'm'))
+    expect(result).not.toEqual({ x: center.x, y: center.y })
+    expect(quadrantMeta(result.x, result.y).key).toBe('schedule')
   })
 })

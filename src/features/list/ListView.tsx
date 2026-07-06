@@ -30,9 +30,15 @@ export interface ListViewProps {
    * the full ranked list, staged tasks included with their "unplaced" badge.
    */
   quadrantFilter?: QuadrantKey
+  /**
+   * Optional tap-based reposition callback (mobile focus list only). When set, each row shows a
+   * Move control that hands the task up to open the quadrant picker. Desktop passes nothing, so
+   * rows are unchanged there.
+   */
+  onMoveToQuadrant?: (task: Task) => void
 }
 
-export function ListView({ quadrantFilter }: ListViewProps = {}) {
+export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {}) {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
@@ -160,6 +166,7 @@ export function ListView({ quadrantFilter }: ListViewProps = {}) {
             onSetFrequency={handleSetFrequency}
             onRemoveRecurring={handleRemoveRecurring}
             onDelete={handleDelete}
+            onMove={onMoveToQuadrant}
           />
         ))}
       </ul>

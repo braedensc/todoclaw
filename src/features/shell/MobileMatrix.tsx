@@ -1,11 +1,19 @@
 import { useState } from 'react'
-import { useTasks } from '../tasks/use-tasks'
+import type { Task } from '../../types/task'
+import { useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
-import { summarizeQuadrants, QUADRANT_ORDER, QUADRANT_CENTER } from '../../lib/quadrant-summary'
+import {
+  summarizeQuadrants,
+  moveToQuadrant,
+  QUADRANT_ORDER,
+  QUADRANT_CENTER,
+  QUADRANT_SUBTITLE,
+} from '../../lib/quadrant-summary'
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import { ListView } from '../list/ListView'
+import { MoveToQuadrantSheet } from './MoveToQuadrantSheet'
 
 // MobileMatrix — the phone (< 720px) reinterpretation of the priority matrix (Concept C, ADR-0025).
 // A pixel-drag grid is a poor fit for a thumb, so on mobile the two jobs the matrix does are split
@@ -13,18 +21,10 @@ import { ListView } from '../list/ListView'
 // picture / what's on fire") and a FOCUS list (one quadrant as a comfortable, full-width list where
 // real work happens — the existing ListView, scoped by `quadrantFilter`).
 //
-// This is the first slice: overview → focus navigation + a segmented pager across quadrants. Rows
-// keep every ListView interaction (complete / edit / delete / expand / recurring). Repositioning
-// still happens in the Grid view (kept intact on mobile), so nothing is lost while the tap-based
-// "Move to quadrant" + create-into-quadrant sheets land in follow-ups. Desktop never mounts this —
-// WorkArea renders it only below the breakpoint (useIsMobile).
-
-const CLASSIC: Record<QuadrantKey, string> = {
-  'do-now': 'Urgent · important',
-  schedule: 'Important · not urgent',
-  errands: 'Urgent · not important',
-  someday: 'Not urgent · not important',
-}
+// Rows keep every ListView interaction (complete / edit / delete / expand / recurring), plus a
+// tap-based "Move to quadrant" picker (MoveToQuadrantSheet) — the no-drag reposition path. Adding
+// still happens in the Grid view (kept intact on mobile) until the create-into-quadrant sheet
+// lands. Desktop never mounts this — WorkArea renders it only below the breakpoint (useIsMobile).
 
 // Label + color for a quadrant, read from the canonical quadrantMeta at its band center.
 function meta(key: QuadrantKey) {
@@ -38,7 +38,10 @@ export function MobileMatrix() {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
+  const updateTask = useUpdateTask()
   const [focus, setFocus] = useState<QuadrantKey | null>(null)
+  // The task whose quadrant is being changed via the tap picker (null = sheet closed).
+  const [moveTask, setMoveTask] = useState<Task | null>(null)
 
   if (isLoading) {
     return (
@@ -58,6 +61,25 @@ export function MobileMatrix() {
   const doneToday = daily?.done ?? {}
   const active = tasks.filter((t) => !doneToday[t.id])
   const { buckets, maxCount } = summarizeQuadrants(active, { timeZone })
+
+  // Commit a tap-picker move: snap to the chosen quadrant's center, collision-resolve against all
+  // active tasks, write the coords, and close the sheet. Same coord path as a list-slider commit.
+  const handleMove = (dest: QuadrantKey) => {
+    if (!moveTask) return
+    const { x, y } = moveToQuadrant(moveTask, dest, active)
+    updateTask.mutate({ id: moveTask.id, patch: { x, y } })
+    setMoveTask(null)
+  }
+
+  // The move picker — shared across overview/focus; open while a task is selected.
+  const moveSheet = (
+    <MoveToQuadrantSheet
+      task={moveTask}
+      currentKey={moveTask ? quadrantMeta(moveTask.x ?? 0.5, moveTask.y ?? 0.5).key : null}
+      onPick={handleMove}
+      onClose={() => setMoveTask(null)}
+    />
+  )
 
   // ---- FOCUS: one quadrant as a full-width list, with a pager across the four ----
   if (focus) {
@@ -112,7 +134,8 @@ export function MobileMatrix() {
           })}
         </nav>
 
-        <ListView quadrantFilter={focus} />
+        <ListView quadrantFilter={focus} onMoveToQuadrant={setMoveTask} />
+        {moveSheet}
       </section>
     )
   }
@@ -150,7 +173,7 @@ export function MobileMatrix() {
                   {count}
                 </span>
               </div>
-              <span className="text-[10px] text-muted-light">{CLASSIC[key]}</span>
+              <span className="text-[10px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
               <div className="h-1.5 overflow-hidden rounded-full bg-ink/10">
                 <div
                   className="h-full rounded-full"
