@@ -110,7 +110,10 @@ function AppShell() {
                 </button>
               </div>
               {!gridOnly && (
-                <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
+                <p className="text-sm text-muted">
+                  A puppy-themed AI planner built on the Eisenhower matrix — sort tasks into
+                  quadrants by urgency and importance.
+                </p>
               )}
             </div>
 
