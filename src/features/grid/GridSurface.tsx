@@ -22,24 +22,30 @@ interface GridSurfaceProps {
   gridRef: RefObject<HTMLDivElement>
   view: WorkView
   onSelectView: (view: WorkView) => void
-  /** True while the grid is expanded to (near-)fullscreen. */
-  expanded: boolean
-  onToggleExpanded: () => void
+  /** True while the grid is shown alone, fullscreen — the header "Grid-only view" mode. */
+  gridOnly: boolean
+  /** Leave grid-only mode and return to the normal shell (also wired to Esc in AppShell). */
+  onExitGridOnly: () => void
 }
 
 /**
  * The dominant grid surface: the free-canvas GridCanvas with its placed cards / cluster bubbles,
- * the embedded Grid⇄List toggle notched into its top border, a fullscreen Expand control in the
- * top-right corner, and the long axis arrows drawn just outside the edges (B8, item 4). All the
- * drag/placement state comes from the shared `useGrid` api; this component is the canvas render.
+ * the embedded Grid⇄List toggle notched into its top border, and the long axis arrows drawn just
+ * outside the edges (B8, item 4). All the drag/placement state comes from the shared `useGrid` api;
+ * this component is the canvas render.
+ *
+ * In `gridOnly` mode it becomes a fullscreen overlay showing ONLY the grid (no toggle — that mode
+ * has no list): the entry point is the header "Grid-only view" pill, and the sole exits are the
+ * labelled ✕ pill pinned to the viewport corner and Esc. Inline (the default), it renders the
+ * normal main-page grid with the Grid⇄List toggle notched into its top border.
  */
 export function GridSurface({
   grid,
   gridRef,
   view,
   onSelectView,
-  expanded,
-  onToggleExpanded,
+  gridOnly,
+  onExitGridOnly,
 }: GridSurfaceProps) {
   const {
     timeZone,
@@ -139,45 +145,51 @@ export function GridSurface({
   const groups = draggedTask ? [...clusters, [draggedTask]] : clusters
 
   return (
-    // Outer wrapper reserves the outside gutters (pl / pb) the axis arrows live in. When expanded
-    // it becomes a fixed near-fullscreen overlay; the canvas keeps its aspect ratio but grows to
+    // Outer wrapper reserves the outside gutters (pl / pb) the axis arrows live in. In grid-only
+    // mode it becomes a fixed fullscreen overlay; the canvas keeps its aspect ratio but grows to
     // fill the viewport height (max-width derived from the available height).
     <div
       className={
-        expanded
+        gridOnly
           ? 'fixed inset-0 z-50 flex flex-col items-center justify-center overflow-auto bg-bg pl-8 pr-4'
           : 'relative pb-6 pl-5'
       }
     >
+      {/* Grid-only exit — the fullscreen overlay covers the header (and its entry pill), so this
+          labelled ✕ pill pinned to the viewport corner, plus Esc, are the ways back. */}
+      {gridOnly && (
+        <button
+          type="button"
+          onClick={onExitGridOnly}
+          aria-label="Exit grid-only view"
+          title="Exit grid-only view (Esc)"
+          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border-strong bg-panel px-4 py-2 text-sm font-medium text-ink shadow-sm hover:bg-card"
+        >
+          <span aria-hidden>✕</span> Exit grid-only
+        </button>
+      )}
+
       {/* The canvas is aspect-locked (1046/640), so height follows width. INLINE, the grid is
           DOMINANT by filling its (now wider, 1280px) column edge-to-edge; the chat push-drawer
           shrinks that column so the grid reflows smaller with it (B2). A tall grid may run past
-          the fold on short windows (the Expand control gives a fit-to-height fullscreen view) —
-          that's the trade for a big, column-filling grid. EXPANDED is the reverse: a height-driven
-          max-width so the fullscreen canvas fits the viewport height. The 64px offset is the only
-          chrome outside the canvas — the overlay `justify-center`s the canvas, so that budget
-          splits into ~32px top / ~32px bottom margins, which comfortably clear the toggle that
-          straddles the top edge (~13px above) and the urgency axis arrow just below (~18px). The
-          1046/640 ratio is NEVER distorted (the clustering thresholds CX/CY depend on it). */}
+          the fold on short windows (the header "Grid-only view" pill gives a fit-to-height
+          fullscreen view) — that's the trade for a big, column-filling grid. GRID-ONLY is the
+          reverse: a height-driven max-width so the fullscreen canvas fits the viewport height. The
+          64px offset is the only chrome outside the canvas — the overlay `justify-center`s the
+          canvas, so that budget splits into ~32px top / ~32px bottom margins, which comfortably
+          clear the urgency axis arrow just below the top edge (~18px). The 1046/640 ratio is NEVER
+          distorted (the clustering thresholds CX/CY depend on it). */}
       <div
         className="relative mx-auto w-full"
-        style={expanded ? { maxWidth: 'calc((100vh - 64px) * 1046 / 640)' } : undefined}
+        style={gridOnly ? { maxWidth: 'calc((100vh - 64px) * 1046 / 640)' } : undefined}
       >
-        {/* Embedded Grid⇄List toggle — notched into the canvas's top border line. */}
-        <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2">
-          <ViewToggle view={view} onSelect={onSelectView} />
-        </div>
-
-        {/* Fullscreen Expand / collapse (EisenClaw parity — protects grid height). */}
-        <button
-          type="button"
-          onClick={onToggleExpanded}
-          aria-label={expanded ? 'Exit fullscreen grid' : 'Expand grid to fullscreen'}
-          title={expanded ? 'Exit fullscreen' : 'Expand'}
-          className="absolute right-1.5 top-1.5 z-20 flex h-[22px] w-[22px] items-center justify-center rounded-md border border-border-strong bg-panel text-[13px] leading-none text-muted shadow-sm hover:bg-card hover:text-ink"
-        >
-          {expanded ? '⤡' : '⤢'}
-        </button>
+        {/* Embedded Grid⇄List toggle — the normal main-page control, notched into the canvas's top
+            border line. Hidden in grid-only mode (that mode shows the grid alone, no list). */}
+        {!gridOnly && (
+          <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2">
+            <ViewToggle view={view} onSelect={onSelectView} />
+          </div>
+        )}
 
         <GridAxes />
 

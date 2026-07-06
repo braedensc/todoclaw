@@ -31,6 +31,9 @@ function AppShell() {
   const [showDone, setShowDone] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showReminders, setShowReminders] = useState(false)
+  // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
+  // from the header pill next to Plan My Day; left via the overlay's ✕ pill or Esc.
+  const [gridOnly, setGridOnly] = useState(false)
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
@@ -43,6 +46,16 @@ function AppShell() {
   useEffect(() => {
     ensure()
   }, [ensure])
+
+  // Esc leaves grid-only mode (the overlay covers the header, so the ✕ pill + this are the exits).
+  useEffect(() => {
+    if (!gridOnly) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setGridOnly(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [gridOnly])
 
   return (
     // Full-width shell so the desktop chat push-drawer (ChatRail, fixed to the viewport's right
@@ -83,8 +96,20 @@ function AppShell() {
                     </>
                   )}
                 </button>
+                {/* Grid-only view — a large pill matching Plan My Day's size. Enters a fullscreen,
+                    grid-alone mode (tagline / plan / reminders / input / toggle all hidden). */}
+                <button
+                  type="button"
+                  onClick={() => setGridOnly(true)}
+                  title="Fill the screen with just the grid — hide everything else"
+                  className="whitespace-nowrap rounded-full border border-border-strong bg-panel px-4 py-2 text-sm font-medium text-ink hover:bg-card"
+                >
+                  <span aria-hidden>▦</span> Grid-only view
+                </button>
               </div>
-              <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
+              {!gridOnly && (
+                <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
+              )}
             </div>
 
             {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
@@ -126,31 +151,39 @@ function AppShell() {
           in flight, or an error/paused notice — otherwise nothing shows and the header button is
           the sole trigger. Gate the wrapper on the same condition PlanBox uses to return null so no
           empty margin is left behind. */}
-          {(planner.displayPlan || planner.isPending || planner.isError || planner.paused) && (
-            <div className="mb-3">
-              <ErrorBoundary>
-                <PlanBox
-                  plan={planner.displayPlan}
-                  paused={planner.paused}
-                  isPending={planner.isPending}
-                  isError={planner.isError}
-                  onRetry={planner.generate}
-                  onDismiss={planner.clear}
-                />
-              </ErrorBoundary>
-            </div>
-          )}
+          {!gridOnly &&
+            (planner.displayPlan || planner.isPending || planner.isError || planner.paused) && (
+              <div className="mb-3">
+                <ErrorBoundary>
+                  <PlanBox
+                    plan={planner.displayPlan}
+                    paused={planner.paused}
+                    isPending={planner.isPending}
+                    isError={planner.isError}
+                    onRetry={planner.generate}
+                    onDismiss={planner.clear}
+                  />
+                </ErrorBoundary>
+              </div>
+            )}
 
           {/* Daily reminders — the minified inline form: a compact row of active reminder names near
           the top of the work area. Each name opens that reminder's detail card; the full popup is
           the gear-area Reminders button. The old full-width habits strip is gone (B2 owns the grid
-          expansion into the freed space). */}
-          <ErrorBoundary>
-            <RemindersInline />
-          </ErrorBoundary>
+          expansion into the freed space). Hidden in grid-only mode. */}
+          {!gridOnly && (
+            <ErrorBoundary>
+              <RemindersInline />
+            </ErrorBoundary>
+          )}
 
           <ErrorBoundary>
-            <WorkArea chat={chat} onOpenChat={() => setShowChat(true)} />
+            <WorkArea
+              chat={chat}
+              onOpenChat={() => setShowChat(true)}
+              gridOnly={gridOnly}
+              onExitGridOnly={() => setGridOnly(false)}
+            />
           </ErrorBoundary>
 
           {showBackups && (

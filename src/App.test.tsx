@@ -86,10 +86,19 @@ describe('App shell', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     render(<App />)
     // Grid/List come from the embedded ViewToggle; Done + Reminders are quiet header links (B8).
+    // Exact names — 'Grid' must NOT also match the "Grid-only view" header pill.
     for (const label of ['Grid', 'List', 'Done', 'Reminders']) {
-      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
     // The full reminders popup is closed until the gear-area button is clicked — no dialog yet.
     expect(screen.queryByRole('dialog', { name: 'Daily reminders' })).not.toBeInTheDocument()
+  })
+
+  it('renders the "Grid-only view" header pill next to Plan My Day', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'Grid-only view' })).toBeInTheDocument()
+    // Not entered yet — the overlay's Exit control is absent until the pill is clicked.
+    expect(screen.queryByRole('button', { name: 'Exit grid-only view' })).not.toBeInTheDocument()
   })
 })
