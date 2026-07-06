@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
+import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useGrid } from '../grid/use-grid'
 import { GridSurface } from '../grid/GridSurface'
 import { ListView } from '../list/ListView'
+import { MobileMatrix } from './MobileMatrix'
 import { TaskInputWidget } from './TaskInputWidget'
 import type { ChatController } from '../ai/use-chat-controller'
 
@@ -34,6 +36,10 @@ export function WorkArea({
   const gridRef = useRef<HTMLDivElement>(null)
   const grid = useGrid(gridRef)
   const [view, setView] = useState<WorkView>('grid')
+  // On a phone the "List" view becomes the quadrant overview→focus experience (MobileMatrix,
+  // ADR-0025); desktop keeps the flat ranked ListView. The Grid view is untouched on both, so
+  // tap-to-place add/placement still works while the mobile move/add sheets land in follow-ups.
+  const isMobile = useIsMobile()
 
   // Grid-only mode: the fullscreen grid overlay is the entire work region. The input widget, the
   // Grid⇄List toggle, and the List are all dropped (there's nothing but the grid); the overlay
@@ -71,7 +77,7 @@ export function WorkArea({
             <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2">
               <ViewToggle view={view} onSelect={setView} />
             </div>
-            <ListView />
+            {isMobile ? <MobileMatrix /> : <ListView />}
           </div>
         )}
       </div>
