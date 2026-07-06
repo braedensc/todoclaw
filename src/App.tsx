@@ -78,8 +78,8 @@ function AppShell() {
           <header className="mb-3 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-3">
-                <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">
-                  Todoclaw
+                <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink wide:text-3xl">
+                  <span aria-hidden>🐾</span> Todoclaw
                 </h1>
                 <button
                   type="button"
@@ -245,7 +245,9 @@ export default function App() {
       ) : (
         <main className="mx-auto min-h-screen max-w-3xl p-6">
           <div className="mx-auto max-w-sm">
-            <h1 className="mb-6 font-serif text-3xl font-semibold text-ink">Todoclaw</h1>
+            <h1 className="mb-6 flex items-center gap-2 font-serif text-3xl font-semibold text-ink">
+              <span aria-hidden>🐾</span> Todoclaw
+            </h1>
             <AuthForm />
           </div>
         </main>
