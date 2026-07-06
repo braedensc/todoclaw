@@ -27,8 +27,8 @@ function GridHarness() {
         gridRef={gridRef}
         view="grid"
         onSelectView={() => {}}
-        expanded={false}
-        onToggleExpanded={() => {}}
+        gridOnly={false}
+        onExitGridOnly={() => {}}
       />
     </ConfirmProvider>
   )
