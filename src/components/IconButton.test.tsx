@@ -1,20 +1,48 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { IconButton } from './IconButton'
 
 // jsdom can't evaluate `:hover`, so the variant tests assert the presence of the hover/border
 // utility classes (which Tailwind renders from these exact strings) rather than a computed color.
 
 describe('IconButton', () => {
-  it('exposes the tooltip (title), accessible name (aria-label), and defaults type=button', () => {
+  it('names the button via aria-label, defaults type=button, and does NOT set a native title', () => {
     render(
       <IconButton title="Delete task" aria-label="Delete task">
         ×
       </IconButton>,
     )
     const btn = screen.getByRole('button', { name: 'Delete task' })
-    expect(btn).toHaveAttribute('title', 'Delete task')
+    // `title` now drives the custom Tooltip, not the native browser tooltip — so it must NOT land
+    // on the DOM button (that would resurrect the slow, unstyleable OS tooltip we replaced).
+    expect(btn).not.toHaveAttribute('title')
     expect(btn).toHaveAttribute('type', 'button')
+  })
+
+  it('shows the custom tooltip on hover (role=tooltip) after the open delay', () => {
+    vi.useFakeTimers()
+    try {
+      render(
+        <IconButton title="Delete task" aria-label="Delete task">
+          ×
+        </IconButton>,
+      )
+      const btn = screen.getByRole('button', { name: 'Delete task' })
+      expect(screen.queryByRole('tooltip')).toBeNull()
+
+      fireEvent.pointerEnter(btn)
+      act(() => vi.advanceTimersByTime(200))
+
+      const tip = screen.getByRole('tooltip')
+      expect(tip).toHaveTextContent('Delete task')
+      // The tooltip describes the control; its name still comes from aria-label.
+      expect(btn).toHaveAttribute('aria-describedby', tip.id)
+
+      fireEvent.pointerLeave(btn)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('defaults to the neutral variant (muted → ink on hover)', () => {
