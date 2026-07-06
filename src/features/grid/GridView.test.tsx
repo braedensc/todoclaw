@@ -453,7 +453,8 @@ describe('GridView clustering', () => {
 
     const popup = screen.getByTestId('cluster-popup')
     const recRow = within(popup).getByText('Water plants').closest('[data-task-id]') as HTMLElement
-    fireEvent.click(within(recRow).getByLabelText('Mark done'))
+    // The shared bar labels a recurring row's Done "resets clock", same as a recurring grid card.
+    fireEvent.click(within(recRow).getByLabelText('Mark done (resets clock)'))
 
     expect(markDoneMutate).not.toHaveBeenCalled()
     const call = updateMutate.mock.calls.find(
@@ -518,7 +519,23 @@ describe('GridView cluster popup rework', () => {
     expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
   })
 
-  it('the ✎ edit button also opens inline editing', () => {
+  it('each row carries the same action bar as a grid card (outlined Done pill + ⋯/×)', () => {
+    const { rowA } = openPopup()
+
+    // The primary affordance is the LABELLED outlined pill (not an icon-only ✓): visible "Done"
+    // text, green border + green text, deliberately NOT filled solid — identical to the grid card.
+    const done = within(rowA).getByRole('button', { name: 'Mark done' })
+    expect(done).toHaveTextContent('Done')
+    expect(done.className).toContain('border-primary')
+    expect(done.className).toContain('text-primary')
+    expect(done.className).not.toMatch(/(^|\s)bg-primary(\s|$)/)
+
+    // Plus the same quiet ⋯ (menu/edit) + × (delete) pair on the right.
+    expect(within(rowA).getByRole('button', { name: 'Edit task' })).toHaveTextContent('⋯')
+    expect(within(rowA).getByRole('button', { name: 'Delete task' })).toHaveTextContent('×')
+  })
+
+  it('the ⋯ button also opens inline editing', () => {
     const { popup, rowA } = openPopup()
     fireEvent.click(within(rowA).getByLabelText('Edit task'))
     expect(within(popup).getByLabelText('Edit task name')).toBeInstanceOf(HTMLInputElement)
