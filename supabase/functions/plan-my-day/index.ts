@@ -71,6 +71,8 @@ Deno.serve(async (req) => {
     if (!toolUse || toolUse.type !== 'tool_use') return json({ error: 'no_plan' }, 502)
     return json({ plan: toolUse.input as PlanResult })
   } catch (e) {
-    return json({ error: 'plan_failed', detail: e instanceof Error ? e.message : 'unknown' }, 500)
+    // Log the real error server-side; return a generic code so no internal detail reaches the client.
+    console.error('plan-my-day failed:', e)
+    return json({ error: 'plan_failed' }, 500)
   }
 })
