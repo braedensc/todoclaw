@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { MobileMatrix } from './MobileMatrix'
 import { ConfirmProvider } from '../../components/use-confirm'
+import { quadrantMeta } from '../../lib/quadrants'
 
 // MobileMatrix drives the mobile overview→focus experience. It reuses ListView for the focus rows,
 // so the same module-level hook mocks (paths resolve from features/shell/ to the SAME modules
@@ -18,10 +19,11 @@ function renderMatrix() {
 
 let tasksData: Task[] = []
 let doneToday: Record<string, true> = {}
+const updateMutate = vi.fn()
 
 vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksData, isLoading: false, isError: false }),
-  useUpdateTask: () => ({ mutate: vi.fn() }),
+  useUpdateTask: () => ({ mutate: updateMutate }),
   useSoftDeleteTask: () => ({ mutate: vi.fn() }),
 }))
 vi.mock('../done/use-history', () => ({
@@ -56,6 +58,7 @@ function makeTask(over: Partial<Task>): Task {
 beforeEach(() => {
   tasksData = []
   doneToday = {}
+  updateMutate.mockClear()
 })
 
 // One placed task per quadrant, plus a second Do Now task so its count reads 2.
@@ -126,5 +129,43 @@ describe('MobileMatrix', () => {
     renderMatrix()
     // Three of four quadrants are empty → the placeholder appears.
     expect(screen.getAllByText('Nothing here yet').length).toBe(3)
+  })
+
+  describe('move to quadrant', () => {
+    function openMovePicker() {
+      tasksData = onerPerQuadrant()
+      renderMatrix()
+      fireEvent.click(screen.getByLabelText('Do Now, 2 tasks'))
+      // Move the top Do Now row ("ship the release").
+      const row = screen.getByRole('button', { name: /ship the release/ }).closest('li')!
+      fireEvent.click(within(row).getByLabelText('Move to quadrant'))
+      return screen.getByRole('dialog')
+    }
+
+    it('opens the quadrant picker from a focus row', () => {
+      const dialog = openMovePicker()
+      expect(dialog).toHaveAccessibleName(/Move .*ship the release/)
+      // All four quadrant targets are offered.
+      expect(within(dialog).getByRole('button', { name: 'Move to Schedule' })).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Move to Errands' })).toBeInTheDocument()
+    })
+
+    it('the task’s current quadrant is not selectable', () => {
+      const dialog = openMovePicker()
+      // The task is in Do Now, so that target is disabled (a no-op move).
+      expect(within(dialog).getByRole('button', { name: 'Move to Do Now' })).toBeDisabled()
+    })
+
+    it('picking a quadrant writes coords inside it and closes the sheet', () => {
+      const dialog = openMovePicker()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Move to Errands' }))
+
+      expect(updateMutate).toHaveBeenCalledTimes(1)
+      const arg = updateMutate.mock.calls[0]![0] as { id: string; patch: { x: number; y: number } }
+      expect(arg.id).toBe('dn1')
+      expect(quadrantMeta(arg.patch.x, arg.patch.y).key).toBe('errands')
+      // Sheet dismissed.
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
   })
 })

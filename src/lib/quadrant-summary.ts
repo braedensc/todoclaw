@@ -1,6 +1,7 @@
 import type { Task } from '../types/task'
 import { quadrantMeta, type QuadrantKey } from './quadrants'
 import { taskScore } from './scoring'
+import { resolveCollision } from './collision'
 
 // Per-quadrant rollup for the mobile overview (Concept C). The 2×2 minimap needs, for each
 // Eisenhower quadrant: how many tasks sit there (count badge + density bar) and the single
@@ -10,6 +11,15 @@ import { taskScore } from './scoring'
 /** Screen order of the quadrants, y-inverted to match the desktop grid: top row = high importance
  *  (Schedule left, Do Now right), bottom row = low importance (Someday left, Errands right). */
 export const QUADRANT_ORDER: QuadrantKey[] = ['schedule', 'do-now', 'someday', 'errands']
+
+/** One-line urgency×importance descriptor per quadrant — the overview cell caption and the
+ *  move-picker subtitle, kept here so the two never drift. */
+export const QUADRANT_SUBTITLE: Record<QuadrantKey, string> = {
+  'do-now': 'Urgent · important',
+  schedule: 'Important · not urgent',
+  errands: 'Urgent · not important',
+  someday: 'Not urgent · not important',
+}
 
 /** Band-center coordinate of each quadrant (data-space, x=urgency/y=importance). The default drop
  *  point when a task is created into / moved to a quadrant with no finer position — the collision
@@ -57,4 +67,20 @@ export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): Q
 
   const maxCount = Math.max(0, ...QUADRANT_ORDER.map((k) => buckets[k].count))
   return { buckets, maxCount }
+}
+
+/**
+ * Coordinates for moving a task to a quadrant via the mobile tap picker (Concept C) — the no-drag
+ * reposition path. Snaps to the destination quadrant's band center, then runs the existing
+ * collision spiral (step 0.016, clamped) against all active tasks so it never lands on top of
+ * another card. The quadrant carries the meaning on mobile; the spiral settles the exact spot,
+ * exactly as a list slider commit does. Returns the resolved `{x, y}` for the caller to write.
+ */
+export function moveToQuadrant(
+  task: Task,
+  dest: QuadrantKey,
+  allTasks: Task[],
+): { x: number; y: number } {
+  const center = QUADRANT_CENTER[dest]
+  return resolveCollision(center.x, center.y, allTasks, task.id)
 }

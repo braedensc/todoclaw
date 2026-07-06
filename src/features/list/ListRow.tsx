@@ -51,6 +51,12 @@ interface ListRowProps {
   onRemoveRecurring: (id: string) => void
   /** Delete the task — the parent gates this behind a confirm before soft-deleting. */
   onDelete: (task: Task) => void
+  /**
+   * Optional tap-based reposition (mobile focus list only). When provided, a Move control appears
+   * in the trailing cluster; clicking it hands the task up to open the quadrant picker. Desktop
+   * ListView omits it, so the row is unchanged there.
+   */
+  onMove?: (task: Task) => void
 }
 
 export function ListRow({
@@ -67,6 +73,7 @@ export function ListRow({
   onSetFrequency,
   onRemoveRecurring,
   onDelete,
+  onMove,
 }: ListRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -247,6 +254,20 @@ export function ListRow({
             space, so ml-auto resolves to 0. Both are shared B9 IconButtons — done reads green,
             delete reads red, each with a native tooltip. Delete is confirmed in ListView. */}
         <div className="ml-auto flex shrink-0 items-center gap-2 wide:gap-3">
+          {/* Move-to-quadrant (mobile only, when the parent wires it): the tap-based reposition
+              path that replaces dragging on a phone. Opens the quadrant picker in ListView's
+              parent. Omitted on desktop, so the cluster stays Done + Delete there. */}
+          {onMove && (
+            <IconButton
+              variant="neutral"
+              onClick={() => onMove(task)}
+              aria-label="Move to quadrant"
+              title="Move to quadrant"
+            >
+              ⊞
+            </IconButton>
+          )}
+
           {/* Done control. Branches on recurring: a normal task is archived (Done tab + history),
               a recurring task instead resets its clock (no history). Both go through ListView. */}
           <IconButton
