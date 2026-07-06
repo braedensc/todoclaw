@@ -10,6 +10,7 @@ import {
 } from './use-habits'
 import { HabitRow } from './HabitRow'
 import { useConfirm } from '../../components/use-confirm'
+import { SleepingPuppy } from '../../components/SleepingPuppy'
 import type { Habit } from '../../types/habit'
 
 // Daily reminders — the body of the "Daily reminders" modal (RemindersModal). UI copy says
@@ -101,7 +102,10 @@ export function HabitsView() {
     // (RemindersModal), which supplies the surface and the title. Kept a labeled region for a11y.
     <section aria-label="Daily reminders">
       {active.length === 0 && queued.length === 0 ? (
-        <p className="mb-3 text-sm text-muted">No reminders yet — add one below.</p>
+        <div className="mb-3 flex flex-col items-center gap-1 py-2 text-center">
+          <SleepingPuppy className="h-16 w-28 text-muted-light" />
+          <p className="text-sm text-muted">No reminders yet — add one below.</p>
+        </div>
       ) : (
         <>
           {active.length > 0 && (

@@ -7,7 +7,7 @@ import { NewItemStrip } from './NewItemStrip'
 import type { ChatController } from '../ai/use-chat-controller'
 import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
 import type { BabyClawTone } from './babyclaw-status'
-import { AnimatedDots } from '../../components/Thinking'
+import { PawSteps } from '../../components/Thinking'
 
 // The one slim input widget above the grid (B8, items 4/5/7/9). A Manual ⇄ BabyClaw pill toggle
 // swaps between two modes that share the row:
@@ -31,7 +31,7 @@ interface TaskInputWidgetProps {
 }
 
 export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputWidgetProps) {
-  const [mode, setMode] = useState<Mode>('manual')
+  const [mode, setMode] = useState<Mode>('babyclaw')
 
   return (
     <div className="rounded-[10px] border border-border bg-card p-2">
@@ -57,13 +57,17 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
     >
       {(
         [
-          { id: 'manual', label: 'Manual', icon: '✎' },
           // 🐾 is BabyClaw's identity mark (his logo on his own tab) — distinct from the animated
-          // ✦ thinking/working sparkle in babyclaw-status.ts, which stays as-is.
+          // ✦ thinking/working sparkle in babyclaw-status.ts, which stays as-is. BabyClaw is the
+          // default/left-hand option — Manual is the fallback for anyone who wants to skip him.
           { id: 'babyclaw', label: 'BabyClaw', icon: '🐾' },
+          { id: 'manual', label: 'Manual', icon: '✎' },
         ] as const
       ).map((m) => {
         const active = m.id === mode
+        // BabyClaw's own tab gets a whisper of his namesake's blue when active — everything else
+        // (Manual, both tabs' resting state) stays on the neutral warm-paper ring.
+        const activeRing = m.id === 'babyclaw' ? 'ring-puppy/60' : 'ring-border-strong'
         return (
           <button
             key={m.id}
@@ -73,7 +77,7 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
             className={
               'flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ' +
               (active
-                ? 'bg-card text-ink shadow-sm ring-1 ring-border-strong'
+                ? `bg-card text-ink shadow-sm ring-1 ${activeRing}`
                 : 'text-muted hover:text-ink')
             }
           >
@@ -416,7 +420,7 @@ function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat:
           placeholder="Tell BabyClaw what to add…"
           aria-label="Tell BabyClaw"
           disabled={paused}
-          className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm disabled:opacity-50"
+          className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm focus:border-puppy focus:outline-none disabled:opacity-50"
         />
         <button
           type="submit"
@@ -437,7 +441,7 @@ function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat:
           {status.tone === 'busy' ? (
             <>
               Working
-              <AnimatedDots />
+              <PawSteps />
             </>
           ) : (
             status.text

@@ -106,6 +106,29 @@
   }
 }
 
+/* Paw-print footstep trail (src/components/Thinking.tsx PawSteps) — BabyClaw's own "Working…"
+   status line only. Reuses the thinking-dot fade/stagger so the timing matches AnimatedDots. */
+.paw-steps {
+  display: inline-flex;
+  gap: 1px;
+  font-size: 0.7em;
+}
+.paw-steps span {
+  animation: thinking-dot 1.2s ease-in-out infinite;
+}
+.paw-steps span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.paw-steps span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .paw-steps span {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Merge preview (net-new; EisenClaw had none). While a card is dragged to a spot where releasing
    would cluster it (the SAME seed-based predicate the drop runs — see useGrid `updateMergeTarget`),
    every task it would merge with is flagged `data-merge-target` from the per-frame drag handler (a

@@ -6,6 +6,7 @@ import { RemindersInline } from './features/habits/RemindersInline'
 import { RemindersModal } from './features/habits/RemindersModal'
 import { WorkArea } from './features/shell/WorkArea'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { TodoClawIcon } from './components/TodoClawIcon'
 import { ConfirmProvider } from './components/use-confirm'
 import { PlanBox } from './features/ai/PlanBox'
 import { Thinking } from './components/Thinking'
@@ -78,8 +79,8 @@ function AppShell() {
           <header className="mb-3 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-3">
-                <h1 className="font-serif text-2xl font-semibold text-ink wide:text-3xl">
-                  Todoclaw
+                <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink wide:text-3xl">
+                  <TodoClawIcon className="h-6 w-6 wide:h-7 wide:w-7" /> Todoclaw
                 </h1>
                 <button
                   type="button"
@@ -109,7 +110,10 @@ function AppShell() {
                 </button>
               </div>
               {!gridOnly && (
-                <p className="text-sm text-muted">An AI-powered Eisenhower-matrix-based planner</p>
+                <p className="text-sm text-muted">
+                  An AI-enabled planner built on the Eisenhower matrix — sort tasks into quadrants
+                  by urgency and importance.
+                </p>
               )}
             </div>
 
@@ -245,7 +249,9 @@ export default function App() {
       ) : (
         <main className="mx-auto min-h-screen max-w-3xl p-6">
           <div className="mx-auto max-w-sm">
-            <h1 className="mb-6 font-serif text-3xl font-semibold text-ink">Todoclaw</h1>
+            <h1 className="mb-6 flex items-center gap-2 font-serif text-3xl font-semibold text-ink">
+              <TodoClawIcon className="h-7 w-7" /> Todoclaw
+            </h1>
             <AuthForm />
           </div>
         </main>
