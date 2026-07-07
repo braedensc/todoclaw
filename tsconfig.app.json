@@ -23,5 +23,9 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // The service worker runs in the WebWorker lib, not DOM — its globals (self as
+  // ServiceWorkerGlobalScope, PushEvent, …) conflict with this app config's DOM lib. It is compiled
+  // by vite-plugin-pwa (esbuild) at build time, so exclude it from the app's tsc pass.
+  "exclude": ["src/sw.ts"]
 }

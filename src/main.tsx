@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Sentry from '@sentry/react'
+import { registerSW } from 'virtual:pwa-register'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
 // Self-hosted fonts (no external Google Fonts request — privacy). Fraunces (variable)
@@ -30,6 +31,11 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     release: __GIT_COMMIT_SHA__ ? `todoclaw@${__GIT_COMMIT_SHA__}` : undefined,
   })
 }
+
+// Register the service worker for Web Push (ADR-0031). autoUpdate: a new deploy's SW activates on
+// next load. Registration is harmless without a push subscription — the SW only acts once the user
+// opts in (Settings) and a subscription exists; see src/features/notifications.
+registerSW({ immediate: true })
 
 const queryClient = new QueryClient()
 
