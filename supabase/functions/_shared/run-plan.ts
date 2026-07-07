@@ -64,7 +64,13 @@ export async function runPlanForUser(
       tools: [EMIT_PLAN_TOOL as unknown as Anthropic.Tool],
       tool_choice: { type: 'tool', name: 'emit_plan' },
     })
-    await recordUsage(client, gate.usageId, msg.usage.input_tokens, msg.usage.output_tokens)
+    await recordUsage(
+      client,
+      gate.usageId,
+      msg.usage.input_tokens,
+      msg.usage.output_tokens,
+      'plan_my_day',
+    )
 
     const toolUse = msg.content.find((b) => b.type === 'tool_use')
     if (!toolUse || toolUse.type !== 'tool_use') {

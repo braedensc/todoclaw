@@ -49,6 +49,14 @@ Backed by `supabase/migrations/20260624010000_ai_usage_and_budget.sql`:
   `ai_budget_add` (SECURITY DEFINER). $20/month cap; when tripped, every AI endpoint refuses.
   This keeps the **service-role key out of the functions entirely** — the ledger is reached via
   these RPCs under the caller's JWT, never an admin client.
+- **Per-user spend cap + owner alert** — a per-user monthly sub-cap (`ai_user_budget_ledger`,
+  `$10`, ADR from the 2026-07-06 audit) BLOCKS one account from draining the shared pool. On top of
+  that, `_shared/spend-alert.ts` DETECTS abuse: `recordUsage` pages the owner once, via
+  `AI_SPEND_ALERT_WEBHOOK_URL`, the first time a user's monthly spend crosses
+  `USER_SPEND_ALERT_MICROS` (`$8`, 80% of the sub-cap) — a signal that an account may be
+  compromised or misused _before_ it hits the wall. **Unset webhook ⇒ no-op** (local/CI safe); the
+  body fits a plain Slack **or** Discord incoming webhook. Best-effort — never fails the user's
+  request. See ADR-0029.
 
 ## Invite codes (ADR-0030)
 
@@ -76,6 +84,9 @@ Secrets (production; only the human can set — the hook blocks `.env*` + the ke
 supabase secrets set ANTHROPIC_API_KEY=...        # owner key (required for PR3/PR4)
 supabase secrets set ALLOWED_ORIGIN=https://<app> # prod origin for CORS (dev defaults to localhost:5173)
 supabase secrets set OWNER_USER_ID=<uuid>         # who may generate invite codes (ADR-0030)
+supabase secrets set AI_SPEND_ALERT_WEBHOOK_URL=https://hooks.slack.com/...  # OPTIONAL: owner
+#   per-user spend alert. Slack or Discord incoming-webhook URL (or any receiver). Unset ⇒ alerts
+#   are silently off. Server-only — never a VITE_* var / never in the bundle (it's not a frontend var).
 ```
 
 `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` are auto-injected by the platform
