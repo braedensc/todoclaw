@@ -502,14 +502,47 @@ export default function App() {
           <AppShell />
         </ErrorBoundary>
       ) : (
-        <main className="mx-auto min-h-screen max-w-3xl p-6">
-          <div className="mx-auto max-w-sm">
-            <h1 className="mb-6 flex items-center gap-2 font-serif text-3xl font-semibold text-ink">
-              <TodoClawPeek className="h-7 w-7" /> Todoclaw
-              <span aria-hidden className="-ml-2 text-accent">
-                .
-              </span>
-            </h1>
+        // The mascot's front door (style mix, login pass): centered masthead wordmark — no
+        // icon up here, the AuthMascot peeking over the card below is the star — with the claw
+        // swipe and the sign-in tagline. AuthGate renders the card + mascot.
+        <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-center p-6 pt-14">
+          <h1
+            className="font-serif text-[46px] font-[620] leading-none tracking-[-0.015em] text-ink"
+            style={{ fontVariationSettings: "'opsz' 70" }}
+          >
+            Todoclaw
+            <span aria-hidden className="text-accent">
+              .
+            </span>
+          </h1>
+          <svg className="mt-1.5" width="130" height="14" viewBox="0 0 118 14" aria-hidden="true">
+            <path
+              d="M2,4 Q58,15 114,3"
+              stroke="#c2693f"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              fill="none"
+              opacity="0.9"
+            />
+            <path
+              d="M8,8 Q56,17 104,7"
+              stroke="#c2693f"
+              strokeWidth="2"
+              strokeLinecap="round"
+              fill="none"
+              opacity="0.55"
+            />
+            <path
+              d="M16,12 Q54,18 88,11"
+              stroke="#c2693f"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              fill="none"
+              opacity="0.3"
+            />
+          </svg>
+          <p className="mt-2.5 font-serif text-[17px] italic text-muted">Sit. Stay. Prioritize.</p>
+          <div className="mt-1 w-full">
             <AuthGate />
           </div>
         </main>
