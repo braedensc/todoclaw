@@ -430,6 +430,11 @@ verify_jwt = false
 [functions.redeem-invite]
 verify_jwt = false
 
+# Proactive dispatcher (ADR-0031). Cron-triggered by notify.yml with no user JWT — it is gated by
+# the DISPATCH_SECRET header it checks in-function, not by auth, so the gateway JWT check MUST be off.
+[functions.dispatch-messages]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

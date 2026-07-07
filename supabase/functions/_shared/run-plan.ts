@@ -16,11 +16,39 @@ import {
   SYSTEM_PROMPT,
   EMIT_PLAN_TOOL,
   buildUserPrompt,
+  type PlanRequest,
   type ScheduleConfig,
   type PlanResult,
 } from './plan-prompt.ts'
 
 export type PlanRunResult = { ok: true; headline: string } | { ok: false; reason: string }
+
+// The pure Anthropic call: build the prompt, force emit_plan, return the structured plan + token
+// usage. Shared by the interactive path (runPlanForUser) and the proactive dispatcher (ADR-0031),
+// which each supply their own inputs + guardrails. Throws if the model returns no tool use.
+export async function generatePlan(
+  a: Anthropic,
+  req: PlanRequest,
+  config: ScheduleConfig | null,
+  weather: string | null,
+): Promise<{ plan: PlanResult; usage: { input: number; output: number } }> {
+  const msg = await a.messages.create({
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: buildUserPrompt(req, config, weather) }],
+    tools: [EMIT_PLAN_TOOL as unknown as Anthropic.Tool],
+    tool_choice: { type: 'tool', name: 'emit_plan' },
+  })
+  const toolUse = msg.content.find((b) => b.type === 'tool_use')
+  if (!toolUse || toolUse.type !== 'tool_use') {
+    throw new Error('The planner did not return a plan.')
+  }
+  return {
+    plan: toolUse.input as PlanResult,
+    usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens },
+  }
+}
 
 export async function runPlanForUser(
   client: SupabaseClient,
@@ -55,28 +83,9 @@ export async function runPlanForUser(
 
     const req = buildPlanRequest(tasksRes.data ?? [], habitsRes.data ?? [], doneMap, timeZone, now)
 
-    const a = anthropic()
-    const msg = await a.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildUserPrompt(req, config, weather) }],
-      tools: [EMIT_PLAN_TOOL as unknown as Anthropic.Tool],
-      tool_choice: { type: 'tool', name: 'emit_plan' },
-    })
-    await recordUsage(
-      client,
-      gate.usageId,
-      msg.usage.input_tokens,
-      msg.usage.output_tokens,
-      'plan_my_day',
-    )
+    const { plan, usage } = await generatePlan(anthropic(), req, config, weather)
+    await recordUsage(client, gate.usageId, usage.input, usage.output, 'plan_my_day')
 
-    const toolUse = msg.content.find((b) => b.type === 'tool_use')
-    if (!toolUse || toolUse.type !== 'tool_use') {
-      return { ok: false, reason: 'The planner did not return a plan.' }
-    }
-    const plan = toolUse.input as PlanResult
     const { error } = await client.rpc('save_daily_plan', { p_date: date, p_plan: plan })
     if (error) return { ok: false, reason: error.message }
     return { ok: true, headline: plan.headline }

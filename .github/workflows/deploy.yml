@@ -180,13 +180,14 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
-          # Deploy the three functions explicitly (skips `_shared` / config).
+          # Deploy the functions explicitly (skips `_shared` / config).
           #   --use-api      : bundle server-side, no Docker (removes a whole CI failure class).
           #   --no-verify-jwt: turn OFF the gateway JWT check so the CORS OPTIONS preflight
           #                    reaches the function; each function verifies the JWT itself
           #                    (_shared/auth.ts) and RLS isolates data. Mirrors the
           #                    `verify_jwt = false` in supabase/config.toml (belt-and-suspenders).
-          for fn in ai-status plan-my-day ai-chat; do
+          # dispatch-messages has no user JWT: the notify.yml cron gates it with DISPATCH_SECRET.
+          for fn in ai-status plan-my-day ai-chat dispatch-messages; do
             echo "::group::deploy $fn"
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --use-api --no-verify-jwt
             echo "::endgroup::"
