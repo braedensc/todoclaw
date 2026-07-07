@@ -47,3 +47,5 @@ index.
 | [ADR-0025](adr/0025-mobile-matrix-overview-focus-reinterpretation.md) | 2026-07-06 | Mobile matrix: quadrant overview → focus view reinterpretation |
 | [ADR-0026](adr/0026-mobile-chrome-slim-topbar-bottom-nav.md) | 2026-07-06 | Mobile chrome: slim top bar + thumb-zone bottom nav (Concept D) |
 | [ADR-0027](adr/0027-done-reminders-full-pages-hash-router.md) | 2026-07-06 | Done & Daily reminders as full pages via a minimal hash router |
+| [ADR-0028](adr/0028-mobile-list-only-no-grid-single-add-sheet.md) | 2026-07-06 | Mobile is list-only: remove the grid, single bottom-bar add sheet |
+| [ADR-0029](adr/0029-per-user-ai-spend-alert-owner-webhook.md) | 2026-07-07 | Per-user AI spend alert: owner webhook on threshold crossing |

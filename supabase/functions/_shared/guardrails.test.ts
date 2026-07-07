@@ -1,7 +1,15 @@
 // Deno unit tests for the pure guardrail logic (the DB-backed parts are proven by the psql
 // guardrail proof). Run: deno test --no-check supabase/functions/_shared/
 import { assertEquals } from 'jsr:@std/assert@1'
-import { costMicros, BUDGET_CAP_MICROS, USER_BUDGET_CAP_MICROS, LIMITS } from './guardrails.ts'
+import {
+  costMicros,
+  BUDGET_CAP_MICROS,
+  USER_BUDGET_CAP_MICROS,
+  USER_SPEND_ALERT_MICROS,
+  PER_CALL_CEILING_MICROS,
+  crossedSpendAlert,
+  LIMITS,
+} from './guardrails.ts'
 
 Deno.test('costMicros: Sonnet 5 standard pricing ($3/$15 per 1M) → micro-dollars', () => {
   // 1M input = $3 = 3,000,000 micros; 1M output = $15 = 15,000,000 micros.
@@ -35,6 +43,35 @@ Deno.test(
     assertEquals(costMicros(60_000, 2048) < 220_000, true)
   },
 )
+
+Deno.test('owner spend-alert threshold sits below the per-user cap and above zero', () => {
+  // The alert must fire BEFORE the wall (so the owner learns of a runaway account while it can still
+  // spend), and be meaningfully positive. 80% of the $10 per-user cap = $8.
+  assertEquals(USER_SPEND_ALERT_MICROS, 8_000_000)
+  assertEquals(USER_SPEND_ALERT_MICROS < USER_BUDGET_CAP_MICROS, true)
+  assertEquals(USER_SPEND_ALERT_MICROS > 0, true)
+})
+
+Deno.test('crossedSpendAlert fires once — only on the call that first crosses the line', () => {
+  const T = USER_SPEND_ALERT_MICROS
+  // below → below: no page.
+  assertEquals(crossedSpendAlert(0, 1_000_000), false)
+  assertEquals(crossedSpendAlert(T - 200_000, T - 1), false)
+  // below → at/over: the crossing call pages once.
+  assertEquals(crossedSpendAlert(T - 1, T), true)
+  assertEquals(crossedSpendAlert(T - 13_500, T + 50_000), true)
+  // already over → further over: do NOT re-page on every subsequent call.
+  assertEquals(crossedSpendAlert(T, T + 13_500), false)
+  assertEquals(crossedSpendAlert(T + 1, T + 999_999), false)
+})
+
+Deno.test('per-call clamp is below the alert threshold, so a crossing can never be skipped', () => {
+  // Each ai_budget_add is clamped to PER_CALL_CEILING_MICROS. Because that ceiling is below the
+  // alert threshold, spend can never LEAP the line in one call from far below — it steps across it,
+  // and crossedSpendAlert catches that step. (Sanity-check the invariant the detection relies on.)
+  assertEquals(PER_CALL_CEILING_MICROS, 200_000)
+  assertEquals(PER_CALL_CEILING_MICROS < USER_SPEND_ALERT_MICROS, true)
+})
 
 Deno.test('Balanced-tier limits', () => {
   assertEquals(LIMITS.chat, { hour: 30, day: 100 })

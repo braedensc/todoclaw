@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
       let outTok = 0
       const flushUsage = async () => {
         try {
-          await recordUsage(client, gate.usageId, inTok, outTok)
+          await recordUsage(client, gate.usageId, inTok, outTok, 'chat')
         } catch {
           /* bookkeeping is best-effort */
         }
