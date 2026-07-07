@@ -1,0 +1,68 @@
+name: Notify (proactive daily messages)
+
+# Hourly cron (ADR-0031) → POST the dispatch-messages Edge Function with the shared DISPATCH_SECRET.
+# The FUNCTION decides who is due this hour (each user's LOCAL morning/evening hour, quiet-hours
+# aware), claims today's message idempotently, generates the plan / recap, and pushes it. Hour-
+# granular timing is fine — the in-app inbox covers any missed hour. Mirrors keepalive.yml /
+# backup.yml: a preflight SKIPS (green) until DISPATCH_URL + DISPATCH_SECRET are set, so an
+# unconfigured fork/repo is never red. pg_cron + pg_net calling the same function is the documented
+# tighter-timing upgrade if hour granularity ever isn't enough.
+#
+# Config (repo → Settings → Secrets and variables → Actions):
+#   - Variable `DISPATCH_URL`    = https://<prod-ref>.supabase.co/functions/v1/dispatch-messages
+#   - Secret   `DISPATCH_SECRET` = a strong shared secret; the SAME value set on the Supabase project
+#                                  (`supabase secrets set DISPATCH_SECRET=…`). Only this workflow and
+#                                  the function know it — it is the function's ONLY caller gate.
+#
+# Also required ON THE SUPABASE PROJECT (once, via `supabase secrets set`, NOT here) for push to
+# work: VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT (generate with generateVapidKeys() in
+# supabase/functions/_shared/web-push.ts) + the existing ANTHROPIC_API_KEY. The platform injects
+# SUPABASE_SERVICE_ROLE_KEY. Without VAPID the messages still persist to the inbox — push is skipped.
+#
+# NOTE: scheduled workflows only run from the DEFAULT branch (main) — this takes effect once merged.
+# Trigger manually (workflow_dispatch) from the Actions tab to test.
+
+on:
+  schedule:
+    - cron: '0 * * * *' # hourly, on the hour (UTC). The function matches each user's LOCAL hour.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch due notifications
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preflight — is the dispatcher configured?
+        id: pre
+        env:
+          DISPATCH_URL: ${{ vars.DISPATCH_URL }}
+          DISPATCH_SECRET: ${{ secrets.DISPATCH_SECRET }}
+        run: |
+          if [ -z "$DISPATCH_URL" ] || [ -z "$DISPATCH_SECRET" ]; then
+            echo "::notice::Dispatch not configured — set the DISPATCH_URL variable + DISPATCH_SECRET secret to enable. Skipping."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: POST dispatch-messages
+        if: steps.pre.outputs.configured == 'true'
+        env:
+          DISPATCH_URL: ${{ vars.DISPATCH_URL }}
+          DISPATCH_SECRET: ${{ secrets.DISPATCH_SECRET }}
+        run: |
+          # The secret rides in a header (never in the URL, never logged). The function replies 200
+          # with a small JSON summary { candidates, sent, skipped, failed }; 403 = bad/missing secret.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST --max-time 60 \
+            -H "content-type: application/json" \
+            -H "x-dispatch-secret: $DISPATCH_SECRET" \
+            -d '{}' \
+            "$DISPATCH_URL")
+          echo "dispatch-messages responded: HTTP $code"
+          case "$code" in
+            200 | 204) echo "dispatched (HTTP $code)" ;;
+            *) echo "::error::dispatch-messages returned HTTP $code (expected 200)"; exit 1 ;;
+          esac

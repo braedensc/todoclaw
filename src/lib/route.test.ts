@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { hashToRoute, navigate, useRoute } from './route'
+import { chatMessageId, hashToRoute, navigate, navigateToChat, useRoute } from './route'
 
 // Reset the URL hash after each test so module/global state doesn't leak between cases.
 afterEach(() => {
@@ -14,6 +14,34 @@ describe('hashToRoute', () => {
     expect(hashToRoute('')).toBe('home')
     expect(hashToRoute('#/')).toBe('home')
     expect(hashToRoute('#/anything-else')).toBe('home')
+  })
+
+  it('maps bare and deep-linked chat hashes to the chat route (ADR-0031)', () => {
+    expect(hashToRoute('#/chat')).toBe('chat')
+    expect(hashToRoute('#/chat/abc-123')).toBe('chat')
+  })
+})
+
+describe('chatMessageId', () => {
+  it('extracts the message id from a deep link, decoding it', () => {
+    expect(chatMessageId('#/chat/abc-123')).toBe('abc-123')
+    expect(chatMessageId('#/chat/a%2Fb')).toBe('a/b')
+  })
+
+  it('is null for a bare chat hash or any non-chat hash', () => {
+    expect(chatMessageId('#/chat')).toBeNull()
+    expect(chatMessageId('#/chat/')).toBeNull()
+    expect(chatMessageId('#/done')).toBeNull()
+    expect(chatMessageId('')).toBeNull()
+  })
+})
+
+describe('navigateToChat', () => {
+  it('sets a #/chat/<id> hash (encoded), routing to chat', () => {
+    navigateToChat('m1')
+    expect(window.location.hash).toBe('#/chat/m1')
+    expect(hashToRoute(window.location.hash)).toBe('chat')
+    expect(chatMessageId(window.location.hash)).toBe('m1')
   })
 })
 

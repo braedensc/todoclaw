@@ -11,6 +11,21 @@ vi.mock('../schedule/use-user-schedule', () => ({
   useSaveScheduleConfig: () => ({ mutate: saveMutate, isPending: false, isError: false }),
 }))
 
+// Stub the push hook so the panel test doesn't pull in the real Supabase client (which throws at
+// import without env vars) or the browser Push/Notification APIs (absent in jsdom).
+vi.mock('../notifications/use-push-subscription', () => ({
+  usePushSubscription: () => ({
+    supported: true,
+    configured: false,
+    permission: 'default',
+    busy: false,
+    error: null,
+    iosInstallHint: false,
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+  }),
+}))
+
 import { SettingsPanel } from './SettingsPanel'
 
 beforeEach(() => {

@@ -24,8 +24,11 @@ import { DonePage } from './features/done/DonePage'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { InvitePanel } from './features/settings/InvitePanel'
 import { useIsOwner } from './features/auth/use-is-owner'
-import { useRoute, navigate } from './lib/route'
+import { useRoute, navigate, navigateToChat, chatMessageId } from './lib/route'
 import { supabase } from './lib/supabase'
+import { NotificationBell } from './features/notifications/NotificationBell'
+import { InboxPanel } from './features/notifications/InboxPanel'
+import { useMessages, useMarkMessageRead } from './features/notifications/use-messages'
 
 // Plan My Day pill (style mix): the ink fill warmed with a deep-green cast toward one corner,
 // the ✦ picked out in gold — the header's one quiet "AI moment". Shared by the mobile and
@@ -73,6 +76,10 @@ function AppShell() {
   )}`
   // One conversation for the whole shell — shared by the inline BabyClaw reply and the chat popup.
   const chat = useChatController()
+  // In-app inbox (ADR-0031): the bell/badge + the message list overlay.
+  const [showInbox, setShowInbox] = useState(false)
+  const messages = useMessages()
+  const markRead = useMarkMessageRead()
 
   // Guarantee a user_schedule row exists on first authenticated load — the daily reset depends on
   // its timezone. Idempotent (upsert ignoreDuplicates); runs once on mount.
@@ -80,6 +87,22 @@ function AppShell() {
   useEffect(() => {
     ensure()
   }, [ensure])
+
+  // A `#/chat/<id>` route (a notification tap or an inbox click) opens the chat overlay seeded with
+  // that message. The overlay is shown whenever showChat OR the route is 'chat' (chatOpen, below), so
+  // no setState-in-effect is needed here — this effect only seeds + marks the message read once it
+  // loads. seed is idempotent per text; mark is a no-op once read, so re-runs settle.
+  const seedChat = chat.seed
+  const mark = markRead.mutate
+  useEffect(() => {
+    if (route !== 'chat') return
+    const id = chatMessageId()
+    if (!id || !messages.data) return
+    const msg = messages.data.find((m) => m.id === id)
+    if (!msg) return
+    seedChat(`${msg.title} — ${msg.body}`)
+    if (!msg.read_at) mark(id)
+  }, [route, messages.data, seedChat, mark])
 
   // Esc leaves grid-only mode (the overlay covers the header, so the ✕ pill + this are the exits).
   useEffect(() => {
@@ -91,6 +114,15 @@ function AppShell() {
     return () => window.removeEventListener('keydown', onKey)
   }, [gridOnly])
 
+  // The chat overlay is open via the WorkArea button (showChat) OR a #/chat deep link (route). Both
+  // the desktop push-drawer and the mobile sheet key off this; closing clears both and returns the
+  // hash to home when the chat was opened by a deep link.
+  const chatOpen = showChat || route === 'chat'
+  const closeChat = () => {
+    setShowChat(false)
+    if (route === 'chat') navigate('home')
+  }
+
   return (
     // Full-width shell so the desktop chat push-drawer (ChatRail, fixed to the viewport's right
     // edge) can pair with an animated right-padding on the main content: opening chat pads the
@@ -101,7 +133,7 @@ function AppShell() {
       <div
         className={
           'min-h-screen transition-[padding] duration-300 ease-out ' +
-          (showChat ? 'wide:pr-[360px]' : '')
+          (chatOpen ? 'wide:pr-[360px]' : '')
         }
       >
         {/* A focused column: wide enough that the desktop grid is dominant (aspect-locked ≈
@@ -129,25 +161,32 @@ function AppShell() {
                         .
                       </span>
                     </h1>
-                    <button
-                      type="button"
-                      onClick={planner.generate}
-                      disabled={!planner.canGenerate}
-                      title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
-                      className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-                      style={planPillStyle}
-                    >
-                      {planner.isPending ? (
-                        <Thinking label="Thinking" />
-                      ) : (
-                        <>
-                          <span aria-hidden className="text-[#e8c47a]">
-                            ✦
-                          </span>{' '}
-                          Plan My Day
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <NotificationBell
+                        compact
+                        onClick={() => setShowInbox(true)}
+                        className="relative text-lg text-muted hover:text-ink"
+                      />
+                      <button
+                        type="button"
+                        onClick={planner.generate}
+                        disabled={!planner.canGenerate}
+                        title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                        className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                        style={planPillStyle}
+                      >
+                        {planner.isPending ? (
+                          <Thinking label="Thinking" />
+                        ) : (
+                          <>
+                            <span aria-hidden className="text-[#e8c47a]">
+                              ✦
+                            </span>{' '}
+                            Plan My Day
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </header>
                 )
               ) : (
@@ -256,6 +295,10 @@ function AppShell() {
                       aria-label="Account"
                       className="flex items-center gap-4 text-xs text-muted"
                     >
+                      <NotificationBell
+                        onClick={() => setShowInbox(true)}
+                        className="relative hover:text-ink"
+                      />
                       <button
                         type="button"
                         onClick={() => navigate('reminders')}
@@ -380,6 +423,18 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
+          {showInbox && (
+            <ErrorBoundary>
+              <InboxPanel
+                onClose={() => setShowInbox(false)}
+                onOpenMessage={(id) => {
+                  setShowInbox(false)
+                  navigateToChat(id)
+                }}
+              />
+            </ErrorBoundary>
+          )}
+
           {showInvite && (
             <ErrorBoundary>
               <InvitePanel onClose={() => setShowInvite(false)} />
@@ -419,10 +474,10 @@ function AppShell() {
 
       {/* Chat — desktop push-drawer (shrinks the grid) + mobile covering bottom-sheet. Both are
           driven by the same `showChat` flag; only one is visible per breakpoint. */}
-      <ChatRail chat={chat} open={showChat} onClose={() => setShowChat(false)} />
-      {showChat && (
+      <ChatRail chat={chat} open={chatOpen} onClose={closeChat} />
+      {chatOpen && (
         <ErrorBoundary>
-          <ChatPanel chat={chat} onClose={() => setShowChat(false)} />
+          <ChatPanel chat={chat} onClose={closeChat} />
         </ErrorBoundary>
       )}
     </div>

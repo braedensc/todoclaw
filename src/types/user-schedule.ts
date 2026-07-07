@@ -66,6 +66,19 @@ const commitmentSchema = z.object({
   when: shortText.optional(), // when it happens, e.g. "Tue/Thu 6pm" (freeform)
 })
 
+// ---- Proactive notifications (ADR-0031) ------------------------------------------------------
+// Opt-in, default-off. `enabled` plus a live push subscription is what makes a user a dispatch
+// candidate (supabase/functions/_shared/dispatch.ts). Hours are LOCAL integers (0–23), matched
+// against the user's timezone by the dispatcher; quiet hours suppress a window (wraps past midnight).
+const localHour = z.number().int().min(0).max(23)
+const notificationsSchema = z.object({
+  enabled: z.boolean().optional(),
+  morningHour: localHour.optional(), // when the daily plan is pushed
+  eveningHour: localHour.optional(), // when the recap is pushed
+  quietStartHour: localHour.optional(),
+  quietEndHour: localHour.optional(),
+})
+
 export const ScheduleConfigSchema = z.object({
   location: shortText.optional(),
   weekday: weekdaySchema.optional(),
@@ -79,6 +92,7 @@ export const ScheduleConfigSchema = z.object({
   // Bounded freeform preferences for Plan My Day — layered onto the fixed prompt scaffold.
   planNotes: z.string().trim().max(PLAN_NOTES_MAX).optional(),
   babyclaw: babyclawSchema.optional(),
+  notifications: notificationsSchema.optional(),
 })
 export type ScheduleConfig = z.infer<typeof ScheduleConfigSchema>
 
