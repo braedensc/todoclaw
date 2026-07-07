@@ -149,7 +149,7 @@ export async function closeDone(page: Page): Promise<void> {
 export async function openReminders(page: Page): Promise<void> {
   await page
     .getByRole('navigation', { name: 'Account' })
-    .getByRole('button', { name: 'Reminders' })
+    .getByRole('button', { name: 'Daily reminders' })
     .click()
   await expect(page.getByRole('region', { name: 'Daily reminders' })).toBeVisible()
 }
