@@ -141,14 +141,19 @@ export function GridCard({
     left: `${screenX * 100}%`,
     top: `${screenY * 100}%`,
     width: CARD_WIDTH,
-    transform: dragging ? 'translate(-50%, -50%) scale(1.06)' : 'translate(-50%, -50%)',
+    // The resting transform reads --tc-lift (set by the hover class on this element) so the
+    // card can rise on hover even though the transform is inline — a plain hover:transform
+    // class would lose to this style attribute. Dragging owns its own transform (no lift).
+    transform: dragging
+      ? 'translate(-50%, -50%) scale(1.06)'
+      : 'translate(-50%, -50%) translateY(var(--tc-lift, 0px))',
     borderTopColor: borderColor,
     borderRightColor: sideColor,
     borderBottomColor: sideColor,
     borderLeftColor: sideColor,
     ...recurringBorder,
     touchAction: 'none',
-    transition: dragging ? 'none' : 'box-shadow 120ms ease',
+    transition: dragging ? 'none' : 'box-shadow 120ms ease, transform 120ms ease',
     // Glow overrides the resting shadow (its string carries its own drop-shadow layer). Overdue
     // cards also get the pulse animation; the keyframe is global (src/index.css). `animation` is
     // spread only when present so a future base animation on this card can't be clobbered.
@@ -196,7 +201,10 @@ export function GridCard({
       data-task-id={task.id}
       data-quadrant={quadrant.key}
       onPointerDown={editing ? undefined : onPointerDown}
-      className="absolute cursor-grab rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md active:cursor-grabbing"
+      // hover:[--tc-lift:-2px] = the 2px hover rise (style mix): the inline transform above
+      // consumes the var, so cards feel like index cards lifting off a desk. Desktop-only by
+      // construction (the grid never renders on mobile).
+      className="absolute cursor-grab rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md hover:[--tc-lift:-2px] active:cursor-grabbing"
       style={{ ...style, borderTopWidth: 3, padding: '6px 8px 5px' }}
     >
       {/* Persistent recurring cue: a ↻ chip overhanging the top-right corner, decoupled from the

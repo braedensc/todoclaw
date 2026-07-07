@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
@@ -10,6 +10,7 @@ import { boxClampBounds, clampPoint } from '../../hooks/use-free-drag'
 import { GridCanvas } from './GridCanvas'
 import { GridCard } from './GridCard'
 import { GridAxes } from './GridAxes'
+import { PawPrintShape } from './PawTrail'
 import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 import { ClusterBubble } from '../clustering/ClusterBubble'
@@ -87,6 +88,26 @@ export function GridSurface({
   // The open bubble's positioned wrapper node — the portaled popup anchors to its live rect.
   const anchorRef = useRef<HTMLDivElement | null>(null)
 
+  // Completion moment (style mix grab-bag): marking a card done stamps one fading paw print at
+  // its stored x/y while the card leaves the grid — a 900ms flourish, then the element unmounts
+  // (the timeout runs past the CSS animation so it never cuts the fade short). Skipped when the
+  // user asks for reduced motion (the .tc-paw-stamp CSS also hides it, belt-and-braces) and in
+  // jsdom (no matchMedia). Wraps handleDone for both the standalone card and the cluster rows.
+  const [stamps, setStamps] = useState<Array<{ key: number; x: number; y: number }>>([])
+  const stampSeq = useRef(0)
+  const doneWithStamp = (task: Task) => {
+    const reduce =
+      typeof window.matchMedia !== 'function' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!reduce && task.x != null && task.y != null) {
+      const key = ++stampSeq.current
+      const { x, y } = task
+      setStamps((s) => [...s, { key, x, y }])
+      setTimeout(() => setStamps((s) => s.filter((st) => st.key !== key)), 1000)
+    }
+    handleDone(task)
+  }
+
   // Delete now confirms first (was a silent soft-delete), mirroring the List/cluster surfaces (B9).
   // The app-themed useConfirm gate names the task so an accidental click can't quietly remove it.
   const handleDelete = async (task: Task) => {
@@ -116,7 +137,7 @@ export function GridSurface({
         onPointerDown={startReposition(task.id)}
         onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
         onDelete={() => handleDelete(task)}
-        onDone={() => handleDone(task)}
+        onDone={() => doneWithStamp(task)}
         onSetDue={(due) => updateMutate({ id: task.id, patch: { due } })}
         onSetRecurring={(frequencyDays) =>
           updateMutate({
@@ -257,7 +278,7 @@ export function GridSurface({
                     onStartEdit={(task) => startClusterRowEdit(task.id)}
                     onStopEdit={stopClusterRowEdit}
                     onRename={(task, text) => updateMutate({ id: task.id, patch: { text } })}
-                    onDone={handleDone}
+                    onDone={doneWithStamp}
                     onDelete={handleDelete}
                     onRowPointerDown={startPopupRowDrag}
                   />
@@ -265,6 +286,20 @@ export function GridSurface({
               </ClusterBubble>
             )
           })}
+
+          {/* Transient done stamps — see doneWithStamp above. Rendered last so a print blooms
+              over neighboring cards, never under them. */}
+          {stamps.map((s) => (
+            <svg
+              key={s.key}
+              aria-hidden
+              viewBox="0 0 100 100"
+              className="tc-paw-stamp pointer-events-none absolute h-9 w-9"
+              style={{ left: `${s.x * 100}%`, top: `${(1 - s.y) * 100}%`, zIndex: 25 }}
+            >
+              <PawPrintShape />
+            </svg>
+          ))}
         </GridCanvas>
       </div>
     </div>
