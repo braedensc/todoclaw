@@ -15,6 +15,10 @@ interface ImportMetaEnv {
   // Optional: the owner's auth.users id (ADR-0030). Only used to SHOW the owner the "Invite
   // someone" UI — the real gate is the server-side OWNER_USER_ID check in generate-invite. Public.
   readonly VITE_OWNER_USER_ID?: string
+  // Optional (ADR-0031): the VAPID PUBLIC key for Web Push subscriptions. Public by design (the
+  // private key is a server-only Edge secret). Unset ⇒ the notifications toggle reports "not
+  // configured" and no subscription is attempted.
+  readonly VITE_VAPID_PUBLIC_KEY?: string
 }
 
 interface ImportMeta {

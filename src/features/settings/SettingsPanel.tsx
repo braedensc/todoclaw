@@ -10,6 +10,7 @@ import {
 } from '../../types/user-schedule'
 import { EMPTY_DRAFT, configToDraft, draftToConfig, type SettingsDraft } from './settings-form'
 import { AiPrivacyNote } from '../ai/AiPrivacyNote'
+import { NotificationSettings } from '../notifications/NotificationSettings'
 
 // Settings — a modal overlay (BackupsPanel pattern: z-50 over the mobile tab bar, click-outside +
 // ✕ to close). It edits `user_schedule.config`: the schedule the Plan My Day prompt reads (so it
@@ -425,6 +426,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 placeholder="Keep replies concise. Ask before creating tasks without a due date."
               />
             </Section>
+
+            <NotificationSettings draft={draft} set={set} />
 
             <Section
               title="AI &amp; privacy"
