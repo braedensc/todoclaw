@@ -1,5 +1,5 @@
 import { test, expect } from '../helpers/fixtures'
-import { placeTask, switchTab, openDone } from '../helpers/ui'
+import { placeTask, switchTab, openDone, expandRow } from '../helpers/ui'
 
 // Golden path: make a task recurring, then mark it done — a cycle-done RESETS the clock
 // (lastDoneAt = now → status "ok") instead of archiving: the task stays in the list, leaves
@@ -13,7 +13,7 @@ test('set recurring → cycle-done resets the clock instead of archiving', async
   // Make it recurring from the expanded list row: 7 days → Set.
   await switchTab(page, 'List')
   const row = page.getByRole('listitem').filter({ hasText: TASK })
-  await row.getByRole('button', { name: 'Expand row' }).click()
+  await expandRow(row)
   await row.getByLabel('Days between repeats').fill('7')
   // Anchored: role-name matching is substring, and "Mark done (resets clock)" contains "set".
   await row.getByRole('button', { name: /^Set$/ }).click()
@@ -35,7 +35,7 @@ test('set recurring → cycle-done resets the clock instead of archiving', async
   // too — count(0) alone would also pass on a query error / crashed grid, this proves the
   // grid rendered and is genuinely empty.
   await switchTab(page, 'Grid')
-  await expect(page.getByText('No tasks placed — drag one from the tray.')).toBeVisible()
+  await expect(page.getByText('No tasks placed — add one above and drag it here.')).toBeVisible()
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
   // …and recurring completions never reach the permanent history.

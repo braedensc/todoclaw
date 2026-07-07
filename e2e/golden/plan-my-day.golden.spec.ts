@@ -29,13 +29,14 @@ test('generates a mocked plan into the inline card and regenerates on demand —
   await mockAiStatus(page)
   const planRoute = await mockPlanMyDay(page, [PLAN, REGENERATED])
 
-  // The inline card is always present (no modal); before generating it shows the empty state.
+  // The inline card only materializes once a plan exists or one is generating (batch-2 rework —
+  // no persistent empty-state box); with a clean slate and nothing in flight it renders nothing.
   const card = page.getByRole('region', { name: 'Plan My Day' })
-  await expect(card).toBeVisible()
-  await expect(card.getByText(/reads your grid, recurring chores, and habits/i)).toBeVisible()
+  await expect(card).toHaveCount(0)
 
-  // The header button triggers generation → the canned plan renders inline in the card.
+  // The header button triggers generation → the card appears and the canned plan renders inline.
   await page.getByRole('button', { name: 'Plan My Day' }).click()
+  await expect(card).toBeVisible()
   await expect(card.getByText(PLAN.headline)).toBeVisible()
   await expect(card.getByText(PLAN.availableTime)).toBeVisible()
   // exact: true — getByText is case-insensitive substring by default, and the canned headline

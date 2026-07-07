@@ -119,6 +119,17 @@ export async function switchTab(page: Page, name: 'Grid' | 'List'): Promise<void
   await expect(tab).toHaveAttribute('aria-current', 'page')
 }
 
+/**
+ * Expand a list row's detail panel (sliders / due / recurring). The row BODY itself is the toggle
+ * now (batch-2 item 9): a single wide `aria-expanded` button whose accessible name is the row's own
+ * content (rank + text), so there is no "Expand row"-named control anymore. Match it by its
+ * expandable state instead — the row's Done/Delete IconButtons carry no aria-expanded, so a
+ * collapsed-button match inside the row is unambiguous.
+ */
+export async function expandRow(row: Locator): Promise<void> {
+  await row.getByRole('button', { expanded: false }).click()
+}
+
 /** Open the Done page from the Account nav (ADR-0027: Done is a route/page, not a modal). */
 export async function openDone(page: Page): Promise<void> {
   await page
