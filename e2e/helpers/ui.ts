@@ -12,6 +12,12 @@ import { expect, type Locator, type Page } from '@playwright/test'
 
 /** Add a task via the Manual input and wait for its draggable "new item" card to appear. */
 export async function addTask(page: Page, text: string): Promise<void> {
+  // The add widget defaults to BabyClaw; switch it to Manual so the text input is present. The
+  // toggle is idempotent — clicking "Manual" when already on Manual is a no-op.
+  await page
+    .getByRole('group', { name: 'Add mode' })
+    .getByRole('button', { name: 'Manual' })
+    .click()
   await page.getByPlaceholder('manually add task…').fill(text)
   // Scope to the Manual add form: the shell has other "Add" buttons (e.g. the Habits panel),
   // so an unscoped name match is ambiguous. The form is the one holding the Manual input.
