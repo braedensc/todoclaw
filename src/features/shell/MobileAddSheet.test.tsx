@@ -23,6 +23,7 @@ function fakeChat(): ChatController {
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
+    seed: vi.fn(),
   }
 }
 

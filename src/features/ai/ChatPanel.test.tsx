@@ -17,6 +17,7 @@ function chat(over: Partial<ChatController> = {}): ChatController {
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
+    seed: vi.fn(),
     ...over,
   }
 }
