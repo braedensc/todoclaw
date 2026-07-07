@@ -20,6 +20,16 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
+// Encode a raw key (the ArrayBuffer from PushSubscription.getKey) to unpadded base64url — the exact
+// format the server decodes (supabase/functions/_shared/web-push.ts). btoa over the byte string,
+// then URL-safe swaps + strip padding.
+function bufferToBase64Url(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 function isIos(): boolean {
   if (typeof navigator === 'undefined') return false
   return (
@@ -83,17 +93,22 @@ export function usePushSubscription(): PushSubscriptionState {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       })
-      const json = sub.toJSON()
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+      // Read the encryption keys via getKey() (raw ArrayBuffers), NOT sub.toJSON().keys — Safari
+      // leaves toJSON's keys empty even though getKey() returns them. Encode to base64url ourselves.
+      const p256dh = sub.getKey('p256dh')
+      const auth = sub.getKey('auth')
+      if (!sub.endpoint || !p256dh || !auth) {
         throw new Error('subscription missing keys')
       }
       // user_id defaults to auth.uid() (RLS WITH CHECK); we never send it. Re-subscribe upserts.
-      const { error: dbError } = await supabase
-        .from('push_subscriptions')
-        .upsert(
-          { endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth },
-          { onConflict: 'endpoint' },
-        )
+      const { error: dbError } = await supabase.from('push_subscriptions').upsert(
+        {
+          endpoint: sub.endpoint,
+          p256dh: bufferToBase64Url(p256dh),
+          auth: bufferToBase64Url(auth),
+        },
+        { onConflict: 'endpoint' },
+      )
       if (dbError) throw dbError
       return true
     } catch (e) {
