@@ -11,6 +11,9 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY: string
   // Optional: Sentry error reporting. When unset, Sentry is not initialized (dev-mode gate).
   readonly VITE_SENTRY_DSN?: string
+  // Optional: the owner's auth.users id (ADR-0029). Only used to SHOW the owner the "Invite
+  // someone" UI — the real gate is the server-side OWNER_USER_ID check in generate-invite. Public.
+  readonly VITE_OWNER_USER_ID?: string
 }
 
 interface ImportMeta {

@@ -37,12 +37,16 @@ export function MoreSheet({
   open,
   onSettings,
   onBackups,
+  onInvite,
   onSignOut,
   onClose,
 }: {
   open: boolean
   onSettings: () => void
   onBackups: () => void
+  // Owner-only (ADR-0029): present only when the signed-in user is the app owner, so the owner can
+  // mint an invite link from their phone. Omitted for everyone else.
+  onInvite?: () => void
   onSignOut: () => void
   onClose: () => void
 }) {
@@ -53,6 +57,7 @@ export function MoreSheet({
   return (
     <BottomSheet open={open} onClose={onClose} title="More">
       <div className="flex flex-col gap-0.5">
+        {onInvite && <MoreItem glyph="✉" label="Invite someone" onClick={run(onInvite)} />}
         <MoreItem glyph="⚙" label="Settings" onClick={run(onSettings)} />
         <MoreItem glyph="↻" label="Backups" onClick={run(onBackups)} />
         <MoreItem glyph="⏻" label="Sign out" onClick={run(onSignOut)} danger />

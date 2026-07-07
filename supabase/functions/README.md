@@ -10,6 +10,8 @@ run here, never in the frontend bundle (CLAUDE.md Hard Rule; ADR-0015). Deno 2 r
 _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   cors.ts        # origin allow-list (ALLOWED_ORIGIN), preflight — never '*'
   auth.ts        # caller-JWT-scoped Supabase client (RLS applies; no service-role here)
+  admin.ts       # the ONE service-role client (ADR-0029) — used only by redeem-invite (createUser)
+  invite-code.ts # high-entropy Crockford-base32 invite-code generator + redeem URL
   anthropic.ts   # Anthropic SDK client factory + MODEL/MAX_TOKENS (owner key from env)
   guardrails.ts  # per-user rate limits + global budget kill-switch + cost math
   weather.ts     # wttr.in summary, cached ~30min via weather_cache (DEFINER get/put)
@@ -27,6 +29,8 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
 ai-status/       # PR2 proof endpoint: returns the caller's budget/rate-limit state (no model call)
 plan-my-day/     # PR3: schedule + weather-aware daily plan (forced emit_plan tool → structured JSON)
 ai-chat/         # BabyClaw: streaming chat over the capability registry; confirm before destructive ops (ADR-0017)
+generate-invite/ # OWNER-ONLY: mint a redeemable invite code + shareable link (ADR-0029)
+redeem-invite/   # PUBLIC: redeem a code → create the account via service-role admin.createUser (ADR-0029)
 ```
 
 BabyClaw's tool surface lives in `_shared/capabilities/` (a registry meant to be reused by a future
@@ -46,6 +50,18 @@ Backed by `supabase/migrations/20260624010000_ai_usage_and_budget.sql`:
   This keeps the **service-role key out of the functions entirely** — the ledger is reached via
   these RPCs under the caller's JWT, never an admin client.
 
+## Invite codes (ADR-0029)
+
+The one deliberate exception to "no service-role in functions": creating a brand-new Auth account
+requires `auth.admin.createUser`, which has no non-admin path. So `_shared/admin.ts` is the single
+service-role client, fenced to **redeem-invite** only. Everything else is still least-privilege: the
+claim / throttle / release logic lives in `SECURITY DEFINER` RPCs
+(`supabase/migrations/20260707044212_invites.sql`) granted to `service_role` **only**, so the whole
+invite mechanism is off the public PostgREST surface. Backed by three tables — `invites` (owner-RLS,
+list/revoke), `invite_redemptions` (audit), `invite_attempts` (throttle log, no grants). Codes are
+128-bit, single-use by default, expiring, and revocable. `generate-invite` is gated by
+`OWNER_USER_ID`; `redeem-invite` is gated by the code + a per-IP throttle, not by auth.
+
 ## Local dev
 
 ```bash
@@ -59,9 +75,11 @@ Secrets (production; only the human can set — the hook blocks `.env*` + the ke
 ```bash
 supabase secrets set ANTHROPIC_API_KEY=...        # owner key (required for PR3/PR4)
 supabase secrets set ALLOWED_ORIGIN=https://<app> # prod origin for CORS (dev defaults to localhost:5173)
+supabase secrets set OWNER_USER_ID=<uuid>         # who may generate invite codes (ADR-0029)
 ```
 
-`SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected by the platform — no secret to set.
+`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` are auto-injected by the platform
+— no secret to set (the service-role key is used only by `_shared/admin.ts`; never bundled or logged).
 
 ## Testing
 

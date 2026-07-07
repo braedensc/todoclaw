@@ -29,4 +29,18 @@ describe('MoreSheet', () => {
     expect(h.onSettings).toHaveBeenCalledTimes(1)
     expect(h.onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('hides the owner Invite action when onInvite is not provided', () => {
+    render(<MoreSheet open {...handlers()} />)
+    expect(screen.queryByRole('button', { name: 'Invite someone' })).toBeNull()
+  })
+
+  it('shows the Invite action for the owner and runs it', () => {
+    const h = handlers()
+    const onInvite = vi.fn()
+    render(<MoreSheet open {...h} onInvite={onInvite} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Invite someone' }))
+    expect(onInvite).toHaveBeenCalledTimes(1)
+    expect(h.onClose).toHaveBeenCalledTimes(1)
+  })
 })

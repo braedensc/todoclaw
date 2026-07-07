@@ -8,10 +8,19 @@ Email/password authentication via Supabase Auth (GoTrue).
 - **`AuthForm.tsx`** — sign-in-only email/password form. On submit it calls
   `signInWithPassword`. The user is never asked for a `user_id`; the authenticated
   session's `auth.uid()` is what RLS and the `tasks.user_id` default use server-side.
-  **Invite-only (Stage 4, ADR-0014):** there is no account-creation path in the client.
+  **Invite-only (Stage 4, ADR-0014):** the form has no open sign-up path.
   Public sign-up is disabled in the Supabase Auth dashboard; accounts are created by
   owner invite. Everyone who can sign in is trusted, which is what lets AI run on the
   owner's key for all users (ADR-0015).
+- **`AuthGate.tsx`** — the pre-auth surface: shows `AuthForm`, or `RedeemInviteForm` when
+  the visitor arrives via a `/#/redeem?code=…` link or the "Have an invite code?" toggle.
+- **`RedeemInviteForm.tsx`** — code-gated account creation (ADR-0029). Posts
+  `{ code, email, password }` to the `redeem-invite` Edge Function (which validates+claims
+  the code and creates the account via the admin API — `enable_signup` stays off), then
+  signs in. The only client path that ends in a new account, and it needs a valid
+  owner-generated code.
+- **`use-is-owner.ts`** — `useIsOwner()`: reveals the owner-only "Invite someone" UI
+  (`VITE_OWNER_USER_ID`). Display-only; the real gate is server-side (`OWNER_USER_ID`).
 
 ## Notes
 
