@@ -44,3 +44,6 @@ index.
 | [ADR-0022](adr/0022-cidriven-prod-deploy-migrations-edge-functions.md) | 2026-07-02 | CI-driven prod deploy: migrations + Edge Functions on merge to main |
 | [ADR-0023](adr/0023-stage-6-production-cutover-verified-live.md) | 2026-07-02 | Stage 6 production cutover: verified live + external billing posture |
 | [ADR-0024](adr/0024-backup-restore-indb-snapshots-invoker-rpcs.md) | 2026-07-02 | Backup/restore: in-DB snapshots + INVOKER RPCs + JSON export (Stage 5 PR3) |
+| [ADR-0025](adr/0025-mobile-matrix-overview-focus-reinterpretation.md) | 2026-07-06 | Mobile matrix: quadrant overview → focus view reinterpretation |
+| [ADR-0026](adr/0026-mobile-chrome-slim-topbar-bottom-nav.md) | 2026-07-06 | Mobile chrome: slim top bar + thumb-zone bottom nav (Concept D) |
+| [ADR-0027](adr/0027-done-reminders-full-pages-hash-router.md) | 2026-07-06 | Done & Daily reminders as full pages via a minimal hash router |

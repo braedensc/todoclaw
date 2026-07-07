@@ -12,6 +12,14 @@ const TASK = 'Ship the quarterly review'
 test('add a task, drag the new-item card to the grid, and assert its quadrant', async ({
   page,
 }) => {
+  // The capture widget defaults to BabyClaw (the AI router); switch to Manual so the plain add
+  // input is mounted. Inlined (not the shared selectManualMode helper) — this canary spec must not
+  // depend on the helpers it validates.
+  await page
+    .getByRole('group', { name: 'Add mode' })
+    .getByRole('button', { name: 'Manual' })
+    .click()
+
   // Add a task via the Manual input — it materializes as a draggable "new item" card in place
   // (card-in-place, B2), not on the grid yet. Scope the Add click to the Manual add form; the
   // shell has other "Add" buttons (Habits).

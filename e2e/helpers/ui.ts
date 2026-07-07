@@ -10,8 +10,21 @@ import { expect, type Locator, type Page } from '@playwright/test'
 // Data-space y is inverted from screen y (top of the canvas = high importance), so callers
 // pick screen spots: e.g. (0.75, 0.25) lands in data-space (0.75, 0.75) = "Do Now".
 
+/**
+ * Switch the capture widget to Manual mode (idempotent). The widget defaults to BabyClaw (the AI
+ * router), so any flow that drives the plain "manually add task…" input must select Manual first.
+ */
+export async function selectManualMode(page: Page): Promise<void> {
+  const manual = page
+    .getByRole('group', { name: 'Add mode' })
+    .getByRole('button', { name: 'Manual' })
+  if ((await manual.getAttribute('aria-pressed')) !== 'true') await manual.click()
+  await expect(manual).toHaveAttribute('aria-pressed', 'true')
+}
+
 /** Add a task via the Manual input and wait for its draggable "new item" card to appear. */
 export async function addTask(page: Page, text: string): Promise<void> {
+  await selectManualMode(page)
   await page.getByPlaceholder('manually add task…').fill(text)
   // Scope to the Manual add form: the shell has other "Add" buttons (e.g. the Habits panel),
   // so an unscoped name match is ambiguous. The form is the one holding the Manual input.
@@ -106,7 +119,7 @@ export async function switchTab(page: Page, name: 'Grid' | 'List'): Promise<void
   await expect(tab).toHaveAttribute('aria-current', 'page')
 }
 
-/** Open the Done history panel from the header (B8: Done is a header link, not a view). */
+/** Open the Done page from the Account nav (ADR-0027: Done is a route/page, not a modal). */
 export async function openDone(page: Page): Promise<void> {
   await page
     .getByRole('navigation', { name: 'Account' })
@@ -115,10 +128,19 @@ export async function openDone(page: Page): Promise<void> {
   await expect(page.getByRole('region', { name: 'Done' })).toBeVisible()
 }
 
-/** Close the Done history panel, returning to the view underneath. */
+/** Close the Done page (its ✕ → browser Back), returning to the view underneath. */
 export async function closeDone(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Close done' }).click()
   await expect(page.getByRole('region', { name: 'Done' })).toHaveCount(0)
+}
+
+/** Open the Daily reminders page from the Account nav (ADR-0027: a route/page, not a modal). */
+export async function openReminders(page: Page): Promise<void> {
+  await page
+    .getByRole('navigation', { name: 'Account' })
+    .getByRole('button', { name: 'Reminders' })
+    .click()
+  await expect(page.getByRole('region', { name: 'Daily reminders' })).toBeVisible()
 }
 
 /** Open the full chat popup: switch the input widget to BabyClaw, then "Open chat". */

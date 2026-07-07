@@ -9,8 +9,8 @@ import type { Habit } from '../../types/habit'
 // The main-page minified form of Daily reminders: a compact inline row of ACTIVE reminder names,
 // each a small hyperlink-like link (the palette has no blue, so this uses the app's interactive
 // accent — `primary`). It sits near the top of the work area where the full habits strip used to
-// live. The full popup (all reminders + add/queue) is the gear-area RemindersModal; this is the
-// glanceable at-a-glance list.
+// live. The full surface (all reminders + add/queue) is the Reminders page (RemindersPage, ADR-0027);
+// this is the glanceable at-a-glance list.
 //
 // Clicking a name opens a DETAILS modal for THAT single reminder, reusing HabitRow (defaultExpanded)
 // as a popup card — checkbox + steps panel + add-step form. It owns only the "which reminder is
