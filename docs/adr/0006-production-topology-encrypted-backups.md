@@ -7,7 +7,8 @@
   destructive ops against remote DBs, so the single prod project is protected from a
   fat-fingered reset.
 - **Security headers/CSP** ship via `vercel.json` (HSTS, `X-Frame-Options: DENY`, nosniff,
-  CSP limiting `connect-src` to self + `*.supabase.co`). Auth hardening lives in the Supabase
+  CSP limiting `connect-src` to self + `*.supabase.co` + `*.ingest.us.sentry.io` (Sentry
+  error ingest)). Auth hardening lives in the Supabase
   dashboard (human-only toggles), documented in SERVICES.md.
 - **Backups: daily encrypted `pg_dump` of the `public` schema → GitHub Actions artifact**
   (90-day retention). Authenticated by a dedicated least-privilege **`backup_ro`** role
