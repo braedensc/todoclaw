@@ -174,6 +174,35 @@ returns a `200`/`401` (both mean the project is awake).
 
 ---
 
+## Proactive notifications — hourly dispatch (Stage 6, ADR-0031)
+
+Opt-in morning **plan** + evening **recap** Web Push. `.github/workflows/notify.yml` POSTs the
+`dispatch-messages` Edge Function every hour; the function decides who is due (each user's local
+morning/evening hour, quiet-hours aware) and sends. Like keep-alive/backup it SKIPS (green) until
+configured, so it's never red on an unconfigured repo.
+
+**GitHub Actions** (repo → Settings → Secrets and variables → Actions):
+
+| Name              | Kind     | Value                                                                                                         |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `DISPATCH_URL`    | Variable | `https://<prod-ref>.supabase.co/functions/v1/dispatch-messages`                                               |
+| `DISPATCH_SECRET` | Secret   | a strong random string — the function's ONLY caller gate. Set the SAME value on the Supabase project (below). |
+
+**Supabase project** (once, via `supabase secrets set` — never committed; the hook blocks `.env*`):
+
+```bash
+# Generate the VAPID pair once with generateVapidKeys() in supabase/functions/_shared/web-push.ts.
+supabase secrets set VAPID_PUBLIC_KEY=… VAPID_PRIVATE_KEY=… VAPID_SUBJECT=mailto:you@example.com
+supabase secrets set DISPATCH_SECRET=…   # the SAME value as the GitHub Actions secret above
+```
+
+**Vercel** (frontend env): `VITE_VAPID_PUBLIC_KEY` = the VAPID **public** key (public by design; the
+private key stays a server-only Edge secret). Unset ⇒ the Settings notifications toggle says "not
+configured". `dispatch-messages` is already in `deploy.yml`'s deploy loop. Unset VAPID ⇒ messages
+still persist to the in-app inbox; only the push is skipped.
+
+---
+
 ## Production deploy pipeline — Stage 6 (ADR-0022)
 
 `.github/workflows/deploy.yml` applies pending **migrations** and (re)deploys the three **Edge

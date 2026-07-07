@@ -31,6 +31,7 @@ plan-my-day/     # PR3: schedule + weather-aware daily plan (forced emit_plan to
 ai-chat/         # BabyClaw: streaming chat over the capability registry; confirm before destructive ops (ADR-0017)
 generate-invite/ # OWNER-ONLY: mint a redeemable invite code + shareable link (ADR-0030)
 redeem-invite/   # PUBLIC: redeem a code → create the account via service-role admin.createUser (ADR-0030)
+dispatch-messages/ # CRON (notify.yml): proactive daily plan/recap push; DISPATCH_SECRET-gated (ADR-0031)
 ```
 
 BabyClaw's tool surface lives in `_shared/capabilities/` (a registry meant to be reused by a future
@@ -62,13 +63,29 @@ Backed by `supabase/migrations/20260624010000_ai_usage_and_budget.sql`:
 
 The one deliberate exception to "no service-role in functions": creating a brand-new Auth account
 requires `auth.admin.createUser`, which has no non-admin path. So `_shared/admin.ts` is the single
-service-role client, fenced to **redeem-invite** only. Everything else is still least-privilege: the
+service-role client, fenced to **redeem-invite** and **dispatch-messages** (ADR-0031) — the two
+callers with no user JWT. Everything else is still least-privilege: the
 claim / throttle / release logic lives in `SECURITY DEFINER` RPCs
 (`supabase/migrations/20260707044212_invites.sql`) granted to `service_role` **only**, so the whole
 invite mechanism is off the public PostgREST surface. Backed by three tables — `invites` (owner-RLS,
 list/revoke), `invite_redemptions` (audit), `invite_attempts` (throttle log, no grants). Codes are
 128-bit, single-use by default, expiring, and revocable. `generate-invite` is gated by
 `OWNER_USER_ID`; `redeem-invite` is gated by the code + a per-IP throttle, not by auth.
+
+## Proactive notifications (ADR-0031)
+
+`dispatch-messages` is the hourly proactive dispatcher — an opt-in, default-off morning **plan** push
++ evening **recap** push. It is triggered ONLY by `.github/workflows/notify.yml` (hourly cron) with
+the `x-dispatch-secret` header; with no user JWT it runs on the `_shared/admin.ts` service-role client
+via `service_role`-only `SECURITY DEFINER` RPCs (the `*_for_user` guardrails +
+`notification_candidates` / `dispatch_inputs_for_user` / `push_subscriptions_for_user` /
+`prune_push_subscription`; migrations `20260707140000` + `20260707150000`). For each user whose LOCAL
+hour matches their morning/evening pref it CLAIMS today's message idempotently (`claim_message` — the
+row insert is the send lock), pre-generates the plan into `daily_state` under the same `$20`/`$10`
+budget guardrails as interactive AI, and pushes via `_shared/web-push.ts` (RFC 8291 aes128gcm + VAPID,
+pinned to the RFC vectors). Degrades cleanly: a paused budget ⇒ a deterministic message; unset VAPID ⇒
+the message still lands in the in-app inbox (`messages`), push is skipped. See ADR-0031 +
+`src/features/notifications/README.md`.
 
 ## Local dev
 
@@ -87,6 +104,12 @@ supabase secrets set OWNER_USER_ID=<uuid>         # who may generate invite code
 supabase secrets set AI_SPEND_ALERT_WEBHOOK_URL=https://hooks.slack.com/...  # OPTIONAL: owner
 #   per-user spend alert. Slack or Discord incoming-webhook URL (or any receiver). Unset ⇒ alerts
 #   are silently off. Server-only — never a VITE_* var / never in the bundle (it's not a frontend var).
+supabase secrets set DISPATCH_SECRET=...          # notify.yml's shared caller gate (ADR-0031); ALSO
+#   set as a GitHub Actions secret of the same name.
+supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:you@example.com
+#   Web Push (ADR-0031). Generate the pair with generateVapidKeys() in _shared/web-push.ts. Unset ⇒
+#   push skipped (messages still persist to the inbox). VAPID_PUBLIC_KEY also ships to the frontend as
+#   VITE_VAPID_PUBLIC_KEY (Vercel env) — it's public; the PRIVATE key is server-only.
 ```
 
 `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` are auto-injected by the platform
