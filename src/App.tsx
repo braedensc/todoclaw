@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AuthForm } from './features/auth/AuthForm'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
 import { RemindersInline } from './features/habits/RemindersInline'
-import { RemindersModal } from './features/habits/RemindersModal'
+import { RemindersPage } from './features/habits/RemindersPage'
 import { WorkArea } from './features/shell/WorkArea'
 import { MobileBottomNav } from './features/shell/MobileBottomNav'
 import { MoreSheet } from './features/shell/MoreSheet'
@@ -19,22 +19,25 @@ import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { ChatRail } from './features/ai/ChatRail'
 import { BackupsPanel } from './features/backups/BackupsPanel'
-import { DonePanel } from './features/done/DonePanel'
+import { DonePage } from './features/done/DonePage'
 import { SettingsPanel } from './features/settings/SettingsPanel'
+import { useRoute, navigate } from './lib/route'
 import { supabase } from './lib/supabase'
 
 // The signed-in app shell (B8 layout): header (wordmark + Plan My Day + quiet Reminders/Settings/
 // Done/Backups/Sign out links), the persistent Plan card top-center, the work region (a compact
 // inline reminders list + one input widget + the Grid⇄List swap with its embedded toggle). Daily
-// reminders live off the main page now — a gear-area button opens the full popup and the inline
-// names open per-reminder detail cards. Kept separate from App so the ensure-schedule effect only
-// runs once a session exists.
+// reminders live off the main page now — the inline names open per-reminder detail cards. Kept
+// separate from App so the ensure-schedule effect only runs once a session exists.
+//
+// Done and Daily reminders are full pages, not modals (ADR-0027): a hash route (`useRoute`) swaps
+// the home content for the page and the browser Back button pops it. Settings / Backups / Chat stay
+// as route-independent overlays.
 function AppShell() {
+  const route = useRoute()
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
-  const [showDone, setShowDone] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showReminders, setShowReminders] = useState(false)
   // The mobile "More" overflow sheet (Settings / Backups / Grid-only / Sign out).
   const [showMore, setShowMore] = useState(false)
   // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
@@ -70,14 +73,33 @@ function AppShell() {
   // The mobile bottom nav's "+" is a shortcut to the existing capture input: scroll it into view
   // and focus it (Manual or BabyClaw, whichever is showing). Kept inline rather than moved behind a
   // sheet so the grid's tap-to-place add flow — and the golden tapPlaceTask helper — are untouched.
-  const focusAddInput = () => {
+  const focusCaptureInput = useCallback(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     document
       .querySelector<HTMLInputElement>(
         'input[aria-label="Add a task"], input[aria-label="Tell BabyClaw"]',
       )
       ?.focus()
+  }, [])
+
+  // The capture input lives in WorkArea (home only), so "+" from the Done / Reminders pages has to
+  // return home first, then focus once WorkArea has mounted. A ref latch + effect makes that
+  // deterministic: navigate home, and when the route settles to home the effect focuses and clears
+  // the latch. On home it focuses immediately.
+  const pendingCaptureFocus = useRef(false)
+  const focusAddInput = () => {
+    if (route === 'home') focusCaptureInput()
+    else {
+      pendingCaptureFocus.current = true
+      navigate('home')
+    }
   }
+  useEffect(() => {
+    if (route === 'home' && pendingCaptureFocus.current) {
+      pendingCaptureFocus.current = false
+      focusCaptureInput()
+    }
+  }, [route, focusCaptureInput])
 
   return (
     // Full-width shell so the desktop chat push-drawer (ChatRail, fixed to the viewport's right
@@ -101,161 +123,182 @@ function AppShell() {
             'mx-auto max-w-3xl p-6 wide:max-w-[1280px] ' + (isMobile && !gridOnly ? 'pb-24' : '')
           }
         >
-          {isMobile ? (
-            // Mobile (Concept D): a slim top row — wordmark + Plan pill only. The tagline, the
-            // Grid-only pill, and the account links all move off the fold (bottom nav + More sheet).
-            !gridOnly && (
-              <header className="mb-3 flex items-center justify-between gap-3">
-                <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink">
-                  <TodoClawIcon className="h-6 w-6" /> Todoclaw
-                </h1>
-                <button
-                  type="button"
-                  onClick={planner.generate}
-                  disabled={!planner.canGenerate}
-                  title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
-                  className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-                >
-                  {planner.isPending ? (
-                    <Thinking label="Thinking" />
-                  ) : (
-                    <>
-                      <span aria-hidden>✦</span> Plan My Day
-                    </>
-                  )}
-                </button>
-              </header>
-            )
-          ) : (
-            <header className="mb-3 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink wide:text-3xl">
-                    <TodoClawIcon className="h-6 w-6 wide:h-7 wide:w-7" /> Todoclaw
-                  </h1>
-                  <button
-                    type="button"
-                    onClick={planner.generate}
-                    disabled={!planner.canGenerate}
-                    title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
-                    className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-                  >
-                    {planner.isPending ? (
-                      <Thinking label="Thinking" />
-                    ) : (
-                      <>
-                        <span aria-hidden>✦</span> Plan My Day
-                      </>
-                    )}
-                  </button>
-                  {/* Grid-only view — a large pill matching Plan My Day's size, in the app's brand
+          {/* Home vs. a full page. Only 'home' renders the header, plan, inline reminders, and work
+              area; a Done / Daily-reminders page swaps all of that out (ADR-0027). The Settings /
+              Backups overlays and the mobile bottom nav below are route-independent. */}
+          {route === 'home' && (
+            <>
+              {isMobile ? (
+                // Mobile (Concept D): a slim top row — wordmark + Plan pill only. The tagline, the
+                // Grid-only pill, and the account links all move off the fold (bottom nav + More sheet).
+                !gridOnly && (
+                  <header className="mb-3 flex items-center justify-between gap-3">
+                    <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink">
+                      <TodoClawIcon className="h-6 w-6" /> Todoclaw
+                    </h1>
+                    <button
+                      type="button"
+                      onClick={planner.generate}
+                      disabled={!planner.canGenerate}
+                      title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                      className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                    >
+                      {planner.isPending ? (
+                        <Thinking label="Thinking" />
+                      ) : (
+                        <>
+                          <span aria-hidden>✦</span> Plan My Day
+                        </>
+                      )}
+                    </button>
+                  </header>
+                )
+              ) : (
+                <header className="mb-3 flex flex-col gap-3 wide:flex-row wide:flex-wrap wide:items-start wide:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink wide:text-3xl">
+                        <TodoClawIcon className="h-6 w-6 wide:h-7 wide:w-7" /> Todoclaw
+                      </h1>
+                      <button
+                        type="button"
+                        onClick={planner.generate}
+                        disabled={!planner.canGenerate}
+                        title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                        className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                      >
+                        {planner.isPending ? (
+                          <Thinking label="Thinking" />
+                        ) : (
+                          <>
+                            <span aria-hidden>✦</span> Plan My Day
+                          </>
+                        )}
+                      </button>
+                      {/* Grid-only view — a large pill matching Plan My Day's size, in the app's brand
                       green (the same fill as Add / Set / Save actions). Enters a fullscreen,
                       grid-alone mode (tagline / plan / reminders / input / toggle all hidden). */}
-                  <button
-                    type="button"
-                    onClick={() => setGridOnly(true)}
-                    title="Fill the screen with just the grid — hide everything else"
-                    className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-                  >
-                    <span aria-hidden>▦</span> Grid-only view
-                  </button>
-                </div>
-                {!gridOnly && (
-                  <p className="text-sm text-muted">
-                    An AI-enabled planner built on the Eisenhower matrix — sort tasks into quadrants
-                    by urgency and importance.
-                  </p>
-                )}
-              </div>
+                      <button
+                        type="button"
+                        onClick={() => setGridOnly(true)}
+                        title="Fill the screen with just the grid — hide everything else"
+                        className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                      >
+                        <span aria-hidden>▦</span> Grid-only view
+                      </button>
+                    </div>
+                    {!gridOnly && (
+                      <p className="text-sm text-muted">
+                        An AI-enabled planner built on the Eisenhower matrix — sort tasks into
+                        quadrants by urgency and importance.
+                      </p>
+                    )}
+                  </div>
 
-              {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
-              <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
-                <button
-                  type="button"
-                  onClick={() => setShowReminders(true)}
-                  title="Daily reminders"
-                  className="hover:text-ink"
-                >
-                  <span aria-hidden>⚐</span> Reminders
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSettings(true)}
-                  className="hover:text-ink"
-                >
-                  <span aria-hidden>⚙</span> Settings
-                </button>
-                <button type="button" onClick={() => setShowDone(true)} className="hover:text-ink">
-                  <span aria-hidden>✓</span> Done
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowBackups(true)}
-                  className="hover:text-ink"
-                >
-                  <span aria-hidden>↻</span> Backups
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void supabase.auth.signOut()}
-                  className="hover:text-ink"
-                >
-                  Sign out
-                </button>
-              </nav>
-            </header>
-          )}
+                  {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
+                  <nav aria-label="Account" className="flex items-center gap-4 text-xs text-muted">
+                    <button
+                      type="button"
+                      onClick={() => navigate('reminders')}
+                      title="Daily reminders"
+                      className="hover:text-ink"
+                    >
+                      <span aria-hidden>⚐</span> Reminders
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSettings(true)}
+                      className="hover:text-ink"
+                    >
+                      <span aria-hidden>⚙</span> Settings
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate('done')}
+                      className="hover:text-ink"
+                    >
+                      <span aria-hidden>✓</span> Done
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowBackups(true)}
+                      className="hover:text-ink"
+                    >
+                      <span aria-hidden>↻</span> Backups
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void supabase.auth.signOut()}
+                      className="hover:text-ink"
+                    >
+                      Sign out
+                    </button>
+                  </nav>
+                </header>
+              )}
 
-          {/* Plan My Day — a persistent inline card (not a modal), top-center under the header. It
+              {/* Plan My Day — a persistent inline card (not a modal), top-center under the header. It
           hydrates from today's daily_state.plan, survives reloads, and auto-clears at local
           midnight. The box (and its margin wrapper) only render once there's a plan, a generation
           in flight, or an error/paused notice — otherwise nothing shows and the header button is
           the sole trigger. Gate the wrapper on the same condition PlanBox uses to return null so no
           empty margin is left behind. */}
-          {!gridOnly &&
-            (planner.displayPlan || planner.isPending || planner.isError || planner.paused) && (
-              <div className="mb-3">
-                <ErrorBoundary>
-                  <PlanBox
-                    plan={planner.displayPlan}
-                    paused={planner.paused}
-                    isPending={planner.isPending}
-                    isError={planner.isError}
-                    onRetry={planner.generate}
-                    onDismiss={planner.clear}
-                  />
-                </ErrorBoundary>
-              </div>
-            )}
+              {!gridOnly &&
+                (planner.displayPlan || planner.isPending || planner.isError || planner.paused) && (
+                  <div className="mb-3">
+                    <ErrorBoundary>
+                      <PlanBox
+                        plan={planner.displayPlan}
+                        paused={planner.paused}
+                        isPending={planner.isPending}
+                        isError={planner.isError}
+                        onRetry={planner.generate}
+                        onDismiss={planner.clear}
+                      />
+                    </ErrorBoundary>
+                  </div>
+                )}
 
-          {/* Daily reminders — the minified inline form: a compact row of active reminder names near
+              {/* Daily reminders — the minified inline form: a compact row of active reminder names near
           the top of the work area. Each name opens that reminder's detail card; the full popup is
           the gear-area Reminders button. The old full-width habits strip is gone (B2 owns the grid
           expansion into the freed space). Hidden in grid-only mode. */}
-          {!gridOnly && (
+              {!gridOnly && (
+                <ErrorBoundary>
+                  <RemindersInline />
+                </ErrorBoundary>
+              )}
+
+              <ErrorBoundary>
+                <WorkArea
+                  chat={chat}
+                  onOpenChat={() => setShowChat(true)}
+                  gridOnly={gridOnly}
+                  onExitGridOnly={() => setGridOnly(false)}
+                />
+              </ErrorBoundary>
+            </>
+          )}
+
+          {/* Full pages (ADR-0027) — swapped in for the home content above when the route matches.
+              Each keeps its original body (DoneView / HabitsView); only the container changed from
+              modal to page. Back is the ✕ inside each (→ history.back) or the browser button. */}
+          {route === 'done' && (
             <ErrorBoundary>
-              <RemindersInline />
+              <DonePage />
             </ErrorBoundary>
           )}
 
-          <ErrorBoundary>
-            <WorkArea
-              chat={chat}
-              onOpenChat={() => setShowChat(true)}
-              gridOnly={gridOnly}
-              onExitGridOnly={() => setGridOnly(false)}
-            />
-          </ErrorBoundary>
+          {route === 'reminders' && (
+            <ErrorBoundary>
+              <RemindersPage />
+            </ErrorBoundary>
+          )}
 
+          {/* Route-independent overlays: Settings and Backups sit over whatever route is active. */}
           {showBackups && (
             <ErrorBoundary>
               <BackupsPanel onClose={() => setShowBackups(false)} />
-            </ErrorBoundary>
-          )}
-
-          {showDone && (
-            <ErrorBoundary>
-              <DonePanel onClose={() => setShowDone(false)} />
             </ErrorBoundary>
           )}
 
@@ -265,27 +308,27 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
-          {showReminders && (
-            <ErrorBoundary>
-              <RemindersModal onClose={() => setShowReminders(false)} />
-            </ErrorBoundary>
-          )}
-
           {/* Mobile chrome (Concept D): the thumb-zone bottom nav + its "More" overflow sheet.
               Hidden in grid-only mode (the fullscreen grid owns the screen). */}
           {isMobile && !gridOnly && (
             <>
               <MobileBottomNav
+                route={route}
                 onAdd={focusAddInput}
-                onReminders={() => setShowReminders(true)}
-                onDone={() => setShowDone(true)}
+                onReminders={() => navigate('reminders')}
+                onDone={() => navigate('done')}
                 onMore={() => setShowMore(true)}
               />
               <MoreSheet
                 open={showMore}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
-                onGridOnly={() => setGridOnly(true)}
+                // Grid-only lives in WorkArea (home-only), so return home before going fullscreen —
+                // the More sheet is reachable from the Done / Reminders pages too.
+                onGridOnly={() => {
+                  navigate('home')
+                  setGridOnly(true)
+                }}
                 onSignOut={() => void supabase.auth.signOut()}
                 onClose={() => setShowMore(false)}
               />

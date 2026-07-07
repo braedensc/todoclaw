@@ -1,17 +1,20 @@
 import { test, expect } from '../helpers/fixtures'
+import { openReminders } from '../helpers/ui'
 
-// Golden path: add a daily habit, check it off for today, add a step (subtask) and check that
-// too — then reload to prove the checks persisted to daily_state (they reset each local day by
-// reading a fresh date-keyed row, so "checked" must survive a reload within the same day).
-// Habits renders on the Grid tab (the default view on load) — no tab switch needed.
+// Golden path: add a daily reminder (habit), check it off for today, add a step (subtask) and
+// check that too — then reload to prove the checks persisted to daily_state (they reset each local
+// day by reading a fresh date-keyed row, so "checked" must survive a reload within the same day).
+// The full reminders view lives on the Daily reminders page (ADR-0027) — open it from the Account
+// nav first. UI copy says "reminders"; the underlying hooks/labels keep "habit" identifiers.
 const HABIT = 'Morning stretch'
 const STEP = 'Neck rolls'
 
-test('add a habit, check it and a step for today; checks survive a reload', async ({ page }) => {
-  const habitsSection = page.getByRole('region', { name: 'Habits' })
+test('add a reminder, check it and a step for today; checks survive a reload', async ({ page }) => {
+  await openReminders(page)
+  const habitsSection = page.getByRole('region', { name: 'Daily reminders' })
 
-  // Add the habit — it lands in the active list with an unchecked daily checkbox.
-  await habitsSection.getByPlaceholder('Add a habit…').fill(HABIT)
+  // Add the reminder — it lands in the active list with an unchecked daily checkbox.
+  await habitsSection.getByPlaceholder('Add a reminder…').fill(HABIT)
   await habitsSection.getByRole('button', { name: /^Add$/ }).click()
   const habitCheck = page.getByLabel(`Mark "${HABIT}" done today`)
   await expect(habitCheck).toBeVisible()

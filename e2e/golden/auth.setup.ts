@@ -22,11 +22,10 @@ setup('authenticate', async ({ page }) => {
   await page.getByPlaceholder('Password').fill(TEST_USER.password)
   await page.getByRole('button', { name: /sign in/i }).click()
 
-  // The app shell renders once the session resolves (the Manual add input + view toggle are
-  // shell-only — they never appear on the sign-in screen). Assert the Manual INPUT by its
-  // placeholder rather than an "Add" button: the shell has two "Add" buttons (the Manual add
-  // form and the Habits panel), so a name-only button match is ambiguous.
-  await expect(page.getByPlaceholder('manually add task…')).toBeVisible()
+  // The app shell renders once the session resolves — assert two shell-only landmarks that never
+  // appear on the sign-in screen and don't depend on the capture widget's mode (it defaults to
+  // BabyClaw, so the Manual input isn't mounted until a flow selects it — see selectManualMode).
+  await expect(page.getByRole('group', { name: 'Add mode' })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Views' })).toBeVisible()
 
   await page.context().storageState({ path: AUTH_STATE_PATH })

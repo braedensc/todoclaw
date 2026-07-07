@@ -13,7 +13,7 @@ import { useConfirm } from '../../components/use-confirm'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
 import type { Habit } from '../../types/habit'
 
-// Daily reminders — the body of the "Daily reminders" modal (RemindersModal). UI copy says
+// Daily reminders — the body of the "Daily reminders" page (RemindersPage, ADR-0027). UI copy says
 // "reminders"; the code/table/hooks keep the original "habit" identifiers by design. Parity:
 // planning/eisenclaw-export/docs/eisenclaw.md "Daily Habits", pics/Todopic3.jpeg. Two groups:
 //   - ACTIVE habits (active === true): expandable rows with a daily checkbox + a steps panel.
@@ -98,8 +98,8 @@ export function HabitsView() {
   }
 
   return (
-    // No panel chrome / heading of its own — this renders inside the "Daily reminders" modal
-    // (RemindersModal), which supplies the surface and the title. Kept a labeled region for a11y.
+    // No panel chrome / heading of its own — this renders inside the "Daily reminders" page
+    // (RemindersPage), which supplies the surface and the title. Kept a labeled region for a11y.
     <section aria-label="Daily reminders">
       {active.length === 0 && queued.length === 0 ? (
         <div className="mb-3 flex flex-col items-center gap-1 py-2 text-center">
