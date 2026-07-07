@@ -66,7 +66,12 @@ export function MobileBottomNav({
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <NavItem glyph="✚" label="Add" onClick={onAdd} accent />
-      <NavItem glyph="⚐" label="Reminders" onClick={onReminders} active={route === 'reminders'} />
+      <NavItem
+        glyph="⚐"
+        label="Daily reminders"
+        onClick={onReminders}
+        active={route === 'reminders'}
+      />
       <NavItem glyph="✓" label="Done" onClick={onDone} active={route === 'done'} />
       <NavItem glyph="⋯" label="More" onClick={onMore} />
     </nav>

@@ -377,7 +377,14 @@ const TONE_CLASS: Record<BabyClawTone, string> = {
   paused: 'text-muted',
 }
 
-function BabyClawInput({ chat, onOpenChat }: { chat: ChatController; onOpenChat: () => void }) {
+// Exported so the mobile add sheet (MobileAddSheet) can reuse the exact BabyClaw capture UI.
+export function BabyClawInput({
+  chat,
+  onOpenChat,
+}: {
+  chat: ChatController
+  onOpenChat: () => void
+}) {
   const [text, setText] = useState('')
   const { send, busy, paused, pending, error, items } = chat
 

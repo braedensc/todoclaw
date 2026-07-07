@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AuthForm } from './features/auth/AuthForm'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
@@ -7,6 +7,7 @@ import { RemindersPage } from './features/habits/RemindersPage'
 import { WorkArea } from './features/shell/WorkArea'
 import { MobileBottomNav } from './features/shell/MobileBottomNav'
 import { MoreSheet } from './features/shell/MoreSheet'
+import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useIsMobile } from './hooks/use-is-mobile'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { TodoClawIcon } from './components/TodoClawIcon'
@@ -38,8 +39,9 @@ function AppShell() {
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  // The mobile "More" overflow sheet (Settings / Backups / Grid-only / Sign out).
+  // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
   // from the header pill (desktop) or the More sheet (mobile); left via the overlay's ✕ pill or Esc.
   const [gridOnly, setGridOnly] = useState(false)
@@ -69,37 +71,6 @@ function AppShell() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [gridOnly])
-
-  // The mobile bottom nav's "+" is a shortcut to the existing capture input: scroll it into view
-  // and focus it (Manual or BabyClaw, whichever is showing). Kept inline rather than moved behind a
-  // sheet so the grid's tap-to-place add flow — and the golden tapPlaceTask helper — are untouched.
-  const focusCaptureInput = useCallback(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    document
-      .querySelector<HTMLInputElement>(
-        'input[aria-label="Add a task"], input[aria-label="Tell BabyClaw"]',
-      )
-      ?.focus()
-  }, [])
-
-  // The capture input lives in WorkArea (home only), so "+" from the Done / Reminders pages has to
-  // return home first, then focus once WorkArea has mounted. A ref latch + effect makes that
-  // deterministic: navigate home, and when the route settles to home the effect focuses and clears
-  // the latch. On home it focuses immediately.
-  const pendingCaptureFocus = useRef(false)
-  const focusAddInput = () => {
-    if (route === 'home') focusCaptureInput()
-    else {
-      pendingCaptureFocus.current = true
-      navigate('home')
-    }
-  }
-  useEffect(() => {
-    if (route === 'home' && pendingCaptureFocus.current) {
-      pendingCaptureFocus.current = false
-      focusCaptureInput()
-    }
-  }, [route, focusCaptureInput])
 
   return (
     // Full-width shell so the desktop chat push-drawer (ChatRail, fixed to the viewport's right
@@ -203,7 +174,7 @@ function AppShell() {
                       title="Daily reminders"
                       className="hover:text-ink"
                     >
-                      <span aria-hidden>⚐</span> Reminders
+                      <span aria-hidden>⚐</span> Daily reminders
                     </button>
                     <button
                       type="button"
@@ -314,21 +285,21 @@ function AppShell() {
             <>
               <MobileBottomNav
                 route={route}
-                onAdd={focusAddInput}
+                onAdd={() => setShowAdd(true)}
                 onReminders={() => navigate('reminders')}
                 onDone={() => navigate('done')}
                 onMore={() => setShowMore(true)}
+              />
+              <MobileAddSheet
+                open={showAdd}
+                chat={chat}
+                onOpenChat={() => setShowChat(true)}
+                onClose={() => setShowAdd(false)}
               />
               <MoreSheet
                 open={showMore}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
-                // Grid-only lives in WorkArea (home-only), so return home before going fullscreen —
-                // the More sheet is reachable from the Done / Reminders pages too.
-                onGridOnly={() => {
-                  navigate('home')
-                  setGridOnly(true)
-                }}
                 onSignOut={() => void supabase.auth.signOut()}
                 onClose={() => setShowMore(false)}
               />

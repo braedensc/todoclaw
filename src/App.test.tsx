@@ -85,9 +85,9 @@ describe('App shell', () => {
   it('renders the Grid/List toggle and the quiet header links (incl. Reminders) when logged in', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     render(<App />)
-    // Grid/List come from the embedded ViewToggle; Done + Reminders are quiet header links (B8).
+    // Grid/List come from the embedded ViewToggle; Done + Daily reminders are quiet header links.
     // Exact names — 'Grid' must NOT also match the "Grid-only view" header pill.
-    for (const label of ['Grid', 'List', 'Done', 'Reminders']) {
+    for (const label of ['Grid', 'List', 'Done', 'Daily reminders']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
     // The full reminders popup is closed until the gear-area button is clicked — no dialog yet.
