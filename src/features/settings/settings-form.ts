@@ -34,6 +34,12 @@ export interface SettingsDraft {
   babyclawTone: '' | BabyclawTone
   babyclawVerbosity: '' | BabyclawVerbosity
   babyclawInstructions: string
+  // Proactive notifications (ADR-0031). enabled is the toggle; hours are '' until set.
+  notificationsEnabled: boolean
+  morningHour: string
+  eveningHour: string
+  quietStartHour: string
+  quietEndHour: string
 }
 
 export const EMPTY_DRAFT: SettingsDraft = {
@@ -54,6 +60,11 @@ export const EMPTY_DRAFT: SettingsDraft = {
   babyclawTone: '',
   babyclawVerbosity: '',
   babyclawInstructions: '',
+  notificationsEnabled: false,
+  morningHour: '',
+  eveningHour: '',
+  quietStartHour: '',
+  quietEndHour: '',
 }
 
 const numToStr = (n: number | undefined): string => (n == null ? '' : String(n))
@@ -64,6 +75,7 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
   const sat = c.weekend?.saturday ?? {}
   const sun = c.weekend?.sunday ?? {}
   const baby = c.babyclaw ?? {}
+  const notif = c.notifications ?? {}
   return {
     location: c.location ?? '',
     wakeTime: wd.wakeTime ?? '',
@@ -82,6 +94,11 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
     babyclawTone: baby.tone ?? '',
     babyclawVerbosity: baby.verbosity ?? '',
     babyclawInstructions: baby.customInstructions ?? '',
+    notificationsEnabled: notif.enabled ?? false,
+    morningHour: numToStr(notif.morningHour),
+    eveningHour: numToStr(notif.eveningHour),
+    quietStartHour: numToStr(notif.quietStartHour),
+    quietEndHour: numToStr(notif.quietEndHour),
   }
 }
 
@@ -99,6 +116,7 @@ const clamped =
     return Math.min(max, Math.max(min, n))
   }
 const hours = clamped(0, 24)
+const hour24 = clamped(0, 23) // a wall-clock hour 0–23
 
 // Drop undefined values; return undefined when the object ends up empty so we never persist `{}`
 // sub-objects (keeps the stored jsonb minimal and the plan prompt's `if (field)` guards simple).
@@ -137,6 +155,15 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     verbosity: draft.babyclawVerbosity || undefined,
     customInstructions: str(draft.babyclawInstructions),
   })
+  // Hours persist whenever set (they're preferences); `enabled` is the gate the dispatcher checks.
+  // A never-touched notifications section compacts away entirely (no `{}` block persisted).
+  const notifications = compact({
+    enabled: draft.notificationsEnabled || undefined,
+    morningHour: hour24(draft.morningHour),
+    eveningHour: hour24(draft.eveningHour),
+    quietStartHour: hour24(draft.quietStartHour),
+    quietEndHour: hour24(draft.quietEndHour),
+  })
   const raw = compact({
     location: str(draft.location),
     weekday,
@@ -144,6 +171,7 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     commitments: commitments.length ? commitments : undefined,
     planNotes: str(draft.planNotes),
     babyclaw,
+    notifications,
   })
   return ScheduleConfigSchema.parse(raw ?? {})
 }

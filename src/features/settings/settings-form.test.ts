@@ -53,4 +53,46 @@ describe('settings-form', () => {
     expect(out.location).toBeUndefined()
     expect(out.planNotes).toBe('mornings')
   })
+
+  it('round-trips a notifications block (enabled + hours + quiet)', () => {
+    const config: ScheduleConfig = {
+      notifications: {
+        enabled: true,
+        morningHour: 8,
+        eveningHour: 21,
+        quietStartHour: 22,
+        quietEndHour: 7,
+      },
+    }
+    expect(draftToConfig(configToDraft(config))).toEqual(config)
+  })
+
+  it('a normal save preserves an existing notifications block (anti-clobber)', () => {
+    // The Settings panel saves the WHOLE config from the draft. Editing an unrelated field and
+    // saving must NOT drop notifications — the regression this whole draft integration guards against.
+    const config: ScheduleConfig = {
+      location: 'Atlanta',
+      notifications: { enabled: true, morningHour: 8, eveningHour: 21 },
+    }
+    const draft = configToDraft(config)
+    const saved = draftToConfig({ ...draft, planNotes: 'new note' })
+    expect(saved.notifications).toEqual({ enabled: true, morningHour: 8, eveningHour: 21 })
+    expect(saved.planNotes).toBe('new note')
+  })
+
+  it('persists hour prefs even when disabled; keeps `enabled` only when true', () => {
+    const out = draftToConfig({ ...EMPTY_DRAFT, notificationsEnabled: false, morningHour: '8' })
+    expect(out.notifications).toEqual({ morningHour: 8 }) // hour kept; no enabled key
+  })
+
+  it('clamps notification hours to 0–23', () => {
+    const out = draftToConfig({
+      ...EMPTY_DRAFT,
+      notificationsEnabled: true,
+      morningHour: '25',
+      eveningHour: '-3',
+    })
+    expect(out.notifications?.morningHour).toBe(23)
+    expect(out.notifications?.eveningHour).toBe(0)
+  })
 })
