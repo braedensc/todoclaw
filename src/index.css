@@ -3,10 +3,56 @@
 @tailwind utilities;
 
 /* Warm-paper base. Fonts are loaded via @fontsource in src/main.tsx; the families
-   themselves are declared as Tailwind tokens (tailwind.config.js → fontFamily). */
+   themselves are declared as Tailwind tokens (tailwind.config.js → fontFamily).
+
+   Atmosphere (the "style mix" pass): the background is no longer a flat hex — four ultra-soft
+   radial washes echo the quadrant colors in their actual corners (schedule green top-left,
+   do-now terracotta top-right, someday grey bottom-left, errands olive bottom-right), and a
+   fine SVG-noise grain kills the vector-flatness. All layers are fixed-attachment so the light
+   stays put while the page scrolls. Decorative only — contrast of text on bg is unaffected
+   (every wash is ≤ 8.5% alpha). */
 @layer base {
   body {
     @apply bg-bg font-sans text-ink antialiased;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
+      radial-gradient(58% 46% at 8% 0%, rgba(61, 122, 95, 0.085), transparent 70%),
+      radial-gradient(58% 46% at 94% 0%, rgba(191, 94, 42, 0.085), transparent 70%),
+      radial-gradient(52% 42% at 4% 100%, rgba(133, 124, 110, 0.075), transparent 70%),
+      radial-gradient(52% 42% at 96% 100%, rgba(125, 107, 30, 0.06), transparent 70%);
+    background-attachment: fixed;
+  }
+}
+
+/* TodoClaw's blink (components/TodoClawPeek) — a quick scaleY squish of the eye groups every
+   few seconds. The -alt clock runs a different period + phase so when two pups share the screen
+   (wordmark + the grid-edge peeker) they never blink in sync. Reduced-motion stops it; the eyes
+   just stay open. */
+.tc-eye-blink,
+.tc-eye-blink-alt {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tc-blink 6.5s infinite;
+}
+.tc-eye-blink-alt {
+  animation-duration: 7.4s;
+  animation-delay: 2.3s;
+}
+@keyframes tc-blink {
+  0%,
+  93.5%,
+  97%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-eye-blink,
+  .tc-eye-blink-alt {
+    animation: none;
   }
 }
 

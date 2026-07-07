@@ -34,7 +34,25 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
   const [mode, setMode] = useState<Mode>('babyclaw')
 
   return (
-    <div className="rounded-[10px] border border-border bg-card p-2">
+    // On BabyClaw's side the whole widget picks up a whisper of his slate-blue — a tinted
+    // border, a one-hairline ring, and a wash fading down from the top edge. Inline (not
+    // Tailwind opacity modifiers) to match how this file already does translucent color, and
+    // within STYLE.md's rule for the `puppy` token: BabyClaw-mode accents only. Manual mode
+    // drops back to the plain warm-paper widget.
+    <div
+      className="rounded-[10px] border border-border bg-card p-2 transition-[border-color,box-shadow] duration-300"
+      style={
+        mode === 'babyclaw'
+          ? {
+              borderColor: 'rgba(95, 138, 163, 0.45)',
+              boxShadow:
+                '0 0 0 1px rgba(95, 138, 163, 0.14), 0 2px 10px -4px rgba(95, 138, 163, 0.25)',
+              backgroundImage:
+                'linear-gradient(180deg, rgba(95, 138, 163, 0.045), rgba(255, 255, 255, 0) 60%)',
+            }
+          : undefined
+      }
+    >
       <div className="flex flex-wrap items-start gap-2">
         <ModeToggle mode={mode} onSelect={setMode} />
         {mode === 'manual' ? (
