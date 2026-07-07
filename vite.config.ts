@@ -25,9 +25,21 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/',
         scope: '/',
-        // SVG icon for now (no rasterizer in this environment); PNG/maskable/apple-touch is a
-        // follow-up. Chrome/desktop/Android install with an SVG "any" icon.
-        icons: [{ src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+        // SVG (scales anywhere) + rasterized PNGs for platforms that require fixed sizes. The
+        // maskable variant has an opaque background so Android's adaptive-icon crop never shows
+        // transparency; apple-touch-icon (iOS) is linked from index.html, not the manifest.
+        // Regenerate the PNGs from favicon.svg with `npm run gen:icons`.
+        icons: [
+          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          {
+            src: 'pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
       },
       injectManifest: {
         // Precache the built app shell (JS/CSS/HTML/fonts) so an installed PWA opens offline.
