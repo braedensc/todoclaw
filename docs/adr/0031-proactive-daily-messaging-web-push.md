@@ -27,11 +27,12 @@ Ship it in the sequence below (one branch = one PR). The moving parts:
 - **Per-user local time.** The dispatcher derives each user's local hour from `user_schedule.timezone`
   via `Intl.DateTimeFormat` and matches it against explicit integer `morningHour` / `eveningHour`
   prefs (not freeform wake/bed strings) to decide who is due this hour.
-- **System auth — a dispatch-only, fenced service-role client (`_shared/admin.ts`).** The cron has no
+- **System auth — reuse the existing fenced service-role client (`_shared/admin.ts`).** The cron has no
   user JWT, and the guardrail RPCs raise `not_authenticated` when `auth.uid()` is null. So
-  `dispatch-messages` uses a service-role client to call `*_for_user(p_user_id, …)` SECURITY DEFINER
-  RPCs (granted to `service_role` only). **This narrowly amends ADR-0015** ("no service-role client")
-  — see Why this shape.
+  `dispatch-messages` uses `adminClient()` — the single service-role client ADR-0030 already
+  introduced for `redeem-invite` — to call `*_for_user(p_user_id, …)` SECURITY DEFINER RPCs (granted to
+  `service_role` only). It becomes `admin.ts`'s **second** fenced caller; no new service-role surface —
+  see Why this shape.
 - **Idempotency — the message row is the claim.** A `messages` table with `unique(user_id, local_date,
   kind)` and a claim RPC doing `insert … on conflict do nothing returning id`. AI + push happen **only
   if a row was inserted**, so an overlapping/retried cron never double-sends.
@@ -60,18 +61,21 @@ could have silently failed on a real phone — is de-risked before anything is b
 - **Cron over pg_cron/Vault.** Fits the repo's existing scheduled-work pattern and needs no new DB
   extensions or secret store. The cost is hour granularity; the inbox absorbs it. If tighter timing is
   ever wanted, `pg_cron` + `pg_net` calling the same function is the documented upgrade.
-- **Service-role client — why it's necessary and how ADR-0015 still holds.** The cron must act across
-  users with no JWT; that requires a system credential. The alternatives fail:
-  _anon client + DEFINER RPCs_ would force those RPCs to be granted to `public`, making them callable
-  by anyone with the (public) anon key — the `DISPATCH_SECRET` only gates the HTTP function, not direct
-  PostgREST; _pg_cron_ can't originate the Anthropic call for a plan. So a service-role client is the
-  only clean path. Crucially, **Supabase already injects `SUPABASE_SERVICE_ROLE_KEY` into every Edge
-  Function's environment** — introducing `admin.ts` adds *code that uses* the key, not the key's
-  presence. ADR-0015's threat model is **prompt injection via BabyClaw**, and injection changes model
-  outputs, not code paths: the BabyClaw tool registry is fixed code, and `admin.ts` is imported by
-  `dispatch-messages` alone (never by `ai-chat`/`plan-my-day`). The residual surface is code review,
-  not a reachable runtime path — so the "no service-role client in the request path" property is
-  preserved. Spend is still attributed per user and bounded by the same caps via the `*_for_user` RPCs.
+- **Service-role client — an established pattern, not a new seal.** The cron must act across users with
+  no JWT; that requires a system credential. The alternatives fail: _anon client + DEFINER RPCs_ would
+  force those RPCs to be granted to `public`, making them callable by anyone with the (public) anon key
+  — the `DISPATCH_SECRET` only gates the HTTP function, not direct PostgREST; _pg_cron_ can't originate
+  the Anthropic call for a plan. **ADR-0030 already answered this**: it introduced the one service-role
+  client (`_shared/admin.ts`) for `redeem-invite`, plus the `revoke all from public` / `grant execute
+  to service_role` DEFINER-RPC pattern that keeps sensitive logic off the public PostgREST surface.
+  `dispatch-messages` reuses `adminClient()` verbatim and adds its `*_for_user` guardrail RPCs under the
+  same fencing — a second symmetric caller, not a new capability. `SUPABASE_SERVICE_ROLE_KEY` is
+  auto-injected into every function's env already (never a managed secret, never bundled), so this adds
+  *code that uses* the key, not the key's presence. ADR-0015's real threat — **prompt injection via
+  BabyClaw** — cannot reach it: injection changes model output, not code paths; the tool registry is
+  fixed code, and `admin.ts` is imported only by `redeem-invite` and `dispatch-messages`, never by
+  `ai-chat`/`plan-my-day`. The "no service-role client in the request/AI path" property is preserved,
+  and spend stays attributed per user under the same caps via the `*_for_user` RPCs.
 - **From-scratch Web Push over a library.** The Edge tree carries only three deps. Node-`crypto`-based
   `web-push` doesn't run on Deno; a WebCrypto jsr lib (`@negrel/webpush`) would work but adds a
   supply-chain surface for ~200 lines we can pin to the RFC ourselves. Doing it in-house means every
@@ -100,6 +104,7 @@ could have silently failed on a real phone — is de-risked before anything is b
   `dispatch-messages` must also be added to `deploy.yml`'s hardcoded function list or it never ships.
 
 **Down path:** remove `notify.yml`, `dispatch-messages`, `_shared/{web-push,guardrails-system,
-run-recap}.ts` + `admin.ts`, the `*_for_user` RPCs, and the `messages` / `push_subscriptions` tables
-(drop migrations). Frontend: drop the PWA plugin, `sw.ts`, the notifications feature, and the
+run-recap}.ts`, the `*_for_user` RPCs, and the `messages` / `push_subscriptions` tables (drop
+migrations). Leave `admin.ts` (shared with `redeem-invite`; just drop `dispatch-messages` from its
+fence comment). Frontend: drop the PWA plugin, `sw.ts`, the notifications feature, and the
 `#/chat/<id>` route. No user data depends on it; disabling the cron alone fully halts the feature.
