@@ -22,11 +22,10 @@ setup('authenticate', async ({ page }) => {
   await page.getByPlaceholder('Password').fill(TEST_USER.password)
   await page.getByRole('button', { name: /sign in/i }).click()
 
-  // The app shell renders once the session resolves (the Manual add input + view toggle are
-  // shell-only — they never appear on the sign-in screen). Assert the Manual INPUT by its
-  // placeholder rather than an "Add" button: the shell has two "Add" buttons (the Manual add
-  // form and the Habits panel), so a name-only button match is ambiguous.
-  await expect(page.getByPlaceholder('manually add task…')).toBeVisible()
+  // The app shell renders once the session resolves. Assert two shell-only, mode-agnostic elements
+  // that never appear on the sign-in screen: the Add-mode toggle (the app defaults to BabyClaw, so
+  // the Manual input isn't in the DOM until you switch) and the Views toggle.
+  await expect(page.getByRole('group', { name: 'Add mode' })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'Views' })).toBeVisible()
 
   await page.context().storageState({ path: AUTH_STATE_PATH })

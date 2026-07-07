@@ -39,7 +39,8 @@ export function AddTaskSheet({
   )
 }
 
-function AddTaskForm({
+// Exported so MobileAddSheet can reuse the manual (text + quadrant picker) form under its own toggle.
+export function AddTaskForm({
   defaultQuadrant,
   onAdd,
   inputRef,

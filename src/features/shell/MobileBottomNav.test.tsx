@@ -24,7 +24,7 @@ describe('MobileBottomNav', () => {
   it('renders the four thumb-zone actions and wires each callback', () => {
     const { onAdd, onReminders, onDone, onMore } = setup()
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Reminders' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Daily reminders' }))
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
     expect(onAdd).toHaveBeenCalledTimes(1)

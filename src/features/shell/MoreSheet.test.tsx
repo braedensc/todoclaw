@@ -6,7 +6,6 @@ describe('MoreSheet', () => {
   const handlers = () => ({
     onSettings: vi.fn(),
     onBackups: vi.fn(),
-    onGridOnly: vi.fn(),
     onSignOut: vi.fn(),
     onClose: vi.fn(),
   })
@@ -18,7 +17,7 @@ describe('MoreSheet', () => {
 
   it('lists the overflow actions when open', () => {
     render(<MoreSheet open {...handlers()} />)
-    for (const label of ['Settings', 'Backups', 'Grid-only view', 'Sign out']) {
+    for (const label of ['Settings', 'Backups', 'Sign out']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
   })

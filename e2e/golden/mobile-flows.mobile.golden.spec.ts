@@ -1,36 +1,45 @@
 import { test, expect } from '../helpers/fixtures'
-import { tapPlaceTask, openDone } from '../helpers/ui'
+import { openDone } from '../helpers/ui'
+import type { Page } from '@playwright/test'
 
-// Mobile golden path (Stage 5). Runs in the `chromium-mobile` project (Pixel 7 viewport + touch),
-// so `useIsMobile` (< 720px) is true: the grid uses TAP-TO-PLACE instead of drag. The Grid⇄List
-// toggle is the same embedded segmented control as on desktop (B8 retired the fixed bottom tab
-// bar), just compact. The per-test DB wipe (fixtures) keeps these independent of the desktop
-// specs despite the shared user.
+// Mobile golden path (ADR-0027). Runs in the `chromium-mobile` project (Pixel 7 viewport + touch),
+// so `useIsMobile` (< 720px) is true. On mobile there is NO grid and NO Grid/List toggle:
+// MobileMatrix (the quadrant overview→focus list) is the only task surface, and ADDING happens via
+// the bottom nav's "+" → MobileAddSheet (BabyClaw / Manual toggle). The Manual path drops a PLACED
+// task at the chosen quadrant's center. The per-test DB wipe (fixtures) keeps these independent.
+//
+// NOTE: rewritten from the retired tap-to-place flow when the mobile grid was removed. Run the full
+// golden suite locally to confirm selectors before merge.
 
-test('tap-to-place: select a new-item card, tap the grid, the card lands in the right quadrant', async ({
+// Add a task through the bottom-nav "+" sheet in Manual mode, into a given quadrant.
+async function addManual(page: Page, text: string, quadrant: string): Promise<void> {
+  await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
+  const sheet = page.getByRole('dialog', { name: 'Add a task' })
+  await sheet.getByRole('button', { name: 'Manual' }).tap()
+  await sheet.getByLabel('Task text').fill(text)
+  await sheet.getByRole('button', { name: quadrant }).tap()
+  await sheet.getByRole('button', { name: 'Add task' }).tap()
+  await expect(sheet).toBeHidden()
+}
+
+test('add via the bottom-nav "+" (manual → quadrant) and the task lands in that quadrant', async ({
   page,
 }) => {
-  // Screen (0.75, 0.25) → data (0.75, 0.75) = Do Now (urgent + important). Upper canvas, well
-  // clear of the fixed bottom bar so the tap lands on the canvas, not the nav.
-  const card = await tapPlaceTask(page, 'Book the dentist', 0.75, 0.25)
-  await expect(card).toHaveAttribute('data-quadrant', 'do-now')
+  await addManual(page, 'Book the dentist', 'Do Now')
+
+  // The Do Now overview cell now counts it; drill in and confirm it's a row.
+  await page.getByRole('button', { name: /Do Now, \d+ task/ }).tap()
+  await expect(page.getByRole('button', { name: /Book the dentist/ })).toBeVisible()
 })
 
-test('embedded view toggle is present and completing a card flows through to the Done panel', async ({
-  page,
-}) => {
-  // The Views toggle is the same semantic element as on desktop — an embedded segmented control,
-  // usable at the mobile width (no more fixed bottom bar).
-  await expect(page.getByRole('navigation', { name: 'Views' })).toBeVisible()
+test('completing a task from the focus list flows through to the Done panel', async ({ page }) => {
+  await addManual(page, 'Water the plants', 'Do Now')
 
-  // Place a task by tap, then complete it from the card. On mobile the card actions are always
-  // visible (no hover), so the Done checkbox is tappable. `exact` avoids the header "Done" link
-  // (and a recurring card's "Done (resets cycle)" control).
-  const card = await tapPlaceTask(page, 'Water the plants', 0.75, 0.25)
-  await card.getByRole('checkbox', { name: 'Done', exact: true }).tap()
-  await expect(page.getByTestId('grid-card')).toHaveCount(0)
+  await page.getByRole('button', { name: /Do Now, \d+ task/ }).tap()
+  const row = page.getByRole('listitem').filter({ hasText: 'Water the plants' })
+  await row.getByRole('button', { name: 'Mark done', exact: true }).tap()
 
-  // Open the Done panel from the header; the completion is listed there.
+  // Open the Done panel from the bottom nav; the completion is listed there.
   await openDone(page)
   const doneSection = page.getByRole('region', { name: 'Done' })
   await expect(

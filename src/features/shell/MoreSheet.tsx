@@ -1,9 +1,9 @@
 import { BottomSheet } from '../../components/BottomSheet'
 
 // MoreSheet — the overflow for the mobile bottom nav (Concept D). Holds the low-frequency /
-// harder-to-reach utility actions pushed out of the tall header: Settings, Backups, Grid-only view,
-// and Sign out (destructive, last). A tap runs the action; each closes the sheet first so the
-// underlying panel/overlay opens cleanly.
+// harder-to-reach utility actions pushed out of the tall header: Settings, Backups, and Sign out
+// (destructive, last). A tap runs the action; each closes the sheet first so the underlying
+// panel/overlay opens cleanly. (Grid-only view is desktop-only now — there's no grid on mobile.)
 
 function MoreItem({
   glyph,
@@ -37,14 +37,12 @@ export function MoreSheet({
   open,
   onSettings,
   onBackups,
-  onGridOnly,
   onSignOut,
   onClose,
 }: {
   open: boolean
   onSettings: () => void
   onBackups: () => void
-  onGridOnly: () => void
   onSignOut: () => void
   onClose: () => void
 }) {
@@ -57,7 +55,6 @@ export function MoreSheet({
       <div className="flex flex-col gap-0.5">
         <MoreItem glyph="⚙" label="Settings" onClick={run(onSettings)} />
         <MoreItem glyph="↻" label="Backups" onClick={run(onBackups)} />
-        <MoreItem glyph="▦" label="Grid-only view" onClick={run(onGridOnly)} />
         <MoreItem glyph="⏻" label="Sign out" onClick={run(onSignOut)} danger />
       </div>
     </BottomSheet>

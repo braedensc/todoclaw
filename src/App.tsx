@@ -7,6 +7,7 @@ import { RemindersModal } from './features/habits/RemindersModal'
 import { WorkArea } from './features/shell/WorkArea'
 import { MobileBottomNav } from './features/shell/MobileBottomNav'
 import { MoreSheet } from './features/shell/MoreSheet'
+import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useIsMobile } from './hooks/use-is-mobile'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { TodoClawIcon } from './components/TodoClawIcon'
@@ -35,8 +36,9 @@ function AppShell() {
   const [showDone, setShowDone] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showReminders, setShowReminders] = useState(false)
-  // The mobile "More" overflow sheet (Settings / Backups / Grid-only / Sign out).
+  // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
   // from the header pill (desktop) or the More sheet (mobile); left via the overlay's ✕ pill or Esc.
   const [gridOnly, setGridOnly] = useState(false)
@@ -66,18 +68,6 @@ function AppShell() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [gridOnly])
-
-  // The mobile bottom nav's "+" is a shortcut to the existing capture input: scroll it into view
-  // and focus it (Manual or BabyClaw, whichever is showing). Kept inline rather than moved behind a
-  // sheet so the grid's tap-to-place add flow — and the golden tapPlaceTask helper — are untouched.
-  const focusAddInput = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    document
-      .querySelector<HTMLInputElement>(
-        'input[aria-label="Add a task"], input[aria-label="Tell BabyClaw"]',
-      )
-      ?.focus()
-  }
 
   return (
     // Full-width shell so the desktop chat push-drawer (ChatRail, fixed to the viewport's right
@@ -176,7 +166,7 @@ function AppShell() {
                   title="Daily reminders"
                   className="hover:text-ink"
                 >
-                  <span aria-hidden>⚐</span> Reminders
+                  <span aria-hidden>⚐</span> Daily reminders
                 </button>
                 <button
                   type="button"
@@ -276,16 +266,21 @@ function AppShell() {
           {isMobile && !gridOnly && (
             <>
               <MobileBottomNav
-                onAdd={focusAddInput}
+                onAdd={() => setShowAdd(true)}
                 onReminders={() => setShowReminders(true)}
                 onDone={() => setShowDone(true)}
                 onMore={() => setShowMore(true)}
+              />
+              <MobileAddSheet
+                open={showAdd}
+                chat={chat}
+                onOpenChat={() => setShowChat(true)}
+                onClose={() => setShowAdd(false)}
               />
               <MoreSheet
                 open={showMore}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
-                onGridOnly={() => setGridOnly(true)}
                 onSignOut={() => void supabase.auth.signOut()}
                 onClose={() => setShowMore(false)}
               />
