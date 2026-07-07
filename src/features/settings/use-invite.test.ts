@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { inviteStatus, inviteLink, type Invite } from './use-invite'
+
+// use-invite imports lib/supabase, which throws at import without env vars (CI has none). These
+// tests exercise only the pure helpers, so a bare stub is enough — same pattern as the other
+// supabase-importing test files (see AuthForm.test.tsx). vi.mock is hoisted above the imports.
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
 
 const base: Invite = {
   id: 'i1',
