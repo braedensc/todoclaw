@@ -19,6 +19,7 @@
     "test:e2e:golden": "playwright test --config playwright.golden.config.ts",
     "seed:eisenclaw": "tsx scripts/eisenclaw-seed/import.ts",
     "legacy-ui": "tsx scripts/legacy-ui.ts",
+    "gen:icons": "node scripts/generate-pwa-icons.mjs",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -53,6 +54,7 @@
     "postcss": "^8.5.15",
     "prettier": "^3.8.4",
     "secretlint": "^13.0.2",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",
