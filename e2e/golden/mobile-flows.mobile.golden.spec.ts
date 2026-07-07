@@ -23,11 +23,11 @@ test('embedded view toggle is present and completing a card flows through to the
   // usable at the mobile width (no more fixed bottom bar).
   await expect(page.getByRole('navigation', { name: 'Views' })).toBeVisible()
 
-  // Place a task by tap, then complete it from the card. On mobile the card actions are always
-  // visible (no hover), so the Done checkbox is tappable. `exact` avoids the header "Done" link
-  // (and a recurring card's "Done (resets cycle)" control).
+  // Place a task by tap, then complete it from the card. On mobile the card action bar is always
+  // visible (no hover), so its outlined "Mark done" pill is tappable. `exact` distinguishes it from
+  // a recurring card's "Mark done (resets clock)" control.
   const card = await tapPlaceTask(page, 'Water the plants', 0.75, 0.25)
-  await card.getByRole('checkbox', { name: 'Done', exact: true }).tap()
+  await card.getByRole('button', { name: 'Mark done', exact: true }).tap()
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
   // Open the Done panel from the header; the completion is listed there.

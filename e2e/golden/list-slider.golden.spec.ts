@@ -1,6 +1,6 @@
 import { test, expect } from '../helpers/fixtures'
 import type { Page } from '@playwright/test'
-import { placeTask, switchTab } from '../helpers/ui'
+import { placeTask, switchTab, expandRow } from '../helpers/ui'
 
 // Golden path: the List view ranks by score (x*0.45 + y*0.55 — importance over urgency,
 // src/lib/scoring.ts); committing an importance change re-ranks, and the commit runs collision
@@ -30,7 +30,7 @@ test('ranking follows score; committing importance re-ranks (live quadrant badge
   // Expand the low task and raise Importance to 95. The quadrant badge tracks the LIVE value
   // (before any commit): (0.25, 0.95) is important-not-urgent → "Schedule".
   const lowRow = page.getByRole('listitem').filter({ hasText: LOW_TASK })
-  await lowRow.getByRole('button', { name: 'Expand row' }).click()
+  await expandRow(lowRow)
   await expect(lowRow.getByText('Someday', { exact: true })).toBeVisible()
 
   const importance = lowRow.getByLabel('Importance value')
@@ -53,7 +53,7 @@ test('a slider commit that lands on another card is collision-resolved to a free
 
   await switchTab(page, 'List')
   const lowRow = page.getByRole('listitem').filter({ hasText: LOW_TASK })
-  await lowRow.getByRole('button', { name: 'Expand row' }).click()
+  await expandRow(lowRow)
 
   // Ask for importance 55 — the naive target (0.55, 0.55) is EXACTLY the other card's spot
   // (inside the 0.16/0.115 footprint), so resolveCollision must commit a nearby free spot.

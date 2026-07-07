@@ -1,7 +1,7 @@
 import { test, expect } from '../helpers/fixtures'
 import { seedEisenclawFixtures } from '../helpers/db'
 import { resolveLocalSupabaseEnv } from '../helpers/env'
-import { switchTab, openDone } from '../helpers/ui'
+import { switchTab, openDone, closeDone, openReminders } from '../helpers/ui'
 
 // Proves the EisenClaw import (scripts/eisenclaw-seed/) round-trips through the real schema:
 // seed Braeden's actual planner data on top of the reset test user, reload, and spot-check that
@@ -30,22 +30,25 @@ test('seeded EisenClaw data renders: tasks, a recurring badge, and habits with s
   await expect(laundryRow).toBeVisible()
   await expect(laundryRow.getByText('↻', { exact: false })).toBeVisible()
 
-  // Habits has no view of its own — it renders as a strip below the work region (App.tsx),
-  // shown under both Grid and List. Switch back to Grid and assert it.
-  await switchTab(page, 'Grid')
-  const habitsSection = page.getByRole('region', { name: 'Habits' })
-  await expect(
-    habitsSection.getByRole('listitem').filter({ hasText: 'Wrist strengthening routine' }),
-  ).toBeVisible()
-  await expect(
-    habitsSection.getByRole('listitem').filter({ hasText: 'Drink more water' }),
-  ).toBeVisible()
-
-  // The one permanent history entry in the source data — the Done panel shows full history
-  // regardless of today's done map (Discrepancy #2, EISENCLAW-LOGIC-TO-PORT.md).
+  // The one permanent history entry in the source data — the Done page shows full history
+  // regardless of today's done map (Discrepancy #2, EISENCLAW-LOGIC-TO-PORT.md). Check it from the
+  // home nav first, then return home before opening the reminders page (the Account nav that
+  // reaches both pages lives on home, not inside a page).
   await openDone(page)
   const doneSection = page.getByRole('region', { name: 'Done' })
   await expect(
     doneSection.getByRole('listitem').filter({ hasText: 'Get a backpacking backpack' }),
+  ).toBeVisible()
+  await closeDone(page)
+
+  // Reminders (formerly "Habits") are a full page of their own now (ADR-0027), not a strip on the
+  // main view — open it and assert the seeded reminders with subtasks render there.
+  await openReminders(page)
+  const remindersSection = page.getByRole('region', { name: 'Daily reminders' })
+  await expect(
+    remindersSection.getByRole('listitem').filter({ hasText: 'Wrist strengthening routine' }),
+  ).toBeVisible()
+  await expect(
+    remindersSection.getByRole('listitem').filter({ hasText: 'Drink more water' }),
   ).toBeVisible()
 })

@@ -170,13 +170,18 @@ test('dragging a task out of a cluster shows the card immediately, before drop',
 
   await bubble.getByRole('button', { name: /tasks stacked here/ }).click()
   const row = page.getByTestId('cluster-popup-row').filter({ hasText: 'Book flights' })
-  const rowBox = await row.boundingBox()
-  if (!rowBox) throw new Error('popup row not laid out')
-
-  await page.mouse.move(rowBox.x + rowBox.width / 2, rowBox.y + rowBox.height / 2)
+  // Grab the row by its TEXT (top of the card-style row). Its lower half is now the shared
+  // CardActionBar (Done/⋯/×) whose controls stopPropagation, so grabbing the geometric center
+  // would land on the bar and never start the tear-out drag.
+  const grip = row.getByText('Book flights')
+  await grip.hover()
   await page.mouse.down()
   const empty = await canvasPoint(page, 0.3, 0.6)
-  await page.mouse.move(empty.x, empty.y, { steps: 8 })
+  // The popup row DEFERS its tear-out until the pointer crosses the 4px drag threshold (useFreeDrag
+  // activateOnMove): a bare press is a tap that opens inline edit, only a real drag pulls the card
+  // out. Travel to the empty spot in many small steps (continuous motion, no pauses) so the move
+  // reliably registers as a drag rather than a coalesced tap.
+  await page.mouse.move(empty.x, empty.y, { steps: 24 })
 
   // The pulled card is a live, standalone GridCard mid-drag (it separated on pointer-down).
   const pulled = page.getByTestId('grid-card').filter({ hasText: 'Book flights' })
@@ -214,13 +219,9 @@ test('grabbing a placed card by its controls does not start a drag', async ({ pa
   await expect(card).toBeVisible() // released off the button → no delete, and no drag moved it
 
   // Same for the inline edit INPUT (the card root drops its drag handler entirely while editing).
-  // Re-hover the card to reveal its actions, then open edit with a low-level click — the actions
-  // are pointer-events-gated on hover, which trips .click()'s actionability wait.
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  const editBtn = card.getByRole('button', { name: 'Edit task' })
-  const eb = await editBtn.boundingBox()
-  if (!eb) throw new Error('edit button not laid out')
-  await page.mouse.click(eb.x + eb.width / 2, eb.y + eb.height / 2)
+  // Editing now opens by double-clicking the card TEXT (batch-2 item 5 replaced the Edit button
+  // with a double-click-to-edit gesture); a motionless double-click can't be read as a drag.
+  await card.getByText('Steady').dblclick()
   const input = page.getByRole('textbox', { name: 'Edit task' })
   await expect(input).toBeVisible()
   const ib = await input.boundingBox()
