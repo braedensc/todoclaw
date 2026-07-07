@@ -86,7 +86,7 @@ export function RedeemInviteForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <h2 className="text-lg font-medium">Redeem your invite</h2>
+      <h2 className="text-lg font-semibold text-ink">Redeem your invite</h2>
       <p className="text-sm text-muted">
         You were invited to Todoclaw. Enter your code and pick a password to create your account.
       </p>
@@ -100,7 +100,7 @@ export function RedeemInviteForm({
         autoCapitalize="characters"
         autoCorrect="off"
         spellCheck={false}
-        className="rounded border border-slate-300 px-3 py-2 font-mono tracking-wide"
+        className="rounded-[10px] border border-border-strong bg-card px-3 py-2 font-mono text-sm tracking-wide text-ink placeholder:text-muted-faint focus:border-primary focus:outline-none"
       />
       <input
         type="email"
@@ -108,7 +108,7 @@ export function RedeemInviteForm({
         placeholder="you@example.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="rounded border border-slate-300 px-3 py-2"
+        className="rounded-[10px] border border-border-strong bg-card px-3 py-2 text-sm text-ink placeholder:text-muted-faint focus:border-primary focus:outline-none"
       />
       <input
         type="password"
@@ -117,15 +117,15 @@ export function RedeemInviteForm({
         placeholder="Choose a password (8+ characters)"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        className="rounded border border-slate-300 px-3 py-2"
+        className="rounded-[10px] border border-border-strong bg-card px-3 py-2 text-sm text-ink placeholder:text-muted-faint focus:border-primary focus:outline-none"
       />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-accent">{error}</p>}
 
       <button
         type="submit"
         disabled={busy}
-        className="rounded bg-slate-800 px-3 py-2 text-white disabled:opacity-50"
+        className="rounded-[10px] bg-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
       >
         {busy ? '…' : 'Create account & sign in'}
       </button>

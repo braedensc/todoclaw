@@ -26,8 +26,11 @@ export function AuthForm() {
   }
 
   return (
+    // Warm-paper theming (style mix, login pass) — this was the last slate-styled surface in
+    // the app. Copy, placeholders, and control names are unchanged (pinned by AuthForm.test
+    // and the golden auth.setup).
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      <h2 className="text-lg font-medium">Sign in</h2>
+      <h2 className="text-lg font-semibold text-ink">Sign in</h2>
 
       <input
         type="email"
@@ -35,7 +38,7 @@ export function AuthForm() {
         placeholder="you@example.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="rounded border border-slate-300 px-3 py-2"
+        className="rounded-[10px] border border-border-strong bg-card px-3 py-2 text-sm text-ink placeholder:text-muted-faint focus:border-primary focus:outline-none"
       />
       <input
         type="password"
@@ -44,20 +47,20 @@ export function AuthForm() {
         placeholder="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        className="rounded border border-slate-300 px-3 py-2"
+        className="rounded-[10px] border border-border-strong bg-card px-3 py-2 text-sm text-ink placeholder:text-muted-faint focus:border-primary focus:outline-none"
       />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-accent">{error}</p>}
 
       <button
         type="submit"
         disabled={busy}
-        className="rounded bg-slate-800 px-3 py-2 text-white disabled:opacity-50"
+        className="rounded-[10px] bg-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
       >
         {busy ? '…' : 'Sign in'}
       </button>
 
-      <p className="text-sm text-muted">Invite-only — contact the owner for access.</p>
+      <p className="text-center text-xs text-muted">Invite-only — contact the owner for access.</p>
     </form>
   )
 }

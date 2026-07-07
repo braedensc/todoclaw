@@ -301,3 +301,34 @@ html[data-daypart='night'] body {
     transition: none;
   }
 }
+
+/* Sign-in mascot (features/auth/AuthMascot) — the pup peeking over the sign-in card. His
+   pupils track the cursor (inline transforms set by the component); when a password field
+   has focus the component adds .shy and his paws swing up over his eyes with a small
+   overshoot. Reduced-motion: paws still cover the eyes (privacy gag intact), just without
+   the animated travel; the component skips cursor-tracking entirely. */
+.auth-mascot .paw {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* Percentages of each paw's own fill-box (transform-box above), NOT px: CSS px in SVG
+   transforms are ambiguous across engines (user units vs device px), which left the paws
+   hanging mid-muzzle in Chromium. The paw box is 10×~12.4 user units and each eye center
+   sits ~5u inward / ~16u up from the paw center, so 50% / -117% lands the pad on the eye
+   at every rendered size. */
+.auth-mascot.shy .paw-l {
+  transform: translate(50%, -117%) rotate(-8deg);
+}
+.auth-mascot.shy .paw-r {
+  transform: translate(-50%, -117%) rotate(8deg);
+}
+.auth-mascot g[data-pupil] {
+  transition: transform 0.09s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-mascot .paw,
+  .auth-mascot g[data-pupil] {
+    transition: none;
+  }
+}
