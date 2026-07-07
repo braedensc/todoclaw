@@ -12,6 +12,7 @@ import '@fontsource/ibm-plex-sans/400.css'
 import '@fontsource/ibm-plex-sans/500.css'
 import '@fontsource/ibm-plex-sans/600.css'
 import './index.css'
+import { installDaypart } from './lib/daypart'
 
 // Sentry "dev mode": only initializes when a DSN is provided (set VITE_SENTRY_DSN in
 // .env.local locally / Vercel prod env in production — see docs/SERVICES.md). Without a DSN
@@ -36,6 +37,10 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 // next load. Registration is harmless without a push subscription — the SW only acts once the user
 // opts in (Settings) and a subscription exists; see src/features/notifications.
 registerSW({ immediate: true })
+
+// Time-of-day background tint — stamps <html data-daypart> and re-checks every 10 minutes
+// (style mix; the wash values live in index.css).
+installDaypart()
 
 const queryClient = new QueryClient()
 

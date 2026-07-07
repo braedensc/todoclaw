@@ -25,6 +25,20 @@ const PRINTS: Array<{ x: number; y: number; r: number; s: number; o: number }> =
   { x: 868, y: 90, r: 52, s: 0.25, o: 0.09 },
 ]
 
+// One print (100×100 local units, ink fill), toes pointing up. Shared: the trail rotates it
+// per step below, and GridSurface stamps it where a card was just marked done.
+export function PawPrintShape() {
+  return (
+    <g fill="#2e2a24">
+      <ellipse cx="50" cy="66" rx="24" ry="19" />
+      <ellipse cx="22" cy="38" rx="9" ry="12" transform="rotate(-18 22 38)" />
+      <ellipse cx="42" cy="26" rx="9" ry="12" transform="rotate(-6 42 26)" />
+      <ellipse cx="62" cy="27" rx="9" ry="12" transform="rotate(8 62 27)" />
+      <ellipse cx="80" cy="41" rx="9" ry="12" transform="rotate(20 80 41)" />
+    </g>
+  )
+}
+
 export function PawTrail() {
   const pawId = useId()
   return (
@@ -34,14 +48,8 @@ export function PawTrail() {
       viewBox="0 0 1046 640"
     >
       <defs>
-        {/* One print (100×100 local units), toes pointing up; each <use> rotates it toward
-            its direction of travel. */}
-        <g id={pawId} fill="#2e2a24">
-          <ellipse cx="50" cy="66" rx="24" ry="19" />
-          <ellipse cx="22" cy="38" rx="9" ry="12" transform="rotate(-18 22 38)" />
-          <ellipse cx="42" cy="26" rx="9" ry="12" transform="rotate(-6 42 26)" />
-          <ellipse cx="62" cy="27" rx="9" ry="12" transform="rotate(8 62 27)" />
-          <ellipse cx="80" cy="41" rx="9" ry="12" transform="rotate(20 80 41)" />
+        <g id={pawId}>
+          <PawPrintShape />
         </g>
       </defs>
       {PRINTS.map((p, i) => (

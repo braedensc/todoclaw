@@ -22,12 +22,30 @@ export function NotificationBell({
       title="Your daily plan & recap messages"
       className={className}
     >
-      <span aria-hidden>🔔</span>
+      {/* Monochrome stroke bell (was a 🔔 emoji) so it matches the nav's other line glyphs;
+          1em-sized so the caller's font-size scales it (quiet in the desktop nav, larger in the
+          compact mobile bar). The unread chip is BabyClaw's slate-blue, not alert-red — the
+          plan/recap messages are his, and unread mail isn't an emergency (style mix). */}
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        width="1em"
+        height="1em"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="inline-block align-[-0.15em]"
+      >
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+      </svg>
       {!compact && ' Inbox'}
       {unread > 0 && (
         <span
           aria-hidden
-          className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-none text-white"
+          className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-puppy px-1 text-[10px] font-semibold leading-none text-white"
         >
           {unread > 9 ? '9+' : unread}
         </span>
