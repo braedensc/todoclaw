@@ -70,7 +70,7 @@ export function MobileMatrix() {
 
   const doneToday = daily?.done ?? {}
   const active = tasks.filter((t) => !doneToday[t.id])
-  const { buckets, maxCount } = summarizeQuadrants(active, { timeZone })
+  const { buckets } = summarizeQuadrants(active, { timeZone })
 
   // Commit a tap-picker move: snap to the chosen quadrant's center, collision-resolve against all
   // active tasks, write the coords, and close the sheet. Same coord path as a list-slider commit.
@@ -181,8 +181,7 @@ export function MobileMatrix() {
       <div className="grid grid-cols-2 gap-2.5">
         {QUADRANT_ORDER.map((key) => {
           const m = meta(key)
-          const { count, dominant } = buckets[key]
-          const density = maxCount > 0 ? (count / maxCount) * 100 : 0
+          const { count, top } = buckets[key]
           const empty = count === 0
           return (
             <button
@@ -191,7 +190,7 @@ export function MobileMatrix() {
               onClick={() => setFocus(key)}
               aria-label={`${m.label}, ${count} ${count === 1 ? 'task' : 'tasks'}`}
               className={
-                'flex min-h-[112px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +
+                'flex min-h-[128px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +
                 (empty ? 'opacity-60' : '')
               }
               style={{ borderLeft: `4px solid ${m.color}`, background: QUADRANT_TINT[key] }}
@@ -209,19 +208,29 @@ export function MobileMatrix() {
                 </span>
               </div>
               <span className="text-[10px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
-              <div className="h-1.5 overflow-hidden rounded-full bg-ink/10">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${density}%`, background: m.color, opacity: 0.7 }}
-                />
-              </div>
-              <span className="mt-auto line-clamp-2 text-[11.5px] text-ink">
-                {dominant ? (
-                  dominant.text
-                ) : (
-                  <span className="text-muted-light">Nothing here yet</span>
-                )}
-              </span>
+              {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar. */}
+              {empty ? (
+                <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>
+              ) : (
+                <ul className="mt-0.5 flex flex-col gap-1">
+                  {top.map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink"
+                    >
+                      <span
+                        aria-hidden
+                        className="h-1 w-1 shrink-0 rounded-full"
+                        style={{ background: m.color }}
+                      />
+                      <span className="truncate">{t.text}</span>
+                    </li>
+                  ))}
+                  {count > top.length && (
+                    <li className="text-[10px] text-muted-light">+{count - top.length} more</li>
+                  )}
+                </ul>
+              )}
             </button>
           )
         })}

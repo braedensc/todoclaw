@@ -47,7 +47,7 @@ describe('summarizeQuadrants', () => {
     expect(buckets.someday.count).toBe(1)
   })
 
-  it('picks the highest-scoring task as the quadrant dominant', () => {
+  it('orders the top preview list by score, highest first', () => {
     const { buckets } = summarizeQuadrants(
       [
         makeTask({ id: 'lo', text: 'lower', x: 0.55, y: 0.55 }),
@@ -55,40 +55,35 @@ describe('summarizeQuadrants', () => {
       ],
       TZ,
     )
-    expect(buckets['do-now'].dominant?.id).toBe('hi')
+    expect(buckets['do-now'].top.map((t) => t.id)).toEqual(['hi', 'lo'])
+  })
+
+  it('caps the preview at QUADRANT_PREVIEW_COUNT but keeps the full count', () => {
+    const many = Array.from({ length: 5 }, (_, i) =>
+      makeTask({ id: `dn${i}`, x: 0.9, y: 0.6 + i * 0.05 }),
+    )
+    const { buckets } = summarizeQuadrants(many, TZ)
+    expect(buckets['do-now'].count).toBe(5)
+    expect(buckets['do-now'].top).toHaveLength(3)
   })
 
   it('excludes staged and null-coord tasks (they carry no quadrant)', () => {
-    const { buckets, maxCount } = summarizeQuadrants(
+    const { buckets } = summarizeQuadrants(
       [
         makeTask({ id: 'staged', x: null, y: null, staged: true }),
         makeTask({ id: 'nullcoord', x: null, y: null }),
       ],
       TZ,
     )
-    expect(maxCount).toBe(0)
     for (const key of QUADRANT_ORDER) {
       expect(buckets[key].count).toBe(0)
-      expect(buckets[key].dominant).toBeNull()
+      expect(buckets[key].top).toEqual([])
     }
   })
 
-  it('reports maxCount as the largest bucket (density-bar denominator)', () => {
-    const { maxCount } = summarizeQuadrants(
-      [
-        makeTask({ id: 'a', x: 0.9, y: 0.9 }),
-        makeTask({ id: 'b', x: 0.8, y: 0.8 }),
-        makeTask({ id: 'c', x: 0.7, y: 0.7 }),
-        makeTask({ id: 'd', x: 0.1, y: 0.9 }),
-      ],
-      TZ,
-    )
-    expect(maxCount).toBe(3) // three Do Now vs one Schedule
-  })
-
-  it('leaves empty quadrants with a null dominant', () => {
+  it('leaves empty quadrants with an empty preview', () => {
     const { buckets } = summarizeQuadrants([makeTask({ id: 'dn', x: 0.9, y: 0.9 })], TZ)
-    expect(buckets.someday.dominant).toBeNull()
+    expect(buckets.someday.top).toEqual([])
     expect(buckets.someday.count).toBe(0)
   })
 
