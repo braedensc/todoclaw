@@ -29,6 +29,13 @@ vi.mock('./features/schedule/use-user-schedule', () => ({
   useEnsureUserSchedule: () => ({ mutate: vi.fn() }),
   useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
 }))
+// The inbox bell/badge + deep-link seed effect read messages (useQuery/useMutation). Stub them so
+// the shell renders without a QueryClientProvider / network.
+vi.mock('./features/notifications/use-messages', () => ({
+  useMessages: () => ({ data: [], isLoading: false }),
+  useUnreadCount: () => 0,
+  useMarkMessageRead: () => ({ mutate: vi.fn() }),
+}))
 vi.mock('./features/daily-state/use-daily-state', () => ({
   useDailyState: () => ({
     data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {}, plan: null },

@@ -13,24 +13,33 @@ import { useSyncExternalStore } from 'react'
 // Trade-off: hash URLs are a little less pretty, and this is ~40 lines we own instead of a routing
 // library — a deliberate fit for a 2–3 route app (see the ADR for the full comparison).
 
-export type AppRoute = 'home' | 'done' | 'reminders'
+export type AppRoute = 'home' | 'done' | 'reminders' | 'chat'
 
 const ROUTE_TO_HASH: Record<AppRoute, string> = {
   home: '#/',
   done: '#/done',
   reminders: '#/reminders',
+  chat: '#/chat',
 }
+
+const CHAT_PREFIX = '#/chat/'
 
 /** Parse a `location.hash` string into a route. Anything unrecognized is 'home'. Exported for tests. */
 export function hashToRoute(hash: string): AppRoute {
-  switch (hash) {
-    case ROUTE_TO_HASH.done:
-      return 'done'
-    case ROUTE_TO_HASH.reminders:
-      return 'reminders'
-    default:
-      return 'home'
-  }
+  if (hash === ROUTE_TO_HASH.done) return 'done'
+  if (hash === ROUTE_TO_HASH.reminders) return 'reminders'
+  // `#/chat` (bare) or `#/chat/<messageId>` (deep link from a notification, ADR-0031).
+  if (hash === ROUTE_TO_HASH.chat || hash.startsWith(CHAT_PREFIX)) return 'chat'
+  return 'home'
+}
+
+/**
+ * The message id in a `#/chat/<id>` deep link, or null for a bare `#/chat` (or any non-chat hash).
+ * App uses it to seed the chat with that message + mark it read. Exported for tests.
+ */
+export function chatMessageId(hash: string = window.location.hash): string | null {
+  if (!hash.startsWith(CHAT_PREFIX)) return null
+  return decodeURIComponent(hash.slice(CHAT_PREFIX.length)) || null
 }
 
 function currentRoute(): AppRoute {
@@ -62,6 +71,13 @@ let hasNavigatedWithinApp = false
 export function navigate(route: AppRoute): void {
   hasNavigatedWithinApp = true
   const hash = ROUTE_TO_HASH[route]
+  if (window.location.hash !== hash) window.location.hash = hash
+}
+
+/** Open the chat deep-linked to a message (`#/chat/<id>`), which seeds it. Bare `#/chat` if no id. */
+export function navigateToChat(messageId?: string): void {
+  hasNavigatedWithinApp = true
+  const hash = messageId ? `${CHAT_PREFIX}${encodeURIComponent(messageId)}` : ROUTE_TO_HASH.chat
   if (window.location.hash !== hash) window.location.hash = hash
 }
 

@@ -87,6 +87,10 @@ export function useAiChat() {
   const history = useRef<AnyMsg[]>([])
   const approved = useRef<string[]>([])
   const assistantId = useRef<string | null>(null)
+  // A message the chat was deep-linked from (ADR-0031): shown as an intro bubble and folded into the
+  // FIRST outgoing turn so BabyClaw has context — without a separate assistant-first history entry
+  // (which would break Anthropic's user-first / alternation rule).
+  const seedRef = useRef<string | null>(null)
 
   const run = useCallback(async () => {
     setBusy(true)
@@ -194,12 +198,28 @@ export function useAiChat() {
     }
   }
 
+  // Seed the chat from a message it was opened for (a plan/recap notification). Idempotent per
+  // message: shows the message as an assistant intro bubble; the actual context is folded into the
+  // next user turn (see send). Ignores a repeat of the same seed (re-render / same deep link).
+  const seed = useCallback((intro: string) => {
+    const t = intro.trim()
+    if (!t || seedRef.current === t) return
+    seedRef.current = t
+    setItems((xs) => [...xs, { id: nextId(), role: 'assistant', text: t }])
+  }, [])
+
   const send = useCallback(
     (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || busy) return
       approved.current = [] // a new user turn clears prior approvals
-      history.current = [...history.current, { role: 'user', content: trimmed }]
+      // Fold any pending deep-link context into this first message's HISTORY only — the displayed
+      // bubble stays the user's words. Keeps the API history user-first with no dangling assistant turn.
+      const outgoing = seedRef.current
+        ? `(Context — the app sent me this: "${seedRef.current}")\n\n${trimmed}`
+        : trimmed
+      seedRef.current = null
+      history.current = [...history.current, { role: 'user', content: outgoing }]
       setItems((xs) => [...xs, { id: nextId(), role: 'user', text: trimmed }])
       void run()
     },
@@ -236,5 +256,5 @@ export function useAiChat() {
     void run()
   }, [pending, run])
 
-  return { items, busy, pending, error, send, confirm, deny }
+  return { items, busy, pending, error, send, confirm, deny, seed }
 }
