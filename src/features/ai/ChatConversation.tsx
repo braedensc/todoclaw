@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
-import { AiPrivacyNote } from './AiPrivacyNote'
 
-// The full BabyClaw conversation UI (header + privacy note + streamed history + confirm gate +
-// input), factored out of ChatPanel so BOTH chat shells render the same thing:
+// The full BabyClaw conversation UI (header + streamed history + confirm gate + input), factored
+// out of ChatPanel so BOTH chat shells render the same thing:
 //  - desktop: ChatRail — a slide-out RIGHT column that PUSHES the grid left (B2 decision)
 //  - mobile (< 720px): ChatPanel — a bottom sheet overlay (no room to push)
 // It fills its container (h-full flex-col); the shell owns positioning/animation/sizing. The
@@ -46,10 +45,6 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
         >
           ✕
         </button>
-      </div>
-
-      <div className="border-b border-border px-4 py-2">
-        <AiPrivacyNote compact />
       </div>
 
       <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto p-4">

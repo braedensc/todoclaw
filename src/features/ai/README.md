@@ -36,10 +36,11 @@ Functions (`supabase/functions/`).
   optional `customInstructions`) folded into its prompt with safe defaults; the editor UI is a
   separate Settings task (custom instructions are treated as preferences and can never widen scope).
 
-- **`AiPrivacyNote.tsx`** — a short, honest disclosure shown in the chat panel: AI runs on the
-  owner's Anthropic key, your task/message text is sent to Anthropic, and chat isn't saved. The
-  full opt-in **consent gate** is still deferred (ADR-0014/0015); this is the lightweight notice.
-  (Removed from the Plan My Day card, which now shows only when a plan exists.)
+- **`AiPrivacyNote.tsx`** — a short, honest disclosure kept in **Settings → "AI & privacy"**: AI
+  runs on the owner's Anthropic key, your task/message text is sent to Anthropic, and chat isn't
+  saved. The full opt-in **consent gate** is still deferred (ADR-0014/0015); this is the lightweight
+  notice. Moved out of the chat window (2026-07-06) so the assistant UI isn't cluttered — the
+  disclosure now lives once, in Settings.
 
 Guardrails (rate limits + global monthly budget kill-switch) and the server-side architecture
 live in `supabase/functions/README.md` and ADR-0015.
