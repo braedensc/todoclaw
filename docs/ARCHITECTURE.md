@@ -49,3 +49,5 @@ index.
 | [ADR-0027](adr/0027-done-reminders-full-pages-hash-router.md) | 2026-07-06 | Done & Daily reminders as full pages via a minimal hash router |
 | [ADR-0028](adr/0028-mobile-list-only-no-grid-single-add-sheet.md) | 2026-07-06 | Mobile is list-only: remove the grid, single bottom-bar add sheet |
 | [ADR-0029](adr/0029-per-user-ai-spend-alert-owner-webhook.md) | 2026-07-07 | Per-user AI spend alert: owner webhook on threshold crossing |
+| [ADR-0030](adr/0030-self-service-invite-codes.md) | 2026-07-07 | Self-service invite codes: text a link to onboard users |
+| [ADR-0031](adr/0031-proactive-daily-messaging-web-push.md) | 2026-07-07 | Proactive daily messaging + end-of-day chat via Web Push (opt-in) |
