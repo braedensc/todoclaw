@@ -31,42 +31,44 @@ export const QUADRANT_CENTER: Record<QuadrantKey, { x: number; y: number }> = {
   someday: { x: 0.25, y: 0.25 },
 }
 
+/** How many top tasks the mobile overview previews per quadrant cell. */
+export const QUADRANT_PREVIEW_COUNT = 3
+
 export interface QuadrantSummary {
   count: number
-  /** Highest-scoring task in the quadrant (the overview's preview line); null when empty. */
-  dominant: Task | null
+  /** Up to QUADRANT_PREVIEW_COUNT highest-scoring tasks, score-descending — the overview preview. */
+  top: Task[]
 }
 
 export interface QuadrantsOverview {
   buckets: Record<QuadrantKey, QuadrantSummary>
-  /** Largest bucket count — the denominator for the relative density bars (0 when all empty). */
-  maxCount: number
 }
 
 /**
- * Bucket PLACED tasks into their Eisenhower quadrants with a count and the dominant (top-score)
- * task each. Staged/unplaced tasks (null x/y) carry no real quadrant and are skipped — the mobile
- * overview surfaces those separately. Callers pass the already-active set (done-today removed).
+ * Bucket PLACED tasks into their Eisenhower quadrants: a total count plus the top-scored few for
+ * the mobile overview's preview cards. Staged/unplaced tasks (null x/y) carry no real quadrant and
+ * are skipped — the mobile overview surfaces those separately. Callers pass the already-active set
+ * (done-today removed).
  */
 export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): QuadrantsOverview {
-  const buckets: Record<QuadrantKey, QuadrantSummary> = {
-    'do-now': { count: 0, dominant: null },
-    schedule: { count: 0, dominant: null },
-    errands: { count: 0, dominant: null },
-    someday: { count: 0, dominant: null },
+  const groups: Record<QuadrantKey, Task[]> = {
+    'do-now': [],
+    schedule: [],
+    errands: [],
+    someday: [],
   }
 
   for (const t of tasks) {
     if (t.staged || t.x == null || t.y == null) continue
-    const bucket = buckets[quadrantMeta(t.x, t.y).key]
-    bucket.count += 1
-    if (bucket.dominant == null || taskScore(t, opts) > taskScore(bucket.dominant, opts)) {
-      bucket.dominant = t
-    }
+    groups[quadrantMeta(t.x, t.y).key].push(t)
   }
 
-  const maxCount = Math.max(0, ...QUADRANT_ORDER.map((k) => buckets[k].count))
-  return { buckets, maxCount }
+  const buckets = {} as Record<QuadrantKey, QuadrantSummary>
+  for (const key of QUADRANT_ORDER) {
+    const ranked = [...groups[key]].sort((a, b) => taskScore(b, opts) - taskScore(a, opts))
+    buckets[key] = { count: ranked.length, top: ranked.slice(0, QUADRANT_PREVIEW_COUNT) }
+  }
+  return { buckets }
 }
 
 /**
