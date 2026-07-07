@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AuthForm } from './AuthForm'
 import { RedeemInviteForm } from './RedeemInviteForm'
 
-// AuthGate — the pre-auth surface: sign in, or redeem an invite (ADR-0029). A texted invite link
+// AuthGate — the pre-auth surface: sign in, or redeem an invite (ADR-0030). A texted invite link
 // (`/#/redeem?code=…`) lands here (the user has no session yet) and opens the redeem form with the
 // code pre-filled; otherwise the sign-in form shows with a quiet toggle to switch. The redeem
 // route is read from the hash directly rather than via lib/route's AppRoute union, which is for

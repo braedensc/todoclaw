@@ -14,7 +14,7 @@ Email/password authentication via Supabase Auth (GoTrue).
   owner's key for all users (ADR-0015).
 - **`AuthGate.tsx`** — the pre-auth surface: shows `AuthForm`, or `RedeemInviteForm` when
   the visitor arrives via a `/#/redeem?code=…` link or the "Have an invite code?" toggle.
-- **`RedeemInviteForm.tsx`** — code-gated account creation (ADR-0029). Posts
+- **`RedeemInviteForm.tsx`** — code-gated account creation (ADR-0030). Posts
   `{ code, email, password }` to the `redeem-invite` Edge Function (which validates+claims
   the code and creates the account via the admin API — `enable_signup` stays off), then
   signs in. The only client path that ends in a new account, and it needs a valid

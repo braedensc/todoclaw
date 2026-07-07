@@ -1,5 +1,5 @@
 // generate-invite — OWNER-ONLY. Mints a redeemable invite code + shareable link so the owner can
-// onboard someone by texting them a link, no Supabase dashboard needed (ADR-0029). The code is a
+// onboard someone by texting them a link, no Supabase dashboard needed (ADR-0030). The code is a
 // bearer token that will create a trusted account on the owner's Anthropic key, so: only the owner
 // (OWNER_USER_ID) may call this, codes are single-use by default and always expire, and the row is
 // inserted under the caller's JWT (RLS `invites_insert_own`, owner_id defaults to auth.uid()).

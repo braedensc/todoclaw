@@ -1,7 +1,7 @@
 -- Migration: invites
 --
 -- Intent: owner-generated, redeemable invite codes so the owner can onboard a new user by
--- texting them a code/link — no Supabase dashboard, no needing their email up front (ADR-0029).
+-- texting them a code/link — no Supabase dashboard, no needing their email up front (ADR-0030).
 -- `enable_signup` stays FALSE: this does NOT reopen public self-registration. Accounts are
 -- created only by the redeem-invite Edge Function, via the service-role admin API, and ONLY when
 -- a valid, unexpired, unrevoked, not-used-up code is presented. An invite code is effectively a
@@ -50,7 +50,7 @@ create table public.invites (
 );
 
 comment on table public.invites is
-  'Owner-generated invite codes (ADR-0029). One row per code; single-use by default (max_uses=1). '
+  'Owner-generated invite codes (ADR-0030). One row per code; single-use by default (max_uses=1). '
   'Redemption (used_count increment) is done by claim_invite_code under service_role, not RLS — '
   'the owner-scoped policies here are only for listing/revoking their own codes.';
 

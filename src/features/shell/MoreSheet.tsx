@@ -44,7 +44,7 @@ export function MoreSheet({
   open: boolean
   onSettings: () => void
   onBackups: () => void
-  // Owner-only (ADR-0029): present only when the signed-in user is the app owner, so the owner can
+  // Owner-only (ADR-0030): present only when the signed-in user is the app owner, so the owner can
   // mint an invite link from their phone. Omitted for everyone else.
   onInvite?: () => void
   onSignOut: () => void

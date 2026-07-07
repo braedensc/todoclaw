@@ -1,5 +1,5 @@
 // redeem-invite — PUBLIC (no JWT: this is how a brand-new user gets their first account). Turns a
-// valid invite code + email + password into a Supabase Auth account (ADR-0029). `enable_signup`
+// valid invite code + email + password into a Supabase Auth account (ADR-0030). `enable_signup`
 // stays false — the ONLY way to create an account is here, and only against a code that passes the
 // atomic claim. Ordering matters:
 //   1. Zod-validate the body.

@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { RedeemInviteSchema } from '../../types/invite'
 
 // RedeemInviteForm — the pre-auth surface a new user reaches from a texted invite link
-// (`/#/redeem?code=…`) or the "Have an invite code?" toggle on the sign-in form (ADR-0029). It
+// (`/#/redeem?code=…`) or the "Have an invite code?" toggle on the sign-in form (ADR-0030). It
 // posts { code, email, password } to the redeem-invite Edge Function, which validates+claims the
 // code and creates the account; on success we immediately sign in with the same credentials, so
 // useSession flips the app to the signed-in shell. No account is ever created client-side.

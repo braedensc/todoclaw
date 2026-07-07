@@ -1,4 +1,4 @@
-// Invite-code helpers (ADR-0029). Shared by generate-invite (mints the code) and tests.
+// Invite-code helpers (ADR-0030). Shared by generate-invite (mints the code) and tests.
 //
 // A code is a bearer token that can create a trusted account, so it must be infeasible to guess:
 // 16 random bytes = 128 bits of entropy, encoded in Crockford base32 (no I/L/O/U — the letters

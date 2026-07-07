@@ -9,7 +9,7 @@ import {
   type InviteStatus,
 } from './use-invite'
 
-// InvitePanel — OWNER-ONLY (ADR-0029). A modal (SettingsPanel pattern) to mint a redeemable invite
+// InvitePanel — OWNER-ONLY (ADR-0030). A modal (SettingsPanel pattern) to mint a redeemable invite
 // link and text/share it, so onboarding someone doesn't need the Supabase dashboard. Reachable only
 // when useIsOwner() is true; the real gate is the server-side OWNER_USER_ID check in generate-invite
 // (a non-owner who forces this open still gets a 403). Every invite is a bearer token that spends

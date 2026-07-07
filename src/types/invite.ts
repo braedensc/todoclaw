@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-// Invite redemption input (ADR-0029). Mirrors the redeem-invite Edge Function's server-side Zod
+// Invite redemption input (ADR-0030). Mirrors the redeem-invite Edge Function's server-side Zod
 // schema so the client rejects obviously-bad input before the round-trip; the function re-validates
 // (defense-in-depth). The code is a high-entropy token, not secret-formatted, so we only bound its
 // length — the real check is the atomic DB claim.

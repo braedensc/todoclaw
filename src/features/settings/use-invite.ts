@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 
-// Owner-side invite-code data (ADR-0029). Listing/revoking read the owner's own `invites` rows
+// Owner-side invite-code data (ADR-0030). Listing/revoking read the owner's own `invites` rows
 // (RLS-scoped); generating calls the owner-only generate-invite Edge Function. Redemption is
 // server-side and not represented here.
 

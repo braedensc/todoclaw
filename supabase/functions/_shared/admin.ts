@@ -1,5 +1,5 @@
 // Admin — the ONE service-role Supabase client in the codebase, and deliberately the only place
-// SUPABASE_SERVICE_ROLE_KEY is used (ADR-0029). Every other function talks to the DB through the
+// SUPABASE_SERVICE_ROLE_KEY is used (ADR-0030). Every other function talks to the DB through the
 // CALLER's JWT (auth.ts) so RLS isolates data; this client BYPASSES RLS and has admin auth
 // powers, so it is fenced to exactly one caller — redeem-invite — and used for exactly one thing
 // that has no non-admin path: auth.admin.createUser (create the invited account). The invite

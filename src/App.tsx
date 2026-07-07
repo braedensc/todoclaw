@@ -41,7 +41,7 @@ function AppShell() {
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  // Owner-only "Invite someone" overlay (ADR-0029). isOwner only reveals the entry point — the
+  // Owner-only "Invite someone" overlay (ADR-0030). isOwner only reveals the entry point — the
   // generate-invite Edge Function enforces the real OWNER_USER_ID gate server-side.
   const [showInvite, setShowInvite] = useState(false)
   const isOwner = useIsOwner()

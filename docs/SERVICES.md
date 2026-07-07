@@ -81,7 +81,7 @@ are the deliberately-deferred backup least-privilege hardening (ADR-0006/ADR-002
      the frontend has no open sign-up. Everyone invited is trusted, which is what lets AI run on the
      owner's key (ADR-0015). Two ways to onboard someone new:
      - **Dashboard** — Authentication → Users → *Invite / Add user* (invite by email).
-     - **In-app invite codes (ADR-0029)** — the owner opens "Invite someone", generates a link, and
+     - **In-app invite codes (ADR-0030)** — the owner opens "Invite someone", generates a link, and
        texts it; the invitee redeems it to create their account. Keep sign-up **disabled** — redeem
        uses the service-role admin API, gated by the code. One-time setup:
        `supabase secrets set OWNER_USER_ID=<owner's auth.users uuid>` and add `VITE_OWNER_USER_ID`

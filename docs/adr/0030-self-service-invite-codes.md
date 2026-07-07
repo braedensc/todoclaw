@@ -1,4 +1,4 @@
-# ADR-0029 — Self-service invite codes (redeem a code → account, no dashboard)
+# ADR-0030 — Self-service invite codes (redeem a code → account, no dashboard)
 
 **Date:** 2026-07-07 · **Stage:** post-launch
 
