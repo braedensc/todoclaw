@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AuthForm } from './features/auth/AuthForm'
+import { AuthGate } from './features/auth/AuthGate'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
 import { RemindersInline } from './features/habits/RemindersInline'
@@ -22,6 +22,8 @@ import { ChatRail } from './features/ai/ChatRail'
 import { BackupsPanel } from './features/backups/BackupsPanel'
 import { DonePage } from './features/done/DonePage'
 import { SettingsPanel } from './features/settings/SettingsPanel'
+import { InvitePanel } from './features/settings/InvitePanel'
+import { useIsOwner } from './features/auth/use-is-owner'
 import { useRoute, navigate } from './lib/route'
 import { supabase } from './lib/supabase'
 
@@ -39,6 +41,10 @@ function AppShell() {
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  // Owner-only "Invite someone" overlay (ADR-0030). isOwner only reveals the entry point — the
+  // generate-invite Edge Function enforces the real OWNER_USER_ID gate server-side.
+  const [showInvite, setShowInvite] = useState(false)
+  const isOwner = useIsOwner()
   // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
@@ -176,6 +182,16 @@ function AppShell() {
                     >
                       <span aria-hidden>⚐</span> Daily reminders
                     </button>
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => setShowInvite(true)}
+                        title="Invite someone to Todoclaw"
+                        className="hover:text-ink"
+                      >
+                        <span aria-hidden>✉</span> Invite
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setShowSettings(true)}
@@ -279,6 +295,12 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
+          {showInvite && (
+            <ErrorBoundary>
+              <InvitePanel onClose={() => setShowInvite(false)} />
+            </ErrorBoundary>
+          )}
+
           {/* Mobile chrome (Concept D): the thumb-zone bottom nav + its "More" overflow sheet.
               Hidden in grid-only mode (the fullscreen grid owns the screen). */}
           {isMobile && !gridOnly && (
@@ -301,6 +323,7 @@ function AppShell() {
                 open={showMore}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
+                onInvite={isOwner ? () => setShowInvite(true) : undefined}
                 onSignOut={() => void supabase.auth.signOut()}
                 onClose={() => setShowMore(false)}
               />
@@ -344,7 +367,7 @@ export default function App() {
             <h1 className="mb-6 flex items-center gap-2 font-serif text-3xl font-semibold text-ink">
               <TodoClawIcon className="h-7 w-7" /> Todoclaw
             </h1>
-            <AuthForm />
+            <AuthGate />
           </div>
         </main>
       )}

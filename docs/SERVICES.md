@@ -77,11 +77,15 @@ are the deliberately-deferred backup least-privilege hardening (ADR-0006/ADR-002
      refresh rotation, **disable anonymous sign-ins**, and restrict **redirect/allowed URLs**
      to the Vercel domain + `http://localhost:5173`.
    - **Invite-only (Stage 4, ADR-0014):** Authentication → **disable public sign-ups** (turn off
-     "Allow new users to sign up" / "Enable email signup"), then **invite each user by email**
-     (Authentication → Users → *Invite / Add user*). The frontend is sign-in-only, so this
-     dashboard toggle is the real gate. Everyone invited is trusted, which is what lets AI run
-     on the owner's key (ADR-0015). To onboard someone new, invite their email here — there is
-     no self-service sign-up.
+     "Allow new users to sign up" / "Enable email signup"). This dashboard toggle is the real gate;
+     the frontend has no open sign-up. Everyone invited is trusted, which is what lets AI run on the
+     owner's key (ADR-0015). Two ways to onboard someone new:
+     - **Dashboard** — Authentication → Users → *Invite / Add user* (invite by email).
+     - **In-app invite codes (ADR-0030)** — the owner opens "Invite someone", generates a link, and
+       texts it; the invitee redeems it to create their account. Keep sign-up **disabled** — redeem
+       uses the service-role admin API, gated by the code. One-time setup:
+       `supabase secrets set OWNER_USER_ID=<owner's auth.users uuid>` and add `VITE_OWNER_USER_ID`
+       (same uuid) to the Vercel env so the owner sees the Invite UI.
    - Apply the schema: `supabase link --project-ref <ref>` then **one-time** `supabase db push`
      (the documented bootstrap exception; CI-driven migrations come in Stage 2/6).
    - Create the backup role's password (SQL editor — not committed):

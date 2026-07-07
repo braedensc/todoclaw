@@ -178,6 +178,8 @@ refresh_token_reuse_interval = 10
 # the dashboard toggle + the client omitting a signup form). Flipping this to `true` is a
 # deliberate change that must go through a PR + review — do not enable it casually. Owner-created
 # accounts (and the e2e admin API) use the service_role admin endpoint, which bypasses this flag.
+# The redeem-invite Edge Function onboards new users the same way — service_role admin API, gated
+# by a valid owner-generated invite code (ADR-0030) — so signup stays off, not reopened.
 enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
@@ -416,6 +418,16 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.ai-chat]
+verify_jwt = false
+
+# Invite codes (ADR-0030). generate-invite is owner-only and checks the caller's JWT in-function
+# (like the AI functions), so verify_jwt=false is the same preflight fix. redeem-invite is PUBLIC
+# by design — a brand-new user has no JWT yet; it is gated by the invite code (atomic claim) + a
+# per-IP throttle, not by auth, so it MUST run with the gateway JWT check off.
+[functions.generate-invite]
+verify_jwt = false
+
+[functions.redeem-invite]
 verify_jwt = false
 
 [analytics]
