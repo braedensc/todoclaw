@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
 
 // Injected by vite.config.ts `define` from Vercel's build-time env vars. Empty strings when not
 // built on Vercel (local dev / CI): __GIT_COMMIT_SHA__ → "no release", __VERCEL_ENV__ → fall back
