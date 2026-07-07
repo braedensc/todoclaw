@@ -97,8 +97,19 @@ export function usePushSubscription(): PushSubscriptionState {
       // leaves toJSON's keys empty even though getKey() returns them. Encode to base64url ourselves.
       const p256dh = sub.getKey('p256dh')
       const auth = sub.getKey('auth')
-      if (!sub.endpoint || !p256dh || !auth) {
-        throw new Error('subscription missing keys')
+      // Safari can RESOLVE subscribe() with a HOLLOW subscription — empty endpoint + zero-length keys —
+      // when it couldn't register with Apple's push service (APNs). That's not our bug (a fresh random
+      // VAPID key reproduces it); it means a VPN / restrictive network is blocking Apple push, or macOS
+      // notifications/Focus are off. Tear the dead subscription down and explain, rather than storing a
+      // useless row or throwing a cryptic error.
+      if (!sub.endpoint || !p256dh || p256dh.byteLength === 0 || !auth || auth.byteLength === 0) {
+        await sub.unsubscribe().catch(() => {})
+        setError(
+          'Safari couldn’t finish setting up notifications with Apple’s push service. This usually ' +
+            'means a VPN or network is blocking Apple push, or notifications are off in macOS System ' +
+            'Settings. Try a different network, then check System Settings → Notifications.',
+        )
+        return false
       }
       // user_id defaults to auth.uid() (RLS WITH CHECK); we never send it. Re-subscribe upserts.
       const { error: dbError } = await supabase.from('push_subscriptions').upsert(
