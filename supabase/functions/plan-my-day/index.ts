@@ -65,7 +65,13 @@ Deno.serve(async (req) => {
     })
 
     // Record actual token cost against the budget ledger (best-effort).
-    await recordUsage(client, gate.usageId, msg.usage.input_tokens, msg.usage.output_tokens)
+    await recordUsage(
+      client,
+      gate.usageId,
+      msg.usage.input_tokens,
+      msg.usage.output_tokens,
+      'plan_my_day',
+    )
 
     const toolUse = msg.content.find((b) => b.type === 'tool_use')
     if (!toolUse || toolUse.type !== 'tool_use') return json({ error: 'no_plan' }, 502)

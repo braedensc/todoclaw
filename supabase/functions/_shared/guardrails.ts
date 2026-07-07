@@ -9,6 +9,7 @@
 // real user and is never a parameter. Limits/cap are constants here (Balanced tier) — tunable.
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
+import { sendSpendAlert } from './spend-alert.ts'
 
 export type Feature = 'chat' | 'plan_my_day'
 
@@ -28,6 +29,31 @@ export const BUDGET_CAP_MICROS = 20_000_000
 // its own slice so it can't consume the whole pool. Tunable here without a schema change; must stay
 // below BUDGET_CAP_MICROS to mean anything (asserted in guardrails.test.ts).
 export const USER_BUDGET_CAP_MICROS = 10_000_000
+
+// Per-call clamp mirrored from ai_budget_add's SQL ceiling (20260706000000): each add is capped at
+// this many micros server-side, so a user's monthly spend can only ever advance in ≤ this-size
+// steps. recordUsage reconstructs the pre-call total from it to detect the alert-threshold crossing.
+export const PER_CALL_CEILING_MICROS = 200_000
+
+// Owner spend-alert threshold. Distinct from the per-user kill-switch (USER_BUDGET_CAP_MICROS, which
+// BLOCKS): when a user's cumulative monthly spend first crosses THIS line, the owner is paged once
+// (spend-alert.ts) — detection of "this account is spending too much" (misuse / a compromised token)
+// BEFORE it hits the wall. 80% of the per-user cap. Tunable here; a second lower band is a one-liner.
+export const USER_SPEND_ALERT_MICROS = 8_000_000
+
+// Did this call push the user's cumulative monthly spend across the alert threshold? True ONLY on
+// the single call that first crosses it (prev < threshold ≤ next), so the owner is paged once per
+// user per month — not on every call after the line. Spend only increments, so this is monotonic;
+// and because each add is clamped to PER_CALL_CEILING_MICROS (< the threshold), no call can leap the
+// line from far below — it always steps across it, and this catches that step.
+export function crossedSpendAlert(prevMicros: number, nextMicros: number): boolean {
+  return prevMicros < USER_SPEND_ALERT_MICROS && nextMicros >= USER_SPEND_ALERT_MICROS
+}
+
+// 'YYYY-MM' in UTC — matches the period key the SQL ledgers use (to_char(now() at time zone 'utc')).
+function utcPeriod(now: Date = new Date()): string {
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+}
 
 // Sonnet 5 STANDARD pricing: $3 / 1M input tokens, $15 / 1M output tokens (identical to Sonnet 4.6).
 // Converting to micros: micros = (input/1e6)*3*1e6 + (output/1e6)*15*1e6 = input*3 + output*15.
@@ -82,6 +108,7 @@ export async function recordUsage(
   usageId: string,
   inputTokens: number,
   outputTokens: number,
+  feature: Feature,
 ): Promise<void> {
   await client.rpc('ai_usage_record_tokens', {
     p_id: usageId,
@@ -89,6 +116,33 @@ export async function recordUsage(
     p_output: outputTokens,
   })
   await client.rpc('ai_budget_add', { p_micros: costMicros(inputTokens, outputTokens) })
+
+  // Owner spend-alert (best-effort). Read the caller's NEW monthly total, reconstruct the pre-call
+  // total from what this call actually added (clamped like the SQL), and page the owner once if this
+  // call is the one that crossed the alert line. Wrapped so an alerting failure never surfaces —
+  // recordUsage is already best-effort at every call site, and the budget bookkeeping above is done.
+  try {
+    const added = Math.min(costMicros(inputTokens, outputTokens), PER_CALL_CEILING_MICROS)
+    const { data: remaining } = await client.rpc('ai_user_budget_check', {
+      p_cap_micros: USER_BUDGET_CAP_MICROS,
+    })
+    if (typeof remaining !== 'number') return
+    const nextSpent = USER_BUDGET_CAP_MICROS - remaining
+    if (!crossedSpendAlert(nextSpent - added, nextSpent)) return
+    // Identity is only needed on the rare crossing → fetch it lazily (not on every call).
+    const { data: userData } = await client.auth.getUser()
+    await sendSpendAlert({
+      userId: userData.user?.id ?? 'unknown',
+      userEmail: userData.user?.email ?? null,
+      feature,
+      spentMicros: nextSpent,
+      capMicros: USER_BUDGET_CAP_MICROS,
+      thresholdMicros: USER_SPEND_ALERT_MICROS,
+      period: utcPeriod(),
+    })
+  } catch {
+    /* alerting is best-effort — never fail the user's already-completed request */
+  }
 }
 
 export interface AiStatus {
