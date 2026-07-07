@@ -1,16 +1,15 @@
 import type { AppRoute } from '../../lib/route'
 
-// MobileBottomNav — the thumb-zone bottom bar for the phone shell (Concept D). Hosts the primary
-// "Add" action plus the account/utility destinations (Reminders, Done, More), moving them out of
-// the tall header so the matrix owns the fold. Rendered only on mobile (App gates on useIsMobile),
-// fixed to the bottom edge with a safe-area inset.
+// MobileBottomNav — the thumb-zone bottom bar for the phone shell (Concept D). Now that Home, Done,
+// and Daily reminders are all full routes (ADR-0027/0028), the bar reads like real tabs: tapping a
+// destination navigates the app route and the active one is highlighted (accent + aria-current), so
+// there's always a Home tab back to the task list — no ✕ needed. Plus the primary "Add" action and
+// the "More" overflow. Rendered only on mobile (App gates on useIsMobile), fixed to the bottom edge
+// with a safe-area inset.
 //
-// Reminders / Done are now full pages (ADR-0027): tapping them navigates the app route, and the
-// active destination is highlighted (accent + aria-current) so the bar reads like tabs. Labelled
-// <nav aria-label="Account"> with a real "Done" button so the golden `openDone` helper —
+// Labelled <nav aria-label="Account"> with a real "Done" button so the golden `openDone` helper —
 // getByRole('navigation', {name:'Account'}).getByRole('button', {name:'Done'}) — keeps working; on
-// mobile this is the ONLY Account nav (the desktop header one is not rendered). The Grid/List
-// switch stays the embedded ViewToggle in the work area, untouched.
+// mobile this is the ONLY Account nav (the desktop header one is not rendered).
 
 function NavItem({
   glyph,
@@ -33,20 +32,22 @@ function NavItem({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={
-        'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors ' +
+        'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium leading-tight transition-colors ' +
         (accent || active ? 'text-primary' : 'text-muted hover:text-ink')
       }
     >
-      <span aria-hidden className="text-xl leading-none">
+      <span aria-hidden className="text-lg leading-none">
         {glyph}
       </span>
-      {label}
+      {/* Fixed two-line-tall box so single- and multi-word labels stay vertically aligned. */}
+      <span className="flex h-[22px] items-center text-center">{label}</span>
     </button>
   )
 }
 
 export function MobileBottomNav({
   route,
+  onHome,
   onAdd,
   onReminders,
   onDone,
@@ -54,6 +55,7 @@ export function MobileBottomNav({
 }: {
   /** The active route, so the matching destination reads as the current tab. */
   route: AppRoute
+  onHome: () => void
   onAdd: () => void
   onReminders: () => void
   onDone: () => void
@@ -65,6 +67,7 @@ export function MobileBottomNav({
       className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-panel/95 backdrop-blur"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
+      <NavItem glyph="⌂" label="Home" onClick={onHome} active={route === 'home'} />
       <NavItem glyph="✚" label="Add" onClick={onAdd} accent />
       <NavItem
         glyph="⚐"

@@ -5,6 +5,7 @@ import type { AppRoute } from '../../lib/route'
 
 describe('MobileBottomNav', () => {
   function setup(route: AppRoute = 'home') {
+    const onHome = vi.fn()
     const onAdd = vi.fn()
     const onReminders = vi.fn()
     const onDone = vi.fn()
@@ -12,13 +13,14 @@ describe('MobileBottomNav', () => {
     render(
       <MobileBottomNav
         route={route}
+        onHome={onHome}
         onAdd={onAdd}
         onReminders={onReminders}
         onDone={onDone}
         onMore={onMore}
       />,
     )
-    return { onAdd, onReminders, onDone, onMore }
+    return { onHome, onAdd, onReminders, onDone, onMore }
   }
 
   it('exposes Done inside a nav labelled "Account" (the golden openDone contract)', () => {
@@ -28,23 +30,28 @@ describe('MobileBottomNav', () => {
     expect(within(nav).getByRole('button', { name: 'Done' })).toBeInTheDocument()
   })
 
-  it('renders the four thumb-zone actions and wires each callback', () => {
-    const { onAdd, onReminders, onDone, onMore } = setup()
+  it('renders the thumb-zone tabs (incl. Home) and wires each callback', () => {
+    const { onHome, onAdd, onReminders, onDone, onMore } = setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     fireEvent.click(screen.getByRole('button', { name: 'Daily reminders' }))
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(onHome).toHaveBeenCalledTimes(1)
     expect(onAdd).toHaveBeenCalledTimes(1)
     expect(onReminders).toHaveBeenCalledTimes(1)
     expect(onDone).toHaveBeenCalledTimes(1)
     expect(onMore).toHaveBeenCalledTimes(1)
   })
 
-  it('marks the active route as the current page (tab highlight)', () => {
+  it('marks the active route as the current tab', () => {
     setup('done')
     expect(screen.getByRole('button', { name: 'Done' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('button', { name: 'Daily reminders' })).not.toHaveAttribute(
-      'aria-current',
-    )
+    expect(screen.getByRole('button', { name: 'Home' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('highlights Home when on the home route', () => {
+    setup('home')
+    expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
   })
 })

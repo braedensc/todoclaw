@@ -285,6 +285,7 @@ function AppShell() {
             <>
               <MobileBottomNav
                 route={route}
+                onHome={() => navigate('home')}
                 onAdd={() => setShowAdd(true)}
                 onReminders={() => navigate('reminders')}
                 onDone={() => navigate('done')}
