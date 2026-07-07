@@ -1,9 +1,10 @@
-// TodoClaw's own mark — a simple flat icon based on the real dog behind the name (cream curly
-// fur, one floppy tan ear, pale blue eyes). This represents the APP (wordmark, favicon); BabyClaw
-// the in-app AI assistant keeps his own 🐾 identity mark everywhere (mode toggle, chat header,
-// message bubbles) — the two are deliberately kept visually distinct. Unlike the app's themed
-// icons (which use `currentColor` so they follow text-color utilities), this one carries its own
-// fixed portrait colors — it's a picture of a specific dog, not a UI accent.
+// The original jumping-up portrait of the real dog behind the name (cream curly fur, floppy tan
+// ears, pale blue eyes). Since the style-mix pass the WORDMARK carries the clearer peeking-pup
+// redraw (components/TodoClawPeek); this original now fronts the BabyClaw chat header (it is a
+// picture of his namesake) and remains the favicon / PWA icon source. BabyClaw's 🐾 stays the
+// reply/status glyph in messages and the mode toggle. Unlike the app's themed icons (which use
+// `currentColor` so they follow text-color utilities), this one carries its own fixed portrait
+// colors — it's a picture of a specific dog, not a UI accent.
 export function TodoClawIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden className={className}>

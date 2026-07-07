@@ -1,6 +1,7 @@
 import type { CSSProperties, PointerEvent, ReactNode, RefObject } from 'react'
 import { quadrantMeta } from '../../lib/quadrants'
 import { AXIS_COLOR, GRIDLINE_COLOR, QUADRANT_TINT } from './grid-constants'
+import { PawTrail } from './PawTrail'
 
 // Corner quadrant labels. Each rendered in its quadrantMeta color. The grid is y-inverted on
 // screen, so the high-importance quadrants (Schedule / Do Now) sit at the top.
@@ -54,7 +55,7 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
       ref={surfaceRef}
       data-testid="grid-canvas"
       onPointerDown={onBackgroundPointerDown}
-      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card wide:h-auto wide:aspect-[1046/640]"
+      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card shadow-[0_1px_2px_rgba(46,42,36,0.05),0_16px_40px_-18px_rgba(46,42,36,0.28)] wide:h-auto wide:aspect-[1046/640]"
       style={PAPER_STYLE}
     >
       {/* Quadrant background tints (under the graph-paper lines is fine; they're translucent). */}
@@ -97,6 +98,15 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
           height: '50%',
           background: QUADRANT_TINT.errands,
         }}
+      />
+
+      {/* Decorative character layer (style mix), under the cards: TodoClaw's paw trail wandering
+          up toward Do Now, and a tiny ring marking the grid's true center — the point every
+          placement is judged against. Both are pointer-events-none, so drags pass through. */}
+      <PawTrail />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-faint bg-bg"
       />
 
       {/* Corner quadrant labels (each in its own color). The TOP pair sits lower (top-7) so it

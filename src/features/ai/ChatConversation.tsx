@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
+import { TodoClawIcon } from '../../components/TodoClawIcon'
 
 // The full BabyClaw conversation UI (header + streamed history + confirm gate + input), factored
 // out of ChatPanel so BOTH chat shells render the same thing:
@@ -31,10 +32,11 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        {/* The original jumping-up portrait fronts the chat — it's a picture of BabyClaw's own
+            namesake, so his conversation is where it lives now (the app wordmark carries the
+            peeking-pup mark, TodoClawPeek). His 🐾 stays the reply/status glyph everywhere. */}
         <h2 className="flex items-center gap-1.5 font-serif text-lg font-semibold text-ink">
-          <span aria-hidden className="text-base">
-            🐾
-          </span>
+          <TodoClawIcon className="h-6 w-6" />
           BabyClaw
         </h2>
         <button

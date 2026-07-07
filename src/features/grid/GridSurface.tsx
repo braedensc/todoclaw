@@ -10,6 +10,7 @@ import { boxClampBounds, clampPoint } from '../../hooks/use-free-drag'
 import { GridCanvas } from './GridCanvas'
 import { GridCard } from './GridCard'
 import { GridAxes } from './GridAxes'
+import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 import { ClusterBubble } from '../clustering/ClusterBubble'
 import { ClusterPopup } from '../clustering/ClusterPopup'
@@ -193,6 +194,18 @@ export function GridSurface({
         )}
 
         <GridAxes />
+
+        {/* The paw trail's owner: TodoClaw peeking over the canvas's top edge, over the Do Now
+            quadrant just left of its corner label. He lives OUTSIDE the canvas (which clips
+            overflow) so his head rises above the border; the -top offset puts his chin-clip line
+            (42.2/64 of his 40px height ≈ 26px) exactly on the border, and pointer-events-none
+            keeps him out of every drag. Blinks on the offset clock so he and the wordmark pup
+            never blink in sync. */}
+        <TodoClawPeek
+          ledge={false}
+          blinkClassName="tc-eye-blink-alt"
+          className="pointer-events-none absolute right-[84px] top-[-26px] z-10 h-10 w-10 drop-shadow-sm"
+        />
 
         <GridCanvas surfaceRef={gridRef} onBackgroundPointerDown={handleGridPointerDown}>
           {placedTasks.length === 0 && (
