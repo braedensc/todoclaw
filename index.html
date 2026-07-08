@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- iOS add-to-home-screen: viewport-fit=cover extends the layout under the camera island
+         (making env(safe-area-inset-*) non-zero); black-translucent makes the standalone status
+         bar transparent so the warm-paper atmosphere bleeds edge-to-edge. Standalone mode itself
+         comes from the PWA manifest (vite.config.ts) — apple-mobile-web-app-capable is not needed
+         — but the status bar STYLE has no manifest equivalent, so this legacy meta stays. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Todoclaw</title>

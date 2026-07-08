@@ -115,7 +115,7 @@ export function BottomSheet({
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className={`bottom-sheet-panel relative w-full max-w-md rounded-t-2xl border border-border-strong bg-panel px-4 pb-6 pt-2 shadow-xl outline-none ${className}`.trim()}
+        className={`bottom-sheet-panel relative w-full max-w-md rounded-t-2xl border border-border-strong bg-panel px-4 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))] pt-2 shadow-xl outline-none ${className}`.trim()}
       >
         {/* Grab handle — a visual affordance that this is a draggable/dismissable sheet. */}
         <div aria-hidden className="mx-auto mb-3 h-1 w-9 rounded-full bg-border-strong" />
