@@ -547,6 +547,7 @@ function AppShell() {
                   const c = QUADRANT_CENTER[dest]
                   showToast(`Added to ${quadrantMeta(c.x, c.y).label} ✓`)
                 }}
+                onOpenChat={() => setShowChat(true)}
                 onClose={() => setShowAdd(false)}
               />
               <Snackbar message={toast} />
