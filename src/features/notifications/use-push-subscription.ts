@@ -35,8 +35,9 @@ export type ApplePlatform = 'ios' | 'macos-safari' | 'other'
 
 // Web Push on Apple is happiest from an installed web app: iOS *requires* a Home-Screen install to
 // receive push at all, and on macOS an installed app (Add to Dock) is a more robust context than a
-// tab. Detect the platform so the UI can suggest the right install gesture.
-function detectApplePlatform(): ApplePlatform {
+// tab. Detect the platform so the UI can suggest the right install gesture. Exported for the
+// first-run setup guide (features/onboarding), which shows the same gesture per platform.
+export function detectApplePlatform(): ApplePlatform {
   if (typeof navigator === 'undefined') return 'other'
   const ua = navigator.userAgent
   // iPhone/iPod, or iPadOS (reports as a Mac but exposes touch points).
@@ -52,7 +53,7 @@ function detectApplePlatform(): ApplePlatform {
 }
 
 /** Running as an installed web app (Dock / Home Screen) rather than a browser tab. */
-function isStandalone(): boolean {
+export function isStandalone(): boolean {
   if (typeof window === 'undefined') return false
   return (
     window.matchMedia?.('(display-mode: standalone)').matches ||

@@ -18,6 +18,10 @@ setup('authenticate', async ({ page }) => {
   await resetTestUserData(dbUrl)
 
   await page.goto('/')
+  // The first-run setup guide (src/features/onboarding) renders above the shell on any device
+  // that hasn't dismissed it. Golden specs assert the established shell, so seed the dismissal
+  // (key from setup-guide-store.ts) before sign-in; storageState persists it for every spec.
+  await page.evaluate(() => localStorage.setItem('todoclaw.setup-guide.dismissed', '1'))
   await page.getByPlaceholder('you@example.com').fill(TEST_USER.email)
   await page.getByPlaceholder('Password').fill(TEST_USER.password)
   await page.getByRole('button', { name: /sign in/i }).click()

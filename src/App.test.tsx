@@ -100,6 +100,9 @@ describe('App shell', () => {
     }
     // The full reminders popup is closed until the gear-area button is clicked — no dialog yet.
     expect(screen.queryByRole('dialog', { name: 'Daily reminders' })).not.toBeInTheDocument()
+    // The first-run setup guide shows for a fresh device (nothing dismissed in this jsdom's
+    // localStorage; the install step is hidden because jsdom's UA is neither Apple nor Chromium).
+    expect(screen.getByRole('region', { name: 'Setup guide' })).toBeInTheDocument()
   })
 
   it('renders the "Grid-only view" header pill next to Plan My Day', () => {

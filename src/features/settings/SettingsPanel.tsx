@@ -1,5 +1,6 @@
-import { useId, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
 import type { ReactNode } from 'react'
+import { resetSetupGuide } from '../onboarding/setup-guide-store'
 import { useUserSchedule, useSaveScheduleConfig } from '../schedule/use-user-schedule'
 import {
   BABYCLAW_TONES,
@@ -164,9 +165,22 @@ function Section({
   )
 }
 
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel({
+  onClose,
+  initialSection,
+}: {
+  onClose: () => void
+  /** Open scrolled to a section — the setup guide deep-links to 'notifications'. */
+  initialSection?: 'notifications'
+}) {
   const scheduleQuery = useUserSchedule()
   const save = useSaveScheduleConfig()
+
+  // Callback ref: fires once the section mounts (i.e. after the loading gate), no effect/state
+  // needed. scrollIntoView is absent under jsdom — optional-call it.
+  const scrollHere = useCallback((node: HTMLDivElement | null) => {
+    node?.scrollIntoView?.({ block: 'start' })
+  }, [])
 
   const [draft, setDraft] = useState<SettingsDraft>(EMPTY_DRAFT)
   const [hydrated, setHydrated] = useState(false)
@@ -427,7 +441,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               />
             </Section>
 
-            <NotificationSettings draft={draft} set={set} />
+            <div ref={initialSection === 'notifications' ? scrollHere : undefined}>
+              <NotificationSettings draft={draft} set={set} />
+            </div>
 
             <Section
               title="AI &amp; privacy"
@@ -440,22 +456,35 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <p className="text-sm text-accent">Couldn't save your settings — please try again.</p>
             )}
 
-            <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+              {/* Re-surface the first-run setup guide on this device (features/onboarding). */}
               <button
                 type="button"
-                onClick={onClose}
-                className="rounded px-4 py-2 text-sm font-medium text-muted hover:text-ink"
+                onClick={() => {
+                  resetSetupGuide()
+                  onClose()
+                }}
+                className="text-xs text-muted underline hover:text-ink"
               >
-                Cancel
+                Show the setup guide
               </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={save.isPending}
-                className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {save.isPending ? 'Saving…' : 'Save settings'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded px-4 py-2 text-sm font-medium text-muted hover:text-ink"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={save.isPending}
+                  className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {save.isPending ? 'Saving…' : 'Save settings'}
+                </button>
+              </div>
             </div>
           </div>
         )}
