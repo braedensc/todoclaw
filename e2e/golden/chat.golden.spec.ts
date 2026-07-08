@@ -111,18 +111,21 @@ test('a destructive tool pauses for confirmation; Confirm re-sends with the appr
   await panel.getByLabel('Message').fill('complete the plants task')
   await panel.getByRole('button', { name: 'Send' }).click()
 
-  // The stream halts: confirmation UI shows the summary, and the input is locked while pending.
+  // The stream halts: confirmation UI shows the summary. Since PR #154 the input STAYS usable —
+  // a typed reply answers the confirmation (send routes yes/no to confirm/deny; unit-tested in
+  // use-ai-chat.test.tsx) — signalled by the placeholder switching to the yes/no prompt.
   await expect(panel.getByText(`${SUMMARY}?`)).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Cancel' })).toBeVisible()
-  await expect(panel.getByLabel('Message')).toBeDisabled()
+  await expect(panel.getByLabel('Message')).toBeEnabled()
+  await expect(panel.getByLabel('Message')).toHaveAttribute('placeholder', /yes or no/i)
 
   // Confirm → the client re-POSTs with the approved id; the tool-result note and the closing
-  // assistant reply render; the input unlocks.
+  // assistant reply render; the placeholder reverting proves the pending state cleared.
   await panel.getByRole('button', { name: 'Confirm' }).click()
   await expect(panel.getByText('✓ Confirmed.')).toBeVisible()
   await expect(panel.getByText('✓ Marked "Water the plants" done for today.')).toBeVisible()
   await expect(panel.getByText('Done!')).toBeVisible()
-  await expect(panel.getByLabel('Message')).toBeEnabled()
+  await expect(panel.getByLabel('Message')).toHaveAttribute('placeholder', 'Message…')
 
   // The first POST is unapproved; the second carries the approved id AND the echoed history
   // with the halted assistant turn (the client-held-history contract).
