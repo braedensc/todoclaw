@@ -30,15 +30,28 @@ function bufferToBase64Url(buf: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function isIos(): boolean {
-  if (typeof navigator === 'undefined') return false
-  return (
-    /iP(hone|ad|od)/.test(navigator.userAgent) ||
-    // iPadOS 13+ reports as a Mac; disambiguate by touch support.
+/** The Apple browser context, which decides the "install as a web app" tip we show. */
+export type ApplePlatform = 'ios' | 'macos-safari' | 'other'
+
+// Web Push on Apple is happiest from an installed web app: iOS *requires* a Home-Screen install to
+// receive push at all, and on macOS an installed app (Add to Dock) is a more robust context than a
+// tab. Detect the platform so the UI can suggest the right install gesture.
+function detectApplePlatform(): ApplePlatform {
+  if (typeof navigator === 'undefined') return 'other'
+  const ua = navigator.userAgent
+  // iPhone/iPod, or iPadOS (reports as a Mac but exposes touch points).
+  if (
+    /iP(hone|ad|od)/.test(ua) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
   )
+    return 'ios'
+  // macOS Safari only — exclude the Chromium/Firefox families that also carry "Safari" in their UA.
+  const isSafari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Brave/.test(ua)
+  if (isSafari && navigator.platform === 'MacIntel') return 'macos-safari'
+  return 'other'
 }
 
+/** Running as an installed web app (Dock / Home Screen) rather than a browser tab. */
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false
   return (
@@ -54,8 +67,12 @@ export interface PushSubscriptionState {
   permission: NotificationPermission
   busy: boolean
   error: string | null
-  /** iOS Safari can only receive push once the PWA is installed to the Home Screen. */
-  iosInstallHint: boolean
+  /** Which Apple browser context we're in — drives the "install as a web app" tip. */
+  applePlatform: ApplePlatform
+  /** True when running as an installed web app (Dock / Home Screen), not a browser tab. */
+  installed: boolean
+  /** True after a subscribe attempt failed at the push-service layer — show troubleshooting steps. */
+  setupFailed: boolean
   subscribe: () => Promise<boolean>
   unsubscribe: () => Promise<void>
 }
@@ -72,6 +89,7 @@ export function usePushSubscription(): PushSubscriptionState {
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [setupFailed, setSetupFailed] = useState(false)
 
   const subscribe = useCallback(async (): Promise<boolean> => {
     if (!supported) return false
@@ -81,6 +99,7 @@ export function usePushSubscription(): PushSubscriptionState {
     }
     setBusy(true)
     setError(null)
+    setSetupFailed(false)
     try {
       const perm = await Notification.requestPermission()
       setPermission(perm)
@@ -97,8 +116,16 @@ export function usePushSubscription(): PushSubscriptionState {
       // leaves toJSON's keys empty even though getKey() returns them. Encode to base64url ourselves.
       const p256dh = sub.getKey('p256dh')
       const auth = sub.getKey('auth')
-      if (!sub.endpoint || !p256dh || !auth) {
-        throw new Error('subscription missing keys')
+      // Safari can RESOLVE subscribe() with a HOLLOW subscription — empty endpoint + zero-length keys —
+      // when it can't register with Apple's push service (a wedged webpushd/apsd daemon, an out-of-date
+      // macOS, or notifications/Location Services off). It reproduces even with a fresh random VAPID key
+      // and a real user gesture, so it's not our code or key. Tear the dead subscription down and flag
+      // setupFailed so the UI can show the recovery steps, rather than storing a useless row.
+      if (!sub.endpoint || !p256dh || p256dh.byteLength === 0 || !auth || auth.byteLength === 0) {
+        await sub.unsubscribe().catch(() => {})
+        setError('Safari couldn’t set up notifications with Apple’s push service.')
+        setSetupFailed(true)
+        return false
       }
       // user_id defaults to auth.uid() (RLS WITH CHECK); we never send it. Re-subscribe upserts.
       const { error: dbError } = await supabase.from('push_subscriptions').upsert(
@@ -143,7 +170,9 @@ export function usePushSubscription(): PushSubscriptionState {
     permission,
     busy,
     error,
-    iosInstallHint: supported && isIos() && !isStandalone(),
+    applePlatform: detectApplePlatform(),
+    installed: isStandalone(),
+    setupFailed,
     subscribe,
     unsubscribe,
   }
