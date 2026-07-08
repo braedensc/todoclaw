@@ -5,8 +5,9 @@ import type { Page } from '@playwright/test'
 // Mobile golden path (ADR-0028). Runs in the `chromium-mobile` project (Pixel 7 viewport + touch),
 // so `useIsMobile` (< 720px) is true. On mobile there is NO grid and NO Grid/List toggle:
 // MobileMatrix (the quadrant overview→focus list) is the only task surface, and ADDING happens via
-// the bottom nav's "+" → MobileAddSheet (BabyClaw / Manual toggle). The Manual path drops a PLACED
-// task at the chosen quadrant's center. The per-test DB wipe (fixtures) keeps these independent.
+// the bottom nav's "+" → MobileAddSheet — a manual-only text + quadrant form (AI capture lives in
+// the Chat tab), which drops a PLACED task at the chosen quadrant's center. The per-test DB wipe
+// (fixtures) keeps these independent.
 //
 // NOTE: rewritten from the retired tap-to-place flow when the mobile grid was removed. Run the full
 // golden suite locally to confirm selectors before merge.
@@ -15,11 +16,10 @@ import type { Page } from '@playwright/test'
 // touching `document` would not typecheck).
 const bodyOverflow = (page: Page) => page.evaluate<string>('document.body.style.overflow')
 
-// Add a task through the bottom-nav "+" sheet in Manual mode, into a given quadrant.
+// Add a task through the bottom-nav "+" sheet (manual text + quadrant), into a given quadrant.
 async function addManual(page: Page, text: string, quadrant: string): Promise<void> {
   await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
   const sheet = page.getByRole('dialog', { name: 'Add a task' })
-  await sheet.getByRole('button', { name: 'Manual' }).tap()
   await sheet.getByLabel('Task text').fill(text)
   await sheet.getByRole('button', { name: quadrant }).tap()
   await sheet.getByRole('button', { name: 'Add task' }).tap()
@@ -39,8 +39,10 @@ test('the add sheet is a full-screen takeover that fits without scrolling and cl
   expect(box.width).toBeGreaterThanOrEqual(viewport.width - 1)
   expect(box.height).toBeGreaterThanOrEqual(viewport.height - 1)
 
-  // Fits: in BOTH modes everything is reachable with no scrolling — the sheet's scroll container
-  // has no overflow, and the manual submit sits in-bounds at the bottom edge.
+  // Manual-only: no AI/BabyClaw mode switcher (natural-language capture is the Chat tab).
+  await expect(sheet.getByRole('group', { name: 'Add mode' })).toHaveCount(0)
+
+  // Fits: everything is reachable with no scrolling — the sheet's scroll container has no overflow.
   // (e2e is typechecked without the DOM lib, so reach getComputedStyle via the element's document.)
   const noOverflow = () =>
     sheet.evaluate((el) => {
@@ -50,9 +52,13 @@ test('the add sheet is a full-screen takeover that fits without scrolling and cl
       )!
       return scroller.scrollHeight <= scroller.clientHeight
     })
-  expect(await noOverflow()).toBe(true) // BabyClaw (default) mode
-  await sheet.getByRole('button', { name: 'Manual' }).tap()
-  expect(await noOverflow()).toBe(true) // Manual mode
+  expect(await noOverflow()).toBe(true)
+
+  // The text input is the bottom-anchored composer: it sits BELOW the quadrant picker, and the Add
+  // button beside it is in-bounds at the bottom edge (thumb zone, above where the keyboard rises).
+  const input = (await sheet.getByLabel('Task text').boundingBox())!
+  const quadrant = (await sheet.getByRole('button', { name: 'Do Now' }).boundingBox())!
+  expect(input.y).toBeGreaterThan(quadrant.y)
   const submit = await sheet.getByRole('button', { name: 'Add task' }).boundingBox()
   expect(submit!.y + submit!.height).toBeLessThanOrEqual(viewport.height)
 
@@ -100,12 +106,12 @@ test('Daily reminders opens as a sheet OVER home (home stays mounted, body scrol
 test('chat opens as a near-full sheet OVER home and the scrim tap dismisses it', async ({
   page,
 }) => {
-  // Mobile entry point: the "+" add sheet's BabyClaw mode escalates to the full chat. Opening
-  // chat REPLACES the add sheet (it closes underneath).
-  await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
-  const addSheet = page.getByRole('dialog', { name: 'Add a task' })
-  await addSheet.getByRole('button', { name: /Open chat/ }).tap()
-  await expect(addSheet).toBeHidden()
+  // Mobile entry point: the bottom-nav Chat tab (🐾) opens the full BabyClaw chat — the add sheet
+  // is now manual-only, so natural-language capture lives here.
+  await page
+    .getByRole('navigation', { name: 'Account' })
+    .getByRole('button', { name: 'Chat' })
+    .tap()
 
   const chat = page.getByRole('complementary', { name: 'Chat' })
   await expect(chat).toBeVisible()
