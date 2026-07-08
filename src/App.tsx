@@ -152,7 +152,8 @@ function AppShell() {
             freed (B2). */}
         <div
           className={
-            'mx-auto max-w-3xl p-6 wide:max-w-[1280px] ' + (isMobile && !gridOnly ? 'pb-24' : '')
+            // pb-28 clears the taller fixed bottom nav (64px tabs + safe-area + breathing room).
+            'mx-auto max-w-3xl p-6 wide:max-w-[1280px] ' + (isMobile && !gridOnly ? 'pb-28' : '')
           }
         >
           {/* Home vs. a full page. 'home' renders the header, plan, inline reminders, and work
@@ -494,7 +495,7 @@ function AppShell() {
                 route={route}
                 onHome={() => navigate('home')}
                 onAdd={() => setShowAdd(true)}
-                onReminders={() => navigate('reminders')}
+                onChat={() => setShowChat(true)}
                 onDone={() => navigate('done')}
                 onMore={() => setShowMore(true)}
               />
@@ -511,6 +512,7 @@ function AppShell() {
               />
               <MoreSheet
                 open={showMore}
+                onReminders={() => navigate('reminders')}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
                 onAdmin={isOwner ? () => navigate('admin') : undefined}

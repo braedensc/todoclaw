@@ -145,7 +145,11 @@ export async function closeDone(page: Page): Promise<void> {
   await expect(page.getByRole('region', { name: 'Done' })).toHaveCount(0)
 }
 
-/** Open the Daily reminders page from the Account nav (ADR-0027: a route/page, not a modal). */
+/**
+ * Open the Daily reminders page from the Account nav (ADR-0027: a route/page, not a modal).
+ * DESKTOP only — the mobile bottom nav no longer has a reminders tab (it moved into the More
+ * sheet when Chat took its slot); a mobile spec would open More first.
+ */
 export async function openReminders(page: Page): Promise<void> {
   await page
     .getByRole('navigation', { name: 'Account' })

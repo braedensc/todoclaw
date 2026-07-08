@@ -1,9 +1,10 @@
 import { BottomSheet } from '../../components/BottomSheet'
 
 // MoreSheet — the overflow for the mobile bottom nav (Concept D). Holds the low-frequency /
-// harder-to-reach utility actions pushed out of the tall header: Settings, Backups, and Sign out
-// (destructive, last). A tap runs the action; each closes the sheet first so the underlying
-// panel/overlay opens cleanly. (Grid-only view is desktop-only now — there's no grid on mobile.)
+// harder-to-reach utility actions pushed out of the tall header: Daily reminders (moved out of
+// the bar when Chat took its slot), Settings, Backups, and Sign out (destructive, last). A tap
+// runs the action; each closes the sheet first so the underlying panel/overlay/route opens
+// cleanly. (Grid-only view is desktop-only now — there's no grid on mobile.)
 
 function MoreItem({
   glyph,
@@ -35,6 +36,7 @@ function MoreItem({
 
 export function MoreSheet({
   open,
+  onReminders,
   onSettings,
   onBackups,
   onAdmin,
@@ -42,6 +44,8 @@ export function MoreSheet({
   onClose,
 }: {
   open: boolean
+  /** Navigates to the Daily reminders page (#/reminders). */
+  onReminders: () => void
   onSettings: () => void
   onBackups: () => void
   // Owner-only: present only when the signed-in user is the app owner — opens the Admin panel (which
@@ -58,6 +62,7 @@ export function MoreSheet({
     <BottomSheet open={open} onClose={onClose} title="More">
       <div className="flex flex-col gap-0.5">
         {onAdmin && <MoreItem glyph="❖" label="Admin" onClick={run(onAdmin)} />}
+        <MoreItem glyph="⚐" label="Daily reminders" onClick={run(onReminders)} />
         <MoreItem glyph="⚙" label="Settings" onClick={run(onSettings)} />
         <MoreItem glyph="↻" label="Backups" onClick={run(onBackups)} />
         <MoreItem glyph="⏻" label="Sign out" onClick={run(onSignOut)} danger />
