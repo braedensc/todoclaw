@@ -1,12 +1,15 @@
 import type { AppRoute } from '../../lib/route'
 
 // MobileBottomNav — the thumb-zone bottom bar for the phone shell (Concept D). Home and Done are
-// full routes (ADR-0027/0028): tapping one navigates the app route and the active tab is
-// highlighted (accent + aria-current), so there's always a Home tab back to the task list — no ✕
-// needed. Plus the primary "Add" action, BabyClaw's Chat, and the "More" overflow (which now holds
-// Daily reminders alongside Settings/Backups). Rendered only on mobile (App gates on useIsMobile),
-// fixed to the bottom edge, lifted clear of the iPhone home indicator by a safe-area inset plus
-// real breathing room (needs viewport-fit=cover in index.html or the inset resolves to 0).
+// full routes (ADR-0027/0028): tapping one navigates the app route and the active tab gets a
+// distinct selected treatment (a short accent bar across its top edge + accent icon/label +
+// aria-current), so there's always a Home tab back to the task list — no ✕ needed. Plus the
+// primary "Add" action (a subtle accent ring on just its ✚ glyph, not a full tint, so it reads as
+// a normal tab until selected — which it never is, being an action not a route), BabyClaw's Chat,
+// and the "More" overflow (which now holds Daily reminders alongside Settings/Backups). Rendered
+// only on mobile (App gates on useIsMobile), fixed to the bottom edge, lifted clear of the iPhone
+// home indicator by a safe-area inset plus a little breathing room (needs viewport-fit=cover in
+// index.html or the inset resolves to 0).
 //
 // Labelled <nav aria-label="Account"> with a real "Done" button so the golden `openDone` helper —
 // getByRole('navigation', {name:'Account'}).getByRole('button', {name:'Done'}) — keeps working; on
@@ -16,15 +19,15 @@ function NavItem({
   glyph,
   label,
   onClick,
-  accent = false,
+  primary = false,
   active = false,
 }: {
   glyph: string
   label: string
   onClick: () => void
-  /** Always-on primary tint (the "Add" action). */
-  accent?: boolean
-  /** This destination is the current route — tints it and marks it the current page for a11y. */
+  /** Subtle "primary action" hint — a faint accent ring on just the ✚ glyph (the "Add" tab). */
+  primary?: boolean
+  /** This destination is the current route — selected treatment + marks it the current page. */
   active?: boolean
 }) {
   return (
@@ -33,11 +36,22 @@ function NavItem({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={
-        'flex min-h-[64px] flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium leading-tight transition-colors ' +
-        (accent || active ? 'text-primary' : 'text-muted hover:text-ink')
+        'relative flex min-h-[64px] flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium leading-tight transition-colors ' +
+        (active ? 'text-primary' : 'text-muted hover:text-ink')
       }
     >
-      <span aria-hidden className="text-lg leading-none">
+      {/* Selected-tab indicator: a short rounded accent bar flush to the tab's top edge. */}
+      {active && (
+        <span aria-hidden className="absolute inset-x-5 top-0 h-1 rounded-b-full bg-primary" />
+      )}
+      {/* Every glyph sits in the same 28px box so the ✚ ring can't nudge label baselines out of row. */}
+      <span
+        aria-hidden
+        className={
+          'flex h-7 w-7 items-center justify-center rounded-full text-xl leading-none ' +
+          (primary && !active ? 'text-primary ring-1 ring-primary/40' : '')
+        }
+      >
         {glyph}
       </span>
       {/* Fixed two-line-tall box so single- and multi-word labels stay vertically aligned. */}
@@ -70,13 +84,14 @@ export function MobileBottomNav({
   return (
     <nav
       aria-label="Account"
-      // px-3 keeps the outer tabs off the screen's rounded corners; the bottom padding stacks
-      // real breathing room on top of the home-indicator inset (which is 0 on non-notch devices).
-      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-panel/95 px-3 backdrop-blur"
-      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)' }}
+      // px-3 keeps the outer tabs off the screen's rounded corners; divide-x draws a hairline
+      // between tabs; the bottom padding stacks a little breathing room on top of the
+      // home-indicator inset (which is 0 on non-notch devices).
+      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch divide-x divide-border border-t border-border bg-panel/95 px-3 backdrop-blur"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5px)' }}
     >
       <NavItem glyph="⌂" label="Home" onClick={onHome} active={route === 'home'} />
-      <NavItem glyph="✚" label="Add" onClick={onAdd} accent />
+      <NavItem glyph="✚" label="Add" onClick={onAdd} primary />
       {/* 🐾 is BabyClaw's identity mark app-wide (add-sheet toggle, Settings) — the chat IS him. */}
       {onChat && <NavItem glyph="🐾" label="Chat" onClick={onChat} active={route === 'chat'} />}
       <NavItem glyph="✓" label="Done" onClick={onDone} active={route === 'done'} />
