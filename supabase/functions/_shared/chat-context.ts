@@ -5,7 +5,7 @@
 // every optional field has a fallback so a sparse profile never breaks the chat.
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
-import { localDateInTZ } from './dates.ts'
+import { dayNameInTZ, localDateInTZ } from './dates.ts'
 import {
   DEFAULT_ASSISTANT_CONFIG,
   type AssistantConfig,
@@ -164,7 +164,7 @@ export async function loadChatContext(
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
   const today = fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const dayOfWeek = fmt({ weekday: 'long' })
+  const dayOfWeek = dayNameInTZ(timeZone, now)
 
   const context: ChatContext = {
     today,
