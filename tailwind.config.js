@@ -45,8 +45,9 @@ export default {
         // palette; passes AA for white text on the fill and for the glyph on paper/card. See
         // src/components/IconButton.tsx.
         danger: '#b3392f',
-        // Soft slate-blue pulled from BabyClaw's real-life namesake's eyes. Sparing use only —
-        // BabyClaw-mode accents (active toggle, focus ring), never functional/urgency colors.
+        // Soft slate-blue pulled from BabyClaw's real-life namesake's eyes. Sparing use —
+        // BabyClaw-mode accents (active toggle, focus ring) plus the HABITS surface (paw checks,
+        // bone marks, habit cards: habits are his daily routine). Never functional/urgency colors.
         puppy: '#5f8aa3',
         // Eisenhower quadrants
         quadrant: {

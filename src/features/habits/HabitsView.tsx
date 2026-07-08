@@ -9,6 +9,7 @@ import {
   useToggleDailyFlag,
 } from './use-habits'
 import { HabitRow } from './HabitRow'
+import { habitDayWrites } from './subtasks'
 import { useConfirm } from '../../components/use-confirm'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
 import type { Habit } from '../../types/habit'
@@ -77,8 +78,10 @@ export function HabitsView() {
   const active = habits.filter((h) => h.active)
   const queued = habits.filter((h) => !h.active)
 
+  // The habit box is a master switch: checking/unchecking it fans out to every step too
+  // (habitDayWrites). Each write is its own atomic set_daily_flag merge + optimistic patch.
   const toggleHabit = (habit: Habit, checked: boolean) =>
-    toggleFlag.mutate({ map: 'habit_done', key: habit.id, value: checked, timeZone })
+    habitDayWrites(habit, checked).forEach((w) => toggleFlag.mutate({ ...w, timeZone }))
 
   const toggleSubtask = (habit: Habit, subtaskId: string, checked: boolean) =>
     toggleFlag.mutate({
@@ -145,7 +148,7 @@ export function HabitsView() {
                       disabled={pendingHabitId === habit.id}
                       aria-label={`Activate habit "${habit.text}"`}
                       title="Activate this habit"
-                      className="rounded-lg border border-dashed border-border-strong bg-card px-2.5 py-1 text-sm text-muted hover:border-primary hover:text-primary disabled:opacity-50"
+                      className="rounded-lg border border-dashed border-border-strong bg-card px-2.5 py-1 text-sm text-muted hover:border-puppy hover:text-puppy disabled:opacity-50"
                     >
                       + {habit.text}
                     </button>
@@ -179,7 +182,7 @@ export function HabitsView() {
         <button
           type="submit"
           disabled={addHabit.isPending}
-          className="rounded bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-puppy px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
           Add
         </button>

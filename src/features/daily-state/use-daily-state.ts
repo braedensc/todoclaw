@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
-import { localDateInTZ } from '../../lib/dates'
+import { useLocalToday } from '../../hooks/use-local-today'
 import { DailyStateSchema, type DailyState } from '../../types/daily-state'
 
 // Today's per-user daily state: the maps of what's been completed today. The row is keyed
@@ -48,8 +48,10 @@ async function fetchDailyState(today: string): Promise<DailyStateMaps> {
 }
 
 export function useDailyState(timeZone: string) {
-  const today = localDateInTZ(timeZone)
-  // Date-keyed so the query naturally refetches a new (empty) day when local midnight passes.
+  // LIVE local date (useLocalToday): the key flips on its own at local midnight / on app
+  // foreground, so an app left open overnight rolls to the new (empty) day — habits and the done
+  // map visibly reset each morning without waiting for the user's first interaction.
+  const today = useLocalToday(timeZone)
   return useQuery({
     queryKey: ['daily_state', today],
     queryFn: () => fetchDailyState(today),

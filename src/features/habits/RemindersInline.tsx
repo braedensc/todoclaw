@@ -3,7 +3,10 @@ import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useHabits, useUpdateHabit, useSoftDeleteHabit, useToggleDailyFlag } from './use-habits'
 import { HabitRow } from './HabitRow'
+import { PawMark } from './HabitCheck'
+import { habitDayWrites } from './subtasks'
 import { useConfirm } from '../../components/use-confirm'
+import { BoneIcon } from '../../components/BoneIcon'
 import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import type { Habit } from '../../types/habit'
@@ -56,8 +59,10 @@ export function RemindersInline() {
 
   const close = () => setSelectedId(null)
 
+  // The habit check is a master switch: it fans out to every step too (habitDayWrites), same
+  // as the Daily habits page, so the two surfaces never disagree on what "done today" means.
   const toggleHabit = (habit: Habit, checked: boolean) =>
-    toggleFlag.mutate({ map: 'habit_done', key: habit.id, value: checked, timeZone })
+    habitDayWrites(habit, checked).forEach((w) => toggleFlag.mutate({ ...w, timeZone }))
 
   const toggleSubtask = (habit: Habit, subtaskId: string, checked: boolean) =>
     toggleFlag.mutate({
@@ -75,16 +80,17 @@ export function RemindersInline() {
       softDelete.mutate(habit.id, { onSuccess: close })
   }
 
-  // The round check indicator — a puppy-blue ring when not done today, a filled puppy circle with a
-  // white ✓ when done. Shared by both presentations so the done treatment reads identically.
-  const Check = ({ done, className = '' }: { done: boolean; className?: string }) => (
+  // Done-today tally — rendered as a "treats earned" chip: a little bone + the count, filling
+  // solid puppy-blue once every habit is done. Shared by both presentations.
+  const allDone = doneCount === active.length
+  const tally = (
     <span
-      aria-hidden
-      className={`flex items-center justify-center rounded-full border font-bold leading-none transition-colors ${
-        done ? 'border-puppy bg-puppy text-white' : 'border-puppy/50 text-transparent'
-      } ${className}`}
+      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
+        allDone ? 'bg-puppy text-white' : 'bg-puppy/10 text-puppy'
+      }`}
     >
-      ✓
+      <BoneIcon className="h-2 w-auto" />
+      {doneCount}/{active.length}
     </span>
   )
 
@@ -110,7 +116,8 @@ export function RemindersInline() {
       {isMobile ? (
         // MOBILE — Variant B: a collapsible checklist card. The header folds the list and shows the
         // done tally; each row is a full-width checkbox + name (tap the box to check, the name to
-        // open details).
+        // open details). Dressed in the puppy palette on warm paper (not a bare white card): bone
+        // header mark, paw-print checks, and a faint bone watermark in the card corner.
         <div className="mb-2">
           <button
             type="button"
@@ -118,25 +125,27 @@ export function RemindersInline() {
             aria-expanded={!collapsed}
             className="flex w-full items-center gap-2 py-1.5 text-left"
           >
+            <BoneIcon className="h-2.5 w-auto text-puppy/70" />
             <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-light">
               Habit Reminders
             </span>
-            <span className="rounded-full bg-puppy/10 px-1.5 py-0.5 text-[11px] font-semibold text-puppy">
-              {doneCount}/{active.length}
-            </span>
+            {tally}
             <span aria-hidden className="ml-auto text-sm text-muted-light">
               {collapsed ? '▸' : '▾'}
             </span>
           </button>
 
           {!collapsed && (
-            <ul className="overflow-hidden rounded-xl border border-border bg-card">
+            <ul className="relative overflow-hidden rounded-xl border border-puppy/30 bg-panel">
+              {/* Watermark — a big bone ghosted into the corner, like a paper stamp. Purely
+                  decorative; sits under the rows (they're relative) and steals no taps. */}
+              <BoneIcon className="pointer-events-none absolute -bottom-1.5 -right-2 h-10 w-auto -rotate-12 text-puppy opacity-[0.08]" />
               {active.map((habit, i) => {
                 const isDone = Boolean(habitDone[habit.id])
                 return (
                   <li
                     key={habit.id}
-                    className={`flex items-center ${i > 0 ? 'border-t border-border' : ''}`}
+                    className={`relative flex items-center ${i > 0 ? 'border-t border-puppy/15' : ''}`}
                   >
                     <button
                       type="button"
@@ -145,7 +154,7 @@ export function RemindersInline() {
                       onClick={() => toggleHabit(habit, !isDone)}
                       className="flex shrink-0 items-center py-3 pl-3.5 pr-2"
                     >
-                      <Check done={isDone} className="h-6 w-6 text-[13px]" />
+                      <PawMark checked={isDone} className="h-6 w-6" />
                     </button>
                     <button
                       type="button"
@@ -164,10 +173,12 @@ export function RemindersInline() {
           )}
         </div>
       ) : (
-        // DESKTOP — Variant C: a minimal inline row, no chip chrome. Puppy-blue check + name.
+        // DESKTOP — Variant C: a minimal inline row, no chip chrome. Bone label + paw check + name.
         <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-light">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-light">
+            <BoneIcon className="h-2.5 w-auto text-puppy/70" />
             Habit Reminders
+            {tally}
           </span>
           {active.map((habit) => {
             const isDone = Boolean(habitDone[habit.id])
@@ -181,7 +192,7 @@ export function RemindersInline() {
                   onClick={() => toggleHabit(habit, !isDone)}
                   className="flex shrink-0 items-center rounded p-1"
                 >
-                  <Check done={isDone} className="h-[18px] w-[18px] text-[11px]" />
+                  <PawMark checked={isDone} className="h-[18px] w-[18px]" />
                 </button>
                 <button
                   type="button"
@@ -219,7 +230,10 @@ export function RemindersInline() {
               onClick={(e) => e.stopPropagation()}
             >
               <header className="mb-3 flex items-center justify-between">
-                <h2 className="font-serif text-lg font-semibold text-ink">Habit</h2>
+                <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
+                  <BoneIcon className="h-3 w-auto text-puppy/70" />
+                  Habit
+                </h2>
                 <button
                   type="button"
                   onClick={close}

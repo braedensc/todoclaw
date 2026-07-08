@@ -108,6 +108,20 @@ describe('RemindersInline', () => {
     })
   })
 
+  it('checking a habit in place AUTO-checks its steps too (master switch, both directions)', () => {
+    // habit() carries one step (s1) — the tap must write the habit flag AND the step flag.
+    setHabits([habit({ id: 'h1', text: 'Alpha' })])
+    renderInline()
+    fireEvent.click(screen.getByRole('button', { name: /Mark habit "Alpha" done today/i }))
+    expect(toggleMutate).toHaveBeenCalledTimes(2)
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'subtask_done',
+      key: 'h1:s1',
+      value: true,
+      timeZone: 'America/New_York',
+    })
+  })
+
   it('opens a per-reminder detail modal (steps expanded) when a name is clicked', () => {
     setHabits([habit()])
     renderInline()
