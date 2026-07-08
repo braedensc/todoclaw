@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import type { SettingsDraft } from '../settings/settings-form'
-import { usePushSubscription } from './use-push-subscription'
+import { usePushSubscription, type ApplePlatform } from './use-push-subscription'
 
 // NotificationSettings — the opt-in section rendered inside the Settings panel (ADR-0031). The
 // toggle drives the browser side (permission + subscription, via usePushSubscription) immediately,
@@ -50,9 +50,55 @@ function HourSelect({
   )
 }
 
+// The "install as a web app" tip. On iOS this is required for push; on macOS it's optional but gives
+// an app window and a sturdier push context. Renders nothing off Apple browsers.
+function InstallTip({ platform }: { platform: ApplePlatform }) {
+  if (platform === 'other') return null
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted">
+      <span aria-hidden className="mr-1">
+        💡
+      </span>
+      {platform === 'macos-safari' ? (
+        <>
+          Tip: in Safari, choose <span className="text-ink">File → Add to Dock</span> to install
+          Todoclaw as an app — its own window, and steadier notifications.
+        </>
+      ) : (
+        <>
+          Tip: tap <span className="text-ink">Share → Add to Home Screen</span> to install Todoclaw.
+          On iPhone &amp; iPad this is required to receive notifications.
+        </>
+      )}
+    </div>
+  )
+}
+
+// Shown after a subscribe attempt fails at Apple's push layer (the hollow-subscription case). These
+// are the steps that actually recover it, in order of likelihood — see ADR-0031 / PR history.
+function SafariTroubleshooting() {
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted">
+      <p className="text-ink">Safari couldn’t reach Apple’s push service. Things that fix it:</p>
+      <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-4">
+        <li>Update macOS to the latest version.</li>
+        <li>Quit and reopen Safari, or restart your Mac.</li>
+        <li>System Settings → Notifications — make sure notifications are allowed.</li>
+        <li>
+          System Settings → Privacy &amp; Security → Location Services — turn on, enable Safari.
+        </li>
+        <li>
+          Still stuck? Chrome, Edge, and Firefox use a different push service and work reliably.
+        </li>
+      </ul>
+    </div>
+  )
+}
+
 export function NotificationSettings({ draft, set }: { draft: SettingsDraft; set: SetField }) {
   const push = usePushSubscription()
   const enabled = draft.notificationsEnabled
+  const showInstallTip = push.applePlatform !== 'other' && !push.installed
 
   async function handleToggle() {
     if (enabled) {
@@ -82,7 +128,13 @@ export function NotificationSettings({ draft, set }: { draft: SettingsDraft; set
 
       <div className="mt-3 flex flex-col gap-3">
         {!push.supported ? (
-          <p className="text-sm text-muted">This browser doesn’t support notifications.</p>
+          // On iOS a browser tab has no PushManager at all — installing to the Home Screen is the
+          // only way to get notifications, so lead with that instead of a flat "not supported".
+          showInstallTip && push.applePlatform === 'ios' ? (
+            <InstallTip platform="ios" />
+          ) : (
+            <p className="text-sm text-muted">This browser doesn’t support notifications.</p>
+          )
         ) : (
           <>
             <div className="flex items-center justify-between">
@@ -109,13 +161,8 @@ export function NotificationSettings({ draft, set }: { draft: SettingsDraft; set
             </div>
 
             {push.error && <p className="text-sm text-danger">{push.error}</p>}
-
-            {push.iosInstallHint && (
-              <p className="text-xs text-muted">
-                On iPhone or iPad, add Todoclaw to your Home Screen first (Share → Add to Home
-                Screen), then enable notifications from the installed app.
-              </p>
-            )}
+            {push.setupFailed && <SafariTroubleshooting />}
+            {showInstallTip && <InstallTip platform={push.applePlatform} />}
 
             {enabled && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
