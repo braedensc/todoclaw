@@ -2,17 +2,19 @@
 // due-kind decision, and the message content (plan-rich morning, plan-based evening check-in, and
 // the deterministic fallbacks).
 import { assertEquals, assertStringIncludes, assertNotMatch } from 'jsr:@std/assert@1'
+import { dayNameInTZ } from './dates.ts'
 import {
   buildMorningFromPlan,
   buildMorningMessage,
   buildRecapMessage,
-  dayNameInTZ,
   dueKind,
   isQuietHour,
   localHourInTZ,
+  normalizePlan,
   type DispatchInputs,
   type DispatchPlan,
   type NotificationPrefs,
+  type RecapContext,
 } from './dispatch.ts'
 
 const noon_utc = new Date('2026-07-07T12:00:00Z')
@@ -179,8 +181,15 @@ const planWithTasks: DispatchPlan = {
   smallRocks: [{ task: 'Beta', duration: '~20min' }, { task: 'Gamma (not on board)' }],
 }
 
+const ctx = (over: Partial<RecapContext> = {}): RecapContext => ({
+  dayName: 'Wednesday',
+  timeZone: 'UTC',
+  localDate: '2026-07-07',
+  ...over,
+})
+
 Deno.test('buildRecapMessage: numbers the still-unfinished plan items and asks', () => {
-  const m = buildRecapMessage(inputs({ plan: planWithTasks }), 'Wednesday')
+  const m = buildRecapMessage(inputs({ plan: planWithTasks }), ctx())
   assertEquals(m.title, 'Wrapping up Wednesday 👋')
   assertStringIncludes(m.body, 'Which of these did you knock out today?')
   assertStringIncludes(m.body, '1. Alpha\n2. Beta\n3. Gamma (not on board)')
@@ -188,9 +197,58 @@ Deno.test('buildRecapMessage: numbers the still-unfinished plan items and asks',
 })
 
 Deno.test('buildRecapMessage: done items drop off the list (matched by task text)', () => {
-  const m = buildRecapMessage(inputs({ plan: planWithTasks, done: { a: true } }), 'Wednesday')
+  const m = buildRecapMessage(inputs({ plan: planWithTasks, done: { a: true } }), ctx())
   assertNotMatch(m.body, /Alpha/) // done this morning → not asked about
   assertStringIncludes(m.body, '1. Beta\n2. Gamma (not on board)') // unmatched Gamma stays listed
+})
+
+Deno.test(
+  'buildRecapMessage: a recurring chore done TODAY drops off (lastDoneAt, not done map)',
+  () => {
+    // Recurring tasks never set daily_state.done — completion resets recurring.lastDoneAt. A chore
+    // done this morning must not be re-asked in the evening.
+    const m = buildRecapMessage(
+      inputs({
+        plan: { bigRock: { task: 'Alpha' }, smallRocks: [{ task: 'Beta' }] },
+        tasks: [
+          {
+            id: 'a',
+            text: 'Alpha',
+            x: 0.5,
+            y: 0.5,
+            due: null,
+            staged: false,
+            recurring: { frequencyDays: 7, lastDoneAt: '2026-07-07T15:00:00Z', doneCount: 3 },
+          },
+          { id: 'b', text: 'Beta', x: 0.2, y: 0.3, due: null, staged: false, recurring: null },
+        ],
+      }),
+      ctx(), // UTC, localDate 2026-07-07 → lastDoneAt is "today"
+    )
+    assertNotMatch(m.body, /Alpha/)
+    assertStringIncludes(m.body, '1. Beta')
+  },
+)
+
+Deno.test('buildRecapMessage: a recurring chore done YESTERDAY stays on the list', () => {
+  const m = buildRecapMessage(
+    inputs({
+      plan: { bigRock: { task: 'Alpha' }, smallRocks: [] },
+      tasks: [
+        {
+          id: 'a',
+          text: 'Alpha',
+          x: 0.5,
+          y: 0.5,
+          due: null,
+          staged: false,
+          recurring: { frequencyDays: 7, lastDoneAt: '2026-07-06T23:00:00Z', doneCount: 3 },
+        },
+      ],
+    }),
+    ctx(),
+  )
+  assertStringIncludes(m.body, '1. Alpha')
 })
 
 Deno.test('buildRecapMessage: whole plan finished → celebrate, no list', () => {
@@ -199,7 +257,7 @@ Deno.test('buildRecapMessage: whole plan finished → celebrate, no list', () =>
       plan: { bigRock: { task: 'Alpha' }, smallRocks: [{ task: 'Beta' }] },
       done: { a: true, b: true },
     }),
-    'Friday',
+    ctx({ dayName: 'Friday' }),
   )
   assertEquals(m.title, 'Wrapping up Friday 🎉')
   assertStringIncludes(m.body, 'cleared the whole plan')
@@ -207,7 +265,7 @@ Deno.test('buildRecapMessage: whole plan finished → celebrate, no list', () =>
 })
 
 Deno.test('buildRecapMessage: no plan on file → gentle generic check-in with board count', () => {
-  const m = buildRecapMessage(inputs(), 'Monday')
+  const m = buildRecapMessage(inputs(), ctx({ dayName: 'Monday' }))
   assertEquals(m.title, 'Evening check-in 👋')
   assertStringIncludes(m.body, 'No morning plan on file today')
   assertStringIncludes(m.body, 'are 2 tasks on the board') // Alpha + Beta placed & open
@@ -215,14 +273,50 @@ Deno.test('buildRecapMessage: no plan on file → gentle generic check-in with b
 })
 
 Deno.test('buildRecapMessage: no plan AND empty board → check-in without a task nudge', () => {
-  const m = buildRecapMessage(inputs({ tasks: [] }), 'Monday')
+  const m = buildRecapMessage(inputs({ tasks: [] }), ctx({ dayName: 'Monday' }))
   assertNotMatch(m.body, /on the board/)
 })
 
 Deno.test('buildRecapMessage: greeting uses the configured name', () => {
   const m = buildRecapMessage(
     inputs({ plan: planWithTasks, config: { notifications: { name: 'Braeden' } } }),
-    'Wednesday',
+    ctx(),
   )
   assertStringIncludes(m.body, 'Hey Braeden! Which of these')
+})
+
+Deno.test('buildRecapMessage: an oversized plan list is capped with an "…and N more" line', () => {
+  const smallRocks = Array.from({ length: 14 }, (_, i) => ({ task: `Item ${i + 1}` }))
+  const m = buildRecapMessage(inputs({ plan: { smallRocks } }), ctx())
+  assertStringIncludes(m.body, '10. Item 10')
+  assertNotMatch(m.body, /11\. Item 11/)
+  assertStringIncludes(m.body, '…and 4 more')
+})
+
+// ---- Malformed plan hardening (the column is opaque jsonb — any shape can arrive) ----------------
+
+Deno.test('normalizePlan: rejects non-object shapes and coerces mis-typed fields', () => {
+  assertEquals(normalizePlan(null), null)
+  assertEquals(normalizePlan('a string'), null)
+  assertEquals(normalizePlan([1, 2]), null)
+  const p = normalizePlan({ headline: 42, bigRock: 'nope', smallRocks: 'also nope' })
+  assertEquals(p, { headline: undefined, bigRock: null, smallRocks: [] })
+})
+
+Deno.test(
+  'builders never throw on a mis-typed plan (numbers/strings where objects expected)',
+  () => {
+    const evil = { headline: 42, bigRock: 7, smallRocks: [null, 'x', { task: 9, duration: {} }] }
+    const morning = buildMorningFromPlan(evil as unknown as DispatchPlan, inputs())
+    assertStringIncludes(morning.body, 'open day') // degrades to the open-day line, no crash
+    const evening = buildRecapMessage(inputs({ plan: evil as unknown as DispatchPlan }), ctx())
+    assertEquals(evening.title, 'Evening check-in 👋') // no usable items → generic check-in
+  },
+)
+
+Deno.test('buildMorningFromPlan: quick wins capped at 10', () => {
+  const smallRocks = Array.from({ length: 14 }, (_, i) => ({ task: `Win ${i + 1}` }))
+  const m = buildMorningFromPlan({ headline: 'Busy.', smallRocks }, inputs())
+  assertStringIncludes(m.body, '• Win 10')
+  assertNotMatch(m.body, /• Win 11/)
 })

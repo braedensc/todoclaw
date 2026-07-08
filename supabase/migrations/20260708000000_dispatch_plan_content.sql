@@ -74,14 +74,19 @@ end;
 $$;
 
 -- Upgrade a claimed message's content in place (deterministic → plan-rich). The row id is the proof
--- of a won claim, so this can never create a message or touch another (user, day, kind)'s row.
+-- of a won claim, and the freshness predicate makes the DB own that contract too: only a message
+-- created within the last hour (i.e. by the dispatch run enriching it) can be rewritten — a stale
+-- or replayed id is a silent no-op, never a rewrite of an older day's history.
 create or replace function public.enrich_message(p_id uuid, p_title text, p_body text)
 returns void
 language sql
 security definer
 set search_path = public
 as $$
-  update public.messages set title = p_title, body = p_body where id = p_id;
+  update public.messages
+    set title = p_title, body = p_body
+    where id = p_id
+      and created_at > now() - interval '1 hour';
 $$;
 
 -- Fence: service_role ONLY (dispatch_inputs_for_user's existing grant carries over the replace;

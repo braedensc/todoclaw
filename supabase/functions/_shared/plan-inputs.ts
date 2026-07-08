@@ -3,7 +3,7 @@
 // runs the plan without a client round-trip, so the same selection + date math is ported here.
 // Faithful to src/features/ai/use-plan-my-day.ts buildPlanRequest + src/lib recurringStatus/daysUntil.
 
-import { localDateInTZ } from './dates.ts'
+import { dayNameInTZ, localDateInTZ } from './dates.ts'
 import type { PlanRequest } from './plan-prompt.ts'
 
 const MS_PER_DAY = 86_400_000
@@ -77,7 +77,7 @@ export function buildPlanRequest(
 
   return {
     today: fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-    dayOfWeek: fmt({ weekday: 'long' }),
+    dayOfWeek: dayNameInTZ(timeZone, now),
     tasks: planTasks,
     recurringDue,
     habits: habits.filter((h) => h.active).map((h) => h.text),

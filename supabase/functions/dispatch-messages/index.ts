@@ -13,14 +13,14 @@ import { anthropic } from '../_shared/anthropic.ts'
 import { precheckForUser, recordUsageForUser } from '../_shared/guardrails-system.ts'
 import { generatePlan } from '../_shared/run-plan.ts'
 import { buildPlanRequest } from '../_shared/plan-inputs.ts'
-import { localDateInTZ } from '../_shared/dates.ts'
+import { dayNameInTZ, localDateInTZ } from '../_shared/dates.ts'
 import {
   buildMorningFromPlan,
   buildMorningMessage,
   buildRecapMessage,
-  dayNameInTZ,
   dueKind,
   localHourInTZ,
+  normalizePlan,
   type DispatchInputs,
   type DispatchPlan,
   type MessageContent,
@@ -83,21 +83,32 @@ Deno.serve(async (req) => {
       if (!kind) continue
 
       const localDate = localDateInTZ(c.timezone, now)
-      const { data: inputsJson } = await admin.rpc('dispatch_inputs_for_user', {
+      // A failed inputs read must THROW (→ failed++, no claim): silently proceeding with empty
+      // inputs would claim the (user, day, kind) lock with a wrong message — "no plan on file"
+      // beside a real plan — and the claim makes that uncorrectable for the day.
+      const { data: inputsJson, error: inputsError } = await admin.rpc('dispatch_inputs_for_user', {
         p_user_id: c.user_id,
         p_local_date: localDate,
       })
+      if (inputsError) throw inputsError
       const inputs = (inputsJson ?? EMPTY_INPUTS) as DispatchInputs
+      // The plan came through opaque jsonb — normalize once; builders re-guard but this keeps the
+      // "does a plan exist?" branch honest against mis-typed rows.
+      const existingPlan = normalizePlan(inputs.plan)
 
       // Initial content. Morning with a plan already on file (user planned early, or a prior partial
       // run generated it) formats the real plan immediately; otherwise the deterministic message —
       // upgraded below if generation succeeds. Evening builds its check-in from the morning's plan.
       let content: MessageContent =
         kind === 'plan'
-          ? inputs.plan
-            ? buildMorningFromPlan(inputs.plan, inputs)
+          ? existingPlan
+            ? buildMorningFromPlan(existingPlan, inputs)
             : buildMorningMessage(inputs)
-          : buildRecapMessage(inputs, dayNameInTZ(c.timezone, now))
+          : buildRecapMessage(inputs, {
+              dayName: dayNameInTZ(c.timezone, now),
+              timeZone: c.timezone,
+              localDate,
+            })
 
       // The atomic claim: null ⇒ this (user, day, kind) already went out ⇒ skip (no double-send).
       // Claiming BEFORE any AI spend keeps overlapping runs from double-charging the budget.
@@ -116,16 +127,20 @@ Deno.serve(async (req) => {
 
       // Morning without a plan yet: generate it (budget-gated) into daily_state, then upgrade the
       // claimed message to the plan-rich body before pushing. A paused budget or failed generation
-      // leaves the deterministic message in place — the send never depends on the model.
-      if (kind === 'plan' && !inputs.plan) {
+      // leaves the deterministic message in place — the send never depends on the model. If the
+      // enrich UPDATE fails, push the stored (deterministic) body instead: the notification and the
+      // inbox/chat row must never diverge.
+      if (kind === 'plan' && !existingPlan) {
         const plan = await maybeGeneratePlan(admin, c.user_id, c.timezone, inputs, localDate, now)
         if (plan) {
-          content = buildMorningFromPlan(plan, inputs)
-          await admin.rpc('enrich_message', {
+          const rich = buildMorningFromPlan(plan, inputs)
+          const { error: enrichError } = await admin.rpc('enrich_message', {
             p_id: msgId,
-            p_title: content.title,
-            p_body: content.body,
+            p_title: rich.title,
+            p_body: rich.body,
           })
+          if (enrichError) console.error('enrich_message failed for', c.user_id, enrichError)
+          else content = rich
         }
       }
 
@@ -175,6 +190,10 @@ async function maybeGeneratePlan(
   }
 }
 
+// The encrypted Web Push payload caps near 4KB and the OS truncates the banner anyway, so bound the
+// PUSH body (the stored messages row keeps the full text — the tap opens it in chat).
+const PUSH_BODY_MAX = 1800
+
 // Push the notification to every subscription the user has; a subscription the push service reports
 // gone (404/410) is pruned. The click deep-links into the in-app chat, seeded with the message.
 async function pushToUser(
@@ -185,9 +204,11 @@ async function pushToUser(
   vapid: VapidKeys,
 ): Promise<void> {
   const { data: subs } = await admin.rpc('push_subscriptions_for_user', { p_user_id: userId })
+  const body =
+    content.body.length > PUSH_BODY_MAX ? `${content.body.slice(0, PUSH_BODY_MAX)}…` : content.body
   const payload = JSON.stringify({
     title: content.title,
-    body: content.body,
+    body,
     tag: messageId,
     url: `/#/chat/${messageId}`,
   })
@@ -199,6 +220,7 @@ async function pushToUser(
     try {
       const res = await sendWebPush(subscription, payload, vapid)
       if (res.gone) await admin.rpc('prune_push_subscription', { p_endpoint: s.endpoint })
+      else if (!res.ok) console.error('push rejected for endpoint', s.endpoint, 'HTTP', res.status)
     } catch (e) {
       console.error('push failed for endpoint', s.endpoint, e)
     }

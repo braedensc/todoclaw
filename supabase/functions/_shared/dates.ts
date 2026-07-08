@@ -3,6 +3,11 @@
 // set_task_done (mirroring daily_state.date). Kept in sync with the frontend copy; the deno
 // test asserts the same fixtures as src/lib/dates.test.ts.
 
+/** The user's weekday name ("Wednesday") in their own timezone — plan prompt, chat, dispatch. */
+export function dayNameInTZ(timeZone: string, now: Date): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' }).format(now)
+}
+
 export function localDateInTZ(timeZone: string, instant: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
