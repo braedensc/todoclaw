@@ -1,5 +1,7 @@
 import { useCallback, useId, useState } from 'react'
 import type { ReactNode } from 'react'
+import { BottomSheet } from '../../components/BottomSheet'
+import { useIsMobile } from '../../hooks/use-is-mobile'
 import { resetSetupGuide } from '../onboarding/setup-guide-store'
 import { useUserSchedule, useSaveScheduleConfig } from '../schedule/use-user-schedule'
 import {
@@ -13,11 +15,14 @@ import { EMPTY_DRAFT, configToDraft, draftToConfig, type SettingsDraft } from '.
 import { AiPrivacyNote } from '../ai/AiPrivacyNote'
 import { NotificationSettings } from '../notifications/NotificationSettings'
 
-// Settings — a modal overlay (BackupsPanel pattern: z-50 over the mobile tab bar, click-outside +
-// ✕ to close). It edits `user_schedule.config`: the schedule the Plan My Day prompt reads (so it
-// stops assuming your day), a bounded Plan My Day "preferences" note, and BabyClaw tuning. Every
-// freeform field is length-capped here and re-validated on save; none of it can escape the fixed
-// AI prompt scaffolds — it is layered on as preferences, never as instructions.
+// Settings — an overlay editing `user_schedule.config`: the schedule the Plan My Day prompt reads
+// (so it stops assuming your day), a bounded Plan My Day "preferences" note, and BabyClaw tuning.
+// Every freeform field is length-capped here and re-validated on save; none of it can escape the
+// fixed AI prompt scaffolds — it is layered on as preferences, never as instructions.
+//
+// Presentation splits on breakpoint: DESKTOP is the centered modal card (BackupsPanel pattern:
+// z-50 over the mobile tab bar, click-outside + ✕ to close). MOBILE renders the same content in a
+// slide-up BottomSheet — swipe-down / scrim / Escape dismiss, no ✕ (matching every mobile sheet).
 
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -212,6 +217,276 @@ export function SettingsPanel({
     save.mutate({ config: draftToConfig(draft), timezone }, { onSuccess: onClose })
   }
 
+  const isMobile = useIsMobile()
+
+  // The description + the loading gate / form + footer — identical on both surfaces. Only the
+  // chrome around it differs (centered card + ✕ header on desktop; slide-up sheet on mobile).
+  const content = (
+    <>
+      <p className="mb-2 text-sm text-muted">
+        Tell Plan My Day about your real day so it stops guessing — and tune how the assistant talks
+        to you. Nothing here is required; blank fields fall back to sensible defaults.
+      </p>
+
+      {scheduleQuery.isLoading ? (
+        <p className="py-6 text-sm text-muted">Loading…</p>
+      ) : (
+        <div className="flex flex-col gap-5">
+          <Section title="Where you are" hint="Used for the weather line in your daily plan.">
+            <TextField
+              label="Location"
+              value={draft.location}
+              onChange={(v) => set('location', v)}
+              placeholder="e.g. Atlanta, GA"
+              maxLength={120}
+            />
+          </Section>
+
+          <Section
+            title="Weekday"
+            hint="Times can be a point or a range (e.g. 9:30 or 12:00–1:00pm). Free-time hours drive how much the plan packs in."
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <TextField
+                label="Wake time"
+                value={draft.wakeTime}
+                onChange={(v) => set('wakeTime', v)}
+                placeholder="7:30–8:00am"
+                maxLength={40}
+              />
+              <TextField
+                label="Bedtime"
+                value={draft.bedtime}
+                onChange={(v) => set('bedtime', v)}
+                placeholder="10:30–11:30pm"
+                maxLength={40}
+              />
+              <TextField
+                label="Work start"
+                value={draft.workStart}
+                onChange={(v) => set('workStart', v)}
+                placeholder="9:30"
+                maxLength={40}
+              />
+              <TextField
+                label="Work end"
+                value={draft.workEnd}
+                onChange={(v) => set('workEnd', v)}
+                placeholder="17:00"
+                maxLength={40}
+              />
+              <TextField
+                label="Lunch start"
+                value={draft.lunchStart}
+                onChange={(v) => set('lunchStart', v)}
+                placeholder="12:00"
+                maxLength={40}
+              />
+              <TextField
+                label="Lunch end"
+                value={draft.lunchEnd}
+                onChange={(v) => set('lunchEnd', v)}
+                placeholder="1:00pm"
+                maxLength={40}
+              />
+              <TextField
+                label="Free hours (weekday)"
+                value={draft.weekdayFreeHours}
+                onChange={(v) => set('weekdayFreeHours', v)}
+                type="number"
+                min={0}
+                max={24}
+                step={0.5}
+                placeholder="4.5"
+              />
+            </div>
+          </Section>
+
+          <Section title="Weekend">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <TextField
+                label="Saturday free hours"
+                value={draft.saturdayFreeHours}
+                onChange={(v) => set('saturdayFreeHours', v)}
+                type="number"
+                min={0}
+                max={24}
+                step={0.5}
+                placeholder="9"
+              />
+              <TextField
+                label="Sunday free hours"
+                value={draft.sundayFreeHours}
+                onChange={(v) => set('sundayFreeHours', v)}
+                type="number"
+                min={0}
+                max={24}
+                step={0.5}
+                placeholder="7"
+              />
+            </div>
+            <TextField
+              label="Saturday notes"
+              value={draft.saturdayNotes}
+              onChange={(v) => set('saturdayNotes', v)}
+              placeholder="Mostly free — good for bigger tasks."
+              maxLength={280}
+            />
+            <TextField
+              label="Sunday notes"
+              value={draft.sundayNotes}
+              onChange={(v) => set('sundayNotes', v)}
+              placeholder="Slower start, free most of the day."
+              maxLength={280}
+            />
+          </Section>
+
+          <Section
+            title="Recurring commitments"
+            hint="Standing obligations — gym, school pickup, a weekly meeting. Plan My Day treats these as already on the calendar: it plans around them and never suggests them as tasks."
+          >
+            {draft.commitments.length === 0 && (
+              <p className="text-xs text-muted-light">
+                None yet. Add anything that regularly claims your time.
+              </p>
+            )}
+            {draft.commitments.map((c, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+              >
+                <TextField
+                  label="What"
+                  value={c.label}
+                  onChange={(v) => updateCommitment(i, 'label', v)}
+                  placeholder="Gym"
+                  maxLength={120}
+                />
+                <TextField
+                  label="When (optional)"
+                  value={c.when}
+                  onChange={(v) => updateCommitment(i, 'when', v)}
+                  placeholder="Tue/Thu 6pm"
+                  maxLength={120}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeCommitment(i)}
+                  aria-label={`Remove commitment ${i + 1}`}
+                  className="rounded-lg border border-border-strong px-3 py-2 text-sm text-muted hover:text-accent"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            {draft.commitments.length < COMMITMENTS_MAX && (
+              <button
+                type="button"
+                onClick={addCommitment}
+                className="self-start rounded-full border border-border-strong px-4 py-1.5 text-sm font-medium text-muted hover:text-ink"
+              >
+                + Add commitment
+              </button>
+            )}
+          </Section>
+
+          <Section title="Plan My Day preferences">
+            <TextAreaField
+              label="Preferences"
+              hint="Free-text preferences for how you like your day planned (e.g. “front-load deep work before lunch; keep evenings light”). Treated as preferences, not commands — it can't change the plan's format or scope."
+              value={draft.planNotes}
+              onChange={(v) => set('planNotes', v)}
+              maxLength={PLAN_NOTES_MAX}
+              placeholder="Front-load deep work in the morning; keep evenings for admin only."
+            />
+          </Section>
+
+          <Section title="BabyClaw assistant" icon="🐾">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <SelectField
+                label="Tone"
+                value={draft.babyclawTone}
+                onChange={(v) => set('babyclawTone', v as SettingsDraft['babyclawTone'])}
+                options={BABYCLAW_TONES}
+              />
+              <SelectField
+                label="Verbosity"
+                value={draft.babyclawVerbosity}
+                onChange={(v) => set('babyclawVerbosity', v as SettingsDraft['babyclawVerbosity'])}
+                options={BABYCLAW_VERBOSITY}
+              />
+            </div>
+            <TextAreaField
+              label="Custom instructions"
+              hint="Standing preferences for the assistant (e.g. “call me by my first name; keep replies short”). Layered on its fixed persona — it can't override the assistant's scope or safety rules."
+              value={draft.babyclawInstructions}
+              onChange={(v) => set('babyclawInstructions', v)}
+              maxLength={BABYCLAW_INSTRUCTIONS_MAX}
+              placeholder="Keep replies concise. Ask before creating tasks without a due date."
+            />
+          </Section>
+
+          <div ref={initialSection === 'notifications' ? scrollHere : undefined}>
+            <NotificationSettings draft={draft} set={set} />
+          </div>
+
+          <Section
+            title="AI &amp; privacy"
+            hint="AI is optional — the planner works fully without it."
+          >
+            <AiPrivacyNote />
+          </Section>
+
+          {save.isError && (
+            <p className="text-sm text-accent">Couldn't save your settings — please try again.</p>
+          )}
+
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+            {/* Re-surface the first-run setup guide on this device (features/onboarding). */}
+            <button
+              type="button"
+              onClick={() => {
+                resetSetupGuide()
+                onClose()
+              }}
+              className="text-xs text-muted underline hover:text-ink"
+            >
+              Show the setup guide
+            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded px-4 py-2 text-sm font-medium text-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={save.isPending}
+                className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {save.isPending ? 'Saving…' : 'Save settings'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+
+  // Mobile: a slide-up sheet (swipe/scrim/Escape to dismiss, no ✕). The sheet supplies the
+  // "Settings" title heading; the body scrolls inside it.
+  if (isMobile) {
+    return (
+      <BottomSheet open onClose={onClose} title="Settings" className="flex max-h-[90dvh] flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{content}</div>
+      </BottomSheet>
+    )
+  }
+
+  // Desktop: the centered modal card with a ✕ header (unchanged).
   return (
     <div
       role="dialog"
@@ -235,259 +510,7 @@ export function SettingsPanel({
             ✕
           </button>
         </header>
-
-        <p className="mb-2 text-sm text-muted">
-          Tell Plan My Day about your real day so it stops guessing — and tune how the assistant
-          talks to you. Nothing here is required; blank fields fall back to sensible defaults.
-        </p>
-
-        {scheduleQuery.isLoading ? (
-          <p className="py-6 text-sm text-muted">Loading…</p>
-        ) : (
-          <div className="flex flex-col gap-5">
-            <Section title="Where you are" hint="Used for the weather line in your daily plan.">
-              <TextField
-                label="Location"
-                value={draft.location}
-                onChange={(v) => set('location', v)}
-                placeholder="e.g. Atlanta, GA"
-                maxLength={120}
-              />
-            </Section>
-
-            <Section
-              title="Weekday"
-              hint="Times can be a point or a range (e.g. 9:30 or 12:00–1:00pm). Free-time hours drive how much the plan packs in."
-            >
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <TextField
-                  label="Wake time"
-                  value={draft.wakeTime}
-                  onChange={(v) => set('wakeTime', v)}
-                  placeholder="7:30–8:00am"
-                  maxLength={40}
-                />
-                <TextField
-                  label="Bedtime"
-                  value={draft.bedtime}
-                  onChange={(v) => set('bedtime', v)}
-                  placeholder="10:30–11:30pm"
-                  maxLength={40}
-                />
-                <TextField
-                  label="Work start"
-                  value={draft.workStart}
-                  onChange={(v) => set('workStart', v)}
-                  placeholder="9:30"
-                  maxLength={40}
-                />
-                <TextField
-                  label="Work end"
-                  value={draft.workEnd}
-                  onChange={(v) => set('workEnd', v)}
-                  placeholder="17:00"
-                  maxLength={40}
-                />
-                <TextField
-                  label="Lunch start"
-                  value={draft.lunchStart}
-                  onChange={(v) => set('lunchStart', v)}
-                  placeholder="12:00"
-                  maxLength={40}
-                />
-                <TextField
-                  label="Lunch end"
-                  value={draft.lunchEnd}
-                  onChange={(v) => set('lunchEnd', v)}
-                  placeholder="1:00pm"
-                  maxLength={40}
-                />
-                <TextField
-                  label="Free hours (weekday)"
-                  value={draft.weekdayFreeHours}
-                  onChange={(v) => set('weekdayFreeHours', v)}
-                  type="number"
-                  min={0}
-                  max={24}
-                  step={0.5}
-                  placeholder="4.5"
-                />
-              </div>
-            </Section>
-
-            <Section title="Weekend">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <TextField
-                  label="Saturday free hours"
-                  value={draft.saturdayFreeHours}
-                  onChange={(v) => set('saturdayFreeHours', v)}
-                  type="number"
-                  min={0}
-                  max={24}
-                  step={0.5}
-                  placeholder="9"
-                />
-                <TextField
-                  label="Sunday free hours"
-                  value={draft.sundayFreeHours}
-                  onChange={(v) => set('sundayFreeHours', v)}
-                  type="number"
-                  min={0}
-                  max={24}
-                  step={0.5}
-                  placeholder="7"
-                />
-              </div>
-              <TextField
-                label="Saturday notes"
-                value={draft.saturdayNotes}
-                onChange={(v) => set('saturdayNotes', v)}
-                placeholder="Mostly free — good for bigger tasks."
-                maxLength={280}
-              />
-              <TextField
-                label="Sunday notes"
-                value={draft.sundayNotes}
-                onChange={(v) => set('sundayNotes', v)}
-                placeholder="Slower start, free most of the day."
-                maxLength={280}
-              />
-            </Section>
-
-            <Section
-              title="Recurring commitments"
-              hint="Standing obligations — gym, school pickup, a weekly meeting. Plan My Day treats these as already on the calendar: it plans around them and never suggests them as tasks."
-            >
-              {draft.commitments.length === 0 && (
-                <p className="text-xs text-muted-light">
-                  None yet. Add anything that regularly claims your time.
-                </p>
-              )}
-              {draft.commitments.map((c, i) => (
-                <div
-                  key={i}
-                  className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
-                >
-                  <TextField
-                    label="What"
-                    value={c.label}
-                    onChange={(v) => updateCommitment(i, 'label', v)}
-                    placeholder="Gym"
-                    maxLength={120}
-                  />
-                  <TextField
-                    label="When (optional)"
-                    value={c.when}
-                    onChange={(v) => updateCommitment(i, 'when', v)}
-                    placeholder="Tue/Thu 6pm"
-                    maxLength={120}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeCommitment(i)}
-                    aria-label={`Remove commitment ${i + 1}`}
-                    className="rounded-lg border border-border-strong px-3 py-2 text-sm text-muted hover:text-accent"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              {draft.commitments.length < COMMITMENTS_MAX && (
-                <button
-                  type="button"
-                  onClick={addCommitment}
-                  className="self-start rounded-full border border-border-strong px-4 py-1.5 text-sm font-medium text-muted hover:text-ink"
-                >
-                  + Add commitment
-                </button>
-              )}
-            </Section>
-
-            <Section title="Plan My Day preferences">
-              <TextAreaField
-                label="Preferences"
-                hint="Free-text preferences for how you like your day planned (e.g. “front-load deep work before lunch; keep evenings light”). Treated as preferences, not commands — it can't change the plan's format or scope."
-                value={draft.planNotes}
-                onChange={(v) => set('planNotes', v)}
-                maxLength={PLAN_NOTES_MAX}
-                placeholder="Front-load deep work in the morning; keep evenings for admin only."
-              />
-            </Section>
-
-            <Section title="BabyClaw assistant" icon="🐾">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <SelectField
-                  label="Tone"
-                  value={draft.babyclawTone}
-                  onChange={(v) => set('babyclawTone', v as SettingsDraft['babyclawTone'])}
-                  options={BABYCLAW_TONES}
-                />
-                <SelectField
-                  label="Verbosity"
-                  value={draft.babyclawVerbosity}
-                  onChange={(v) =>
-                    set('babyclawVerbosity', v as SettingsDraft['babyclawVerbosity'])
-                  }
-                  options={BABYCLAW_VERBOSITY}
-                />
-              </div>
-              <TextAreaField
-                label="Custom instructions"
-                hint="Standing preferences for the assistant (e.g. “call me by my first name; keep replies short”). Layered on its fixed persona — it can't override the assistant's scope or safety rules."
-                value={draft.babyclawInstructions}
-                onChange={(v) => set('babyclawInstructions', v)}
-                maxLength={BABYCLAW_INSTRUCTIONS_MAX}
-                placeholder="Keep replies concise. Ask before creating tasks without a due date."
-              />
-            </Section>
-
-            <div ref={initialSection === 'notifications' ? scrollHere : undefined}>
-              <NotificationSettings draft={draft} set={set} />
-            </div>
-
-            <Section
-              title="AI &amp; privacy"
-              hint="AI is optional — the planner works fully without it."
-            >
-              <AiPrivacyNote />
-            </Section>
-
-            {save.isError && (
-              <p className="text-sm text-accent">Couldn't save your settings — please try again.</p>
-            )}
-
-            <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-              {/* Re-surface the first-run setup guide on this device (features/onboarding). */}
-              <button
-                type="button"
-                onClick={() => {
-                  resetSetupGuide()
-                  onClose()
-                }}
-                className="text-xs text-muted underline hover:text-ink"
-              >
-                Show the setup guide
-              </button>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded px-4 py-2 text-sm font-medium text-muted hover:text-ink"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={save.isPending}
-                  className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  {save.isPending ? 'Saving…' : 'Save settings'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {content}
       </section>
     </div>
   )

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useBodyScrollLock } from '../hooks/use-body-scroll-lock'
+import { useSwipeDismiss } from '../hooks/use-swipe-dismiss'
 
 // BottomSheet — the shared modal sheet the mobile redesign opens for its contextual flows
 // (Move-to-quadrant picker, Add task, task detail/edit). Themed like the app's other overlays
@@ -20,10 +21,16 @@ import { useBodyScrollLock } from '../hooks/use-body-scroll-lock'
 //
 // `fullScreen` swaps the bottom-anchored card for a 100dvh takeover (mobile add-task): dvh so the
 // iOS URL bar collapsing doesn't leave a gap, env(safe-area-inset-*) padding so content clears the
-// notch/home indicator (needs viewport-fit=cover in index.html), and — since the grab-handle+scrim
-// affordance is invisible at full height — a header row with an explicit ✕ close button. The body
-// becomes the scroll container (overscroll-contained) so when the on-screen keyboard compresses
-// the viewport the sheet's inside scrolls, never the page. Same scrim/trap/animation contract.
+// notch/home indicator (needs viewport-fit=cover in index.html). Like the card mode it carries a
+// draggable grab handle at the top — a swipe-down there dismisses (the scrim behind a full-height
+// panel isn't tappable, so the handle is the visible way out; there is no ✕). The body becomes the
+// scroll container (overscroll-contained) so when the on-screen keyboard compresses the viewport
+// the sheet's inside scrolls, never the page. Same scrim/trap/animation contract.
+//
+// Dismiss gesture: the grab handle (both modes) is a swipe-down-to-dismiss target — dragging it
+// down translates the panel with the finger and releasing past a threshold / with a flick calls
+// onClose, else it springs back. See use-swipe-dismiss.ts. `touch-action: none` on the handle keeps
+// the browser from stealing the touch-drag for scroll; the sheet body still scrolls normally.
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -62,6 +69,10 @@ export function BottomSheet({
 
   // The page behind a modal sheet must not scroll — scrolling belongs INSIDE the sheet.
   useBodyScrollLock(open)
+
+  // Swipe-down-to-dismiss: wired to the grab handle below. Translates the panel with the finger and
+  // fades the scrim; releasing past the threshold / with a flick calls onClose (see the hook).
+  const swipe = useSwipeDismiss(onClose, panelRef)
 
   useEffect(() => {
     if (!open) return
@@ -115,11 +126,13 @@ export function BottomSheet({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       {/* Scrim: dims the surface behind and dismisses on click. aria-hidden so AT sees only the
-          dialog; the panel's stopPropagation keeps clicks inside from bubbling out to here. */}
+          dialog; the panel's stopPropagation keeps clicks inside from bubbling out to here. Its
+          opacity tracks the drag so the surface behind brightens as the sheet is pulled down. */}
       <div
         aria-hidden
         className="bottom-sheet-scrim absolute inset-0 bg-ink/40"
         onClick={onClose}
+        style={swipe.dragging ? { opacity: 1 - swipe.progress } : undefined}
       />
       <div
         ref={panelRef}
@@ -128,50 +141,46 @@ export function BottomSheet({
         aria-label={title ? undefined : ariaLabel}
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
+        data-dragging={swipe.dragging ? 'true' : undefined}
         onClick={(e) => e.stopPropagation()}
         className={`bottom-sheet-panel relative outline-none ${
           fullScreen
             ? 'flex h-dvh w-full flex-col bg-panel px-4'
             : 'w-full max-w-md rounded-t-2xl border border-border-strong bg-panel px-4 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))] pt-2 shadow-xl'
         } ${className}`.trim()}
-        style={
-          fullScreen
+        style={{
+          ...(fullScreen
             ? {
                 paddingTop: 'env(safe-area-inset-top)',
                 paddingBottom: 'env(safe-area-inset-bottom)',
               }
-            : undefined
-        }
+            : null),
+          ...(swipe.offset ? { transform: `translateY(${swipe.offset}px)` } : null),
+        }}
       >
-        {fullScreen ? (
-          // Full height hides the grab-handle/scrim affordance, so name the surface and give an
-          // explicit way out: heading left, ✕ right (44px-ish tap target, optically flush).
-          <header className="flex shrink-0 items-center justify-between pb-1 pt-2">
-            {title && (
-              <h2 id={titleId} className="font-serif text-lg font-semibold text-ink">
-                {title}
-              </h2>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="-mr-2 flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:text-ink"
+        {/* Grab handle — the draggable dismiss affordance for BOTH modes. `touch-action: none` so a
+            touch-drag here isn't stolen by scroll; the title rides along so dragging the header
+            dismisses too (iOS/Android sheet convention). Content below scrolls independently. */}
+        <div
+          data-testid="sheet-grabber"
+          onPointerDown={swipe.onPointerDown}
+          className={`shrink-0 cursor-grab touch-none select-none ${fullScreen ? 'pt-1' : ''}`}
+        >
+          <div
+            aria-hidden
+            className={`mx-auto h-1 w-9 rounded-full bg-border-strong ${fullScreen ? 'mb-2' : 'mb-3'}`}
+          />
+          {title && (
+            <h2
+              id={titleId}
+              className={`font-serif font-semibold text-ink ${
+                fullScreen ? 'pb-1 text-lg' : 'mb-1 text-base'
+              }`}
             >
-              ✕
-            </button>
-          </header>
-        ) : (
-          <>
-            {/* Grab handle — a visual affordance that this is a draggable/dismissable sheet. */}
-            <div aria-hidden className="mx-auto mb-3 h-1 w-9 rounded-full bg-border-strong" />
-            {title && (
-              <h2 id={titleId} className="mb-1 font-serif text-base font-semibold text-ink">
-                {title}
-              </h2>
-            )}
-          </>
-        )}
+              {title}
+            </h2>
+          )}
+        </div>
         {fullScreen ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
             {children}

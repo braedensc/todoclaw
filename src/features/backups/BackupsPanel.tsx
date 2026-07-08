@@ -3,11 +3,16 @@ import { useTasks } from '../tasks/use-tasks'
 import { useHabits } from '../habits/use-habits'
 import { formatDateTime } from '../../lib/dates'
 import { buildPlannerExport, downloadJson, exportFilename } from './export-json'
+import { BottomSheet } from '../../components/BottomSheet'
+import { useIsMobile } from '../../hooks/use-is-mobile'
 
-// Backups panel — a modal overlay (z-50 so it covers the mobile bottom tab bar, per ADR-0020).
-// Lists the user's server-side snapshots newest-first with Create / Restore, plus a client-side
-// "Download JSON" export for portability. Snapshot + restore are RPCs (see use-backups); this
-// component is presentation + a restore confirmation.
+// Backups panel — lists the user's server-side snapshots newest-first with Create / Restore, plus a
+// client-side "Download JSON" export for portability. Snapshot + restore are RPCs (see use-backups);
+// this component is presentation + a restore confirmation.
+//
+// Presentation splits on breakpoint: DESKTOP is the centered modal card (z-50 so it covers the
+// mobile bottom tab bar, per ADR-0020, with a ✕). MOBILE renders the same content in a slide-up
+// BottomSheet — swipe-down / scrim / Escape dismiss, no ✕.
 
 export function BackupsPanel({ onClose }: { onClose: () => void }) {
   const backups = useBackups()
@@ -33,6 +38,83 @@ export function BackupsPanel({ onClose }: { onClose: () => void }) {
     if (ok) restore.mutate(id)
   }
 
+  const isMobile = useIsMobile()
+
+  // The description + actions + snapshot list — identical on both surfaces; only the chrome differs.
+  const content = (
+    <>
+      <p className="mb-4 text-sm text-muted">
+        Snapshot your tasks, habits, and schedule — or download a JSON copy. Restoring brings a
+        snapshot back; your completion history is always kept.
+      </p>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => create.mutate(undefined)}
+          disabled={busy}
+          className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {create.isPending ? 'Creating…' : 'Create backup'}
+        </button>
+        <button
+          type="button"
+          onClick={handleExport}
+          className="rounded border border-border-strong px-4 py-2 text-sm font-medium text-ink hover:bg-bg"
+        >
+          Download JSON
+        </button>
+      </div>
+
+      {(create.isError || restore.isError) && (
+        <p className="mb-3 text-sm text-accent">Something went wrong — please try again.</p>
+      )}
+
+      {backups.isLoading ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-muted">No backups yet — create one above.</p>
+      ) : (
+        <ul className="space-y-2">
+          {entries.map((b) => (
+            <li
+              key={b.id}
+              className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                {b.label ?? formatDateTime(b.created_at)}
+                {b.label && (
+                  <span className="ml-2 text-xs text-muted-light">
+                    {formatDateTime(b.created_at)}
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleRestore(b.id)}
+                disabled={busy}
+                aria-label={`Restore backup from ${formatDateTime(b.created_at)}`}
+                className="shrink-0 rounded px-3 py-1 text-sm font-medium text-primary hover:bg-bg disabled:opacity-50"
+              >
+                Restore
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+
+  // Mobile: a slide-up sheet (swipe/scrim/Escape to dismiss, no ✕); the sheet supplies the title.
+  if (isMobile) {
+    return (
+      <BottomSheet open onClose={onClose} title="Backups" className="flex max-h-[85dvh] flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{content}</div>
+      </BottomSheet>
+    )
+  }
+
+  // Desktop: the centered modal card with a ✕ header (unchanged).
   return (
     <div
       role="dialog"
@@ -56,66 +138,7 @@ export function BackupsPanel({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </header>
-
-        <p className="mb-4 text-sm text-muted">
-          Snapshot your tasks, habits, and schedule — or download a JSON copy. Restoring brings a
-          snapshot back; your completion history is always kept.
-        </p>
-
-        <div className="mb-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => create.mutate(undefined)}
-            disabled={busy}
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {create.isPending ? 'Creating…' : 'Create backup'}
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            className="rounded border border-border-strong px-4 py-2 text-sm font-medium text-ink hover:bg-bg"
-          >
-            Download JSON
-          </button>
-        </div>
-
-        {(create.isError || restore.isError) && (
-          <p className="mb-3 text-sm text-accent">Something went wrong — please try again.</p>
-        )}
-
-        {backups.isLoading ? (
-          <p className="text-sm text-muted">Loading…</p>
-        ) : entries.length === 0 ? (
-          <p className="text-sm text-muted">No backups yet — create one above.</p>
-        ) : (
-          <ul className="space-y-2">
-            {entries.map((b) => (
-              <li
-                key={b.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
-              >
-                <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                  {b.label ?? formatDateTime(b.created_at)}
-                  {b.label && (
-                    <span className="ml-2 text-xs text-muted-light">
-                      {formatDateTime(b.created_at)}
-                    </span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleRestore(b.id)}
-                  disabled={busy}
-                  aria-label={`Restore backup from ${formatDateTime(b.created_at)}`}
-                  className="shrink-0 rounded px-3 py-1 text-sm font-medium text-primary hover:bg-bg disabled:opacity-50"
-                >
-                  Restore
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        {content}
       </section>
     </div>
   )

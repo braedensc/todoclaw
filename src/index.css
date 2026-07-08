@@ -179,6 +179,13 @@ body {
 }
 .bottom-sheet-panel {
   animation: sheet-in 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  /* Spring-back after a swipe-down that didn't cross the dismiss threshold: the panel's inline
+     translateY resets to 0 and this eases it home. Disabled mid-drag (below) so it tracks the
+     finger 1:1 — see use-swipe-dismiss.ts. */
+  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.bottom-sheet-panel[data-dragging='true'] {
+  transition: none;
 }
 .bottom-sheet-scrim {
   animation: sheet-scrim-in 200ms ease-out;
@@ -187,6 +194,7 @@ body {
   .bottom-sheet-panel,
   .bottom-sheet-scrim {
     animation: none;
+    transition: none;
   }
 }
 

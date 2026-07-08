@@ -4,6 +4,8 @@ import { useDailyState } from '../daily-state/use-daily-state'
 import { useHabits, useUpdateHabit, useSoftDeleteHabit, useToggleDailyFlag } from './use-habits'
 import { HabitRow } from './HabitRow'
 import { useConfirm } from '../../components/use-confirm'
+import { BottomSheet } from '../../components/BottomSheet'
+import { useIsMobile } from '../../hooks/use-is-mobile'
 import type { Habit } from '../../types/habit'
 
 // The main-page minified form of Daily reminders: a compact inline row of ACTIVE reminder names,
@@ -28,6 +30,7 @@ export function RemindersInline() {
   const confirm = useConfirm()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const isMobile = useIsMobile()
 
   const active = (habits ?? []).filter((h) => h.active)
 
@@ -82,30 +85,10 @@ export function RemindersInline() {
         </button>
       ))}
 
-      {selected && (
-        <div
-          role="dialog"
-          aria-label={`Reminder: ${selected.text}`}
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(2.5rem_+_env(safe-area-inset-top))]"
-          onClick={close}
-        >
-          <section
-            className="w-full max-w-md rounded-xl border border-border-strong bg-panel p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="mb-3 flex items-center justify-between">
-              <h2 className="font-serif text-lg font-semibold text-ink">Reminder</h2>
-              <button
-                type="button"
-                onClick={close}
-                aria-label="Close reminder"
-                className="text-muted hover:text-ink"
-              >
-                ✕
-              </button>
-            </header>
-
+      {selected &&
+        (() => {
+          // One reminder's detail card (checkbox + steps + add-step), reused by both surfaces.
+          const detail = (
             <ul>
               <HabitRow
                 habit={selected}
@@ -121,9 +104,51 @@ export function RemindersInline() {
                 onDelete={() => deleteHabit(selected)}
               />
             </ul>
-          </section>
-        </div>
-      )}
+          )
+
+          // Mobile: a slide-up sheet (swipe/scrim/Escape to dismiss, no ✕).
+          if (isMobile) {
+            return (
+              <BottomSheet
+                open
+                onClose={close}
+                title="Reminder"
+                className="flex max-h-[85dvh] flex-col"
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{detail}</div>
+              </BottomSheet>
+            )
+          }
+
+          // Desktop: the centered modal card with a ✕ header (unchanged).
+          return (
+            <div
+              role="dialog"
+              aria-label={`Reminder: ${selected.text}`}
+              aria-modal="true"
+              className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(2.5rem_+_env(safe-area-inset-top))]"
+              onClick={close}
+            >
+              <section
+                className="w-full max-w-md rounded-xl border border-border-strong bg-panel p-5 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <header className="mb-3 flex items-center justify-between">
+                  <h2 className="font-serif text-lg font-semibold text-ink">Reminder</h2>
+                  <button
+                    type="button"
+                    onClick={close}
+                    aria-label="Close reminder"
+                    className="text-muted hover:text-ink"
+                  >
+                    ✕
+                  </button>
+                </header>
+                {detail}
+              </section>
+            </div>
+          )
+        })()}
     </div>
   )
 }

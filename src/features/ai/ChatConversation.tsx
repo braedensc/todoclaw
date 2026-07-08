@@ -13,7 +13,19 @@ import { TodoClawIcon } from '../../components/TodoClawIcon'
 // conversation is OWNED by the shell (useChatController) and passed in, so the inline one-line
 // reply and this view are the same conversation. The model call is server-side (owner key);
 // tools are user-scoped (RLS) — see ADR-0017.
-export function ChatConversation({ chat, onClose }: { chat: ChatController; onClose: () => void }) {
+//
+// `showClose` (default true) draws the header ✕. Desktop (ChatRail) keeps it — the push-drawer has
+// no swipe affordance. The mobile sheet (ChatPanel) passes `false`: it dismisses via a swipe-down on
+// its grab handle / a scrim tap / Back, matching every other mobile sheet, so the ✕ is redundant.
+export function ChatConversation({
+  chat,
+  onClose,
+  showClose = true,
+}: {
+  chat: ChatController
+  onClose: () => void
+  showClose?: boolean
+}) {
   const { items, busy, pending, error, send, confirm, deny, paused } = chat
   const [text, setText] = useState('')
   const listRef = useRef<HTMLUListElement>(null)
@@ -40,14 +52,16 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
           <TodoClawIcon className="h-6 w-6" />
           BabyClaw
         </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close chat"
-          className="text-muted hover:text-ink"
-        >
-          ✕
-        </button>
+        {showClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close chat"
+            className="text-muted hover:text-ink"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto overscroll-contain p-4">
