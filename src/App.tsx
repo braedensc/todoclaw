@@ -156,7 +156,7 @@ function AppShell() {
                 !gridOnly && (
                   <header className="mb-3 flex items-center justify-between gap-3">
                     <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink">
-                      <TodoClawPeek className="h-6 w-6" /> Todoclaw
+                      <TodoClawPeek peekaboo className="h-7 w-7" /> Todoclaw
                       <span aria-hidden className="-ml-1.5 text-accent">
                         .
                       </span>
@@ -209,7 +209,10 @@ function AppShell() {
                           className="flex items-center gap-1.5 whitespace-nowrap font-serif text-2xl font-semibold text-ink wide:text-[38px] wide:font-[620] wide:tracking-[-0.015em]"
                           style={{ fontVariationSettings: "'opsz' 70" }}
                         >
-                          <TodoClawPeek className="h-6 w-6 wide:-my-2 wide:mr-0.5 wide:h-[54px] wide:w-[54px] wide:drop-shadow-sm" />
+                          <TodoClawPeek
+                            peekaboo
+                            className="h-7 w-7 wide:-my-3 wide:mr-0.5 wide:h-[62px] wide:w-[62px] wide:drop-shadow-sm"
+                          />
                           Todoclaw
                           <span aria-hidden className="-ml-1.5 text-accent">
                             .
@@ -249,10 +252,10 @@ function AppShell() {
                       {!gridOnly && (
                         <>
                           {/* Terracotta claw swipe under the wordmark — aligned under the text
-                              (the 54px mark + gap on its left), three strokes fading like a
+                              (the 62px mark + gap on its left), three strokes fading like a
                               scratch through paper. */}
                           <svg
-                            className="ml-[60px] block"
+                            className="ml-[68px] block"
                             width="118"
                             height="14"
                             viewBox="0 0 118 14"

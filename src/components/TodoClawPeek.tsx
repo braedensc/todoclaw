@@ -10,16 +10,20 @@ import { useId } from 'react'
 //    top ≈ -(42.2/64 × rendered height) so the clip line sits exactly on the border.
 // His eyes blink every few seconds via the .tc-eye-blink class (src/index.css, reduced-motion
 // safe); `blinkClassName` lets a second pup on screen blink on an offset clock so the two never
-// sync up like robots. Fixed portrait colors, like TodoClawIcon (which now marks the BabyClaw
-// chat header) — it's a picture of a specific dog, not a themed UI accent.
+// sync up like robots. `peekaboo` opts his paws into an ambient cover-the-eyes gag (the same
+// pad-on-eye move the sign-in mascot does on password focus, but on a slow timer like the blink)
+// — used by the header wordmark pup. Fixed portrait colors, like TodoClawIcon (which now marks
+// the BabyClaw chat header) — it's a picture of a specific dog, not a themed UI accent.
 export function TodoClawPeek({
   className,
   ledge = true,
   blinkClassName = 'tc-eye-blink',
+  peekaboo = false,
 }: {
   className?: string
   ledge?: boolean
   blinkClassName?: string
+  peekaboo?: boolean
 }) {
   const clipId = useId()
 
@@ -97,8 +101,9 @@ export function TodoClawPeek({
       {/* Nose draped over the edge (drawn after the rail/clip so it overhangs), with a glint. */}
       <ellipse cx="32" cy="41.5" rx="4.2" ry="3.2" fill="#2e2a24" />
       <circle cx="30.8" cy="40.4" r="0.9" fill="#f8f2e6" opacity="0.85" />
-      {/* Paws hooked over the edge: rounded pads, two toe lines, three dangling claw tips. */}
-      <g>
+      {/* Paws hooked over the edge: rounded pads, two toe lines, three dangling claw tips.
+          With `peekaboo` they periodically swing up over the eyes (.tc-paw-*, src/index.css). */}
+      <g className={peekaboo ? 'tc-paw tc-paw-l' : undefined}>
         <rect
           x="14.5"
           y="39.5"
@@ -122,7 +127,7 @@ export function TodoClawPeek({
           strokeLinecap="round"
         />
       </g>
-      <g>
+      <g className={peekaboo ? 'tc-paw tc-paw-r' : undefined}>
         <rect
           x="39.5"
           y="39.5"
