@@ -4,6 +4,7 @@ import { MoreSheet } from './MoreSheet'
 
 describe('MoreSheet', () => {
   const handlers = () => ({
+    onReminders: vi.fn(),
     onSettings: vi.fn(),
     onBackups: vi.fn(),
     onSignOut: vi.fn(),
@@ -17,7 +18,7 @@ describe('MoreSheet', () => {
 
   it('lists the overflow actions when open', () => {
     render(<MoreSheet open {...handlers()} />)
-    for (const label of ['Settings', 'Backups', 'Sign out']) {
+    for (const label of ['Daily reminders', 'Settings', 'Backups', 'Sign out']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
   })
