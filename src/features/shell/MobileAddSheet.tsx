@@ -1,41 +1,29 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { useTasks, useAddTask } from '../tasks/use-tasks'
 import type { QuadrantKey } from '../../lib/quadrants'
 import { placeInQuadrant } from '../../lib/quadrant-summary'
-import type { ChatController } from '../ai/use-chat-controller'
 import { BottomSheet } from '../../components/BottomSheet'
-import { BabyClawInput } from './TaskInputWidget'
 import { AddTaskForm } from './AddTaskSheet'
 
 // MobileAddSheet — the single mobile "add a task" surface, opened by the bottom nav's "+". On a
-// phone there is no grid to place into, so the two capture paths both produce a PLACED task:
-//   • BabyClaw (default) — natural language; the assistant sets placement (e.g. "urgent + important").
-//   • Manual — a text field + quadrant picker (AddTaskForm); we drop it at that quadrant's center
-//     (collision-resolved) with staged:false.
-// Reuses the exact BabyClawInput and manual AddTaskForm so there's one implementation of each.
+// phone there is no grid to place into, so the manual form produces a PLACED task: a text field +
+// quadrant picker (AddTaskForm), dropped at that quadrant's center (collision-resolved) with
+// staged:false.
 //
-// Rendered as a FULL-SCREEN sheet (BottomSheet fullScreen): everything sized to fit a 375×667
-// viewport with no scrolling, the submit anchored to the bottom edge (thumb zone) by the form's
-// mt-auto. If the on-screen keyboard compresses the viewport the sheet scrolls internally —
-// BottomSheet owns that — the page itself never scrolls.
+// Manual-only by design. Natural-language / AI task capture lives in the Chat tab (🐾, BabyClaw
+// chat) — a user who wants the assistant to phrase and place a task uses chat, so this add sheet
+// stays a plain manual form. (It used to carry a BabyClaw ⇄ Manual toggle; that was dropped once
+// Chat became the AI capture path. The shared BabyClawInput still powers the desktop inline widget.)
+//
+// Rendered as a FULL-SCREEN sheet (BottomSheet fullScreen): the quadrant picker sits up top and the
+// text input + Add button form a composer row anchored to the BOTTOM edge (thumb zone, just above
+// the on-screen keyboard). BottomSheet owns dvh sizing + safe-area insets, and its body scrolls
+// internally if the keyboard compresses the viewport — the page itself never scrolls.
 
-type AddMode = 'babyclaw' | 'manual'
-
-export function MobileAddSheet({
-  open,
-  onClose,
-  chat,
-  onOpenChat,
-}: {
-  open: boolean
-  onClose: () => void
-  chat: ChatController
-  onOpenChat: () => void
-}) {
-  const [mode, setMode] = useState<AddMode>('babyclaw')
+export function MobileAddSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: tasks } = useTasks()
   const addTask = useAddTask()
-  const manualInputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Manual add → placed task. Collision-resolve the quadrant center against existing placed tasks.
   const handleManualAdd = (text: string, dest: QuadrantKey) => {
@@ -51,44 +39,9 @@ export function MobileAddSheet({
       onClose={onClose}
       title="Add a task"
       fullScreen
-      initialFocusRef={mode === 'manual' ? manualInputRef : undefined}
+      initialFocusRef={inputRef}
     >
-      {/* Add-mode toggle — BabyClaw (natural language) vs Manual (text + quadrant). */}
-      <div
-        role="group"
-        aria-label="Add mode"
-        className="mb-3 flex shrink-0 gap-1 rounded-xl border border-border bg-panel p-1"
-      >
-        {(
-          [
-            { id: 'babyclaw', label: 'BabyClaw', icon: '🐾' },
-            { id: 'manual', label: 'Manual', icon: '✎' },
-          ] as const
-        ).map((m) => {
-          const on = mode === m.id
-          return (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setMode(m.id)}
-              aria-pressed={on}
-              className={
-                'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ' +
-                (on ? 'bg-card text-ink shadow-sm' : 'text-muted hover:text-ink')
-              }
-            >
-              <span aria-hidden>{m.icon}</span>
-              {m.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {mode === 'babyclaw' ? (
-        <BabyClawInput chat={chat} onOpenChat={onOpenChat} />
-      ) : (
-        <AddTaskForm defaultQuadrant={null} onAdd={handleManualAdd} inputRef={manualInputRef} />
-      )}
+      <AddTaskForm defaultQuadrant={null} onAdd={handleManualAdd} inputRef={inputRef} />
     </BottomSheet>
   )
 }

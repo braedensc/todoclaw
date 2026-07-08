@@ -204,9 +204,10 @@ export function ListRow({
       {/* Tighter gap on mobile (gap-2) so the fixed-width rank/badges/status + the two action
           buttons still fit a ~375px row without clipping the delete ×; roomier gap-3 ≥720px.
           The heaviest recurring rows (↻ + ×N badge + a long "overdue Nd" status) can still
-          exceed a ~320px row even with the text truncated to zero, so on mobile we let the
-          action buttons wrap to a second line (flex-wrap); desktop stays single-line
-          (wide:flex-nowrap). */}
+          exceed a ~320px row, so on mobile we let the action buttons wrap to a second line
+          (flex-wrap); desktop stays single-line (wide:flex-nowrap). The task text itself wraps
+          (line-clamp-2 collapsed, full on expand — see the text span below) so it is never
+          starved out of view, however heavy the badges get. */}
       <div className="flex flex-wrap items-center gap-2 px-4 py-3 wide:flex-nowrap wide:gap-3">
         {editing ? (
           <div className="flex min-w-0 flex-1 items-center gap-2 wide:gap-3">
@@ -240,10 +241,23 @@ export function ListRow({
             onKeyDown={handleRowKeyDown}
             aria-expanded={expanded}
             title={expanded ? 'Collapse — double-click to edit' : 'Expand — double-click to edit'}
-            className="group flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded text-left wide:gap-3"
+            className="group flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-2 rounded text-left wide:flex-nowrap wide:gap-3"
           >
             {leading}
-            <span className="min-w-0 flex-1 truncate text-sm text-ink">{task.text}</span>
+            {/* Read path for the task text. Collapsed: clamp to 2 lines so rows stay scannable
+              (a long title wraps instead of hard-truncating to a single-line ellipsis, which on
+              mobile left no way to read it). Expanded: drop the clamp so the FULL title is always
+              revealed. `break-words` keeps an unbroken string (e.g. a pasted URL) from overflowing
+              the row. On mobile a 9rem floor (`min-w-[9rem]`) plus the button's `flex-wrap` means
+              a heavy recurring row can't starve the text to a sliver — instead the text keeps a
+              readable column and, when the badges leave too little room, wraps onto its own line.
+              Desktop drops the floor (`wide:min-w-0`, `wide:flex-nowrap`) to keep the single-row
+              layout, with the same 2-line clamp. */}
+            <span
+              className={`min-w-[9rem] flex-1 break-words text-sm text-ink wide:min-w-0 ${expanded ? '' : 'line-clamp-2'}`}
+            >
+              {task.text}
+            </span>
             {trailing}
           </button>
         )}

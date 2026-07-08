@@ -15,8 +15,9 @@ import { BottomSheet } from '../../components/BottomSheet'
 // no reset-in-effect.
 //
 // AddTaskForm is column-fill-aware: inside MobileAddSheet's full-screen flex column, flex-1 makes
-// it take the leftover height and mt-auto pins the submit to the bottom edge (thumb zone). In a
-// plain block/auto-height parent both are inert, so the same markup serves both.
+// it take the leftover height and mt-auto pins the text-input + Add composer row to the bottom edge
+// (thumb zone, just above the on-screen keyboard) with the quadrant picker above it. In a plain
+// block/auto-height parent both are inert, so the same markup serves both.
 
 function display(key: QuadrantKey) {
   const c = QUADRANT_CENTER[key]
@@ -66,15 +67,6 @@ export function AddTaskForm({
 
   return (
     <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-3">
-      <input
-        ref={inputRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        aria-label="Task text"
-        placeholder="What needs doing?"
-        className="w-full rounded-xl border border-border-strong bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted-light focus:border-primary"
-      />
-
       <div>
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-light">
           Which quadrant?
@@ -110,13 +102,26 @@ export function AddTaskForm({
         </div>
       </div>
 
-      <button
-        type="submit"
-        disabled={!canAdd}
-        className="mt-auto w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-      >
-        Add task
-      </button>
+      {/* Composer row anchored to the bottom edge (thumb zone / just above the on-screen keyboard):
+          the text input is the primary, bottom-most typing target, with Add beside it. mt-auto
+          pushes the row down when the parent is a flex column (MobileAddSheet's full-screen sheet). */}
+      <div className="mt-auto flex items-end gap-2">
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          aria-label="Task text"
+          placeholder="What needs doing?"
+          className="min-w-0 flex-1 rounded-xl border border-border-strong bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted-light focus:border-primary"
+        />
+        <button
+          type="submit"
+          disabled={!canAdd}
+          className="shrink-0 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+        >
+          Add task
+        </button>
+      </div>
     </form>
   )
 }
