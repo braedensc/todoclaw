@@ -22,6 +22,7 @@ import { ChatRail } from './features/ai/ChatRail'
 import { BackupsPanel } from './features/backups/BackupsPanel'
 import { DonePage } from './features/done/DonePage'
 import { SettingsPanel } from './features/settings/SettingsPanel'
+import { SetupGuide } from './features/onboarding/SetupGuide'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
 import { useRoute, navigate, navigateToChat, chatMessageId } from './lib/route'
@@ -49,6 +50,9 @@ function AppShell() {
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  // Set when Settings should open scrolled to a specific section (the setup guide's
+  // "Turn on notifications" deep-link); cleared on close so a normal open starts at the top.
+  const [settingsSection, setSettingsSection] = useState<'notifications' | undefined>(undefined)
   // The owner-only Admin panel is a route (`/#/admin`), not an overlay — invites now live inside it.
   // isOwner only reveals the entry point; the admin Edge Function enforces the real OWNER_USER_ID
   // gate server-side.
@@ -352,6 +356,25 @@ function AppShell() {
                 </header>
               )}
 
+              {/* First-run setup guide — a dismissible checklist card (install as app → daily
+          notifications → try Plan My Day) whose steps auto-detect completion. Renders only until
+          dismissed or every step is done; a fully-set-up user never sees it. Above PlanBox so a
+          plan generated from its last step appears directly beneath it. */}
+              {!gridOnly && (
+                <ErrorBoundary>
+                  <SetupGuide
+                    planReady={Boolean(planner.displayPlan)}
+                    planPending={planner.isPending}
+                    canPlan={planner.canGenerate}
+                    onPlan={planner.generate}
+                    onOpenNotificationSettings={() => {
+                      setSettingsSection('notifications')
+                      setShowSettings(true)
+                    }}
+                  />
+                </ErrorBoundary>
+              )}
+
               {/* Plan My Day — a persistent inline card (not a modal), top-center under the header. It
           hydrates from today's daily_state.plan, survives reloads, and auto-clears at local
           midnight. The box (and its margin wrapper) only render once there's a plan, a generation
@@ -427,7 +450,13 @@ function AppShell() {
 
           {showSettings && (
             <ErrorBoundary>
-              <SettingsPanel onClose={() => setShowSettings(false)} />
+              <SettingsPanel
+                initialSection={settingsSection}
+                onClose={() => {
+                  setShowSettings(false)
+                  setSettingsSection(undefined)
+                }}
+              />
             </ErrorBoundary>
           )}
 
