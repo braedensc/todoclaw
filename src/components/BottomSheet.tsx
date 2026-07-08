@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { useBodyScrollLock } from '../hooks/use-body-scroll-lock'
 
 // BottomSheet — the shared modal sheet the mobile redesign opens for its contextual flows
 // (Move-to-quadrant picker, Add task, task detail/edit). Themed like the app's other overlays
@@ -58,6 +59,9 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
+
+  // The page behind a modal sheet must not scroll — scrolling belongs INSIDE the sheet.
+  useBodyScrollLock(open)
 
   useEffect(() => {
     if (!open) return
