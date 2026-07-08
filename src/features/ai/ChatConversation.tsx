@@ -50,7 +50,7 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
         </button>
       </div>
 
-      <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto p-4">
+      <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto overscroll-contain p-4">
         {items.length === 0 && !paused && (
           <li className="text-sm text-muted">
             Meet <span className="font-medium text-ink">BabyClaw</span> <span aria-hidden>🐾</span>{' '}

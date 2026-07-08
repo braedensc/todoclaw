@@ -13,6 +13,10 @@ import { BottomSheet } from '../../components/BottomSheet'
 // The stateful form is a CHILD of BottomSheet, which renders nothing while closed — so the form
 // remounts on each open and its useState initializers reset the draft + re-seed the quadrant, with
 // no reset-in-effect.
+//
+// AddTaskForm is column-fill-aware: inside MobileAddSheet's full-screen flex column, flex-1 makes
+// it take the leftover height and mt-auto pins the submit to the bottom edge (thumb zone). In a
+// plain block/auto-height parent both are inert, so the same markup serves both.
 
 function display(key: QuadrantKey) {
   const c = QUADRANT_CENTER[key]
@@ -61,7 +65,7 @@ export function AddTaskForm({
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3">
+    <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-3">
       <input
         ref={inputRef}
         value={text}
@@ -72,7 +76,7 @@ export function AddTaskForm({
       />
 
       <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-light">
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-light">
           Which quadrant?
         </p>
         <div className="grid grid-cols-2 gap-2.5">
@@ -87,7 +91,7 @@ export function AddTaskForm({
                 aria-pressed={on}
                 aria-label={m.label}
                 className={
-                  'flex min-h-[62px] flex-col gap-0.5 rounded-2xl border border-border-strong p-3 text-left transition ' +
+                  'flex min-h-[56px] flex-col gap-0.5 rounded-2xl border border-border-strong px-3 py-2 text-left transition ' +
                   (on ? '' : 'opacity-70')
                 }
                 style={{
@@ -109,7 +113,7 @@ export function AddTaskForm({
       <button
         type="submit"
         disabled={!canAdd}
-        className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+        className="mt-auto w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
       >
         Add task
       </button>
