@@ -76,34 +76,32 @@ logic itself is `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle
 
 ---
 
-## Responsive layout (Stage 5)
+## Responsive layout
 
 Mobile-first around a **720px breakpoint** — the mobile/desktop threshold for the *interaction* and
 the shell. It is defined once as `MOBILE_MAX_WIDTH` (719) in `src/hooks/use-is-mobile.ts` and
-mirrored as a Tailwind screen named **`wide`** (`min-width: 720px`) in `tailwind.config.js`. So the
-pieces keyed off it — the view nav, the grid-card action visibility, and (via `useIsMobile()`)
-tap-to-place — all flip at the exact same width: the CSS `wide:` utilities and the JS never disagree
-about where the mobile/desktop line is (which a stock `md` = 768px breakpoint would).
+mirrored as a Tailwind screen named **`wide`** (`min-width: 720px`) in `tailwind.config.js`, so the
+CSS `wide:` utilities and the JS never disagree about where the mobile/desktop line is (which a
+stock `md` = 768px breakpoint would).
 
-> The **grid's canvas/tray column** arrangement is a separate concern and keeps its own wider `lg`
-> (1024px) breakpoint (`GridView`): a side-by-side canvas + 256px tray needs more room than 720px,
-> so on tablets it stays stacked even though the nav/interaction are already in desktop mode. That
-> is a layout choice, not an interaction mismatch — drag/tap work the same whichever way it's laid out.
+Since ADR-0028, **mobile and desktop are different shells, not one squeezed layout** — `App`
+JS-gates on `useIsMobile()` (ADR-0026):
 
-- **View nav** (`TabNav`) — a **fixed bottom tab bar** on mobile (full-width, thumb-reachable, an
-  active tab marked by a top accent bar), the original **top tab row** at `wide:` and up. It is one
-  `<nav aria-label="Views">` with the same buttons + `aria-current` in both layouts, so assistive
-  tech and the E2E `switchTab` helper are layout-independent. The signed-in content area adds
-  `pb-24` on mobile to clear the fixed bar (`wide:pb-0`).
-- **Header** — stacks on mobile (title, then a full-width add-task input, then the action buttons
-  sharing a row); a single horizontal row at `wide:`.
-- **Grid** — the canvas stacks above the staging tray on narrow screens and sits beside it on large
-  screens (the tray's `lg:` sidebar — side-by-side needs the extra width, so this is 1024px, not the
-  720px `wide`). Placement switches from drag to **tap-to-place** below 720px (already built —
-  ADR-0004).
-- **Grid card actions** (done/edit/back/delete) — hover-reveal on desktop, but **always visible on
-  mobile** (there is no hover on touch), gated on the same `wide` breakpoint. Without this a placed
-  card would be un-actionable by touch.
+- **Mobile (< 720px)** — the pixel grid does not render at all. The task surface is `MobileMatrix`
+  (`src/features/shell/`): a read-only 2×2 quadrant **overview** that opens per-quadrant **focus
+  lists** (the shared `ListView` scoped by `quadrantFilter`). Repositioning is the tap-based
+  **Move-to-quadrant** picker (`MoveToQuadrantSheet`), not drag. Chrome is a slim header + the
+  fixed `MobileBottomNav` (Home / Add / Chat / Done / More, safe-area padded); adding goes through
+  the bottom-nav ➕ → `MobileAddSheet`; contextual flows use the shared `BottomSheet` primitive.
+  The signed-in content area adds `pb-28` to clear the fixed bar.
+- **Desktop (`wide:` and up)** — the free-canvas grid with drag, hover-reveal card actions, the
+  Grid⇄List toggle, and the full header. The grid's canvas/tray column arrangement keeps its own
+  wider `lg` (1024px) breakpoint (`GridView`): side-by-side canvas + 256px tray needs more room
+  than 720px, so tablets stay stacked even though the shell is already in desktop mode.
+
+(The Stage-5-era mobile design — bottom `TabNav`, a mobile grid with tap-to-place, always-visible
+grid-card actions — was replaced by ADR-0025/0026/0028. `use-grid.ts` still carries the
+tap-to-place path, but nothing mounts the grid below 720px.)
 
 ---
 

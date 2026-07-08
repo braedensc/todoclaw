@@ -79,7 +79,7 @@ vercel                 # Preview deploy
 ```
 src/
   features/           # One folder per system; each has its own README.md
-    grid/             # Free-canvas 2D grid, drag/tap-to-place, quadrants
+    grid/             # Free-canvas 2D grid, drag placement, quadrants (desktop-only since ADR-0028)
     list/             # Priority-ranked list view, sliders, inline edit
     clustering/       # Card clustering (seed-based, non-transitive)
     recurring/        # Recurring task logic and status computation
@@ -186,7 +186,7 @@ At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw S
 - **Collision resolution:** spiral outward from target, step `0.016`, clamp to `[0.04, 0.96]`. Only called on list-view slider commit — NOT on grid drag (overlap→cluster handles it there).
 - **Daily reset:** computed against the user's stored timezone, not server UTC. The `user_schedule.timezone` column (hoisted out of `config` jsonb — see ADR-0007) is authoritative; `daily_state` is one row per `(user_id, local-date)`, so the reset is non-destructive (today = today's row).
 - **Realtime conflict:** higher `_clientRev` (epoch ms) wins. Ignore Realtime events that originated from this client.
-- **Mobile breakpoint:** `< 720px`. Tap-to-place replaces drag on mobile.
+- **Mobile breakpoint:** `< 720px` (`useIsMobile` / Tailwind `wide`). Mobile has no grid (ADR-0028): `MobileMatrix` (quadrant overview → focus lists) is the only task surface, repositioning is the tap-based Move-to-quadrant sheet, adding is the bottom-nav ➕ sheet.
 - **Drag/drop implementation:** spike @dnd-kit vs. raw pointer events before committing — the free-canvas model (continuous coords, custom clustering) cuts against @dnd-kit's sortable grain. Touch/mobile is the hard requirement.
 - **History:** completion log (newest-first). Not append-only: `×` removes a completion record (owner-scoped `DELETE` on `history`, added 2026-07-05). Restore (↩) returns any completion whose task is still live to the grid — it clears today's `done` flag (the only thing hiding a task) so the task reappears at its stored x/y. Recurring tasks do NOT go to history — they reset `lastDoneAt`.
 
