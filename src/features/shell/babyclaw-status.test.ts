@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampWords, deriveBabyClawStatus, toolVerb } from './babyclaw-status'
+import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
 import type { ChatItem } from '../ai/use-ai-chat'
 
 // Small builders keep the ladder cases readable.
@@ -34,14 +34,14 @@ describe('deriveBabyClawStatus', () => {
     expect(s.text).toBe('Working…')
   })
 
-  it('surfaces a pending confirmation with its summary', () => {
+  it('surfaces a pending confirmation as an answerable yes/no question', () => {
     const s = deriveBabyClawStatus({
       ...base,
       pending: { toolUseId: 'x', summary: 'Move "Call dentist" to the trash' },
     })
     expect(s.tone).toBe('pending')
-    expect(s.text).toMatch(/needs confirmation/i)
     expect(s.text).toMatch(/call dentist/i)
+    expect(s.text).toMatch(/yes\/no/i)
   })
 
   it('surfaces a stream/HTTP error (chat.error) inline', () => {
@@ -65,12 +65,54 @@ describe('deriveBabyClawStatus', () => {
     expect(s.text).toMatch(/call landlord/i)
   })
 
-  it('prefers the concrete tool summary over the assistant reply within a turn', () => {
+  it('prefers the concrete tool summary over a plain assistant reply within a turn', () => {
     const s = deriveBabyClawStatus({
       ...base,
       items: [user('add x'), tool('Created "x".'), reply('Done!')],
     })
     expect(s.text).toContain('Created')
+  })
+
+  it("prefers BabyClaw's own [[status: …]] line over the tool summary, keeping the tool's tone", () => {
+    const s = deriveBabyClawStatus({
+      ...base,
+      items: [
+        user('add x due friday'),
+        tool('Created "x" on the grid.'),
+        reply('Added it — due Friday!\n[[status: Added "x" — due Friday 🐾]]'),
+      ],
+    })
+    expect(s.tone).toBe('done')
+    expect(s.text).toBe('Added "x" — due Friday 🐾')
+  })
+
+  it('keeps the error tone from a failed tool even when a status line is present', () => {
+    const s = deriveBabyClawStatus({
+      ...base,
+      items: [
+        user('delete y'),
+        tool("I couldn't find that task.", false),
+        reply("Hmm, I couldn't find it.\n[[status: Couldn't find that task]]"),
+      ],
+    })
+    expect(s.tone).toBe('error')
+    expect(s.text).toBe("Couldn't find that task")
+  })
+
+  it('uses the status line for a pure reply, and never shows the raw marker', () => {
+    const s = deriveBabyClawStatus({
+      ...base,
+      items: [user('add groceries'), reply('Sure! When is it due?\n[[status: Need a due date!]]')],
+    })
+    expect(s.tone).toBe('idle')
+    expect(s.text).toBe('Need a due date!')
+  })
+
+  it('does not pre-clamp long text — width truncation is the CSS layer’s job', () => {
+    const long =
+      'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen'
+    const s = deriveBabyClawStatus({ ...base, items: [user('hm'), reply(long)] })
+    expect(s.text).toBe(long)
   })
 
   it('reports a failed tool as an error', () => {
@@ -105,17 +147,6 @@ describe('deriveBabyClawStatus', () => {
     // The newest turn produced no tool, so the reply — not the earlier success — is shown.
     expect(s.tone).toBe('idle')
     expect(s.text).toMatch(/dentist/i)
-  })
-})
-
-describe('clampWords', () => {
-  it('passes short strings through untouched', () => {
-    expect(clampWords('Created "x".')).toBe('Created "x".')
-  })
-
-  it('caps long strings to ~N words with an ellipsis', () => {
-    const long = 'one two three four five six seven eight nine ten eleven twelve'
-    expect(clampWords(long)).toBe('one two three four five six seven eight nine ten…')
   })
 })
 

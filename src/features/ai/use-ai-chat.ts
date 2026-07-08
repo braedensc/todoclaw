@@ -40,6 +40,12 @@ export interface PendingConfirm {
 // Minimal Anthropic message shapes we construct client-side.
 type AnyMsg = { role: 'user' | 'assistant'; content: unknown }
 
+// A typed reply that counts as "yes" while a confirmation is pending. Anything else declines —
+// with the user's words passed through, so "actually make it due Friday" both cancels the action
+// and tells the model what to do instead.
+const YES_RE =
+  /^(y|yes|yeah|yep|yup|sure|ok|okay|confirm|confirmed|do it|go ahead|yes please|sure thing|please do)[\s.!]*$/i
+
 let counter = 0
 const nextId = () => `c${counter++}`
 
@@ -208,10 +214,49 @@ export function useAiChat() {
     setItems((xs) => [...xs, { id: nextId(), role: 'assistant', text: t }])
   }, [])
 
+  // Resolve the pending confirmation — shared by the drawer's Confirm/Cancel buttons and a typed
+  // yes/no answer (`note` is the user's typed words, shown as their bubble). Approve re-sends with
+  // the approved id (the server executes the tool); anything else feeds a declined tool_result
+  // back — with the words attached so the model can act on "no, make it due Friday instead".
+  const resolvePending = useCallback(
+    (approve: boolean, note?: string) => {
+      if (!pending) return
+      if (note) setItems((xs) => [...xs, { id: nextId(), role: 'user', text: note }])
+      if (approve) {
+        approved.current = [...approved.current, pending.toolUseId]
+        setItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Confirmed.', ok: true }])
+      } else {
+        const content: unknown[] = [
+          {
+            type: 'tool_result',
+            tool_use_id: pending.toolUseId,
+            content: 'User declined this action.',
+            is_error: true,
+          },
+        ]
+        if (note && !/^(n|no|nope|nah|cancel|stop|don't)[\s.!]*$/i.test(note)) {
+          content.push({ type: 'text', text: note })
+        }
+        history.current = [...history.current, { role: 'user', content }]
+        setItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Declined.', ok: false }])
+      }
+      setPending(null)
+      void run()
+    },
+    [pending, run],
+  )
+
   const send = useCallback(
     (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || busy) return
+      // While a confirmation is pending the held history ends with the halted assistant tool_use
+      // turn — a plain user message would leave it dangling (the API 400s). A typed reply IS the
+      // answer: yes-like runs the action, anything else declines (passing the words through).
+      if (pending) {
+        resolvePending(YES_RE.test(trimmed), trimmed)
+        return
+      }
       approved.current = [] // a new user turn clears prior approvals
       // Fold any pending deep-link context into this first message's HISTORY only — the displayed
       // bubble stays the user's words. Keeps the API history user-first with no dangling assistant turn.
@@ -223,38 +268,11 @@ export function useAiChat() {
       setItems((xs) => [...xs, { id: nextId(), role: 'user', text: trimmed }])
       void run()
     },
-    [busy, run],
+    [busy, pending, resolvePending, run],
   )
 
-  const confirm = useCallback(() => {
-    if (!pending) return
-    approved.current = [...approved.current, pending.toolUseId]
-    setItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Confirmed.', ok: true }])
-    setPending(null)
-    void run()
-  }, [pending, run])
-
-  const deny = useCallback(() => {
-    if (!pending) return
-    // Feed a declined tool_result back so the model continues without the action.
-    history.current = [
-      ...history.current,
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: pending.toolUseId,
-            content: 'User declined this action.',
-            is_error: true,
-          },
-        ],
-      },
-    ]
-    setItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Declined.', ok: false }])
-    setPending(null)
-    void run()
-  }, [pending, run])
+  const confirm = useCallback(() => resolvePending(true), [resolvePending])
+  const deny = useCallback(() => resolvePending(false), [resolvePending])
 
   return { items, busy, pending, error, send, confirm, deny, seed }
 }
