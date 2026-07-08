@@ -105,4 +105,27 @@ describe('BottomSheet', () => {
     )
     expect(screen.getByRole('dialog')).toHaveFocus()
   })
+
+  it('fullScreen shows an explicit ✕ Close button that dismisses', () => {
+    const onClose = vi.fn()
+    render(
+      <BottomSheet open onClose={onClose} title="Add a task" fullScreen>
+        <p>body</p>
+      </BottomSheet>,
+    )
+    // Still a titled modal dialog…
+    expect(screen.getByRole('dialog')).toHaveAccessibleName('Add a task')
+    // …but with a header close button instead of relying on the grab-handle/scrim affordance.
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('the default (card) variant has no Close button', () => {
+    render(
+      <BottomSheet open onClose={vi.fn()} title="Move task">
+        <p>body</p>
+      </BottomSheet>,
+    )
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+  })
 })

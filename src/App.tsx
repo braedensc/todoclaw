@@ -4,6 +4,7 @@ import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
 import { RemindersInline } from './features/habits/RemindersInline'
 import { RemindersPage } from './features/habits/RemindersPage'
+import { RemindersSheet } from './features/habits/RemindersSheet'
 import { WorkArea } from './features/shell/WorkArea'
 import { MobileBottomNav } from './features/shell/MobileBottomNav'
 import { MoreSheet } from './features/shell/MoreSheet'
@@ -157,9 +158,11 @@ function AppShell() {
           {/* Home vs. a full page. 'home' renders the header, plan, inline reminders, and work
               area; a Done / Daily-reminders page swaps all of that out (ADR-0027). The 'chat' route
               is home + the chat overlay — a notification tap must land on the main screen with the
-              drawer open, not a blank shell. The Settings / Backups overlays and the mobile bottom
-              nav below are route-independent. */}
-          {(route === 'home' || route === 'chat') && (
+              drawer open, not a blank shell. On MOBILE the 'reminders' route is likewise home + a
+              slide-up sheet (RemindersSheet below) rather than a page swap, so the home screen
+              stays visible behind it. The Settings / Backups overlays and the mobile bottom nav
+              below are route-independent. */}
+          {(route === 'home' || route === 'chat' || (isMobile && route === 'reminders')) && (
             <>
               {isMobile ? (
                 // Mobile (Concept D): a slim top row — wordmark + Plan pill only. The tagline, the
@@ -167,7 +170,7 @@ function AppShell() {
                 !gridOnly && (
                   <header className="mb-3 flex items-center justify-between gap-3">
                     <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink">
-                      <TodoClawPeek className="h-6 w-6" /> Todoclaw
+                      <TodoClawPeek peekaboo className="h-7 w-7" /> Todoclaw
                       <span aria-hidden className="-ml-1.5 text-accent">
                         .
                       </span>
@@ -220,7 +223,10 @@ function AppShell() {
                           className="flex items-center gap-1.5 whitespace-nowrap font-serif text-2xl font-semibold text-ink wide:text-[38px] wide:font-[620] wide:tracking-[-0.015em]"
                           style={{ fontVariationSettings: "'opsz' 70" }}
                         >
-                          <TodoClawPeek className="h-6 w-6 wide:-my-2 wide:mr-0.5 wide:h-[54px] wide:w-[54px] wide:drop-shadow-sm" />
+                          <TodoClawPeek
+                            peekaboo
+                            className="h-7 w-7 wide:-my-3 wide:mr-0.5 wide:h-[62px] wide:w-[62px] wide:drop-shadow-sm"
+                          />
                           Todoclaw
                           <span aria-hidden className="-ml-1.5 text-accent">
                             .
@@ -260,10 +266,10 @@ function AppShell() {
                       {!gridOnly && (
                         <>
                           {/* Terracotta claw swipe under the wordmark — aligned under the text
-                              (the 54px mark + gap on its left), three strokes fading like a
+                              (the 62px mark + gap on its left), three strokes fading like a
                               scratch through paper. */}
                           <svg
-                            className="ml-[60px] block"
+                            className="ml-[68px] block"
                             width="118"
                             height="14"
                             viewBox="0 0 118 14"
@@ -434,10 +440,11 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
+          {/* Daily reminders: a full page on desktop; on mobile a bottom sheet over the
+              still-mounted home above. Same `#/reminders` route either way — deep links and the
+              browser Back button behave identically, only the presentation differs. */}
           {route === 'reminders' && (
-            <ErrorBoundary>
-              <RemindersPage />
-            </ErrorBoundary>
+            <ErrorBoundary>{isMobile ? <RemindersSheet /> : <RemindersPage />}</ErrorBoundary>
           )}
 
           {/* Owner-only Admin panel (belt-and-suspenders: gated on isOwner here AND inside the page;
@@ -494,7 +501,12 @@ function AppShell() {
               <MobileAddSheet
                 open={showAdd}
                 chat={chat}
-                onOpenChat={() => setShowChat(true)}
+                // Escalating to the full chat replaces the add sheet — close it so it isn't left
+                // open (and holding a body-scroll lock) underneath the chat sheet.
+                onOpenChat={() => {
+                  setShowAdd(false)
+                  setShowChat(true)
+                }}
                 onClose={() => setShowAdd(false)}
               />
               <MoreSheet
