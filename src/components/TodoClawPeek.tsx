@@ -10,28 +10,35 @@ import { useId } from 'react'
 //    top ≈ -(42.2/64 × rendered height) so the clip line sits exactly on the border.
 // His eyes blink every few seconds via the .tc-eye-blink class (src/index.css, reduced-motion
 // safe); `blinkClassName` lets a second pup on screen blink on an offset clock so the two never
-// sync up like robots. `peekaboo` opts his paws into an ambient cover-the-eyes gag (the same
-// pad-on-eye move the sign-in mascot does on password focus, but on a slow timer like the blink)
-// — used by the header wordmark pup. Fixed portrait colors, like TodoClawIcon (which now marks
-// the BabyClaw chat header) — it's a picture of a specific dog, not a themed UI accent.
+// sync up like robots. `playful` opts him into a set of ambient personality touches — his paws
+// periodically swing up over his eyes (a cover-the-eyes gag, the same pad-on-eye move the sign-in
+// mascot does on password focus), an ear flicks now and then, and a little tongue bleps below his
+// nose — each on its own slow, offset timer (like the blink) so the motions stay subtle and don't
+// pile up. Used by the header wordmark pup; the calm grid-edge peeker leaves it off. All of it is
+// reduced-motion safe (the CSS neutralizes every animation). Fixed portrait colors, like
+// TodoClawIcon (which now marks the BabyClaw chat header) — it's a picture of a specific dog, not
+// a themed UI accent.
 export function TodoClawPeek({
   className,
   ledge = true,
   blinkClassName = 'tc-eye-blink',
-  peekaboo = false,
+  playful = false,
 }: {
   className?: string
   ledge?: boolean
   blinkClassName?: string
-  peekaboo?: boolean
+  playful?: boolean
 }) {
   const clipId = useId()
 
   // Ears → head → fur tuft → brows → eyes. Chin (head bottom) is hidden by the ledge rect or
-  // the clip, whichever variant; nose + paws draw after so they overhang the edge.
+  // the clip, whichever variant; nose + paws draw after so they overhang the edge. With `playful`
+  // each ear flicks on its own offset clock (.tc-ear-*, src/index.css) — pivoting at its head
+  // attachment (right/left-top of its own box) so the tip swings but the ear stays joined on.
   const face = (
     <>
       <path
+        className={playful ? 'tc-ear tc-ear-l' : undefined}
         d="M21,14 C11,15 6,28 12,38 C15,43 20,41 20.5,32 C21,25 21.5,18 23,15 Z"
         fill="#b3a488"
         stroke="#2e2a24"
@@ -39,6 +46,7 @@ export function TodoClawPeek({
         strokeLinejoin="round"
       />
       <path
+        className={playful ? 'tc-ear tc-ear-r' : undefined}
         d="M43,14 C53,15 58,28 52,38 C49,43 44,41 43.5,32 C43,25 42.5,18 41,15 Z"
         fill="#b3a488"
         stroke="#2e2a24"
@@ -98,12 +106,28 @@ export function TodoClawPeek({
           strokeWidth="1.5"
         />
       )}
+      {/* Tongue blep (playful only) — a small pink tongue that unrolls below the nose for a beat
+          now and then (.tc-tongue, src/index.css). Drawn BEFORE the nose so its top tucks behind
+          that dark ellipse; only the rounded tip shows. Default state is scaleY(0) (hidden), which
+          is also where reduced-motion parks it. */}
+      {playful && (
+        <g className="tc-tongue">
+          <path
+            d="M29.3,42 h5.4 v2.8 a2.7,2.9 0 0 1 -5.4,0 Z"
+            fill="#e5899b"
+            stroke="#2e2a24"
+            strokeWidth="1.1"
+            strokeLinejoin="round"
+          />
+          <path d="M32,44.3 v2.6" stroke="#c76d80" strokeWidth="1" strokeLinecap="round" />
+        </g>
+      )}
       {/* Nose draped over the edge (drawn after the rail/clip so it overhangs), with a glint. */}
       <ellipse cx="32" cy="41.5" rx="4.2" ry="3.2" fill="#2e2a24" />
       <circle cx="30.8" cy="40.4" r="0.9" fill="#f8f2e6" opacity="0.85" />
       {/* Paws hooked over the edge: rounded pads, two toe lines, three dangling claw tips.
-          With `peekaboo` they periodically swing up over the eyes (.tc-paw-*, src/index.css). */}
-      <g className={peekaboo ? 'tc-paw tc-paw-l' : undefined}>
+          With `playful` they periodically swing up over the eyes (.tc-paw-*, src/index.css). */}
+      <g className={playful ? 'tc-paw tc-paw-l' : undefined}>
         <rect
           x="14.5"
           y="39.5"
@@ -127,7 +151,7 @@ export function TodoClawPeek({
           strokeLinecap="round"
         />
       </g>
-      <g className={peekaboo ? 'tc-paw tc-paw-r' : undefined}>
+      <g className={playful ? 'tc-paw tc-paw-r' : undefined}>
         <rect
           x="39.5"
           y="39.5"

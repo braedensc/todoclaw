@@ -309,12 +309,17 @@
   }
 }
 
-/* Header wordmark pup peekaboo (components/TodoClawPeek with peekaboo) — every so often he
-   swings his paws up off the ledge to cover his eyes, then drops them back, the same
-   pad-on-eye gag the sign-in mascot does on password focus but on a slow ambient timer like
-   the blink. A longer, offset period (14s vs the 6.5s blink) so a cover never lands on a
-   blink. Translate percentages are of each paw's own fill-box — same math as .auth-mascot.shy
-   (see that note above for why % not px). Reduced-motion: paws stay hooked over the ledge. */
+/* Header wordmark pup, ambient personality (components/TodoClawPeek with `playful`). Three
+   subtle background motions, each on its own long, offset, prime-ish period so they drift apart
+   and rarely pile up — the peekaboo is the only "big" one, the ear flick + tongue blep are small
+   enough that an occasional coincidence reads as liveliness, not noise. Every block ends with a
+   reduced-motion guard that parks the pup in his resting pose. */
+
+/* 1. Peekaboo — every so often he swings his paws up off the ledge to cover his eyes, then drops
+   them back, the same pad-on-eye gag the sign-in mascot does on password focus but on a slow
+   ambient timer like the blink. A longer, offset period (14s vs the 6.5s blink) so a cover never
+   lands on a blink. Translate percentages are of each paw's own fill-box — same math as
+   .auth-mascot.shy (see that note above for why % not px). Reduced-motion: paws stay hooked. */
 .tc-paw {
   transform-box: fill-box;
   transform-origin: center;
@@ -350,6 +355,86 @@
 @media (prefers-reduced-motion: reduce) {
   .tc-paw-l,
   .tc-paw-r {
+    animation: none;
+  }
+}
+
+/* 2. Ear flick — one ear twitches, then a while later the other, like a dog shrugging off a fly.
+   Each ear pivots at its own head attachment (top-inner corner of its fill-box: right-top for the
+   left ear, left-top for the right) so the tip swings a few degrees while the ear stays joined to
+   the head — a center pivot would peel it off. Different periods (8.5s / 10s) keep the two from
+   ever locking into a synchronized wiggle. Reduced-motion: ears sit still. */
+.tc-ear {
+  transform-box: fill-box;
+}
+.tc-ear-l {
+  transform-origin: right top;
+  animation: tc-ear-flick-l 8.5s ease-in-out infinite;
+}
+.tc-ear-r {
+  transform-origin: left top;
+  animation: tc-ear-flick-r 10s ease-in-out infinite;
+}
+@keyframes tc-ear-flick-l {
+  0%,
+  28%,
+  46%,
+  100% {
+    transform: rotate(0deg);
+  }
+  34% {
+    transform: rotate(8deg);
+  }
+  40% {
+    transform: rotate(3deg);
+  }
+}
+@keyframes tc-ear-flick-r {
+  0%,
+  52%,
+  70%,
+  100% {
+    transform: rotate(0deg);
+  }
+  58% {
+    transform: rotate(-8deg);
+  }
+  64% {
+    transform: rotate(-3deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-ear-l,
+  .tc-ear-r {
+    animation: none;
+  }
+}
+
+/* 3. Tongue blep — the little pink tongue (drawn tucked behind the nose) unrolls downward for a
+   beat now and then. It scales from its top edge (the mouth line) so it grows out from under the
+   nose rather than popping in whole. Its resting/default state is scaleY(0) — hidden — which is
+   exactly where reduced-motion parks it once the animation is off, so no tongue is left sticking
+   out for those users. An 11s period, offset from everything else. */
+.tc-tongue {
+  transform-box: fill-box;
+  transform-origin: center top;
+  transform: scaleY(0);
+  animation: tc-blep 11s ease-in-out infinite;
+}
+@keyframes tc-blep {
+  0%,
+  62%,
+  76%,
+  100% {
+    transform: scaleY(0);
+  }
+  67%,
+  72% {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-tongue {
     animation: none;
   }
 }

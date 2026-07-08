@@ -166,7 +166,7 @@ function AppShell() {
                 !gridOnly && (
                   <header className="mb-3 flex items-center justify-between gap-3">
                     <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink">
-                      <TodoClawPeek peekaboo className="h-7 w-7" /> Todoclaw
+                      <TodoClawPeek playful className="h-7 w-7" /> Todoclaw
                       <span aria-hidden className="-ml-1.5 text-accent">
                         .
                       </span>
@@ -220,7 +220,7 @@ function AppShell() {
                           style={{ fontVariationSettings: "'opsz' 70" }}
                         >
                           <TodoClawPeek
-                            peekaboo
+                            playful
                             className="h-7 w-7 wide:-my-3 wide:mr-0.5 wide:h-[62px] wide:w-[62px] wide:drop-shadow-sm"
                           />
                           Todoclaw
