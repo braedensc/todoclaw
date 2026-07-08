@@ -10,6 +10,12 @@ const mockSession = vi.fn<() => { session: unknown; loading: boolean }>()
 vi.mock('./features/auth/use-session', () => ({
   useSession: () => mockSession(),
 }))
+// jsdom has no matchMedia, so the real useIsMobile always reports desktop; this mock lets the
+// mobile-presentation tests below flip the breakpoint. Default: desktop.
+const mockIsMobile = vi.fn<() => boolean>(() => false)
+vi.mock('./hooks/use-is-mobile', () => ({
+  useIsMobile: () => mockIsMobile(),
+}))
 vi.mock('./lib/supabase', () => ({
   supabase: { auth: { signOut: vi.fn(), getSession: vi.fn(), onAuthStateChange: vi.fn() } },
 }))
@@ -111,6 +117,55 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Grid-only view' })).toBeInTheDocument()
     // Not entered yet — the overlay's Exit control is absent until the pill is clicked.
     expect(screen.queryByRole('button', { name: 'Exit grid-only view' })).not.toBeInTheDocument()
+  })
+
+  it('on mobile, #/reminders renders home UNDER the reminders sheet (not a page swap) and locks body scroll', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    mockIsMobile.mockReturnValue(true)
+    window.location.hash = '#/reminders'
+    try {
+      render(<App />)
+      // Home stays mounted behind the sheet: the bottom nav (mobile home chrome) is present…
+      expect(screen.getByRole('navigation', { name: 'Account' })).toBeInTheDocument()
+      // …with the reminders sheet (a modal dialog) over it, body scroll locked while it's up.
+      expect(screen.getByRole('dialog', { name: 'Daily reminders' })).toBeInTheDocument()
+      expect(document.body.style.overflow).toBe('hidden')
+    } finally {
+      mockIsMobile.mockReturnValue(false)
+      window.location.hash = ''
+      document.body.style.overflow = ''
+    }
+  })
+
+  it('on desktop, #/reminders keeps the full-page presentation (no dialog, home swapped out)', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    window.location.hash = '#/reminders'
+    try {
+      render(<App />)
+      expect(screen.getByRole('region', { name: 'Daily reminders' })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Daily reminders' })).not.toBeInTheDocument()
+      // The page swap: home's work area is gone.
+      expect(screen.queryByRole('button', { name: 'Grid' })).not.toBeInTheDocument()
+    } finally {
+      window.location.hash = ''
+    }
+  })
+
+  it('on mobile, an open chat locks body scroll behind the sheet', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    mockIsMobile.mockReturnValue(true)
+    window.location.hash = '#/chat'
+    try {
+      render(<App />)
+      // Home chrome is behind the sheet and the page can't scroll under it.
+      expect(screen.getByRole('navigation', { name: 'Account' })).toBeInTheDocument()
+      expect(screen.getAllByRole('complementary', { name: 'Chat' }).length).toBeGreaterThan(0)
+      expect(document.body.style.overflow).toBe('hidden')
+    } finally {
+      mockIsMobile.mockReturnValue(false)
+      window.location.hash = ''
+      document.body.style.overflow = ''
+    }
   })
 
   it('a #/chat deep link renders home UNDER the chat overlay, not a blank shell', () => {
