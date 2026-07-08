@@ -98,16 +98,17 @@ export function usePushSubscription(): PushSubscriptionState {
       const p256dh = sub.getKey('p256dh')
       const auth = sub.getKey('auth')
       // Safari can RESOLVE subscribe() with a HOLLOW subscription — empty endpoint + zero-length keys —
-      // when it couldn't register with Apple's push service (APNs). That's not our bug (a fresh random
-      // VAPID key reproduces it); it means a VPN / restrictive network is blocking Apple push, or macOS
-      // notifications/Focus are off. Tear the dead subscription down and explain, rather than storing a
-      // useless row or throwing a cryptic error.
+      // when it fails to register with Apple's push service. This is a known macOS Safari 17.4+ bug
+      // (developer.apple.com/forums/thread/759564) with no client-side cure: it reproduces even with a
+      // fresh random VAPID key AND a real user gesture, so it's not our code, our key, or a missing
+      // gesture. Tear the dead subscription down and point the user at a working browser rather than
+      // storing a useless row or throwing a cryptic error.
       if (!sub.endpoint || !p256dh || p256dh.byteLength === 0 || !auth || auth.byteLength === 0) {
         await sub.unsubscribe().catch(() => {})
         setError(
-          'Safari couldn’t finish setting up notifications with Apple’s push service. This usually ' +
-            'means a VPN or network is blocking Apple push, or notifications are off in macOS System ' +
-            'Settings. Try a different network, then check System Settings → Notifications.',
+          'Safari couldn’t set up notifications with Apple’s push service — a known issue on some Macs. ' +
+            'Chrome, Edge, and Firefox use a different push service and work reliably. To keep using ' +
+            'Safari, make sure Location Services and Notifications are enabled in macOS System Settings.',
         )
         return false
       }
