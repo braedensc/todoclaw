@@ -15,11 +15,14 @@ import { generatePlan } from '../_shared/run-plan.ts'
 import { buildPlanRequest } from '../_shared/plan-inputs.ts'
 import { localDateInTZ } from '../_shared/dates.ts'
 import {
+  buildMorningFromPlan,
   buildMorningMessage,
   buildRecapMessage,
+  dayNameInTZ,
   dueKind,
   localHourInTZ,
   type DispatchInputs,
+  type DispatchPlan,
   type MessageContent,
   type NotificationPrefs,
 } from '../_shared/dispatch.ts'
@@ -32,6 +35,7 @@ const EMPTY_INPUTS: DispatchInputs = {
   habits: [],
   done: {},
   habit_done: {},
+  plan: null,
 }
 
 // VAPID keys are server-only secrets. Unset ⇒ push is skipped but messages still persist (the inbox
@@ -84,10 +88,19 @@ Deno.serve(async (req) => {
         p_local_date: localDate,
       })
       const inputs = (inputsJson ?? EMPTY_INPUTS) as DispatchInputs
-      const content: MessageContent =
-        kind === 'plan' ? buildMorningMessage(inputs) : buildRecapMessage(inputs)
+
+      // Initial content. Morning with a plan already on file (user planned early, or a prior partial
+      // run generated it) formats the real plan immediately; otherwise the deterministic message —
+      // upgraded below if generation succeeds. Evening builds its check-in from the morning's plan.
+      let content: MessageContent =
+        kind === 'plan'
+          ? inputs.plan
+            ? buildMorningFromPlan(inputs.plan, inputs)
+            : buildMorningMessage(inputs)
+          : buildRecapMessage(inputs, dayNameInTZ(c.timezone, now))
 
       // The atomic claim: null ⇒ this (user, day, kind) already went out ⇒ skip (no double-send).
+      // Claiming BEFORE any AI spend keeps overlapping runs from double-charging the budget.
       const { data: msgId } = await admin.rpc('claim_message', {
         p_user_id: c.user_id,
         p_kind: kind,
@@ -101,10 +114,19 @@ Deno.serve(async (req) => {
         continue
       }
 
-      // Morning: pre-generate the AI plan (budget-gated) into daily_state so the app shows it on open.
-      // The notification itself stays deterministic, so a paused budget still delivers a real message.
-      if (kind === 'plan') {
-        await maybeGeneratePlan(admin, c.user_id, c.timezone, inputs, localDate, now)
+      // Morning without a plan yet: generate it (budget-gated) into daily_state, then upgrade the
+      // claimed message to the plan-rich body before pushing. A paused budget or failed generation
+      // leaves the deterministic message in place — the send never depends on the model.
+      if (kind === 'plan' && !inputs.plan) {
+        const plan = await maybeGeneratePlan(admin, c.user_id, c.timezone, inputs, localDate, now)
+        if (plan) {
+          content = buildMorningFromPlan(plan, inputs)
+          await admin.rpc('enrich_message', {
+            p_id: msgId,
+            p_title: content.title,
+            p_body: content.body,
+          })
+        }
       }
 
       if (vapid) await pushToUser(admin, c.user_id, String(msgId), content, vapid)
@@ -119,8 +141,9 @@ Deno.serve(async (req) => {
 })
 
 // Generate + persist the morning plan for one user, gated by the same budget/rate limits as
-// interactive Plan My Day (keyed on the user id). Best-effort: a failure leaves the deterministic
-// message in place. No weather — the cached-weather RPCs are auth.uid()-scoped (system can't read).
+// interactive Plan My Day (keyed on the user id). Returns the plan so the caller can upgrade the
+// notification body; null on any failure (the deterministic message stands). No weather — the
+// cached-weather RPCs are auth.uid()-scoped (system can't read).
 async function maybeGeneratePlan(
   admin: SupabaseClient,
   userId: string,
@@ -128,9 +151,9 @@ async function maybeGeneratePlan(
   inputs: DispatchInputs,
   localDate: string,
   now: Date,
-): Promise<void> {
+): Promise<DispatchPlan | null> {
   const gate = await precheckForUser(admin, userId, 'plan_my_day')
-  if (!gate.ok) return
+  if (!gate.ok) return null
   try {
     const req = buildPlanRequest(inputs.tasks, inputs.habits, inputs.done, timeZone, now)
     const { plan, usage } = await generatePlan(
@@ -145,8 +168,10 @@ async function maybeGeneratePlan(
       p_date: localDate,
       p_plan: plan,
     })
+    return plan as DispatchPlan
   } catch (e) {
     console.error('plan generation failed for', userId, e)
+    return null
   }
 }
 

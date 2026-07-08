@@ -104,7 +104,7 @@ could have silently failed on a real phone — is de-risked before anything is b
   `dispatch-messages` must also be added to `deploy.yml`'s hardcoded function list or it never ships.
 
 **Down path:** remove `notify.yml`, `dispatch-messages`, `_shared/{web-push,guardrails-system,
-run-recap}.ts`, the `*_for_user` RPCs, and the `messages` / `push_subscriptions` tables (drop
+dispatch}.ts`, the `*_for_user` RPCs, and the `messages` / `push_subscriptions` tables (drop
 migrations). Leave `admin.ts` (shared with `redeem-invite`; just drop `dispatch-messages` from its
 fence comment). Frontend: drop the PWA plugin, `sw.ts`, the notifications feature, and the
 `#/chat/<id>` route. No user data depends on it; disabling the cron alone fully halts the feature.

@@ -81,10 +81,14 @@ via `service_role`-only `SECURITY DEFINER` RPCs (the `*_for_user` guardrails +
 `notification_candidates` / `dispatch_inputs_for_user` / `push_subscriptions_for_user` /
 `prune_push_subscription`; migrations `20260707140000` + `20260707150000`). For each user whose LOCAL
 hour matches their morning/evening pref it CLAIMS today's message idempotently (`claim_message` — the
-row insert is the send lock), pre-generates the plan into `daily_state` under the same `$20`/`$10`
-budget guardrails as interactive AI, and pushes via `_shared/web-push.ts` (RFC 8291 aes128gcm + VAPID,
-pinned to the RFC vectors). Degrades cleanly: a paused budget ⇒ a deterministic message; unset VAPID ⇒
-the message still lands in the in-app inbox (`messages`), push is skipped. See ADR-0031 +
+row insert is the send lock), generates the plan into `daily_state` under the same `$20`/`$10`
+budget guardrails as interactive AI, upgrades the claimed message to the plan-rich body
+(`enrich_message`, migration `20260708000000`), and pushes via `_shared/web-push.ts` (RFC 8291
+aes128gcm + VAPID, pinned to the RFC vectors). The morning body IS the plan — headline, 🪨 big rock,
+⚡ quick wins, 💪 habits; a sparse plan renders as an open day, never padded — and the evening push is
+a check-in listing the morning plan's unfinished items, answered in chat where BabyClaw marks them
+done (`_shared/dispatch.ts`). Degrades cleanly: a paused budget ⇒ a deterministic message; unset
+VAPID ⇒ the message still lands in the in-app inbox (`messages`), push is skipped. See ADR-0031 +
 `src/features/notifications/README.md`.
 
 ## Local dev
