@@ -8,11 +8,16 @@ import { useSwipeDismiss } from './use-swipe-dismiss'
 // constructor, so plain Events get `touches`/`changedTouches` defined on them; geometry
 // (scrollHeight etc.) is stubbed via defineProperty.
 
+// Events carry explicit, well-spaced timestamps: jsdom dispatches micro-seconds apart, which the
+// flick-velocity math would read as a violent downward flick (20px / 0.05ms ≫ threshold) and
+// dismiss drags this suite needs to stay sub-threshold.
+let clock = 0
 function touchEvent(type: string, clientY: number): Event {
   const e = new Event(type, { bubbles: true, cancelable: true })
   const touch = { identifier: 1, clientX: 100, clientY }
   Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [touch] })
   Object.defineProperty(e, 'changedTouches', { value: [touch] })
+  Object.defineProperty(e, 'timeStamp', { value: (clock += 100) })
   return e
 }
 
@@ -74,11 +79,9 @@ describe('useSwipeDismiss — whole-panel touch path', () => {
     act(() => panel.dispatchEvent(touchEvent('touchend', 600)))
   })
 
-  it('a short drag under the threshold springs back without dismissing', () => {
+  it('a short, slow drag under the threshold springs back without dismissing', () => {
     const { result } = mount()
-    drag(panel, 520, 560, 2) // 40px < 100 — and slow (jsdom timeStamps ~equal → no flick false-positive is the risk; assert no dismiss only if velocity path idle)
-    // jsdom gives all events ~the same timeStamp, so dt ≈ 0 → velocity guard (dt > 0) keeps the
-    // flick shortcut out of play here.
+    drag(panel, 520, 560, 2) // 40px < 100, at 0.1–0.2 px/ms (100ms event spacing) — no flick
     expect(onDismiss).not.toHaveBeenCalled()
     expect(result.current.offset).toBe(0)
   })
