@@ -21,6 +21,7 @@ function NavItem({
   onClick,
   primary = false,
   active = false,
+  badge = false,
 }: {
   glyph: string
   label: string
@@ -29,6 +30,8 @@ function NavItem({
   primary?: boolean
   /** This destination is the current route — selected treatment + marks it the current page. */
   active?: boolean
+  /** Unread indicator — a small slate dot on the glyph (the More tab, since Inbox lives inside). */
+  badge?: boolean
 }) {
   return (
     <button
@@ -48,11 +51,15 @@ function NavItem({
       <span
         aria-hidden
         className={
-          'flex h-7 w-7 items-center justify-center rounded-full text-xl leading-none ' +
+          'relative flex h-7 w-7 items-center justify-center rounded-full text-xl leading-none ' +
           (primary && !active ? 'text-primary ring-1 ring-primary/40' : '')
         }
       >
         {glyph}
+        {/* Unread dot — BabyClaw's slate (matches the inbox badge), not alert-red. */}
+        {badge && (
+          <span className="absolute right-0 top-0.5 h-2 w-2 rounded-full bg-puppy ring-2 ring-panel" />
+        )}
       </span>
       {/* Fixed two-line-tall box so single- and multi-word labels stay vertically aligned. */}
       <span className="flex h-[22px] items-center text-center">{label}</span>
@@ -67,6 +74,7 @@ export function MobileBottomNav({
   onChat,
   onDone,
   onMore,
+  unread = 0,
 }: {
   /** The active route, so the matching destination reads as the current tab. */
   route: AppRoute
@@ -80,6 +88,8 @@ export function MobileBottomNav({
   onChat?: () => void
   onDone: () => void
   onMore: () => void
+  /** Unread inbox count — surfaces a dot on the More tab (Inbox now lives inside More). */
+  unread?: number
 }) {
   return (
     <nav
@@ -95,7 +105,7 @@ export function MobileBottomNav({
       {/* 🐾 is BabyClaw's identity mark app-wide (add-sheet toggle, Settings) — the chat IS him. */}
       {onChat && <NavItem glyph="🐾" label="Chat" onClick={onChat} active={route === 'chat'} />}
       <NavItem glyph="✓" label="Done" onClick={onDone} active={route === 'done'} />
-      <NavItem glyph="⋯" label="More" onClick={onMore} />
+      <NavItem glyph="⋯" label="More" onClick={onMore} badge={unread > 0} />
     </nav>
   )
 }

@@ -13,8 +13,9 @@ import { useConfirm } from '../../components/use-confirm'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
 import type { Habit } from '../../types/habit'
 
-// Daily reminders — the body of the "Daily reminders" page (RemindersPage, ADR-0027). UI copy says
-// "reminders"; the code/table/hooks keep the original "habit" identifiers by design. Parity:
+// Daily habits — the body of the "Daily habits" page (RemindersPage, ADR-0027). UI copy now says
+// "habits" (the inline home-screen list is labelled "Habit Reminders"); the component/file/route
+// identifiers keep the original "Reminders" names by design. Parity:
 // planning/eisenclaw-export/docs/eisenclaw.md "Daily Habits", pics/Todopic3.jpeg. Two groups:
 //   - ACTIVE habits (active === true): expandable rows with a daily checkbox + a steps panel.
 //   - QUEUED habits (active === false): dashed "activate" buttons you tap when you're ready to
@@ -56,7 +57,7 @@ export function HabitsView() {
 
   if (isLoading) {
     return (
-      <section aria-label="Daily reminders">
+      <section aria-label="Daily habits">
         <p className="text-sm text-muted">Loading…</p>
       </section>
     )
@@ -64,8 +65,8 @@ export function HabitsView() {
 
   if (isError || !habits) {
     return (
-      <section aria-label="Daily reminders">
-        <p className="text-sm text-accent">Could not load reminders.</p>
+      <section aria-label="Daily habits">
+        <p className="text-sm text-accent">Could not load habits.</p>
       </section>
     )
   }
@@ -93,23 +94,22 @@ export function HabitsView() {
   const activate = (habit: Habit) => updateHabit.mutate({ id: habit.id, patch: { active: true } })
 
   const deleteHabit = async (habit: Habit) => {
-    if (await confirm({ title: `Delete the reminder "${habit.text}"?` }))
-      softDelete.mutate(habit.id)
+    if (await confirm({ title: `Delete the habit "${habit.text}"?` })) softDelete.mutate(habit.id)
   }
 
   return (
-    // No panel chrome / heading of its own — this renders inside the "Daily reminders" page
+    // No panel chrome / heading of its own — this renders inside the "Daily habits" page
     // (RemindersPage), which supplies the surface and the title. Kept a labeled region for a11y.
-    <section aria-label="Daily reminders">
+    <section aria-label="Daily habits">
       <p className="mb-3 text-sm text-muted">
-        Daily reminders are recurring things you want to do every day — check them off as you go and
+        Daily habits are recurring things you want to do every day — check them off as you go and
         they reset each morning, so they never clutter your task grid.
       </p>
 
       {active.length === 0 && queued.length === 0 ? (
         <div className="mb-3 flex flex-col items-center gap-1 py-2 text-center">
           <SleepingPuppy className="h-16 w-28 text-muted-light" />
-          <p className="text-sm text-muted">No reminders yet — add one below.</p>
+          <p className="text-sm text-muted">No habits yet — add one below.</p>
         </div>
       ) : (
         <>
@@ -143,8 +143,8 @@ export function HabitsView() {
                       type="button"
                       onClick={() => activate(habit)}
                       disabled={pendingHabitId === habit.id}
-                      aria-label={`Activate reminder "${habit.text}"`}
-                      title="Activate this reminder"
+                      aria-label={`Activate habit "${habit.text}"`}
+                      title="Activate this habit"
                       className="rounded-lg border border-dashed border-border-strong bg-card px-2.5 py-1 text-sm text-muted hover:border-primary hover:text-primary disabled:opacity-50"
                     >
                       + {habit.text}
@@ -153,8 +153,8 @@ export function HabitsView() {
                       type="button"
                       onClick={() => deleteHabit(habit)}
                       disabled={pendingHabitId === habit.id}
-                      aria-label={`Delete reminder "${habit.text}"`}
-                      title="Delete this reminder"
+                      aria-label={`Delete habit "${habit.text}"`}
+                      title="Delete this habit"
                       className="rounded px-1 text-sm text-muted hover:text-accent disabled:opacity-50"
                     >
                       ×
@@ -171,8 +171,8 @@ export function HabitsView() {
         <input
           value={habitText}
           onChange={(e) => setHabitText(e.target.value)}
-          placeholder="Add a reminder…"
-          aria-label="Add a reminder"
+          placeholder="Add a habit…"
+          aria-label="Add a habit"
           enterKeyHint="done"
           className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-1.5 text-sm"
         />

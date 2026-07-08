@@ -44,7 +44,7 @@ test('seeded EisenClaw data renders: tasks, a recurring badge, and habits with s
   // Reminders (formerly "Habits") are a full page of their own now (ADR-0027), not a strip on the
   // main view — open it and assert the seeded reminders with subtasks render there.
   await openReminders(page)
-  const remindersSection = page.getByRole('region', { name: 'Daily reminders' })
+  const remindersSection = page.getByRole('region', { name: 'Daily habits' })
   await expect(
     remindersSection.getByRole('listitem').filter({ hasText: 'Wrist strengthening routine' }),
   ).toBeVisible()

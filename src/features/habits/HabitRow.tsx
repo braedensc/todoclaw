@@ -90,8 +90,8 @@ export function HabitRow({
           type="button"
           onClick={onDelete}
           disabled={busy}
-          aria-label={`Delete reminder "${habit.text}"`}
-          title="Delete this reminder"
+          aria-label={`Delete habit "${habit.text}"`}
+          title="Delete this habit"
           className="shrink-0 rounded px-2.5 py-1.5 text-base text-muted hover:bg-bg hover:text-accent disabled:opacity-50 wide:px-1.5 wide:py-0.5 wide:text-sm"
         >
           ×

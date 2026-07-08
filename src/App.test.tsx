@@ -82,7 +82,7 @@ vi.mock('./features/ai/use-ai-chat', () => ({
     seed: vi.fn(),
   }),
 }))
-// Daily reminders live off the main page now (a gear-area popup + a compact inline name list).
+// Daily habits live off the main page now (a gear-area popup + a compact inline name list).
 // The inline list reads the habits/daily-state hooks; stub them so the shell renders without a
 // QueryClientProvider / network. With no habits, the inline list renders nothing.
 vi.mock('./features/habits/use-habits', () => ({
@@ -103,13 +103,13 @@ describe('App shell', () => {
   it('renders the Grid/List toggle and the quiet header links (incl. Reminders) when logged in', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     render(<App />)
-    // Grid/List come from the embedded ViewToggle; Done + Daily reminders are quiet header links.
+    // Grid/List come from the embedded ViewToggle; Done + Daily habits are quiet header links.
     // Exact names — 'Grid' must NOT also match the "Grid-only view" header pill.
-    for (const label of ['Grid', 'List', 'Done', 'Daily reminders']) {
+    for (const label of ['Grid', 'List', 'Done', 'Daily habits']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
     // The full reminders popup is closed until the gear-area button is clicked — no dialog yet.
-    expect(screen.queryByRole('dialog', { name: 'Daily reminders' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Daily habits' })).not.toBeInTheDocument()
     // The first-run setup guide shows for a fresh device (nothing dismissed in this jsdom's
     // localStorage; the install step is hidden because jsdom's UA is neither Apple nor Chromium).
     expect(screen.getByRole('region', { name: 'Setup guide' })).toBeInTheDocument()
@@ -132,7 +132,7 @@ describe('App shell', () => {
       // Home stays mounted behind the sheet: the bottom nav (mobile home chrome) is present…
       expect(screen.getByRole('navigation', { name: 'Account' })).toBeInTheDocument()
       // …with the reminders sheet (a modal dialog) over it, body scroll locked while it's up.
-      expect(screen.getByRole('dialog', { name: 'Daily reminders' })).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: 'Daily habits' })).toBeInTheDocument()
       expect(document.body.style.overflow).toBe('hidden')
     } finally {
       mockIsMobile.mockReturnValue(false)
@@ -178,8 +178,8 @@ describe('App shell', () => {
     window.location.hash = '#/reminders'
     try {
       render(<App />)
-      expect(screen.getByRole('region', { name: 'Daily reminders' })).toBeInTheDocument()
-      expect(screen.queryByRole('dialog', { name: 'Daily reminders' })).not.toBeInTheDocument()
+      expect(screen.getByRole('region', { name: 'Daily habits' })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Daily habits' })).not.toBeInTheDocument()
       // The page swap: home's work area is gone.
       expect(screen.queryByRole('button', { name: 'Grid' })).not.toBeInTheDocument()
     } finally {

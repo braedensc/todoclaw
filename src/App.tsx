@@ -35,7 +35,11 @@ import { useRoute, navigate, navigateToChat, chatMessageId } from './lib/route'
 import { supabase } from './lib/supabase'
 import { NotificationBell } from './features/notifications/NotificationBell'
 import { InboxPanel } from './features/notifications/InboxPanel'
-import { useMessages, useMarkMessageRead } from './features/notifications/use-messages'
+import {
+  useMessages,
+  useUnreadCount,
+  useMarkMessageRead,
+} from './features/notifications/use-messages'
 
 // Plan My Day pill (style mix): the ink fill warmed with a deep-green cast toward one corner,
 // the ✦ picked out in gold — the header's one quiet "AI moment". Shared by the mobile and
@@ -101,6 +105,9 @@ function AppShell() {
   // In-app inbox (ADR-0031): the bell/badge + the message list overlay.
   const [showInbox, setShowInbox] = useState(false)
   const messages = useMessages()
+  // Unread count — the bell moved off the mobile top bar into the More sheet, so App surfaces the
+  // count on the More tab (a dot) and the Inbox row inside it.
+  const unread = useUnreadCount()
   const markRead = useMarkMessageRead()
   const confirm = useConfirm()
   // Sign out sits one tap deep in the mobile More sheet, right under Backups — a mis-tap used to
@@ -192,45 +199,94 @@ function AppShell() {
             (isMobile && (route === 'reminders' || route === 'done'))) && (
             <>
               {isMobile ? (
-                // Mobile (Concept D): a slim top row — wordmark + Plan pill only. The tagline, the
-                // Grid-only pill, and the account links all move off the fold (bottom nav + More sheet).
+                // Mobile masthead: mirrors the desktop paper look now that the top bar is freed up.
+                // A small-caps dateline, the wordmark grown around a bigger peeking pup with the
+                // terracotta claw-swipe + tagline beneath, and a decorative paw trail filling the
+                // hard-to-reach top-right corner. The bell moved into the More sheet and Plan My Day
+                // moved under the grid (both were awkward up here), so the top is now purely
+                // orienting + decorative — nothing you must reach for lives at the top of the screen.
                 !gridOnly && (
-                  // min-[360px]: the row is wider than a 320px-class viewport at full size (the
-                  // nowrap pill used to push the whole page into horizontal scroll on iPhone SE),
-                  // so below 360px the wordmark steps down a size and the pill shortens to "Plan".
-                  <header className="mb-3 flex items-center justify-between gap-2 min-[360px]:gap-3">
-                    <h1 className="flex items-center gap-1.5 font-serif text-xl font-semibold text-ink min-[360px]:text-2xl">
-                      <TodoClawPeek playful className="h-7 w-7" /> Todoclaw
-                      <span aria-hidden className="-ml-1.5 text-accent">
-                        .
-                      </span>
-                    </h1>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <NotificationBell
-                        compact
-                        onClick={() => setShowInbox(true)}
-                        className="relative text-lg text-muted hover:text-ink"
-                      />
-                      <button
-                        type="button"
-                        onClick={planner.generate}
-                        disabled={!planner.canGenerate}
-                        title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
-                        className="whitespace-nowrap rounded-full bg-ink px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60 min-[360px]:px-4"
-                        style={planPillStyle}
+                  <header className="mb-4 mt-1">
+                    <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                      {dateline}
+                    </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h1
+                          className="flex items-center gap-1 whitespace-nowrap font-serif text-[26px] font-semibold text-ink"
+                          style={{ fontVariationSettings: "'opsz' 60" }}
+                        >
+                          <TodoClawPeek
+                            playful
+                            className="-my-1 h-12 w-12 shrink-0 drop-shadow-sm"
+                          />
+                          Todoclaw
+                          <span aria-hidden className="-ml-1 text-accent">
+                            .
+                          </span>
+                        </h1>
+                        {/* Terracotta claw-swipe under the wordmark (aligned past the mark). */}
+                        <svg
+                          className="ml-[52px] block"
+                          width="104"
+                          height="12"
+                          viewBox="0 0 118 14"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M2,4 Q58,15 114,3"
+                            stroke="#c2693f"
+                            strokeWidth="2.6"
+                            strokeLinecap="round"
+                            fill="none"
+                            opacity="0.9"
+                          />
+                          <path
+                            d="M8,8 Q56,17 104,7"
+                            stroke="#c2693f"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            fill="none"
+                            opacity="0.55"
+                          />
+                          <path
+                            d="M16,12 Q54,18 88,11"
+                            stroke="#c2693f"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            fill="none"
+                            opacity="0.3"
+                          />
+                        </svg>
+                        <p className="mt-1.5 font-serif text-[14px] italic text-muted">
+                          Where your tasks learn to sit and stay.
+                        </p>
+                      </div>
+                      {/* Decorative paw trail — fills the corner, purely ornamental (no action). */}
+                      <svg
+                        width="56"
+                        height="56"
+                        viewBox="0 0 56 56"
+                        aria-hidden="true"
+                        className="shrink-0 text-muted-faint"
                       >
-                        {planner.isPending ? (
-                          <Thinking label="Thinking" />
-                        ) : (
-                          <>
-                            <span aria-hidden className="text-[#e8c47a]">
-                              ✦
-                            </span>{' '}
-                            Plan
-                            <span className="hidden min-[360px]:inline"> My Day</span>
-                          </>
-                        )}
-                      </button>
+                        <g fill="currentColor">
+                          <g opacity="0.7">
+                            <ellipse cx="16" cy="22" rx="5.2" ry="4.2" />
+                            <circle cx="9.5" cy="15" r="2.1" />
+                            <circle cx="15" cy="11.5" r="2.3" />
+                            <circle cx="21" cy="13.5" r="2.1" />
+                            <circle cx="24.5" cy="19" r="1.9" />
+                          </g>
+                          <g opacity="0.4">
+                            <ellipse cx="38" cy="42" rx="5.2" ry="4.2" />
+                            <circle cx="31.5" cy="35" r="2.1" />
+                            <circle cx="37" cy="31.5" r="2.3" />
+                            <circle cx="43" cy="33.5" r="2.1" />
+                            <circle cx="46.5" cy="39" r="1.9" />
+                          </g>
+                        </g>
+                      </svg>
                     </div>
                   </header>
                 )
@@ -350,10 +406,10 @@ function AppShell() {
                       <button
                         type="button"
                         onClick={() => navigate('reminders')}
-                        title="Daily reminders"
+                        title="Daily habits"
                         className="hover:text-ink"
                       >
-                        <span aria-hidden>⚐</span> Daily reminders
+                        <span aria-hidden>⚐</span> Daily habits
                       </button>
                       {isOwner && (
                         <button
@@ -419,13 +475,13 @@ function AppShell() {
                 </ErrorBoundary>
               )}
 
-              {/* Plan My Day — a persistent inline card (not a modal), top-center under the header. It
-          hydrates from today's daily_state.plan, survives reloads, and auto-clears at local
-          midnight. The box (and its margin wrapper) only render once there's a plan, a generation
-          in flight, or an error/paused notice — otherwise nothing shows and the header button is
-          the sole trigger. Gate the wrapper on the same condition PlanBox uses to return null so no
-          empty margin is left behind. */}
+              {/* Plan My Day (DESKTOP) — a persistent inline card (not a modal), top-center under the
+          header, triggered by the header pill. It hydrates from today's daily_state.plan, survives
+          reloads, and auto-clears at local midnight. Only renders once there's a plan, a generation
+          in flight, or an error/paused notice. On MOBILE the card + trigger live UNDER the grid
+          instead (below WorkArea) — see the mobile plan block further down. */}
               {!gridOnly &&
+                !isMobile &&
                 (planner.displayPlan || planner.isPending || planner.isError || planner.paused) && (
                   <div className="mb-3">
                     <ErrorBoundary>
@@ -460,6 +516,43 @@ function AppShell() {
                   quadrantFocus={quadrantFocus}
                 />
               </ErrorBoundary>
+
+              {/* Plan My Day (MOBILE) — under the grid, centered. A single tap-friendly pill triggers
+                  it; the moment a plan exists (or is generating / errored / paused) the card takes
+                  the pill's place, so the button disappears while a plan is on screen. */}
+              {!gridOnly && isMobile && (
+                <div className="mt-5">
+                  {planner.displayPlan || planner.isPending || planner.isError || planner.paused ? (
+                    <ErrorBoundary>
+                      <PlanBox
+                        mobile
+                        plan={planner.displayPlan}
+                        paused={planner.paused}
+                        isPending={planner.isPending}
+                        isError={planner.isError}
+                        onRetry={planner.generate}
+                        onDismiss={planner.clear}
+                      />
+                    </ErrorBoundary>
+                  ) : (
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={planner.generate}
+                        disabled={!planner.canGenerate}
+                        title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                        className="whitespace-nowrap rounded-full bg-ink px-6 py-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                        style={planPillStyle}
+                      >
+                        <span aria-hidden className="text-[#e8c47a]">
+                          ✦
+                        </span>{' '}
+                        Plan My Day
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -524,6 +617,7 @@ function AppShell() {
             <>
               <MobileBottomNav
                 route={route}
+                unread={unread}
                 onHome={() => {
                   // "Home" from inside a focus list means the top level — the overview. On the
                   // home route the focus entry is consumed cleanly (exit → history.back); from
@@ -553,6 +647,8 @@ function AppShell() {
               <Snackbar message={toast} />
               <MoreSheet
                 open={showMore}
+                onInbox={() => setShowInbox(true)}
+                unread={unread}
                 onReminders={() => navigate('reminders')}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
