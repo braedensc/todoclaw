@@ -11,11 +11,11 @@ export function RemindersPage() {
     <div className="mx-auto max-w-lg">
       <section className="rounded-xl border border-border-strong bg-panel p-6 shadow-sm">
         <header className="mb-3 flex items-center justify-between">
-          <h2 className="font-serif text-lg font-semibold text-ink">Daily reminders</h2>
+          <h2 className="font-serif text-lg font-semibold text-ink">Daily habits</h2>
           <button
             type="button"
             onClick={goBack}
-            aria-label="Close reminders"
+            aria-label="Close habits"
             className="rounded text-lg text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
           >
             ✕

@@ -21,6 +21,7 @@ export function PlanBox({
   isError,
   onRetry,
   onDismiss,
+  mobile = false,
 }: {
   plan: DayPlan | null
   paused: boolean
@@ -28,6 +29,9 @@ export function PlanBox({
   isError: boolean
   onRetry: () => void
   onDismiss: () => void
+  // Mobile swaps the tiny corner ✕ (a fiddly touch target) for a full-width footer "Dismiss"
+  // button beneath the plan. Desktop keeps the corner ✕.
+  mobile?: boolean
 }) {
   // Idle with no plan → render nothing at all. App gates the wrapper on the same condition so no
   // empty margin is left behind.
@@ -39,7 +43,8 @@ export function PlanBox({
       className="relative rounded-[14px] border border-border bg-panel px-5 py-3.5"
     >
       {plan ? (
-        <div className="flex flex-col pr-6">
+        // Leave room for the corner ✕ on desktop; on mobile the dismiss is a footer button, no gap.
+        <div className={mobile ? 'flex flex-col' : 'flex flex-col pr-6'}>
           {isError && (
             // A regenerate failed but the saved plan is still shown — offer a quiet retry.
             <p className="mb-2 text-[13px] text-accent">
@@ -73,19 +78,28 @@ export function PlanBox({
         </p>
       )}
 
-      {plan && (
-        // Dismiss the plan → clears the persisted row (gone across reloads until regenerated).
-        // focus-visible only, so a mouse click leaves no lingering blue ring; matches the app's
-        // other close buttons (e.g. DoneView).
-        <button
-          type="button"
-          onClick={onDismiss}
-          aria-label="Dismiss plan"
-          className="absolute right-3 top-3 rounded text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
-        >
-          ✕
-        </button>
-      )}
+      {plan &&
+        (mobile ? (
+          // Mobile: a full-width, tap-friendly footer button (the corner ✕ was too small to hit).
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="mt-4 w-full rounded-xl border border-border bg-card py-3 text-[13px] font-medium text-muted transition-colors hover:text-ink"
+          >
+            Dismiss today's plan
+          </button>
+        ) : (
+          // Desktop: the quiet corner ✕. focus-visible only, so a mouse click leaves no lingering
+          // ring; matches the app's other close buttons (e.g. DoneView).
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss plan"
+            className="absolute right-3 top-3 rounded text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
+          >
+            ✕
+          </button>
+        ))}
     </section>
   )
 }

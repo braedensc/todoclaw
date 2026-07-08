@@ -10,12 +10,7 @@ import { goBack } from '../../lib/route'
 // same history entry. No ✕ on mobile: the swipe/scrim/Back are the way out.
 export function RemindersSheet() {
   return (
-    <BottomSheet
-      open
-      onClose={goBack}
-      title="Daily reminders"
-      className="flex max-h-[85dvh] flex-col"
-    >
+    <BottomSheet open onClose={goBack} title="Daily habits" className="flex max-h-[85dvh] flex-col">
       {/* The scrollable body: HabitsView is untouched; this container owns the internal scroll. The
           sheet's grab handle + title (BottomSheet) name the surface and carry the dismiss gesture. */}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">

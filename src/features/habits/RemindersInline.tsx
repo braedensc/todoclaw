@@ -8,21 +8,22 @@ import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import type { Habit } from '../../types/habit'
 
-// The main-page minified form of Daily reminders: a compact inline row of ACTIVE reminder pills,
-// near the top of the work area where the full habits strip used to live. The full surface (all
-// reminders + add/queue) is the Reminders page (RemindersPage, ADR-0027); this is the glanceable
-// at-a-glance list.
+// The main-page minified form of Daily habits — a glanceable "Habit Reminders" list near the top
+// of the work area. The full surface (all habits + add/queue) is the Daily habits page
+// (RemindersPage, ADR-0027); this is the at-a-glance nudge. Renders NOTHING when there are no
+// active habits, so it stays out of the way until there's something to remind about.
 //
-// Each pill is two touch targets sharing one rounded shell:
-//   - a state indicator on the left — a hollow ring when NOT done today, a filled ✓ when done —
-//     that ALSO marks the reminder done/undone in place (no need to open anything). Done today is
-//     read from today's daily_state habit_done map, so it resets each local day.
-//   - the reminder name on the right, which opens a DETAILS modal for THAT single reminder, reusing
-//     HabitRow (defaultExpanded) as a popup card — checkbox + steps panel + add-step form.
+// Two presentations of the same data (ADR-0028 split):
+//   - DESKTOP: a minimal inline row (Variant C) — each habit is a small puppy-blue check + its
+//     name, no chip chrome. The check marks it done in place; the name opens the detail card.
+//   - MOBILE: a collapsible checklist card (Variant B) — full-width rows (checkbox + name) that are
+//     easy to tap, with a header that folds the whole list away and shows the done tally.
 //
-// It owns only the "which reminder is open" selection; all reminder/step reads + writes go through
-// the shared hooks (same as HabitsView), so a toggle here and the same toggle in the full popup (or
-// on the Reminders page) stay in lockstep via the query cache.
+// In BOTH the check reads today's daily_state habit_done map (resets each local day) and toggles
+// via the shared set_daily_flag path, and the name opens a per-habit detail card (HabitRow,
+// defaultExpanded) — a centered modal on desktop, a bottom sheet on mobile. It owns only the "which
+// habit is open" selection + the mobile collapse state; all data goes through the shared hooks, so
+// a toggle here and the same toggle on the Daily habits page stay in lockstep via the query cache.
 
 export function RemindersInline() {
   const timeZone = useTimeZone()
@@ -35,17 +36,19 @@ export function RemindersInline() {
   const confirm = useConfirm()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
   const isMobile = useIsMobile()
 
   const active = (habits ?? []).filter((h) => h.active)
 
-  // Nothing to surface inline until there's at least one active reminder — stay out of the way.
+  // Nothing to surface inline until there's at least one active habit — stay out of the way.
   if (active.length === 0) return null
 
   const habitDone = daily?.habit_done ?? {}
   const subtaskDone = daily?.subtask_done ?? {}
+  const doneCount = active.filter((h) => habitDone[h.id]).length
 
-  // Resolve the open reminder from the live list so a delete / deactivate elsewhere auto-closes it.
+  // Resolve the open habit from the live list so a delete / deactivate elsewhere auto-closes it.
   const selected = active.find((h) => h.id === selectedId) ?? null
   const busy =
     (updateHabit.isPending && updateHabit.variables?.id === selected?.id) ||
@@ -68,125 +71,168 @@ export function RemindersInline() {
     updateHabit.mutate({ id: habit.id, patch: { subtasks: next } })
 
   const deleteHabit = async (habit: Habit) => {
-    if (await confirm({ title: `Delete the reminder "${habit.text}"?` }))
+    if (await confirm({ title: `Delete the habit "${habit.text}"?` }))
       softDelete.mutate(habit.id, { onSuccess: close })
   }
 
-  return (
-    <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-light">
-        Reminders
-      </span>
-      {active.map((habit) => {
-        const isDone = Boolean(habitDone[habit.id])
-        return (
-          <span
-            key={habit.id}
-            className={`inline-flex items-center rounded-full border transition-colors ${
-              isDone ? 'border-primary/50 bg-primary/15' : 'border-primary/30 bg-primary/10'
-            }`}
-          >
-            {/* State indicator + mark-done-in-place. Hollow ring = not done, filled ✓ = done today;
-                tapping toggles today's done flag (same set_daily_flag path as the detail card). */}
-            <button
-              type="button"
-              aria-pressed={isDone}
-              aria-label={`Mark reminder "${habit.text}" done today`}
-              title={isDone ? 'Done today — tap to undo' : 'Tap to mark done today'}
-              onClick={() => toggleHabit(habit, !isDone)}
-              className="flex shrink-0 items-center rounded-l-full py-3 pl-3.5 pr-2 hover:bg-primary/15 wide:py-1 wide:pl-2.5 wide:pr-1.5"
-            >
-              <span
-                aria-hidden
-                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold leading-none transition-colors wide:h-4 wide:w-4 wide:text-[10px] ${
-                  isDone
-                    ? 'border-primary bg-primary text-white'
-                    : 'border-primary/50 text-transparent'
-                }`}
-              >
-                ✓
-              </span>
-            </button>
+  // The round check indicator — a puppy-blue ring when not done today, a filled puppy circle with a
+  // white ✓ when done. Shared by both presentations so the done treatment reads identically.
+  const Check = ({ done, className = '' }: { done: boolean; className?: string }) => (
+    <span
+      aria-hidden
+      className={`flex items-center justify-center rounded-full border font-bold leading-none transition-colors ${
+        done ? 'border-puppy bg-puppy text-white' : 'border-puppy/50 text-transparent'
+      } ${className}`}
+    >
+      ✓
+    </span>
+  )
 
-            {/* Name → per-reminder detail card (checkbox + steps + delete). */}
-            <button
-              type="button"
-              onClick={() => setSelectedId(habit.id)}
-              title={`Open reminder: ${habit.text}`}
-              className={`rounded-r-full py-3 pl-1 pr-3.5 text-[13px] font-medium transition-colors hover:bg-primary/15 wide:py-1 wide:pr-2.5 wide:text-xs ${
-                isDone ? 'text-muted line-through decoration-muted/50' : 'text-primary'
-              }`}
-            >
-              {habit.text}
-            </button>
+  const detail = selected && (
+    // One habit's detail card (checkbox + steps + add-step), reused by both surfaces.
+    <ul>
+      <HabitRow
+        habit={selected}
+        habitChecked={Boolean(habitDone[selected.id])}
+        subtaskDone={subtaskDone}
+        busy={busy}
+        defaultExpanded
+        onToggleHabit={(checked) => toggleHabit(selected, checked)}
+        onToggleSubtask={(subtaskId, checked) => toggleSubtask(selected, subtaskId, checked)}
+        onSubtasksChange={(next) => changeSubtasks(selected, next)}
+        onDelete={() => deleteHabit(selected)}
+      />
+    </ul>
+  )
+
+  return (
+    <>
+      {isMobile ? (
+        // MOBILE — Variant B: a collapsible checklist card. The header folds the list and shows the
+        // done tally; each row is a full-width checkbox + name (tap the box to check, the name to
+        // open details).
+        <div className="mb-2">
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            aria-expanded={!collapsed}
+            className="flex w-full items-center gap-2 py-1.5 text-left"
+          >
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-light">
+              Habit Reminders
+            </span>
+            <span className="rounded-full bg-puppy/10 px-1.5 py-0.5 text-[11px] font-semibold text-puppy">
+              {doneCount}/{active.length}
+            </span>
+            <span aria-hidden className="ml-auto text-sm text-muted-light">
+              {collapsed ? '▸' : '▾'}
+            </span>
+          </button>
+
+          {!collapsed && (
+            <ul className="overflow-hidden rounded-xl border border-border bg-card">
+              {active.map((habit, i) => {
+                const isDone = Boolean(habitDone[habit.id])
+                return (
+                  <li
+                    key={habit.id}
+                    className={`flex items-center ${i > 0 ? 'border-t border-border' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={isDone}
+                      aria-label={`Mark habit "${habit.text}" done today`}
+                      onClick={() => toggleHabit(habit, !isDone)}
+                      className="flex shrink-0 items-center py-3 pl-3.5 pr-2"
+                    >
+                      <Check done={isDone} className="h-6 w-6 text-[13px]" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(habit.id)}
+                      title={`Open habit: ${habit.text}`}
+                      className={`min-w-0 flex-1 truncate py-3 pr-3 text-left text-[15px] font-medium ${
+                        isDone ? 'text-muted line-through decoration-muted/50' : 'text-ink'
+                      }`}
+                    >
+                      {habit.text}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      ) : (
+        // DESKTOP — Variant C: a minimal inline row, no chip chrome. Puppy-blue check + name.
+        <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-light">
+            Habit Reminders
           </span>
-        )
-      })}
+          {active.map((habit) => {
+            const isDone = Boolean(habitDone[habit.id])
+            return (
+              <span key={habit.id} className="inline-flex items-center">
+                <button
+                  type="button"
+                  aria-pressed={isDone}
+                  aria-label={`Mark habit "${habit.text}" done today`}
+                  title={isDone ? 'Done today — click to undo' : 'Click to mark done today'}
+                  onClick={() => toggleHabit(habit, !isDone)}
+                  className="flex shrink-0 items-center rounded p-1"
+                >
+                  <Check done={isDone} className="h-[18px] w-[18px] text-[11px]" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(habit.id)}
+                  title={`Open habit: ${habit.text}`}
+                  className={`rounded py-1 pl-0.5 pr-1 text-[13px] font-medium transition-colors hover:text-ink ${
+                    isDone ? 'text-muted line-through decoration-muted/50' : 'text-ink'
+                  }`}
+                >
+                  {habit.text}
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {selected &&
-        (() => {
-          // One reminder's detail card (checkbox + steps + add-step), reused by both surfaces.
-          const detail = (
-            <ul>
-              <HabitRow
-                habit={selected}
-                habitChecked={Boolean(habitDone[selected.id])}
-                subtaskDone={subtaskDone}
-                busy={busy}
-                defaultExpanded
-                onToggleHabit={(checked) => toggleHabit(selected, checked)}
-                onToggleSubtask={(subtaskId, checked) =>
-                  toggleSubtask(selected, subtaskId, checked)
-                }
-                onSubtasksChange={(next) => changeSubtasks(selected, next)}
-                onDelete={() => deleteHabit(selected)}
-              />
-            </ul>
-          )
-
+        (isMobile ? (
           // Mobile: a slide-up sheet (swipe/scrim/Escape to dismiss, no ✕).
-          if (isMobile) {
-            return (
-              <BottomSheet
-                open
-                onClose={close}
-                title="Reminder"
-                className="flex max-h-[85dvh] flex-col"
-              >
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{detail}</div>
-              </BottomSheet>
-            )
-          }
-
-          // Desktop: the centered modal card with a ✕ header (unchanged).
-          return (
-            <div
-              role="dialog"
-              aria-label={`Reminder: ${selected.text}`}
-              aria-modal="true"
-              className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(2.5rem_+_env(safe-area-inset-top))]"
-              onClick={close}
+          <BottomSheet open onClose={close} title="Habit" className="flex max-h-[85dvh] flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{detail}</div>
+          </BottomSheet>
+        ) : (
+          // Desktop: the centered modal card with a ✕ header.
+          <div
+            role="dialog"
+            aria-label={`Habit: ${selected.text}`}
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(2.5rem_+_env(safe-area-inset-top))]"
+            onClick={close}
+          >
+            <section
+              className="w-full max-w-md rounded-xl border border-border-strong bg-panel p-5 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
             >
-              <section
-                className="w-full max-w-md rounded-xl border border-border-strong bg-panel p-5 shadow-xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <header className="mb-3 flex items-center justify-between">
-                  <h2 className="font-serif text-lg font-semibold text-ink">Reminder</h2>
-                  <button
-                    type="button"
-                    onClick={close}
-                    aria-label="Close reminder"
-                    className="text-muted hover:text-ink"
-                  >
-                    ✕
-                  </button>
-                </header>
-                {detail}
-              </section>
-            </div>
-          )
-        })()}
-    </div>
+              <header className="mb-3 flex items-center justify-between">
+                <h2 className="font-serif text-lg font-semibold text-ink">Habit</h2>
+                <button
+                  type="button"
+                  onClick={close}
+                  aria-label="Close habit"
+                  className="text-muted hover:text-ink"
+                >
+                  ✕
+                </button>
+              </header>
+              {detail}
+            </section>
+          </div>
+        ))}
+    </>
   )
 }

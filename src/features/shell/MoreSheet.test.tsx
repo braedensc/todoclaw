@@ -4,6 +4,7 @@ import { MoreSheet } from './MoreSheet'
 
 describe('MoreSheet', () => {
   const handlers = () => ({
+    onInbox: vi.fn(),
     onReminders: vi.fn(),
     onSettings: vi.fn(),
     onBackups: vi.fn(),
@@ -18,9 +19,19 @@ describe('MoreSheet', () => {
 
   it('lists the overflow actions when open', () => {
     render(<MoreSheet open {...handlers()} />)
-    for (const label of ['Daily reminders', 'Settings', 'Backups', 'Sign out']) {
+    for (const label of ['Inbox', 'Daily habits', 'Settings', 'Backups', 'Sign out']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
+  })
+
+  it('shows an unread chip on the Inbox row and opens the inbox on tap', () => {
+    const h = handlers()
+    render(<MoreSheet open {...h} unread={3} />)
+    const inbox = screen.getByRole('button', { name: 'Inbox' })
+    expect(inbox).toHaveTextContent('3')
+    fireEvent.click(inbox)
+    expect(h.onInbox).toHaveBeenCalledTimes(1)
+    expect(h.onClose).toHaveBeenCalledTimes(1)
   })
 
   it('runs the action and closes the sheet on tap', () => {

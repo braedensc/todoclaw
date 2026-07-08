@@ -77,7 +77,7 @@ describe('RemindersInline', () => {
   it('marks a reminder done in place (no modal) via set_daily_flag when its indicator is tapped', () => {
     setHabits([habit({ id: 'h1', text: 'Alpha' })])
     renderInline()
-    const toggle = screen.getByRole('button', { name: /Mark reminder "Alpha" done today/i })
+    const toggle = screen.getByRole('button', { name: /Mark habit "Alpha" done today/i })
     // Not done today → pressed reflects that, and no dialog opened by the toggle.
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(toggle)
@@ -96,7 +96,7 @@ describe('RemindersInline', () => {
     })
     setHabits([habit({ id: 'h1', text: 'Alpha' })])
     renderInline()
-    const toggle = screen.getByRole('button', { name: /Mark reminder "Alpha" done today/i })
+    const toggle = screen.getByRole('button', { name: /Mark habit "Alpha" done today/i })
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     // Tapping a done tag clears it (value: false).
     fireEvent.click(toggle)
@@ -115,7 +115,7 @@ describe('RemindersInline', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Wrist strengthening routine' }))
-    const dialog = screen.getByRole('dialog', { name: /Reminder: Wrist strengthening routine/i })
+    const dialog = screen.getByRole('dialog', { name: /Habit: Wrist strengthening routine/i })
     // defaultExpanded → the step is visible without a further click.
     expect(within(dialog).getByText('Rice bucket — 3 sets each direction')).toBeInTheDocument()
   })
@@ -139,7 +139,7 @@ describe('RemindersInline', () => {
     setHabits([habit()])
     renderInline()
     fireEvent.click(screen.getByRole('button', { name: 'Wrist strengthening routine' }))
-    fireEvent.click(screen.getByRole('button', { name: /Close reminder/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Close habit/i }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -148,11 +148,11 @@ describe('RemindersInline', () => {
     renderInline()
     fireEvent.click(screen.getByRole('button', { name: 'Wrist strengthening routine' }))
     fireEvent.click(
-      screen.getByRole('button', { name: /Delete reminder "Wrist strengthening routine"/i }),
+      screen.getByRole('button', { name: /Delete habit "Wrist strengthening routine"/i }),
     )
     // The themed confirm dialog appears (distinct from the detail modal); deletion fires only
     // after its Delete button is clicked.
-    const confirmDialog = await screen.findByRole('dialog', { name: /Delete the reminder/i })
+    const confirmDialog = await screen.findByRole('dialog', { name: /Delete the habit/i })
     fireEvent.click(within(confirmDialog).getByRole('button', { name: /^Delete$/ }))
     // RemindersInline passes an onSuccess (to close the modal) as the mutate options arg.
     await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('h1', expect.anything()))

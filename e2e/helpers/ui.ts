@@ -146,16 +146,16 @@ export async function closeDone(page: Page): Promise<void> {
 }
 
 /**
- * Open the Daily reminders page from the Account nav (ADR-0027: a route/page, not a modal).
- * DESKTOP only — the mobile bottom nav no longer has a reminders tab (it moved into the More
+ * Open the Daily habits page from the Account nav (ADR-0027: a route/page, not a modal).
+ * DESKTOP only — the mobile bottom nav no longer has a habits tab (it moved into the More
  * sheet when Chat took its slot); a mobile spec would open More first.
  */
 export async function openReminders(page: Page): Promise<void> {
   await page
     .getByRole('navigation', { name: 'Account' })
-    .getByRole('button', { name: 'Daily reminders' })
+    .getByRole('button', { name: 'Daily habits' })
     .click()
-  await expect(page.getByRole('region', { name: 'Daily reminders' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Daily habits' })).toBeVisible()
 }
 
 /** Open the full chat popup: switch the input widget to BabyClaw, then "Open chat". */

@@ -134,7 +134,7 @@ test('Daily reminders opens as a sheet OVER home (home stays mounted, body scrol
 
   // The route is #/reminders, but the mobile PRESENTATION is a bottom sheet — home is still
   // there behind it (the quadrant overview stays mounted) instead of a page swap.
-  const sheet = page.getByRole('dialog', { name: 'Daily reminders' })
+  const sheet = page.getByRole('dialog', { name: 'Daily habits' })
   await expect(sheet).toBeVisible()
   await expect(page).toHaveURL(/#\/reminders$/)
   await expect(page.getByRole('button', { name: /Do Now, \d+ task/ })).toBeVisible()
@@ -145,7 +145,7 @@ test('Daily reminders opens as a sheet OVER home (home stays mounted, body scrol
   // A swipe-down on the grab handle routes through goBack — same as the browser/hardware Back
   // button: the sheet closes, the history entry pops (no #/reminders in the URL), and the page
   // unlocks. There is no ✕ on mobile anymore.
-  await expect(sheet.getByRole('button', { name: 'Close reminders' })).toHaveCount(0)
+  await expect(sheet.getByRole('button', { name: 'Close habits' })).toHaveCount(0)
   await swipeDownToDismiss(page, sheet.getByTestId('sheet-grabber'))
   await expect(sheet).toBeHidden()
   await expect(page).not.toHaveURL(/#\/reminders$/)

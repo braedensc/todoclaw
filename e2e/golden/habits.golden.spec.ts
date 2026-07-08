@@ -11,10 +11,10 @@ const STEP = 'Neck rolls'
 
 test('add a reminder, check it and a step for today; checks survive a reload', async ({ page }) => {
   await openReminders(page)
-  const habitsSection = page.getByRole('region', { name: 'Daily reminders' })
+  const habitsSection = page.getByRole('region', { name: 'Daily habits' })
 
-  // Add the reminder — it lands in the active list with an unchecked daily checkbox.
-  await habitsSection.getByPlaceholder('Add a reminder…').fill(HABIT)
+  // Add the habit — it lands in the active list with an unchecked daily checkbox.
+  await habitsSection.getByPlaceholder('Add a habit…').fill(HABIT)
   await habitsSection.getByRole('button', { name: /^Add$/ }).click()
   const habitCheck = page.getByLabel(`Mark "${HABIT}" done today`)
   await expect(habitCheck).toBeVisible()

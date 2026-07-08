@@ -84,6 +84,26 @@ describe('PlanBox', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 
+  it('mobile: swaps the corner × for a full-width footer "Dismiss today\'s plan" button', () => {
+    const onDismiss = vi.fn()
+    render(
+      <PlanBox
+        mobile
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={onDismiss}
+      />,
+    )
+    // No tiny corner × on mobile…
+    expect(screen.queryByRole('button', { name: /dismiss plan/i })).not.toBeInTheDocument()
+    // …the labelled footer button fires onDismiss instead.
+    fireEvent.click(screen.getByRole('button', { name: /Dismiss today's plan/i }))
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
   it('does not show a dismiss × when there is no plan (loading state)', () => {
     render(
       <PlanBox
