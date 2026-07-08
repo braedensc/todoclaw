@@ -499,17 +499,7 @@ function AppShell() {
                 onDone={() => navigate('done')}
                 onMore={() => setShowMore(true)}
               />
-              <MobileAddSheet
-                open={showAdd}
-                chat={chat}
-                // Escalating to the full chat replaces the add sheet — close it so it isn't left
-                // open (and holding a body-scroll lock) underneath the chat sheet.
-                onOpenChat={() => {
-                  setShowAdd(false)
-                  setShowChat(true)
-                }}
-                onClose={() => setShowAdd(false)}
-              />
+              <MobileAddSheet open={showAdd} onClose={() => setShowAdd(false)} />
               <MoreSheet
                 open={showMore}
                 onReminders={() => navigate('reminders')}
