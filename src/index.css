@@ -308,3 +308,48 @@
     transition: none;
   }
 }
+
+/* Header wordmark pup peekaboo (components/TodoClawPeek with peekaboo) — every so often he
+   swings his paws up off the ledge to cover his eyes, then drops them back, the same
+   pad-on-eye gag the sign-in mascot does on password focus but on a slow ambient timer like
+   the blink. A longer, offset period (14s vs the 6.5s blink) so a cover never lands on a
+   blink. Translate percentages are of each paw's own fill-box — same math as .auth-mascot.shy
+   (see that note above for why % not px). Reduced-motion: paws stay hooked over the ledge. */
+.tc-paw {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.tc-paw-l {
+  animation: tc-peekaboo-l 14s ease-in-out infinite;
+}
+.tc-paw-r {
+  animation: tc-peekaboo-r 14s ease-in-out infinite;
+}
+@keyframes tc-peekaboo-l {
+  0%,
+  80%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  87%,
+  95% {
+    transform: translate(50%, -117%) rotate(-8deg);
+  }
+}
+@keyframes tc-peekaboo-r {
+  0%,
+  80%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  87%,
+  95% {
+    transform: translate(-50%, -117%) rotate(8deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-paw-l,
+  .tc-paw-r {
+    animation: none;
+  }
+}
