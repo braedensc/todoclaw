@@ -6,6 +6,7 @@
 // testable in isolation from React.
 
 import type { ChatItem, PendingConfirm } from '../ai/use-ai-chat'
+import { splitReply } from '../ai/reply-status'
 
 export type BabyClawTone = 'idle' | 'busy' | 'pending' | 'done' | 'error' | 'paused'
 
@@ -13,20 +14,15 @@ export interface BabyClawStatus {
   tone: BabyClawTone
   /** Leading glyph for the line (✦ working/idle, ✓ done, ✕ error). */
   icon: string
-  /** The full inline line — already word-clamped where it wraps a summary. */
+  /**
+   * The full inline line. Never pre-clamped — the widget's CSS `truncate` ellipsizes exactly at
+   * the container edge, so the text uses ALL the available width first.
+   */
   text: string
 }
 
 const IDLE_HINT = 'Add tasks in plain language — e.g. “call landlord, urgent”.'
 const PAUSED_HINT = 'AI is paused this month — the planner still works without it.'
-
-// Hard cap a summary to ~N words so the one-line status never wraps or bloats the widget. Tool and
-// assistant summaries are already short; this is only a backstop for the occasional long one.
-export function clampWords(s: string, max = 10): string {
-  const words = s.trim().split(/\s+/).filter(Boolean)
-  if (words.length <= max) return words.join(' ')
-  return words.slice(0, max).join(' ') + '…'
-}
 
 // A compact verb for the transient flash chip, pulled from a tool summary's leading word
 // ("Created…" → "created", "Moved…" → "moved"). Capability summaries are authored to start with
@@ -44,10 +40,12 @@ export interface StatusInput {
   items: ChatItem[]
 }
 
-// Priority ladder (highest first): paused → busy → awaiting-confirmation → stream/HTTP error →
-// last tool of THIS turn (failed vs. done) → last assistant reply of this turn (e.g. a follow-up
-// question "add a due date?") → idle hint. Scoping to the latest turn keeps a stale success from
-// an earlier turn from masking a fresh pure-reply turn.
+// Priority ladder (highest first): paused → busy → awaiting-confirmation (answerable by typing
+// yes/no right here — see use-ai-chat's pending-aware send) → stream/HTTP error → the latest
+// turn's outcome → idle hint. Within a turn, BabyClaw's own [[status: …]] line (a model-authored
+// tight summary of the action taken / info needed) is preferred over raw tool or reply text; the
+// tone still comes from the tool outcome so failures stay visibly ✕. Scoping to the latest turn
+// keeps a stale success from an earlier turn from masking a fresh pure-reply turn.
 export function deriveBabyClawStatus({
   paused,
   busy,
@@ -57,22 +55,18 @@ export function deriveBabyClawStatus({
 }: StatusInput): BabyClawStatus {
   if (paused) return { tone: 'paused', icon: '✦', text: PAUSED_HINT }
   if (busy) return { tone: 'busy', icon: '✦', text: 'Working…' }
-  if (pending)
-    return {
-      tone: 'pending',
-      icon: '✦',
-      text: `Needs confirmation — ${clampWords(pending.summary)}`,
-    }
-  if (error) return { tone: 'error', icon: '✕', text: clampWords(error) }
+  if (pending) return { tone: 'pending', icon: '✦', text: `${pending.summary}? (yes/no)` }
+  if (error) return { tone: 'error', icon: '✕', text: error }
 
   const turn = latestTurn(items)
   const lastTool = findLast(turn, (i) => i.role === 'tool')
+  const lastReply = findLast(turn, (i) => i.role === 'assistant')
+  const reply = lastReply ? splitReply(lastReply.text) : null
   if (lastTool) {
     const tone = lastTool.ok === false ? 'error' : 'done'
-    return { tone, icon: tone === 'error' ? '✕' : '✓', text: clampWords(lastTool.text) }
+    return { tone, icon: tone === 'error' ? '✕' : '✓', text: reply?.status ?? lastTool.text }
   }
-  const lastReply = findLast(turn, (i) => i.role === 'assistant')
-  if (lastReply) return { tone: 'idle', icon: '✦', text: clampWords(lastReply.text) }
+  if (reply) return { tone: 'idle', icon: '✦', text: reply.status ?? reply.body }
   return { tone: 'idle', icon: '✦', text: IDLE_HINT }
 }
 

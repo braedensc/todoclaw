@@ -163,6 +163,98 @@ describe('useAiChat', () => {
     })
   })
 
+  // The SSE turn that halts on a destructive delete — shared by the typed-answer tests below.
+  const pendingDeleteSse = () =>
+    sseResponse([
+      {
+        type: 'tool-pending-confirmation',
+        tool_use_id: 'toolu_9',
+        name: 'delete_task',
+        input: { task_id: 't1' },
+        summary: 'Move "Call dentist" to the trash',
+        messages: [
+          { role: 'user', content: 'remove dentist' },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'tool_use', id: 'toolu_9', name: 'delete_task', input: { task_id: 't1' } },
+            ],
+          },
+        ],
+      },
+      { type: 'done', stop_reason: 'awaiting-confirmation' },
+    ])
+  const endTurnSse = () =>
+    sseResponse([
+      { type: 'message', role: 'assistant', content: [] },
+      { type: 'done', stop_reason: 'end_turn' },
+    ])
+
+  it('typed "yes" while pending confirms: re-sends with the approved id', async () => {
+    fetchMock.mockResolvedValueOnce(pendingDeleteSse()).mockResolvedValueOnce(endTurnSse())
+
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('remove dentist'))
+    await waitFor(() => expect(result.current.pending).not.toBeNull())
+
+    act(() => result.current.send('yes!'))
+    await waitFor(() => expect(result.current.pending).toBeNull())
+    await waitFor(() => expect(result.current.busy).toBe(false))
+
+    expect(sentBody(1).approvedToolUseIds).toEqual(['toolu_9'])
+    // The typed answer shows as the user's bubble, then the Confirmed note.
+    const texts = result.current.items.map((i) => i.text)
+    expect(texts).toContain('yes!')
+    expect(texts).toContain('Confirmed.')
+  })
+
+  it('typed "no" while pending declines with a plain declined tool_result', async () => {
+    fetchMock.mockResolvedValueOnce(pendingDeleteSse()).mockResolvedValueOnce(endTurnSse())
+
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('remove dentist'))
+    await waitFor(() => expect(result.current.pending).not.toBeNull())
+
+    act(() => result.current.send('no'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+
+    expect(sentBody(1).approvedToolUseIds).toEqual([])
+    const last = sentBody(1).messages.at(-1)!
+    expect(last.role).toBe('user')
+    // A bare "no" adds no extra words — just the declined tool_result.
+    expect(last.content).toEqual([
+      {
+        type: 'tool_result',
+        tool_use_id: 'toolu_9',
+        content: 'User declined this action.',
+        is_error: true,
+      },
+    ])
+    expect(result.current.items.map((i) => i.text)).toContain('Declined.')
+  })
+
+  it('any other typed reply while pending declines AND passes the words to the model', async () => {
+    fetchMock.mockResolvedValueOnce(pendingDeleteSse()).mockResolvedValueOnce(endTurnSse())
+
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('remove dentist'))
+    await waitFor(() => expect(result.current.pending).not.toBeNull())
+
+    act(() => result.current.send('actually just rename it to "call dr smith"'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+
+    const last = sentBody(1).messages.at(-1)!
+    expect(last.content).toEqual([
+      {
+        type: 'tool_result',
+        tool_use_id: 'toolu_9',
+        content: 'User declined this action.',
+        is_error: true,
+      },
+      { type: 'text', text: 'actually just rename it to "call dr smith"' },
+    ])
+  })
+
   it('merges sibling tool results from one turn into a single user turn', async () => {
     // A turn mixing a destructive and a non-destructive tool pauses before executing EITHER
     // (atomic pre-scan); after confirm both run. The API requires every tool_use in a turn to

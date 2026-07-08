@@ -47,6 +47,15 @@ Deno.test(
   },
 )
 
+Deno.test(
+  'persona requires the machine-read [[status: …]] line the add-widget one-liner shows',
+  () => {
+    assertStringIncludes(SYSTEM_PREFIX, 'STATUS LINE')
+    assertStringIncludes(SYSTEM_PREFIX, '[[status: …]]')
+    assertStringIncludes(SYSTEM_PREFIX, 'end EVERY reply')
+  },
+)
+
 Deno.test('persona teaches the grid priority model and transparency/ask-when-unsure', () => {
   assertStringIncludes(SYSTEM_PREFIX, 'x = urgency')
   assertStringIncludes(SYSTEM_PREFIX, 'y = importance')

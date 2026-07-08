@@ -442,7 +442,9 @@ export function BabyClawInput({
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Tell BabyClaw what to add…"
+          // While a confirmation is pending, a typed reply answers it (yes runs it, anything
+          // else declines) — same conversation as the drawer's Confirm/Cancel buttons.
+          placeholder={pending ? 'Yes or no?' : 'Tell BabyClaw what to add…'}
           aria-label="Tell BabyClaw"
           disabled={paused}
           className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm focus:border-puppy focus:outline-none disabled:opacity-50"
@@ -462,7 +464,11 @@ export function BabyClawInput({
         >
           {status.icon}
         </span>
-        <span className={`min-w-0 flex-1 truncate ${TONE_CLASS[status.tone]}`} aria-live="polite">
+        <span
+          className={`min-w-0 flex-1 truncate ${TONE_CLASS[status.tone]}`}
+          aria-live="polite"
+          title={status.tone === 'busy' ? undefined : status.text}
+        >
           {status.tone === 'busy' ? (
             <>
               Working

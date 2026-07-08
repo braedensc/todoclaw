@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
+import { splitReply } from './reply-status'
 import { TodoClawIcon } from '../../components/TodoClawIcon'
 
 // The full BabyClaw conversation UI (header + streamed history + confirm gate + input), factored
@@ -102,14 +103,16 @@ export function ChatConversation({ chat, onClose }: { chat: ChatController; onCl
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Message…"
+          // While a confirmation is pending, a typed reply answers it (send routes yes/no to
+          // confirm/deny) — the buttons above stay as the one-click path.
+          placeholder={pending ? 'Yes or no — or say what to do instead…' : 'Message…'}
           aria-label="Message"
-          disabled={paused || !!pending}
+          disabled={paused}
           className="flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm disabled:opacity-50"
         />
         <button
           type="submit"
-          disabled={busy || paused || !!pending || !text.trim()}
+          disabled={busy || paused || !text.trim()}
           className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           Send
@@ -128,6 +131,9 @@ function Bubble({ item }: { item: ChatItem }) {
     )
   }
   const isUser = item.role === 'user'
+  // BabyClaw's replies end with a machine-read [[status: …]] line for the add-widget one-liner —
+  // hide it from the bubble (falling back to the status itself if the reply was ONLY that line).
+  const { body, status } = isUser ? { body: item.text, status: null } : splitReply(item.text)
   return (
     <li className={isUser ? 'text-right' : 'text-left'}>
       {/* A small 🐾 marks BabyClaw's own replies (assistant only — never the user's). Decorative. */}
@@ -141,7 +147,7 @@ function Bubble({ item }: { item: ChatItem }) {
           isUser ? 'bg-ink text-white' : 'bg-card text-ink'
         }`}
       >
-        {item.text}
+        {body || status || '…'}
       </span>
     </li>
   )

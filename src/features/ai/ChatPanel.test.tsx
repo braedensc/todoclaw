@@ -56,6 +56,38 @@ describe('ChatPanel', () => {
     expect(c.deny).toHaveBeenCalled()
   })
 
+  it('keeps the input usable while a confirmation is pending — a typed yes/no answers it', () => {
+    // send() is pending-aware (use-ai-chat routes it to confirm/deny), so the box must stay open.
+    const c = chat({ pending: { toolUseId: 'toolu_9', summary: 'Move "dentist" to the trash' } })
+    render(<ChatPanel chat={c} onClose={vi.fn()} />)
+
+    const input = screen.getByLabelText('Message')
+    expect(input).not.toBeDisabled()
+    expect(input.getAttribute('placeholder')).toMatch(/yes or no/i)
+    fireEvent.change(input, { target: { value: 'yes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(c.send).toHaveBeenCalledWith('yes')
+  })
+
+  it("hides BabyClaw's trailing [[status: …]] line from the bubble", () => {
+    render(
+      <ChatPanel
+        chat={chat({
+          items: [
+            {
+              id: '1',
+              role: 'assistant',
+              text: 'Added it — due Friday!\n[[status: Added "call mom" 🐾]]',
+            },
+          ],
+        })}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('Added it — due Friday!')).toBeInTheDocument()
+    expect(screen.queryByText(/\[\[status/)).not.toBeInTheDocument()
+  })
+
   it('sends a message on submit', () => {
     const c = chat()
     render(<ChatPanel chat={c} onClose={vi.fn()} />)
