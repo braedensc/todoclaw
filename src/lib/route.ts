@@ -13,13 +13,14 @@ import { useSyncExternalStore } from 'react'
 // Trade-off: hash URLs are a little less pretty, and this is ~40 lines we own instead of a routing
 // library — a deliberate fit for a 2–3 route app (see the ADR for the full comparison).
 
-export type AppRoute = 'home' | 'done' | 'reminders' | 'chat'
+export type AppRoute = 'home' | 'done' | 'reminders' | 'chat' | 'admin'
 
 const ROUTE_TO_HASH: Record<AppRoute, string> = {
   home: '#/',
   done: '#/done',
   reminders: '#/reminders',
   chat: '#/chat',
+  admin: '#/admin',
 }
 
 const CHAT_PREFIX = '#/chat/'
@@ -28,6 +29,7 @@ const CHAT_PREFIX = '#/chat/'
 export function hashToRoute(hash: string): AppRoute {
   if (hash === ROUTE_TO_HASH.done) return 'done'
   if (hash === ROUTE_TO_HASH.reminders) return 'reminders'
+  if (hash === ROUTE_TO_HASH.admin) return 'admin'
   // `#/chat` (bare) or `#/chat/<messageId>` (deep link from a notification, ADR-0031).
   if (hash === ROUTE_TO_HASH.chat || hash.startsWith(CHAT_PREFIX)) return 'chat'
   return 'home'

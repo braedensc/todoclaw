@@ -187,7 +187,8 @@ jobs:
           #                    (_shared/auth.ts) and RLS isolates data. Mirrors the
           #                    `verify_jwt = false` in supabase/config.toml (belt-and-suspenders).
           # dispatch-messages has no user JWT: the notify.yml cron gates it with DISPATCH_SECRET.
-          for fn in ai-status plan-my-day ai-chat dispatch-messages; do
+          # generate-invite/redeem-invite were previously omitted (a gap); admin is owner-gated.
+          for fn in ai-status plan-my-day ai-chat dispatch-messages generate-invite redeem-invite admin; do
             echo "::group::deploy $fn"
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --use-api --no-verify-jwt
             echo "::endgroup::"

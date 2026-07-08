@@ -8,6 +8,7 @@
 import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
 import { userClient, requireUser } from '../_shared/auth.ts'
+import { isOwner } from '../_shared/owner.ts'
 import { generateInviteCode, redeemUrl } from '../_shared/invite-code.ts'
 
 const BodySchema = z
@@ -35,10 +36,9 @@ Deno.serve(async (req) => {
   const user = await requireUser(client)
   if (!user) return json({ error: 'unauthorized' }, 401)
 
-  // Owner gate. Enforced server-side (the frontend only HIDES the UI for non-owners). If
-  // OWNER_USER_ID is unset, no one is the owner and generation is refused — a safe default.
-  const ownerId = Deno.env.get('OWNER_USER_ID')
-  if (!ownerId || user.id !== ownerId) return json({ error: 'forbidden' }, 403)
+  // Owner gate (shared with the admin function). Enforced server-side (the frontend only HIDES the
+  // UI for non-owners). If OWNER_USER_ID is unset, no one is the owner and generation is refused.
+  if (!isOwner(user.id, Deno.env.get('OWNER_USER_ID'))) return json({ error: 'forbidden' }, 403)
 
   let body: z.infer<typeof BodySchema>
   try {
