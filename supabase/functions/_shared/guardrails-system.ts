@@ -7,14 +7,8 @@
 // swapped for a passed userId.
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
-import {
-  BUDGET_CAP_MICROS,
-  USER_BUDGET_CAP_MICROS,
-  LIMITS,
-  costMicros,
-  type Feature,
-  type PrecheckResult,
-} from './guardrails.ts'
+import { costMicros, type Feature, type PrecheckResult } from './guardrails.ts'
+import { loadConfig } from './guardrails-config.ts'
 
 // Pre-call gate for a named user: global pool → per-user sub-cap → rate limit (records the request).
 // Mirrors precheck() but every RPC is the service_role _for_user / _system variant. Same ordering, so
@@ -24,8 +18,9 @@ export async function precheckForUser(
   userId: string,
   feature: Feature,
 ): Promise<PrecheckResult> {
+  const cfg = await loadConfig(admin)
   const { data: remaining, error: budgetErr } = await admin.rpc('ai_budget_check_system', {
-    p_cap_micros: BUDGET_CAP_MICROS,
+    p_cap_micros: cfg.globalBudgetCapMicros,
   })
   if (budgetErr) return { ok: false, reason: 'budget-exhausted', detail: budgetErr.message }
   if (typeof remaining === 'number' && remaining <= 0)
@@ -33,13 +28,13 @@ export async function precheckForUser(
 
   const { data: userRemaining, error: userErr } = await admin.rpc('ai_user_budget_check_for_user', {
     p_user_id: userId,
-    p_cap_micros: USER_BUDGET_CAP_MICROS,
+    p_cap_micros: cfg.userBudgetCapMicros,
   })
   if (userErr) return { ok: false, reason: 'budget-exhausted', detail: userErr.message }
   if (typeof userRemaining === 'number' && userRemaining <= 0)
     return { ok: false, reason: 'budget-exhausted', detail: 'user-monthly-cap' }
 
-  const limit = LIMITS[feature]
+  const limit = cfg.limits[feature]
   const { data: usageId, error: rateErr } = await admin.rpc('ai_usage_check_and_record_for_user', {
     p_user_id: userId,
     p_feature: feature,

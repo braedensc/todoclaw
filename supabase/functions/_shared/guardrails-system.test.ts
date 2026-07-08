@@ -6,6 +6,12 @@ import { assert, assertEquals } from 'jsr:@std/assert@1'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { precheckForUser, recordUsageForUser } from './guardrails-system.ts'
 import { BUDGET_CAP_MICROS, USER_BUDGET_CAP_MICROS, LIMITS, costMicros } from './guardrails.ts'
+import { _resetConfigCache } from './guardrails-config.ts'
+
+// precheckForUser now loads app_config first (loadConfig). The fake returns null for app_config_get
+// (not in its replies), so loadConfig falls back to the constants — the cap/limit ARG assertions
+// below are unchanged; only a leading 'app_config_get' call is added. Reset the per-isolate cache
+// before each precheck test so the read is deterministic.
 
 type RpcReply = { data?: unknown; error?: { message: string } | null } | (() => never)
 
@@ -28,6 +34,7 @@ function fakeClient(replies: Record<string, RpcReply>): FakeClient {
 }
 
 Deno.test('precheckForUser: all gates clear → ok, records the request, correct args', async () => {
+  _resetConfigCache()
   const f = fakeClient({
     ai_budget_check_system: { data: 5_000_000 },
     ai_user_budget_check_for_user: { data: 4_000_000 },
@@ -36,13 +43,15 @@ Deno.test('precheckForUser: all gates clear → ok, records the request, correct
   const res = await precheckForUser(f.client, 'user-1', 'plan_my_day')
   assertEquals(res, { ok: true, usageId: 'usage-123' })
 
-  // Global cap uses the shared constant; per-user + rate-limit calls carry the explicit user id.
-  assertEquals(f.calls[0], {
+  // loadConfig reads app_config first (→ constants via fallback); the global cap then uses that
+  // value; per-user + rate-limit calls carry the explicit user id.
+  assertEquals(f.calls[0].name, 'app_config_get')
+  assertEquals(f.calls[1], {
     name: 'ai_budget_check_system',
     args: { p_cap_micros: BUDGET_CAP_MICROS },
   })
-  assertEquals(f.calls[1].args, { p_user_id: 'user-1', p_cap_micros: USER_BUDGET_CAP_MICROS })
-  assertEquals(f.calls[2].args, {
+  assertEquals(f.calls[2].args, { p_user_id: 'user-1', p_cap_micros: USER_BUDGET_CAP_MICROS })
+  assertEquals(f.calls[3].args, {
     p_user_id: 'user-1',
     p_feature: 'plan_my_day',
     p_hour_limit: LIMITS.plan_my_day.hour,
@@ -53,6 +62,7 @@ Deno.test('precheckForUser: all gates clear → ok, records the request, correct
 Deno.test(
   'precheckForUser: global pool exhausted → budget-exhausted, no rate-limit record',
   async () => {
+    _resetConfigCache()
     const f = fakeClient({
       ai_budget_check_system: { data: 0 },
       ai_user_budget_check_for_user: { data: 4_000_000 },
@@ -60,10 +70,11 @@ Deno.test(
     })
     const res = await precheckForUser(f.client, 'user-1', 'plan_my_day')
     assertEquals(res, { ok: false, reason: 'budget-exhausted' })
-    // Short-circuits: only the global check ran (never charge a rate-limit unit on a paused month).
+    // Short-circuits after the config read + global check (never charge a rate-limit unit on a
+    // paused month).
     assertEquals(
       f.calls.map((c) => c.name),
-      ['ai_budget_check_system'],
+      ['app_config_get', 'ai_budget_check_system'],
     )
   },
 )
@@ -71,6 +82,7 @@ Deno.test(
 Deno.test(
   'precheckForUser: per-user sub-cap hit → budget-exhausted (user-monthly-cap)',
   async () => {
+    _resetConfigCache()
     const f = fakeClient({
       ai_budget_check_system: { data: 5_000_000 },
       ai_user_budget_check_for_user: { data: 0 },
@@ -79,12 +91,13 @@ Deno.test(
     assertEquals(res, { ok: false, reason: 'budget-exhausted', detail: 'user-monthly-cap' })
     assertEquals(
       f.calls.map((c) => c.name),
-      ['ai_budget_check_system', 'ai_user_budget_check_for_user'],
+      ['app_config_get', 'ai_budget_check_system', 'ai_user_budget_check_for_user'],
     )
   },
 )
 
 Deno.test('precheckForUser: rate limit raised by the RPC → rate-limited', async () => {
+  _resetConfigCache()
   const f = fakeClient({
     ai_budget_check_system: { data: 5_000_000 },
     ai_user_budget_check_for_user: { data: 4_000_000 },

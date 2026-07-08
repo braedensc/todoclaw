@@ -11,6 +11,7 @@ describe('hashToRoute', () => {
   it('maps the known page hashes and treats everything else as home', () => {
     expect(hashToRoute('#/done')).toBe('done')
     expect(hashToRoute('#/reminders')).toBe('reminders')
+    expect(hashToRoute('#/admin')).toBe('admin')
     expect(hashToRoute('')).toBe('home')
     expect(hashToRoute('#/')).toBe('home')
     expect(hashToRoute('#/anything-else')).toBe('home')
@@ -78,5 +79,15 @@ describe('navigate', () => {
     })
     expect(window.location.hash).toBe('#/reminders')
     expect(result.current).toBe('reminders')
+  })
+
+  it('routes to the owner admin page', () => {
+    const { result } = renderHook(() => useRoute())
+    act(() => {
+      navigate('admin')
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(window.location.hash).toBe('#/admin')
+    expect(result.current).toBe('admin')
   })
 })

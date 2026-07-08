@@ -22,7 +22,7 @@ import { ChatRail } from './features/ai/ChatRail'
 import { BackupsPanel } from './features/backups/BackupsPanel'
 import { DonePage } from './features/done/DonePage'
 import { SettingsPanel } from './features/settings/SettingsPanel'
-import { InvitePanel } from './features/settings/InvitePanel'
+import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
 import { useRoute, navigate, navigateToChat, chatMessageId } from './lib/route'
 import { supabase } from './lib/supabase'
@@ -49,9 +49,9 @@ function AppShell() {
   const [showChat, setShowChat] = useState(false)
   const [showBackups, setShowBackups] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  // Owner-only "Invite someone" overlay (ADR-0030). isOwner only reveals the entry point — the
-  // generate-invite Edge Function enforces the real OWNER_USER_ID gate server-side.
-  const [showInvite, setShowInvite] = useState(false)
+  // The owner-only Admin panel is a route (`/#/admin`), not an overlay — invites now live inside it.
+  // isOwner only reveals the entry point; the admin Edge Function enforces the real OWNER_USER_ID
+  // gate server-side.
   const isOwner = useIsOwner()
   // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
@@ -310,11 +310,11 @@ function AppShell() {
                       {isOwner && (
                         <button
                           type="button"
-                          onClick={() => setShowInvite(true)}
-                          title="Invite someone to Todoclaw"
+                          onClick={() => navigate('admin')}
+                          title="Owner admin panel"
                           className="hover:text-ink"
                         >
-                          <span aria-hidden>✉</span> Invite
+                          <span aria-hidden>❖</span> Admin
                         </button>
                       )}
                       <button
@@ -410,6 +410,14 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
+          {/* Owner-only Admin panel (belt-and-suspenders: gated on isOwner here AND inside the page;
+              the real gate is the server-side OWNER_USER_ID check in the admin Edge Function). */}
+          {route === 'admin' && isOwner && (
+            <ErrorBoundary>
+              <AdminPage />
+            </ErrorBoundary>
+          )}
+
           {/* Route-independent overlays: Settings and Backups sit over whatever route is active. */}
           {showBackups && (
             <ErrorBoundary>
@@ -435,12 +443,6 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
-          {showInvite && (
-            <ErrorBoundary>
-              <InvitePanel onClose={() => setShowInvite(false)} />
-            </ErrorBoundary>
-          )}
-
           {/* Mobile chrome (Concept D): the thumb-zone bottom nav + its "More" overflow sheet.
               Hidden in grid-only mode (the fullscreen grid owns the screen). */}
           {isMobile && !gridOnly && (
@@ -463,7 +465,7 @@ function AppShell() {
                 open={showMore}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
-                onInvite={isOwner ? () => setShowInvite(true) : undefined}
+                onAdmin={isOwner ? () => navigate('admin') : undefined}
                 onSignOut={() => void supabase.auth.signOut()}
                 onClose={() => setShowMore(false)}
               />
