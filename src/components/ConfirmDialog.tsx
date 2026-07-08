@@ -50,8 +50,9 @@ export function ConfirmDialog({
   const confirmRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const isMobile = useIsMobile()
-  // Mobile: a downward swipe on the grab handle cancels (same as scrim/Escape/Back).
-  const swipe = useSwipeDismiss(onCancel, panelRef)
+  // Mobile: a downward swipe on the handle OR anywhere on the action sheet cancels (same as
+  // scrim/Escape/Back). Active only on the mobile sheet — the desktop dialog doesn't slide.
+  const swipe = useSwipeDismiss(onCancel, panelRef, isMobile)
 
   // Focus the confirm button on open (the user reached here through an explicit action) and wire
   // a document-level Escape → cancel, matching the app's other modals.
@@ -117,6 +118,7 @@ export function ConfirmDialog({
         >
           <div
             data-testid="sheet-grabber"
+            data-sheet-handle
             onPointerDown={swipe.onPointerDown}
             className="cursor-grab touch-none select-none"
           >

@@ -20,7 +20,24 @@ const bodyOverflow = (page: Page) => page.evaluate<string>('document.body.style.
 // mobile sheet drops its ✕ in favour of this gesture (a scrim tap / Back also dismiss). The panel
 // follows the finger, but the hook measures the drag from the fixed pointer-down Y, so absolute
 // mouse coordinates are correct. page.mouse dispatches the pointerdown/move/up the hook listens for.
+//
+// Sheets slide in over 280ms and `toBeVisible` resolves at animation START (a translated element
+// already has a non-empty box). Raw page.mouse and boundingBox() have no actionability wait, so
+// acting or measuring immediately reads MID-FLIGHT coordinates — the cause of all three of this
+// file's historical failures (a press landing on content below the handle; a composer measured
+// hundreds of px under the viewport). Poll until the box stops moving before trusting geometry.
+async function settleSheet(page: Page, target: Locator): Promise<void> {
+  let box = await target.boundingBox()
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(80)
+    const next = await target.boundingBox()
+    if (box && next && Math.abs(next.y - box.y) < 0.5) return
+    box = next
+  }
+}
+
 async function swipeDownToDismiss(page: Page, handle: Locator, distance = 260): Promise<void> {
+  await settleSheet(page, handle)
   const box = await handle.boundingBox()
   if (!box) throw new Error('sheet grab handle not laid out')
   const x = box.x + box.width / 2
@@ -47,6 +64,7 @@ test('the add sheet is a full-screen takeover that fits without scrolling and cl
   await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
   const sheet = page.getByRole('dialog', { name: 'Add a task' })
   await expect(sheet).toBeVisible()
+  await settleSheet(page, sheet)
 
   // Full-screen: the panel spans the whole viewport (100dvh × full width).
   const viewport = page.viewportSize()!

@@ -26,9 +26,11 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   useBodyScrollLock(isMobile)
 
   const panelRef = useRef<HTMLElement>(null)
-  // Swipe-down-to-dismiss on the grab handle — same gesture as BottomSheet (shared hook). The
-  // aside carries the `bottom-sheet-panel` class, so it inherits the drag transition + spring-back.
-  const swipe = useSwipeDismiss(onClose, panelRef)
+  // Swipe-down-to-dismiss — same gesture as BottomSheet (shared hook): the grab handle drives the
+  // pointer path, and on mobile the whole panel is a scroll-aware touch surface (the message list
+  // still scrolls; a downward pull with the list at top drags the sheet). The aside carries the
+  // `bottom-sheet-panel` class, so it inherits the drag transition + spring-back.
+  const swipe = useSwipeDismiss(onClose, panelRef, isMobile)
   // iOS overlays the keyboard over the (dvh-sized) sheet instead of resizing it, hiding the
   // composer behind the keys — pad the panel bottom by the measured overlap so the composer rides
   // above the keyboard, compressing the message list instead (audit §3.3). 0 when closed.
@@ -64,6 +66,7 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
             steal the drag). The BabyClaw header sits just below it inside ChatConversation. */}
         <div
           data-testid="sheet-grabber"
+          data-sheet-handle
           onPointerDown={swipe.onPointerDown}
           className="shrink-0 cursor-grab touch-none select-none pt-2"
         >
