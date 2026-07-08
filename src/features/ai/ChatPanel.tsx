@@ -31,9 +31,11 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         className="bottom-sheet-scrim absolute inset-0 bg-ink/40"
         onClick={onClose}
       />
+      {/* Safe-area bottom padding keeps the chat input clear of the iOS home indicator now that
+          viewport-fit=cover extends the layout under it. */}
       <aside
         aria-label="Chat"
-        className="bottom-sheet-panel absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col rounded-t-2xl border border-border-strong bg-panel shadow-xl"
+        className="bottom-sheet-panel absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col rounded-t-2xl border border-border-strong bg-panel pb-[env(safe-area-inset-bottom)] shadow-xl"
       >
         <ChatConversation chat={chat} onClose={onClose} />
       </aside>

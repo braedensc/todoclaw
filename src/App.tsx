@@ -135,10 +135,14 @@ function AppShell() {
     // content by the drawer width, shrinking the grid column so the grid reflows left (B2). The
     // centered, max-width column lives on the INNER wrapper. On mobile the drawer is a covering
     // bottom-sheet (ChatPanel), so no padding is applied (`wide:` only).
-    <div className="relative min-h-screen w-full">
+    //
+    // min-h-screen is desktop-only: on mobile the page is locked to the viewport and #root is the
+    // scroll container (src/index.css), so a 100vh min-height here would force ~a safe-area's
+    // worth of permanent overflow — i.e. the standalone-PWA scroll wiggle this replaces.
+    <div className="relative min-h-full w-full wide:min-h-screen">
       <div
         className={
-          'min-h-screen transition-[padding] duration-300 ease-out ' +
+          'min-h-full wide:min-h-screen transition-[padding] duration-300 ease-out ' +
           (chatOpen ? 'wide:pr-[360px]' : '')
         }
       >
@@ -539,7 +543,7 @@ export default function App() {
     // (signed-in or auth) can gate a destructive action through it.
     <ConfirmProvider>
       {loading ? (
-        <main className="mx-auto min-h-screen max-w-3xl p-6">
+        <main className="mx-auto min-h-full max-w-3xl p-6 wide:min-h-screen">
           <p className="text-muted">Loading…</p>
         </main>
       ) : session ? (
@@ -551,7 +555,7 @@ export default function App() {
         // The mascot's front door (style mix, login pass): centered masthead wordmark — no
         // icon up here, the AuthMascot peeking over the card below is the star — with the claw
         // swipe and the sign-in tagline. AuthGate renders the card + mascot.
-        <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-center p-6 pt-14">
+        <main className="mx-auto flex min-h-full max-w-3xl flex-col items-center p-6 pt-14 wide:min-h-screen">
           <h1
             className="font-serif text-[46px] font-[620] leading-none tracking-[-0.015em] text-ink"
             style={{ fontVariationSettings: "'opsz' 70" }}

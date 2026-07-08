@@ -87,7 +87,7 @@ export function RemindersInline() {
           role="dialog"
           aria-label={`Reminder: ${selected.text}`}
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-10"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(2.5rem_+_env(safe-area-inset-top))]"
           onClick={close}
         >
           <section

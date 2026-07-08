@@ -132,7 +132,7 @@ export function BottomSheet({
         className={`bottom-sheet-panel relative outline-none ${
           fullScreen
             ? 'flex h-dvh w-full flex-col bg-panel px-4'
-            : 'w-full max-w-md rounded-t-2xl border border-border-strong bg-panel px-4 pb-6 pt-2 shadow-xl'
+            : 'w-full max-w-md rounded-t-2xl border border-border-strong bg-panel px-4 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))] pt-2 shadow-xl'
         } ${className}`.trim()}
         style={
           fullScreen

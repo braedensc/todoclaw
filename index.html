@@ -5,6 +5,11 @@
     <!-- viewport-fit=cover lets the app extend under the iOS notch/home-indicator so full-screen
          surfaces can pad with env(safe-area-inset-*) instead of showing letterbox bars. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- iOS add-to-home-screen: black-translucent makes the standalone status bar transparent so
+         the warm-paper atmosphere bleeds up through the camera island. Standalone mode itself
+         comes from the PWA manifest (vite.config.ts) — apple-mobile-web-app-capable is not needed
+         — but the status bar STYLE has no manifest equivalent, so this legacy meta stays. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Todoclaw</title>
