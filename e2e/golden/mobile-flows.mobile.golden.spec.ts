@@ -39,10 +39,10 @@ test('add via the bottom-nav "+" (manual → quadrant) and the task lands in tha
 test('Daily reminders opens as a sheet OVER home (home stays mounted, body scroll locked)', async ({
   page,
 }) => {
-  await page
-    .getByRole('navigation', { name: 'Account' })
-    .getByRole('button', { name: 'Daily reminders' })
-    .tap()
+  // Enter via the route, not a specific nav control — the entry point is moving (PR #156 puts
+  // Daily reminders in the More sheet); the contract under test is the PRESENTATION: any
+  // navigation to #/reminders on mobile shows the sheet.
+  await page.evaluate("location.hash = '#/reminders'")
 
   // The route is #/reminders, but the mobile PRESENTATION is a bottom sheet — home is still
   // there behind it (the quadrant overview stays mounted) instead of a page swap.
