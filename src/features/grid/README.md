@@ -1,10 +1,15 @@
 # grid
 
-The free-canvas priority grid (urgency × importance). This is the app's main screen — a 2D matrix
-where `x` = urgency (0 left → 1 right) and `y` = importance (0 bottom → 1 top). **Screen-y is
-inverted from data-y**: a card at data `(x, y)` renders at `left: x*100%`, `top: (1−y)*100%`, so
+The free-canvas priority grid (urgency × importance). This is the app's main **desktop** screen — a
+2D matrix where `x` = urgency (0 left → 1 right) and `y` = importance (0 bottom → 1 top). **Screen-y
+is inverted from data-y**: a card at data `(x, y)` renders at `left: x*100%`, `top: (1−y)*100%`, so
 high importance sits at the top. New tasks are added from the widget above the grid and surface as
 draggable **new-item cards** there (card-in-place, B2 — there is no staging tray).
+
+> **Mobile (< 720px) never mounts this feature** (ADR-0028): `WorkArea` renders `MobileMatrix`
+> (quadrant overview → focus lists) instead, and repositioning is the tap-based Move-to-quadrant
+> sheet. The tap-to-place branches referenced below are desktop-era code that only ran when the
+> grid was still rendered on phones; they are unreachable today.
 
 ## Files
 
@@ -42,9 +47,9 @@ draggable new-item card in the add widget instead.
   resolution on drag** — overlaps are expected and absorbed by clustering.
 - **New-item card → grid (desktop):** drag a new-item card onto the canvas → it materializes
   under the pointer and commits `{ x, y, staged: false }` on drop.
-- **New-item card → grid (mobile, < 720px):** tap a new-item card to select it, then tap a spot on
-  the grid. Coordinates come from `toNormalized(gridRef.getBoundingClientRect(), …)` (clamped,
-  y-inverted). The breakpoint is detected by `useIsMobile`.
+- **New-item card → grid (tap-to-place):** `use-grid.ts` still carries a tap-to-select →
+  tap-to-place path gated on `useIsMobile`, from when the grid rendered below 720px. Since
+  ADR-0028 the grid never mounts on mobile, so this branch is currently dead code.
 
 ## Clustering
 
@@ -81,15 +86,15 @@ badge: (a) a persistent **↻ chip** overhanging the top-right corner, and (b) *
 side/bottom borders (one-off cards keep thin solid terracotta sides). The solid, status-colored top
 border is untouched, so the two cues never clash with it (batch-2 items 5 + 13).
 
-## Hover actions (placed cards) & mark done
+## Card actions (placed cards) & mark done
 
 `GridCard` reveals a three-control action row — **done ✓** (green), a **⋯ menu**, and **delete ×**
 (red). Done and delete are the shared `IconButton` (green `success` / red `danger` intents, native
 `title` tooltips); delete is **confirm-gated** (`useConfirm`, wired in `GridSurface`) so an
-accidental click can't silently soft-delete. On desktop the row appears on hover; on mobile
-(< 720px, no hover) it is **always visible** so a placed card stays actionable by touch (gated on
-the same `wide` breakpoint that switches placement to tap-to-place — see `docs/STYLE.md` →
-_Responsive layout_). Each control stops pointer/click propagation so it never starts a drag.
+accidental click can't silently soft-delete. The row is **always visible** (an outlined Done pill
++ quiet ⋯/× — batch-2) rather than hover-only, so it also degrades safely on any touch device,
+though the grid itself is desktop-only now (ADR-0028). Each control stops pointer/click
+propagation so it never starts a drag.
 
 **Inline rename** is triggered by **double-clicking the text** (there is no ✎ button — the whole
 card is the drag handle, and a motionless double-click can't be confused with a drag). Enter/blur

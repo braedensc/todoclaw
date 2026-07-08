@@ -20,6 +20,9 @@ Decisions:
   **placed** task: BabyClaw lets the assistant set placement; Manual is text + a quadrant picker →
   the quadrant center, collision-resolved, `staged:false`. So a phone user never creates a
   "floating" unplaced task and never needs a grid to place one.
+  *(Amended 2026-07-08, PR #164: the BabyClaw ⇄ Manual toggle was dropped from `MobileAddSheet` —
+  the sheet is manual-only now that the Chat tab owns AI capture; `BabyClawInput` still powers the
+  desktop inline widget.)*
 - **Reclaimed screen = header + reminders + list.** With the grid, toggle, and input gone, the
   mobile screen is just the slim top bar, the inline daily-reminders row, and the quadrant list —
   which now gets the full width/height. "Reminders" is relabeled **"Daily reminders"** (bottom nav +
