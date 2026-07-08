@@ -172,14 +172,17 @@ function AppShell() {
                 // Mobile (Concept D): a slim top row — wordmark + Plan pill only. The tagline, the
                 // Grid-only pill, and the account links all move off the fold (bottom nav + More sheet).
                 !gridOnly && (
-                  <header className="mb-3 flex items-center justify-between gap-3">
-                    <h1 className="flex items-center gap-1.5 font-serif text-2xl font-semibold text-ink">
+                  // min-[360px]: the row is wider than a 320px-class viewport at full size (the
+                  // nowrap pill used to push the whole page into horizontal scroll on iPhone SE),
+                  // so below 360px the wordmark steps down a size and the pill shortens to "Plan".
+                  <header className="mb-3 flex items-center justify-between gap-2 min-[360px]:gap-3">
+                    <h1 className="flex items-center gap-1.5 font-serif text-xl font-semibold text-ink min-[360px]:text-2xl">
                       <TodoClawPeek playful className="h-7 w-7" /> Todoclaw
                       <span aria-hidden className="-ml-1.5 text-accent">
                         .
                       </span>
                     </h1>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2">
                       <NotificationBell
                         compact
                         onClick={() => setShowInbox(true)}
@@ -190,7 +193,7 @@ function AppShell() {
                         onClick={planner.generate}
                         disabled={!planner.canGenerate}
                         title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
-                        className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                        className="whitespace-nowrap rounded-full bg-ink px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60 min-[360px]:px-4"
                         style={planPillStyle}
                       >
                         {planner.isPending ? (
@@ -200,7 +203,8 @@ function AppShell() {
                             <span aria-hidden className="text-[#e8c47a]">
                               ✦
                             </span>{' '}
-                            Plan My Day
+                            Plan
+                            <span className="hidden min-[360px]:inline"> My Day</span>
                           </>
                         )}
                       </button>

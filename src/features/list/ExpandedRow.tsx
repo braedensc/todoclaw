@@ -112,12 +112,16 @@ interface AxisControlProps {
 
 // A 0–100 slider paired with a number input, sharing one live value. Both call `onChange`
 // live (so the thumb + badge track) but only `onCommit` on pointer-up / blur.
+//
+// Below `wide` the control takes the full row and the slider flexes to fill it: the fixed
+// label+w-32+w-16 trio is wider than a phone card's content box (the "Importance" number input
+// used to clip past the card edge at 375px), and a longer track is easier to drag by touch.
 function AxisControl({ label, value, onChange, onCommit, accent }: AxisControlProps) {
   const clampPct = (n: number): number => Math.min(100, Math.max(0, n))
 
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm font-medium" style={{ color: accent }}>
+    <div className="flex w-full items-center gap-2 wide:w-auto">
+      <span className="shrink-0 text-sm font-medium" style={{ color: accent }}>
         {label}
       </span>
       <input
@@ -129,17 +133,18 @@ function AxisControl({ label, value, onChange, onCommit, accent }: AxisControlPr
         onChange={(e) => onChange(Number(e.target.value))}
         onPointerUp={onCommit}
         onKeyUp={onCommit}
-        className="w-32"
+        className="min-w-0 flex-1 wide:w-32 wide:flex-none"
       />
       <input
         type="number"
+        inputMode="numeric"
         min={0}
         max={100}
         value={value}
         aria-label={`${label} value`}
         onChange={(e) => onChange(clampPct(Number(e.target.value)))}
         onBlur={onCommit}
-        className="w-16 rounded border border-border-strong bg-card px-2 py-1 text-sm"
+        className="w-16 shrink-0 rounded border border-border-strong bg-card px-2 py-1 text-sm"
       />
     </div>
   )
