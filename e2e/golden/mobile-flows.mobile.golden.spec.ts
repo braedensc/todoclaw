@@ -1,6 +1,6 @@
 import { test, expect } from '../helpers/fixtures'
 import { openDone } from '../helpers/ui'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 // Mobile golden path (ADR-0028). Runs in the `chromium-mobile` project (Pixel 7 viewport + touch),
 // so `useIsMobile` (< 720px) is true. On mobile there is NO grid and NO Grid/List toggle:
@@ -15,6 +15,21 @@ import type { Page } from '@playwright/test'
 // touching `document` would not typecheck).
 const bodyOverflow = (page: Page) => page.evaluate<string>('document.body.style.overflow')
 
+// Swipe a sheet's grab handle down far enough to dismiss (> the 120px distance threshold). Every
+// mobile sheet drops its ✕ in favour of this gesture (a scrim tap / Back also dismiss). The panel
+// follows the finger, but the hook measures the drag from the fixed pointer-down Y, so absolute
+// mouse coordinates are correct. page.mouse dispatches the pointerdown/move/up the hook listens for.
+async function swipeDownToDismiss(page: Page, handle: Locator, distance = 260): Promise<void> {
+  const box = await handle.boundingBox()
+  if (!box) throw new Error('sheet grab handle not laid out')
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x, y + distance, { steps: 12 })
+  await page.mouse.up()
+}
+
 // Add a task through the bottom-nav "+" sheet in Manual mode, into a given quadrant.
 async function addManual(page: Page, text: string, quadrant: string): Promise<void> {
   await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
@@ -26,7 +41,7 @@ async function addManual(page: Page, text: string, quadrant: string): Promise<vo
   await expect(sheet).toBeHidden()
 }
 
-test('the add sheet is a full-screen takeover that fits without scrolling and closes via ✕', async ({
+test('the add sheet is a full-screen takeover that fits without scrolling and closes via swipe-down', async ({
   page,
 }) => {
   await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
@@ -56,8 +71,10 @@ test('the add sheet is a full-screen takeover that fits without scrolling and cl
   const submit = await sheet.getByRole('button', { name: 'Add task' }).boundingBox()
   expect(submit!.y + submit!.height).toBeLessThanOrEqual(viewport.height)
 
-  // The header ✕ dismisses (the scrim is hidden behind a full-height panel, so ✕ is the way out).
-  await sheet.getByRole('button', { name: 'Close' }).tap()
+  // A swipe-down on the grab handle dismisses (the scrim is hidden behind a full-height panel, so
+  // the handle is the way out — there is no ✕ anymore).
+  await expect(sheet.getByRole('button', { name: 'Close' })).toHaveCount(0)
+  await swipeDownToDismiss(page, sheet.getByTestId('sheet-grabber'))
   await expect(sheet).toBeHidden()
 })
 
@@ -89,11 +106,34 @@ test('Daily reminders opens as a sheet OVER home (home stays mounted, body scrol
   // Scrolling happens INSIDE the sheet; the page behind is locked while it's up.
   await expect.poll(() => bodyOverflow(page)).toBe('hidden')
 
-  // The ✕ routes through goBack — same as the browser/hardware Back button: the sheet closes,
-  // the history entry pops (no #/reminders in the URL), and the page unlocks.
-  await sheet.getByRole('button', { name: 'Close reminders' }).tap()
+  // A swipe-down on the grab handle routes through goBack — same as the browser/hardware Back
+  // button: the sheet closes, the history entry pops (no #/reminders in the URL), and the page
+  // unlocks. There is no ✕ on mobile anymore.
+  await expect(sheet.getByRole('button', { name: 'Close reminders' })).toHaveCount(0)
+  await swipeDownToDismiss(page, sheet.getByTestId('sheet-grabber'))
   await expect(sheet).toBeHidden()
   await expect(page).not.toHaveURL(/#\/reminders$/)
+  await expect.poll(() => bodyOverflow(page)).not.toBe('hidden')
+})
+
+test('Done opens as a sheet OVER home (home stays mounted, body locked) and swipe-down dismisses', async ({
+  page,
+}) => {
+  // The bottom nav's Done tab navigates the #/done route; on mobile that PRESENTS as a bottom sheet
+  // over the still-mounted home (like Daily reminders), not a full-page swap.
+  await openDone(page)
+  const sheet = page.getByRole('dialog', { name: 'Done' })
+  await expect(sheet).toBeVisible()
+  await expect(page).toHaveURL(/#\/done$/)
+  // Home stays mounted behind it (the quadrant overview is still there); the page is scroll-locked.
+  await expect(page.getByRole('button', { name: /Do Now, \d+ task/ })).toBeAttached()
+  await expect.poll(() => bodyOverflow(page)).toBe('hidden')
+
+  // No ✕ on mobile — a swipe-down on the grab handle routes through goBack, popping the route.
+  await expect(sheet.getByRole('button', { name: 'Close done' })).toHaveCount(0)
+  await swipeDownToDismiss(page, sheet.getByTestId('sheet-grabber'))
+  await expect(sheet).toBeHidden()
+  await expect(page).not.toHaveURL(/#\/done$/)
   await expect.poll(() => bodyOverflow(page)).not.toBe('hidden')
 })
 

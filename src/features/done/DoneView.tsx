@@ -131,7 +131,7 @@ function HistoryRow({
   )
 }
 
-export function DoneView({ onClose }: { onClose?: () => void }) {
+export function DoneView({ onClose, bare = false }: { onClose?: () => void; bare?: boolean }) {
   const timeZone = useTimeZone()
 
   const history = useHistory()
@@ -225,8 +225,13 @@ export function DoneView({ onClose }: { onClose?: () => void }) {
     )
   }
 
+  // `bare` drops the card chrome when the surface is supplied by a wrapper (the mobile DoneSheet's
+  // BottomSheet already paints the panel + padding); the labelled region + content are unchanged.
   return (
-    <section aria-label="Done" className="rounded-xl border border-border-strong bg-panel p-6">
+    <section
+      aria-label="Done"
+      className={bare ? '' : 'rounded-xl border border-border-strong bg-panel p-6'}
+    >
       {header}
       {body}
     </section>

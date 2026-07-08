@@ -5,7 +5,16 @@ import { BottomSheet } from './BottomSheet'
 
 // BottomSheet is the shared modal sheet the mobile flows open. The tests cover the contract callers
 // depend on: it renders only while open, names itself for AT, and dismisses via scrim + Escape but
-// NOT via clicks inside — plus the focus contract (focus enters on open, restores on close).
+// NOT via clicks inside — plus the focus contract (focus enters on open, restores on close) and the
+// swipe-down-to-dismiss gesture on the grab handle (both card + fullScreen modes; no ✕ anymore).
+
+// Simulate a swipe on the grab handle: pointerdown on the handle (React), then move/up on window
+// (where the hook attaches its listeners). Native MouseEvents carry clientY reliably under jsdom.
+function swipe(grabber: HTMLElement, toClientY: number): void {
+  fireEvent.pointerDown(grabber, { clientY: 0 })
+  window.dispatchEvent(new MouseEvent('pointermove', { clientY: toClientY }))
+  window.dispatchEvent(new MouseEvent('pointerup', { clientY: toClientY }))
+}
 
 describe('BottomSheet', () => {
   it('renders nothing while closed', () => {
@@ -106,26 +115,57 @@ describe('BottomSheet', () => {
     expect(screen.getByRole('dialog')).toHaveFocus()
   })
 
-  it('fullScreen shows an explicit ✕ Close button that dismisses', () => {
-    const onClose = vi.fn()
+  it('fullScreen shows a draggable grab handle instead of a ✕ close button', () => {
     render(
-      <BottomSheet open onClose={onClose} title="Add a task" fullScreen>
+      <BottomSheet open onClose={vi.fn()} title="Add a task" fullScreen>
         <p>body</p>
       </BottomSheet>,
     )
     // Still a titled modal dialog…
     expect(screen.getByRole('dialog')).toHaveAccessibleName('Add a task')
-    // …but with a header close button instead of relying on the grab-handle/scrim affordance.
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
+    // …but the ✕ is gone — a swipe-down on the grab handle dismisses now (like the card mode).
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+    expect(screen.getByTestId('sheet-grabber')).toBeInTheDocument()
   })
 
-  it('the default (card) variant has no Close button', () => {
-    render(
+  it('neither variant has a ✕ Close button', () => {
+    const { rerender } = render(
       <BottomSheet open onClose={vi.fn()} title="Move task">
         <p>body</p>
       </BottomSheet>,
     )
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+    rerender(
+      <BottomSheet open onClose={vi.fn()} title="Move task" fullScreen>
+        <p>body</p>
+      </BottomSheet>,
+    )
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+  })
+
+  it('dismisses on a downward swipe of the grab handle past the threshold — card + fullScreen', () => {
+    for (const fullScreen of [false, true]) {
+      const onClose = vi.fn()
+      const { unmount } = render(
+        <BottomSheet open onClose={onClose} title="Move task" fullScreen={fullScreen}>
+          <p>body</p>
+        </BottomSheet>,
+      )
+      // jsdom lays out at 0px height, so the fallback 120px distance threshold applies; 200 clears it.
+      swipe(screen.getByTestId('sheet-grabber'), 200)
+      expect(onClose).toHaveBeenCalledTimes(1)
+      unmount()
+    }
+  })
+
+  it('springs back (does NOT dismiss) when the swipe is too short', () => {
+    const onClose = vi.fn()
+    render(
+      <BottomSheet open onClose={onClose} title="Move task">
+        <p>body</p>
+      </BottomSheet>,
+    )
+    swipe(screen.getByTestId('sheet-grabber'), 30)
+    expect(onClose).not.toHaveBeenCalled()
   })
 })

@@ -26,10 +26,14 @@ vi.mock('./features/tasks/use-tasks', () => ({
   useUpdateTask: () => ({ mutate: vi.fn() }),
   useSoftDeleteTask: () => ({ mutate: vi.fn() }),
 }))
-// GridView's grid mark-done action calls useMarkTaskDone (Done data layer); stub it so the
-// shell renders without a QueryClientProvider / network.
+// GridView's grid mark-done action calls useMarkTaskDone; the Done page/sheet reads useHistory +
+// its restore/delete mutations (Done data layer). Stub them all so the shell renders (incl. the
+// #/done route) without a QueryClientProvider / network.
 vi.mock('./features/done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: vi.fn() }),
+  useHistory: () => ({ data: [], isLoading: false, isError: false }),
+  useRestoreTask: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteHistoryEntry: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('./features/schedule/use-user-schedule', () => ({
   useEnsureUserSchedule: () => ({ mutate: vi.fn() }),
@@ -134,6 +138,38 @@ describe('App shell', () => {
       mockIsMobile.mockReturnValue(false)
       window.location.hash = ''
       document.body.style.overflow = ''
+    }
+  })
+
+  it('on mobile, #/done renders home UNDER the done sheet (not a page swap) and locks body scroll', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    mockIsMobile.mockReturnValue(true)
+    window.location.hash = '#/done'
+    try {
+      render(<App />)
+      // Home stays mounted behind the sheet: the bottom nav (mobile home chrome) is present…
+      expect(screen.getByRole('navigation', { name: 'Account' })).toBeInTheDocument()
+      // …with the Done sheet (a modal dialog named "Done") over it, body scroll locked while up.
+      expect(screen.getByRole('dialog', { name: 'Done' })).toBeInTheDocument()
+      expect(document.body.style.overflow).toBe('hidden')
+    } finally {
+      mockIsMobile.mockReturnValue(false)
+      window.location.hash = ''
+      document.body.style.overflow = ''
+    }
+  })
+
+  it('on desktop, #/done keeps the full-page presentation (no dialog, home swapped out)', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    window.location.hash = '#/done'
+    try {
+      render(<App />)
+      expect(screen.getByRole('region', { name: 'Done' })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Done' })).not.toBeInTheDocument()
+      // The page swap: home's work area is gone.
+      expect(screen.queryByRole('button', { name: 'Grid' })).not.toBeInTheDocument()
+    } finally {
+      window.location.hash = ''
     }
   })
 
