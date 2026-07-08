@@ -10,10 +10,19 @@ import { BottomSheet } from './BottomSheet'
 
 // Simulate a swipe on the grab handle: pointerdown on the handle (React), then move/up on window
 // (where the hook attaches its listeners). Native MouseEvents carry clientY reliably under jsdom.
+// Events get explicit 100ms-spaced timestamps: jsdom dispatches micro-seconds apart, which the
+// release-velocity math would read as a violent flick and dismiss even the deliberately-short
+// spring-back swipe below.
+let clock = 0
+function ptr(type: string, clientY: number): MouseEvent {
+  const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientY })
+  Object.defineProperty(e, 'timeStamp', { value: (clock += 100) })
+  return e
+}
 function swipe(grabber: HTMLElement, toClientY: number): void {
-  fireEvent.pointerDown(grabber, { clientY: 0 })
-  window.dispatchEvent(new MouseEvent('pointermove', { clientY: toClientY }))
-  window.dispatchEvent(new MouseEvent('pointerup', { clientY: toClientY }))
+  grabber.dispatchEvent(ptr('pointerdown', 0))
+  window.dispatchEvent(ptr('pointermove', toClientY))
+  window.dispatchEvent(ptr('pointerup', toClientY))
 }
 
 describe('BottomSheet', () => {

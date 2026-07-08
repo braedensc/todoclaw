@@ -4,8 +4,12 @@
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover lets the app extend under the iOS notch/home-indicator so env(safe-area-inset-*)
          resolves (0 otherwise): full-screen surfaces avoid letterbox bars and the bottom nav pads clear
-         of the home indicator. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+         of the home indicator. interactive-widget makes Android Chrome resize the layout viewport for
+         the on-screen keyboard (iOS ignores it; use-keyboard-inset.ts covers iOS via visualViewport). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <!-- iOS add-to-home-screen: black-translucent makes the standalone status bar transparent so
          the warm-paper atmosphere bleeds up through the camera island. Standalone mode itself
          comes from the PWA manifest (vite.config.ts) — apple-mobile-web-app-capable is not needed

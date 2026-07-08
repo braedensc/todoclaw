@@ -70,9 +70,11 @@ export function BottomSheet({
   // The page behind a modal sheet must not scroll — scrolling belongs INSIDE the sheet.
   useBodyScrollLock(open)
 
-  // Swipe-down-to-dismiss: wired to the grab handle below. Translates the panel with the finger and
-  // fades the scrim; releasing past the threshold / with a flick calls onClose (see the hook).
-  const swipe = useSwipeDismiss(onClose, panelRef)
+  // Swipe-down-to-dismiss: the grab handle drives the pointer path below, and (while open) the
+  // hook also makes the WHOLE panel a scroll-aware touch-drag surface — people swipe the sheet
+  // body, not a 16px strip. Translates the panel with the finger and fades the scrim; releasing
+  // past the threshold / with a flick calls onClose (see use-swipe-dismiss.ts).
+  const swipe = useSwipeDismiss(onClose, panelRef, open)
 
   useEffect(() => {
     if (!open) return
@@ -163,6 +165,7 @@ export function BottomSheet({
             dismisses too (iOS/Android sheet convention). Content below scrolls independently. */}
         <div
           data-testid="sheet-grabber"
+          data-sheet-handle
           onPointerDown={swipe.onPointerDown}
           className={`shrink-0 cursor-grab touch-none select-none ${fullScreen ? 'pt-1' : ''}`}
         >

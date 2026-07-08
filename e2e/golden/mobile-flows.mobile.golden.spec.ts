@@ -20,7 +20,24 @@ const bodyOverflow = (page: Page) => page.evaluate<string>('document.body.style.
 // mobile sheet drops its ✕ in favour of this gesture (a scrim tap / Back also dismiss). The panel
 // follows the finger, but the hook measures the drag from the fixed pointer-down Y, so absolute
 // mouse coordinates are correct. page.mouse dispatches the pointerdown/move/up the hook listens for.
+//
+// Sheets slide in over 280ms and `toBeVisible` resolves at animation START (a translated element
+// already has a non-empty box). Raw page.mouse and boundingBox() have no actionability wait, so
+// acting or measuring immediately reads MID-FLIGHT coordinates — the cause of all three of this
+// file's historical failures (a press landing on content below the handle; a composer measured
+// hundreds of px under the viewport). Poll until the box stops moving before trusting geometry.
+async function settleSheet(page: Page, target: Locator): Promise<void> {
+  let box = await target.boundingBox()
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(80)
+    const next = await target.boundingBox()
+    if (box && next && Math.abs(next.y - box.y) < 0.5) return
+    box = next
+  }
+}
+
 async function swipeDownToDismiss(page: Page, handle: Locator, distance = 260): Promise<void> {
+  await settleSheet(page, handle)
   const box = await handle.boundingBox()
   if (!box) throw new Error('sheet grab handle not laid out')
   const x = box.x + box.width / 2
@@ -41,47 +58,60 @@ async function addManual(page: Page, text: string, quadrant: string): Promise<vo
   await expect(sheet).toBeHidden()
 }
 
-test('the add sheet is a full-screen takeover that fits without scrolling and closes via swipe-down', async ({
+test('the add sheet is a slide-up bottom sheet: no keyboard pop, repeats control, swipe-down closes', async ({
   page,
 }) => {
   await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
   const sheet = page.getByRole('dialog', { name: 'Add a task' })
   await expect(sheet).toBeVisible()
+  await settleSheet(page, sheet)
 
-  // Full-screen: the panel spans the whole viewport (100dvh × full width).
+  // A bottom SHEET, not a takeover (2026-07-08 feedback): anchored to the bottom edge with home
+  // still visible above it — the panel must NOT span the whole viewport height.
   const viewport = page.viewportSize()!
   const box = (await sheet.boundingBox())!
-  expect(box.width).toBeGreaterThanOrEqual(viewport.width - 1)
-  expect(box.height).toBeGreaterThanOrEqual(viewport.height - 1)
+  expect(box.y).toBeGreaterThan(40)
+  expect(box.y + box.height).toBeGreaterThanOrEqual(viewport.height - 1)
 
-  // Manual-only: no AI/BabyClaw mode switcher (natural-language capture is the Chat tab).
+  // The keyboard must not pop on open: the text field exists but is NOT auto-focused.
+  await expect(sheet.getByLabel('Task text')).toBeVisible()
+  const focused = await sheet
+    .getByLabel('Task text')
+    .evaluate((el) => el === el.ownerDocument.activeElement)
+  expect(focused).toBe(false)
+
+  // Manual-only (no AI/BabyClaw mode switcher) — but with a Repeats row (Off/Daily/Weekly/Custom)
+  // so recurring chores are creatable here, and the 🐾 tip pointing at Chat as the fastest path.
   await expect(sheet.getByRole('group', { name: 'Add mode' })).toHaveCount(0)
+  await expect(sheet.getByRole('group', { name: 'Repeats' })).toBeVisible()
+  await expect(sheet.getByRole('button', { name: /fastest way to add/i })).toBeVisible()
 
-  // Fits: everything is reachable with no scrolling — the sheet's scroll container has no overflow.
-  // (e2e is typechecked without the DOM lib, so reach getComputedStyle via the element's document.)
-  const noOverflow = () =>
-    sheet.evaluate((el) => {
-      const view = el.ownerDocument.defaultView!
-      const scroller = [el, ...el.querySelectorAll('*')].find(
-        (n) => view.getComputedStyle(n).overflowY === 'auto',
-      )!
-      return scroller.scrollHeight <= scroller.clientHeight
-    })
-  expect(await noOverflow()).toBe(true)
+  // Everything reachable without scrolling: the whole form fits inside the viewport.
+  const submit = (await sheet.getByRole('button', { name: 'Add task' }).boundingBox())!
+  expect(submit.y + submit.height).toBeLessThanOrEqual(viewport.height)
 
-  // The text input is the bottom-anchored composer: it sits BELOW the quadrant picker, and the Add
-  // button beside it is in-bounds at the bottom edge (thumb zone, above where the keyboard rises).
-  const input = (await sheet.getByLabel('Task text').boundingBox())!
-  const quadrant = (await sheet.getByRole('button', { name: 'Do Now' }).boundingBox())!
-  expect(input.y).toBeGreaterThan(quadrant.y)
-  const submit = await sheet.getByRole('button', { name: 'Add task' }).boundingBox()
-  expect(submit!.y + submit!.height).toBeLessThanOrEqual(viewport.height)
-
-  // A swipe-down on the grab handle dismisses (the scrim is hidden behind a full-height panel, so
-  // the handle is the way out — there is no ✕ anymore).
+  // A swipe-down dismisses (scrim tap / Back too — there is no ✕).
   await expect(sheet.getByRole('button', { name: 'Close' })).toHaveCount(0)
   await swipeDownToDismiss(page, sheet.getByTestId('sheet-grabber'))
   await expect(sheet).toBeHidden()
+})
+
+test('a Daily repeat from the add sheet creates a live recurring task', async ({ page }) => {
+  await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
+  const sheet = page.getByRole('dialog', { name: 'Add a task' })
+  await settleSheet(page, sheet)
+
+  await sheet.getByLabel('Task text').fill('Morning stretch')
+  await sheet.getByRole('button', { name: 'Do Now' }).tap()
+  await sheet.getByRole('button', { name: 'Daily' }).tap()
+  await sheet.getByRole('button', { name: 'Add task' }).tap()
+  await expect(sheet).toBeHidden()
+
+  // The task lands in the quadrant as a RECURRING row (the ↻ badge names its status).
+  await page.getByRole('button', { name: /Do Now, \d+ task/ }).tap()
+  const row = page.getByRole('listitem').filter({ hasText: 'Morning stretch' })
+  await expect(row).toBeVisible()
+  await expect(row.getByLabel(/^Recurring,/)).toBeVisible()
 })
 
 test('add via the bottom-nav "+" (manual → quadrant) and the task lands in that quadrant', async ({

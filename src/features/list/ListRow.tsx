@@ -315,6 +315,7 @@ export function ListRow({
           onSetRecurring={(freq) => onSetRecurring(task.id, freq)}
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
+          onRename={startEdit}
         />
       )}
     </li>

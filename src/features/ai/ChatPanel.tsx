@@ -5,6 +5,7 @@ import { ChatConversation } from './ChatConversation'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useBodyScrollLock } from '../../hooks/use-body-scroll-lock'
 import { useSwipeDismiss } from '../../hooks/use-swipe-dismiss'
+import { useKeyboardInset } from '../../hooks/use-keyboard-inset'
 
 // MOBILE chat shell (< 720px): a bottom sheet overlay. On desktop the chat is a push-drawer
 // (ChatRail) that shrinks the grid instead of covering it — there's no room to push on a phone,
@@ -25,9 +26,15 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   useBodyScrollLock(isMobile)
 
   const panelRef = useRef<HTMLElement>(null)
-  // Swipe-down-to-dismiss on the grab handle — same gesture as BottomSheet (shared hook). The
-  // aside carries the `bottom-sheet-panel` class, so it inherits the drag transition + spring-back.
-  const swipe = useSwipeDismiss(onClose, panelRef)
+  // Swipe-down-to-dismiss — same gesture as BottomSheet (shared hook): the grab handle drives the
+  // pointer path, and on mobile the whole panel is a scroll-aware touch surface (the message list
+  // still scrolls; a downward pull with the list at top drags the sheet). The aside carries the
+  // `bottom-sheet-panel` class, so it inherits the drag transition + spring-back.
+  const swipe = useSwipeDismiss(onClose, panelRef, isMobile)
+  // iOS overlays the keyboard over the (dvh-sized) sheet instead of resizing it, hiding the
+  // composer behind the keys — pad the panel bottom by the measured overlap so the composer rides
+  // above the keyboard, compressing the message list instead (audit §3.3). 0 when closed.
+  const keyboardInset = useKeyboardInset(isMobile)
 
   // Portaled to <body> like BottomSheet, so a later-mounted portal sheet at the same z-index
   // can't paint over it and no transformed/padded ancestor interferes with `fixed`.
@@ -48,12 +55,18 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         aria-label="Chat"
         data-dragging={swipe.dragging ? 'true' : undefined}
         className="bottom-sheet-panel absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col rounded-t-2xl border border-border-strong bg-panel pb-[env(safe-area-inset-bottom)] shadow-xl"
-        style={swipe.offset ? { transform: `translateY(${swipe.offset}px)` } : undefined}
+        style={{
+          ...(swipe.offset ? { transform: `translateY(${swipe.offset}px)` } : {}),
+          // Inline paddingBottom overrides the class's safe-area padding only while the keyboard
+          // is up (the home indicator is behind the keys then anyway).
+          ...(keyboardInset > 0 ? { paddingBottom: keyboardInset } : {}),
+        }}
       >
         {/* Grab handle — the draggable dismiss affordance (touch-action:none so scroll doesn't
             steal the drag). The BabyClaw header sits just below it inside ChatConversation. */}
         <div
           data-testid="sheet-grabber"
+          data-sheet-handle
           onPointerDown={swipe.onPointerDown}
           className="shrink-0 cursor-grab touch-none select-none pt-2"
         >

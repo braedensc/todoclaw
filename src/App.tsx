@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AuthGate } from './features/auth/AuthGate'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
@@ -9,10 +9,14 @@ import { WorkArea } from './features/shell/WorkArea'
 import { MobileBottomNav } from './features/shell/MobileBottomNav'
 import { MoreSheet } from './features/shell/MoreSheet'
 import { MobileAddSheet } from './features/shell/MobileAddSheet'
+import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
 import { useIsMobile } from './hooks/use-is-mobile'
+import { Snackbar } from './components/Snackbar'
+import { quadrantMeta, type QuadrantKey } from './lib/quadrants'
+import { QUADRANT_CENTER } from './lib/quadrant-summary'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { TodoClawPeek } from './components/TodoClawPeek'
-import { ConfirmProvider } from './components/use-confirm'
+import { ConfirmProvider, useConfirm } from './components/use-confirm'
 import { PlanBox } from './features/ai/PlanBox'
 import { Thinking } from './components/Thinking'
 import { usePlanController } from './features/ai/use-plan-controller'
@@ -62,6 +66,18 @@ function AppShell() {
   // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  // Mobile overview→focus state (which quadrant list is open). App-owned so Back pops it and the
+  // add sheet pre-selects it; inert on desktop (nothing ever calls enter there).
+  const quadrantFocus = useQuadrantFocus()
+  // Transient confirmation pill ("Added to Errands ✓") floated above the bottom nav — the add
+  // sheet closes instantly and the task may land in a quadrant that isn't on screen (audit §4.2).
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showToast = (message: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToast(message)
+    toastTimer.current = setTimeout(() => setToast(null), 2400)
+  }
   // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
   // from the header pill (desktop) or the More sheet (mobile); left via the overlay's ✕ pill or Esc.
   const [gridOnly, setGridOnly] = useState(false)
@@ -86,6 +102,13 @@ function AppShell() {
   const [showInbox, setShowInbox] = useState(false)
   const messages = useMessages()
   const markRead = useMarkMessageRead()
+  const confirm = useConfirm()
+  // Sign out sits one tap deep in the mobile More sheet, right under Backups — a mis-tap used to
+  // cost a full re-login (audit §4.7). Same guard on the desktop header link for consistency.
+  const confirmSignOut = async () => {
+    if (await confirm({ title: 'Sign out of Todoclaw?', confirmLabel: 'Sign out' }))
+      void supabase.auth.signOut()
+  }
 
   // Guarantee a user_schedule row exists on first authenticated load — the daily reset depends on
   // its timezone. Idempotent (upsert ignoreDuplicates); runs once on mount.
@@ -365,7 +388,7 @@ function AppShell() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void supabase.auth.signOut()}
+                        onClick={() => void confirmSignOut()}
                         className="hover:text-ink"
                       >
                         Sign out
@@ -434,6 +457,7 @@ function AppShell() {
                   onOpenChat={() => setShowChat(true)}
                   gridOnly={gridOnly}
                   onExitGridOnly={() => setGridOnly(false)}
+                  quadrantFocus={quadrantFocus}
                 />
               </ErrorBoundary>
             </>
@@ -500,20 +524,40 @@ function AppShell() {
             <>
               <MobileBottomNav
                 route={route}
-                onHome={() => navigate('home')}
+                onHome={() => {
+                  // "Home" from inside a focus list means the top level — the overview. On the
+                  // home route the focus entry is consumed cleanly (exit → history.back); from
+                  // another route we just drop the focus and navigate.
+                  if (route === 'home' && quadrantFocus.focus) {
+                    quadrantFocus.exit()
+                  } else {
+                    quadrantFocus.clear()
+                    navigate('home')
+                  }
+                }}
                 onAdd={() => setShowAdd(true)}
                 onChat={() => setShowChat(true)}
                 onDone={() => navigate('done')}
                 onMore={() => setShowMore(true)}
               />
-              <MobileAddSheet open={showAdd} onClose={() => setShowAdd(false)} />
+              <MobileAddSheet
+                open={showAdd}
+                defaultQuadrant={quadrantFocus.focus}
+                onAdded={(dest: QuadrantKey) => {
+                  const c = QUADRANT_CENTER[dest]
+                  showToast(`Added to ${quadrantMeta(c.x, c.y).label} ✓`)
+                }}
+                onOpenChat={() => setShowChat(true)}
+                onClose={() => setShowAdd(false)}
+              />
+              <Snackbar message={toast} />
               <MoreSheet
                 open={showMore}
                 onReminders={() => navigate('reminders')}
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
                 onAdmin={isOwner ? () => navigate('admin') : undefined}
-                onSignOut={() => void supabase.auth.signOut()}
+                onSignOut={() => void confirmSignOut()}
                 onClose={() => setShowMore(false)}
               />
             </>
