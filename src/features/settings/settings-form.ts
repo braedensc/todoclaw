@@ -36,6 +36,7 @@ export interface SettingsDraft {
   babyclawInstructions: string
   // Proactive notifications (ADR-0031). enabled is the toggle; hours are '' until set.
   notificationsEnabled: boolean
+  notificationsName: string
   morningHour: string
   eveningHour: string
   quietStartHour: string
@@ -61,6 +62,7 @@ export const EMPTY_DRAFT: SettingsDraft = {
   babyclawVerbosity: '',
   babyclawInstructions: '',
   notificationsEnabled: false,
+  notificationsName: '',
   morningHour: '',
   eveningHour: '',
   quietStartHour: '',
@@ -95,6 +97,7 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
     babyclawVerbosity: baby.verbosity ?? '',
     babyclawInstructions: baby.customInstructions ?? '',
     notificationsEnabled: notif.enabled ?? false,
+    notificationsName: notif.name ?? '',
     morningHour: numToStr(notif.morningHour),
     eveningHour: numToStr(notif.eveningHour),
     quietStartHour: numToStr(notif.quietStartHour),
@@ -159,6 +162,7 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
   // A never-touched notifications section compacts away entirely (no `{}` block persisted).
   const notifications = compact({
     enabled: draft.notificationsEnabled || undefined,
+    name: str(draft.notificationsName),
     morningHour: hour24(draft.morningHour),
     eveningHour: hour24(draft.eveningHour),
     quietStartHour: hour24(draft.quietStartHour),

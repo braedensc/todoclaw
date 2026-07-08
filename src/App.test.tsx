@@ -69,6 +69,7 @@ vi.mock('./features/ai/use-ai-chat', () => ({
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
+    seed: vi.fn(),
   }),
 }))
 // Daily reminders live off the main page now (a gear-area popup + a compact inline name list).
@@ -107,5 +108,22 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Grid-only view' })).toBeInTheDocument()
     // Not entered yet — the overlay's Exit control is absent until the pill is clicked.
     expect(screen.queryByRole('button', { name: 'Exit grid-only view' })).not.toBeInTheDocument()
+  })
+
+  it('a #/chat deep link renders home UNDER the chat overlay, not a blank shell', () => {
+    // The notification-tap landing (ADR-0031): main screen with the drawer open. Regression test
+    // for the blank-main-area bug (home content only rendered when route === 'home').
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    window.location.hash = '#/chat/msg-1'
+    try {
+      render(<App />)
+      // Home content is present…
+      expect(screen.getByRole('button', { name: 'Grid' })).toBeInTheDocument()
+      // …and the chat rail is open: the aside drops aria-hidden when open, so the role query
+      // (which excludes aria-hidden elements) only finds Chat asides in the open state.
+      expect(screen.getAllByRole('complementary', { name: 'Chat' }).length).toBeGreaterThan(0)
+    } finally {
+      window.location.hash = ''
+    }
   })
 })
