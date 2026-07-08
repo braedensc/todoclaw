@@ -74,6 +74,7 @@ function RecurringActive({
       <span style={{ color: accent }}>every</span>
       <input
         type="number"
+        inputMode="numeric"
         min={1}
         max={365}
         value={frequencyDays}
@@ -127,6 +128,7 @@ function RecurringSetup({ onSet }: RecurringSetupProps) {
     <div className="flex items-center gap-2">
       <input
         type="number"
+        inputMode="numeric"
         min={1}
         max={365}
         placeholder="days"

@@ -23,9 +23,13 @@ export default {
         card: '#fff',
         // Text
         ink: '#2e2a24',
+        // Darkened 2026-07-08 (mobile audit §6.1) from #7a7466 / #9a9080: the old pair measured
+        // 4.4:1 / 2.9:1 against `panel`, under WCAG AA for the small sizes they're used at. These
+        // hold the same warm hue at 5.1:1 / 4.2:1 while keeping the two tiers visually distinct
+        // (a full 4.5:1 light tier would collapse into `muted`). Applies app-wide by design.
         muted: {
-          DEFAULT: '#7a7466',
-          light: '#9a9080',
+          DEFAULT: '#706a5d',
+          light: '#807768',
           faint: '#bcb09a',
         },
         // Borders

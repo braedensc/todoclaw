@@ -78,7 +78,8 @@ export function RemindersInline() {
           type="button"
           onClick={() => setSelectedId(habit.id)}
           title={`Open reminder: ${habit.text}`}
-          className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:border-primary/60 hover:bg-primary/20"
+          // Roomier on phones (a 26px chip is an easy mis-tap); desktop keeps the compact pill.
+          className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:border-primary/60 hover:bg-primary/20 wide:px-2.5 wide:py-1 wide:text-xs"
         >
           <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80" />
           {habit.text}

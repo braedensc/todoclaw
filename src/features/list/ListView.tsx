@@ -3,6 +3,7 @@ import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useConfirm } from '../../components/use-confirm'
+import { useIsMobile } from '../../hooks/use-is-mobile'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import type { Task } from '../../types/task'
@@ -47,6 +48,9 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const softDelete = useSoftDeleteTask()
   const markDone = useMarkTaskDone()
   const confirm = useConfirm()
+  // Only for the empty-state copy: the add affordance is the header widget on desktop but the
+  // bottom-nav ➕ on a phone — pointing a phone user at a header that isn't there is a dead end.
+  const isMobile = useIsMobile()
 
   if (isLoading) {
     return (
@@ -89,7 +93,9 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
         <p className="text-muted">
           {quadrantFilter
             ? 'Nothing in this quadrant yet.'
-            : 'No tasks yet — add one from the header.'}
+            : isMobile
+              ? 'No tasks yet — add one with the ➕ below.'
+              : 'No tasks yet — add one from the header.'}
         </p>
       </section>
     )
