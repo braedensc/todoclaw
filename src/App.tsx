@@ -100,7 +100,8 @@ function AppShell() {
     if (!id || !messages.data) return
     const msg = messages.data.find((m) => m.id === id)
     if (!msg) return
-    seedChat(`${msg.title} — ${msg.body}`)
+    // Title + body on separate lines — plan-rich bodies are multi-line and the bubble is pre-wrap.
+    seedChat(`${msg.title}\n\n${msg.body}`)
     if (!msg.read_at) mark(id)
   }, [route, messages.data, seedChat, mark])
 
@@ -145,10 +146,12 @@ function AppShell() {
             'mx-auto max-w-3xl p-6 wide:max-w-[1280px] ' + (isMobile && !gridOnly ? 'pb-24' : '')
           }
         >
-          {/* Home vs. a full page. Only 'home' renders the header, plan, inline reminders, and work
-              area; a Done / Daily-reminders page swaps all of that out (ADR-0027). The Settings /
-              Backups overlays and the mobile bottom nav below are route-independent. */}
-          {route === 'home' && (
+          {/* Home vs. a full page. 'home' renders the header, plan, inline reminders, and work
+              area; a Done / Daily-reminders page swaps all of that out (ADR-0027). The 'chat' route
+              is home + the chat overlay — a notification tap must land on the main screen with the
+              drawer open, not a blank shell. The Settings / Backups overlays and the mobile bottom
+              nav below are route-independent. */}
+          {(route === 'home' || route === 'chat') && (
             <>
               {isMobile ? (
                 // Mobile (Concept D): a slim top row — wordmark + Plan pill only. The tagline, the

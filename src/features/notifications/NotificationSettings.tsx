@@ -50,6 +50,25 @@ function HourSelect({
   )
 }
 
+// The greeting name ("Good morning Braeden! ☀️"). Optional; blank keeps the greeting generic.
+function NameField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const id = useId()
+  return (
+    <label htmlFor={id} className="flex flex-col gap-1 text-sm">
+      <span className="text-muted">Your name (in messages)</span>
+      <input
+        id={id}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="e.g. Braeden"
+        maxLength={40}
+        className="rounded-lg border border-border-strong bg-card px-3 py-2 text-sm"
+      />
+    </label>
+  )
+}
+
 // The "install as a web app" tip. On iOS this is required for push; on macOS it's optional but gives
 // an app window and a sturdier push context. Renders nothing off Apple browsers.
 function InstallTip({ platform }: { platform: ApplePlatform }) {
@@ -166,6 +185,10 @@ export function NotificationSettings({ draft, set }: { draft: SettingsDraft; set
 
             {enabled && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <NameField
+                  value={draft.notificationsName}
+                  onChange={(v) => set('notificationsName', v)}
+                />
                 <HourSelect
                   label="Morning plan"
                   value={draft.morningHour}

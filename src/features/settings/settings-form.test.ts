@@ -54,10 +54,11 @@ describe('settings-form', () => {
     expect(out.planNotes).toBe('mornings')
   })
 
-  it('round-trips a notifications block (enabled + hours + quiet)', () => {
+  it('round-trips a notifications block (enabled + name + hours + quiet)', () => {
     const config: ScheduleConfig = {
       notifications: {
         enabled: true,
+        name: 'Braeden',
         morningHour: 8,
         eveningHour: 21,
         quietStartHour: 22,

@@ -73,6 +73,7 @@ const commitmentSchema = z.object({
 const localHour = z.number().int().min(0).max(23)
 const notificationsSchema = z.object({
   enabled: z.boolean().optional(),
+  name: z.string().trim().max(40).optional(), // greeting name ("Good morning Braeden! ☀️")
   morningHour: localHour.optional(), // when the daily plan is pushed
   eveningHour: localHour.optional(), // when the recap is pushed
   quietStartHour: localHour.optional(),
