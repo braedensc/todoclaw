@@ -101,6 +101,11 @@ export function HabitsView() {
     // No panel chrome / heading of its own — this renders inside the "Daily reminders" page
     // (RemindersPage), which supplies the surface and the title. Kept a labeled region for a11y.
     <section aria-label="Daily reminders">
+      <p className="mb-3 text-sm text-muted">
+        Daily reminders are recurring things you want to do every day — check them off as you go and
+        they reset each morning, so they never clutter your task grid.
+      </p>
+
       {active.length === 0 && queued.length === 0 ? (
         <div className="mb-3 flex flex-col items-center gap-1 py-2 text-center">
           <SleepingPuppy className="h-16 w-28 text-muted-light" />
