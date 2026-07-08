@@ -22,6 +22,41 @@ async function addManual(page: Page, text: string, quadrant: string): Promise<vo
   await expect(sheet).toBeHidden()
 }
 
+test('the add sheet is a full-screen takeover that fits without scrolling and closes via ✕', async ({
+  page,
+}) => {
+  await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
+  const sheet = page.getByRole('dialog', { name: 'Add a task' })
+  await expect(sheet).toBeVisible()
+
+  // Full-screen: the panel spans the whole viewport (100dvh × full width).
+  const viewport = page.viewportSize()!
+  const box = (await sheet.boundingBox())!
+  expect(box.width).toBeGreaterThanOrEqual(viewport.width - 1)
+  expect(box.height).toBeGreaterThanOrEqual(viewport.height - 1)
+
+  // Fits: in BOTH modes everything is reachable with no scrolling — the sheet's scroll container
+  // has no overflow, and the manual submit sits in-bounds at the bottom edge.
+  // (e2e is typechecked without the DOM lib, so reach getComputedStyle via the element's document.)
+  const noOverflow = () =>
+    sheet.evaluate((el) => {
+      const view = el.ownerDocument.defaultView!
+      const scroller = [el, ...el.querySelectorAll('*')].find(
+        (n) => view.getComputedStyle(n).overflowY === 'auto',
+      )!
+      return scroller.scrollHeight <= scroller.clientHeight
+    })
+  expect(await noOverflow()).toBe(true) // BabyClaw (default) mode
+  await sheet.getByRole('button', { name: 'Manual' }).tap()
+  expect(await noOverflow()).toBe(true) // Manual mode
+  const submit = await sheet.getByRole('button', { name: 'Add task' }).boundingBox()
+  expect(submit!.y + submit!.height).toBeLessThanOrEqual(viewport.height)
+
+  // The header ✕ dismisses (the scrim is hidden behind a full-height panel, so ✕ is the way out).
+  await sheet.getByRole('button', { name: 'Close' }).tap()
+  await expect(sheet).toBeHidden()
+})
+
 test('add via the bottom-nav "+" (manual → quadrant) and the task lands in that quadrant', async ({
   page,
 }) => {

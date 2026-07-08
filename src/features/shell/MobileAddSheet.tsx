@@ -13,6 +13,11 @@ import { AddTaskForm } from './AddTaskSheet'
 //   • Manual — a text field + quadrant picker (AddTaskForm); we drop it at that quadrant's center
 //     (collision-resolved) with staged:false.
 // Reuses the exact BabyClawInput and manual AddTaskForm so there's one implementation of each.
+//
+// Rendered as a FULL-SCREEN sheet (BottomSheet fullScreen): everything sized to fit a 375×667
+// viewport with no scrolling, the submit anchored to the bottom edge (thumb zone) by the form's
+// mt-auto. If the on-screen keyboard compresses the viewport the sheet scrolls internally —
+// BottomSheet owns that — the page itself never scrolls.
 
 type AddMode = 'babyclaw' | 'manual'
 
@@ -45,13 +50,14 @@ export function MobileAddSheet({
       open={open}
       onClose={onClose}
       title="Add a task"
+      fullScreen
       initialFocusRef={mode === 'manual' ? manualInputRef : undefined}
     >
       {/* Add-mode toggle — BabyClaw (natural language) vs Manual (text + quadrant). */}
       <div
         role="group"
         aria-label="Add mode"
-        className="mb-3 flex gap-1 rounded-xl border border-border bg-panel p-1"
+        className="mb-3 flex shrink-0 gap-1 rounded-xl border border-border bg-panel p-1"
       >
         {(
           [
@@ -67,7 +73,7 @@ export function MobileAddSheet({
               onClick={() => setMode(m.id)}
               aria-pressed={on}
               className={
-                'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ' +
+                'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ' +
                 (on ? 'bg-card text-ink shadow-sm' : 'text-muted hover:text-ink')
               }
             >
