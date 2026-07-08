@@ -56,6 +56,41 @@ body {
   }
 }
 
+/* Mobile form ergonomics (feat/mobile-ergonomics, audit §3.1):
+   iOS Safari auto-zooms the page when a focused control's font-size is under 16px, and almost
+   every input in the app is text-sm (14px) — so on phones every field focus triggered a zoom the
+   user had to pinch back out of. Below the breakpoint, force all text-entry controls to 16px.
+   !important is deliberate: it must beat the Tailwind text-sm/text-xs utility on the element
+   (higher specificity than these element selectors). Desktop keeps its denser 14px type. */
+@media (max-width: 719px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  /* The urgency/importance sliders are the primary prioritization control on a phone; a native
+     range's ~16px-tall hit area is far below the 44px touch guideline. Padding the element (not
+     the track) grows the touchable strip without changing the rendered track/thumb. */
+  input[type='range'] {
+    padding-block: 12px;
+  }
+}
+
+/* Native ranges (expanded-row sliders) rendered browser-default blue inside the warm palette —
+   accent-color brings the thumb/track into the family everywhere (audit §7.2). Checkboxes
+   already set accent-primary per-element. */
+input[type='range'] {
+  accent-color: theme('colors.primary');
+}
+
+/* Keyboard-focus visibility (audit §6.2): most controls relied on the UA default ring, which the
+   warm palette can swallow. :where() keeps specificity at zero so any component that styles its
+   own focus (focus-visible:ring-*, focus:outline-none + border treatments) still wins. */
+:where(a, button, input, select, textarea, summary, [role='switch'], [tabindex]):focus-visible {
+  outline: 2px solid theme('colors.primary');
+  outline-offset: 2px;
+}
+
 /* TodoClaw's blink (components/TodoClawPeek) — a quick scaleY squish of the eye groups every
    few seconds. The -alt clock runs a different period + phase so when two pups share the screen
    (wordmark + the grid-edge peeker) they never blink in sync. Reduced-motion stops it; the eyes

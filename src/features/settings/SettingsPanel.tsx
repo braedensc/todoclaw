@@ -56,6 +56,8 @@ function TextField({
       <input
         id={id}
         type={type}
+        // Numeric fields (free hours etc.) accept decimals — the decimal soft keypad on phones.
+        inputMode={type === 'number' ? 'decimal' : undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

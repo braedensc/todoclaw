@@ -22,9 +22,12 @@ import { Tooltip } from './Tooltip'
 // warm-paper bubble that pops in ~180ms, on hover AND keyboard focus, portaled so it is never
 // clipped inside the cluster popup or Done modal. `aria-label` still names the button for AT.
 //
-// Sizing defaults to a 32px (h-8 w-8) square. Pass `className` to extend or override layout for a
-// specific surface (e.g. "h-5 w-5 text-xs" for a compact row); every other <button> prop
-// (onClick, disabled, type, onPointerDown, …) is forwarded.
+// Sizing defaults to a 44px touch square below the 720px breakpoint (these are primary actions on
+// phone rows, and Delete sits beside Done — mobile audit §2.1) and desktop's denser 32px square at
+// `wide:`. Pass `className` to override for a specific surface — conflicting Tailwind utilities
+// don't reliably win by string order, so size overrides must be `!important` arbitrary values
+// (e.g. CardActionBar's "!h-[18px] !w-[18px]"); every other <button> prop (onClick, disabled,
+// type, onPointerDown, …) is forwarded.
 //
 //   <IconButton variant="danger" title="Delete task" aria-label="Delete task" onClick={remove}>
 //     ×
@@ -44,7 +47,7 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 const BASE =
-  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border text-base leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+  'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded border text-lg leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-50 wide:h-8 wide:w-8 wide:text-base'
 
 const VARIANTS: Record<IconButtonVariant, string> = {
   neutral: 'border-border-strong text-muted hover:bg-bg hover:text-ink',

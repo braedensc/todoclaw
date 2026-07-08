@@ -36,6 +36,8 @@ export function AuthForm() {
         type="email"
         required
         placeholder="you@example.com"
+        autoComplete="email"
+        enterKeyHint="next"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         className="rounded-[10px] border border-border-strong bg-card px-3 py-2 text-sm text-ink placeholder:text-muted-faint focus:border-primary focus:outline-none"
@@ -45,6 +47,8 @@ export function AuthForm() {
         required
         minLength={6}
         placeholder="Password"
+        autoComplete="current-password"
+        enterKeyHint="go"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         className="rounded-[10px] border border-border-strong bg-card px-3 py-2 text-sm text-ink placeholder:text-muted-faint focus:border-primary focus:outline-none"

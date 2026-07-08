@@ -172,7 +172,7 @@ export function MobileMatrix() {
                   {count}
                 </span>
               </div>
-              <span className="text-[10px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
+              <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
               {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar. */}
               {empty ? (
                 <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>
@@ -192,7 +192,7 @@ export function MobileMatrix() {
                     </li>
                   ))}
                   {count > top.length && (
-                    <li className="text-[10px] text-muted-light">+{count - top.length} more</li>
+                    <li className="text-[11px] text-muted-light">+{count - top.length} more</li>
                   )}
                 </ul>
               )}

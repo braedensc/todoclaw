@@ -95,7 +95,7 @@ export function AddTaskForm({
                 <span className="font-serif text-sm font-semibold" style={{ color: m.color }}>
                   {m.label}
                 </span>
-                <span className="text-[10px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
+                <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
               </button>
             )
           })}
@@ -112,6 +112,7 @@ export function AddTaskForm({
           onChange={(e) => setText(e.target.value)}
           aria-label="Task text"
           placeholder="What needs doing?"
+          enterKeyHint="done"
           className="min-w-0 flex-1 rounded-xl border border-border-strong bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-muted-light focus:border-primary"
         />
         <button

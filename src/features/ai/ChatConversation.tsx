@@ -122,7 +122,8 @@ export function ChatConversation({
           placeholder={pending ? 'Yes or no — or say what to do instead…' : 'Message…'}
           aria-label="Message"
           disabled={paused}
-          className="flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm disabled:opacity-50"
+          enterKeyHint="send"
+          className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm disabled:opacity-50"
         />
         <button
           type="submit"
@@ -157,7 +158,7 @@ function Bubble({ item }: { item: ChatItem }) {
         </span>
       )}
       <span
-        className={`inline-block whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
+        className={`inline-block max-w-full whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-sm ${
           isUser ? 'bg-ink text-white' : 'bg-card text-ink'
         }`}
       >

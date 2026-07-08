@@ -173,7 +173,8 @@ export function HabitsView() {
           onChange={(e) => setHabitText(e.target.value)}
           placeholder="Add a reminder…"
           aria-label="Add a reminder"
-          className="flex-1 rounded border border-border-strong bg-card px-3 py-1.5 text-sm"
+          enterKeyHint="done"
+          className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-1.5 text-sm"
         />
         <button
           type="submit"

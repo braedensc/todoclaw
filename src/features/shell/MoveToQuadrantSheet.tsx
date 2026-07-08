@@ -52,9 +52,9 @@ export function MoveToQuadrantSheet({
               <span className="font-serif text-sm font-semibold" style={{ color: m.color }}>
                 {m.label}
               </span>
-              <span className="text-[10px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
+              <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
               {isCurrent && (
-                <span className="absolute right-2 top-2 text-[9px] font-semibold uppercase tracking-wide text-muted-light">
+                <span className="absolute right-2 top-2 text-[10px] font-semibold uppercase tracking-wide text-muted-light">
                   Current
                 </span>
               )}
