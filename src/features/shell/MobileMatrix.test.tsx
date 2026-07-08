@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
+import { useState } from 'react'
 import type { Task } from '../../types/task'
+import type { QuadrantKey } from '../../lib/quadrants'
 import { MobileMatrix } from './MobileMatrix'
 import { ConfirmProvider } from '../../components/use-confirm'
 import { quadrantMeta } from '../../lib/quadrants'
@@ -8,13 +10,30 @@ import { quadrantMeta } from '../../lib/quadrants'
 // MobileMatrix drives the mobile overview→focus experience. It reuses ListView for the focus rows,
 // so the same module-level hook mocks (paths resolve from features/shell/ to the SAME modules
 // ListView imports) cover both. ConfirmProvider wraps it because the focus ListView needs it.
+//
+// Focus state is App-owned now (use-quadrant-focus); this harness supplies a plain useState
+// stand-in with the same QuadrantFocus shape, so these tests stay about MobileMatrix's rendering.
+// The history/back semantics of the real hook are covered in use-quadrant-focus.test.ts.
+
+function Harness() {
+  const [focus, setFocus] = useState<QuadrantKey | null>(null)
+  return (
+    <ConfirmProvider>
+      <MobileMatrix
+        quadrantFocus={{
+          focus,
+          enter: setFocus,
+          switchTo: setFocus,
+          exit: () => setFocus(null),
+          clear: () => setFocus(null),
+        }}
+      />
+    </ConfirmProvider>
+  )
+}
 
 function renderMatrix() {
-  return render(
-    <ConfirmProvider>
-      <MobileMatrix />
-    </ConfirmProvider>,
-  )
+  return render(<Harness />)
 }
 
 let tasksData: Task[] = []

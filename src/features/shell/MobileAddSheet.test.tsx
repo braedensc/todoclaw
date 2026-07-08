@@ -14,7 +14,7 @@ vi.mock('../tasks/use-tasks', () => ({
 
 function renderSheet(over: Partial<Parameters<typeof MobileAddSheet>[0]> = {}) {
   const onClose = vi.fn()
-  render(<MobileAddSheet open onClose={onClose} {...over} />)
+  render(<MobileAddSheet open defaultQuadrant={null} onClose={onClose} {...over} />)
   return { onClose }
 }
 
