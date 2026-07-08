@@ -16,7 +16,7 @@ import { quadrantMeta, type QuadrantKey } from './lib/quadrants'
 import { QUADRANT_CENTER } from './lib/quadrant-summary'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { TodoClawPeek } from './components/TodoClawPeek'
-import { ConfirmProvider } from './components/use-confirm'
+import { ConfirmProvider, useConfirm } from './components/use-confirm'
 import { PlanBox } from './features/ai/PlanBox'
 import { Thinking } from './components/Thinking'
 import { usePlanController } from './features/ai/use-plan-controller'
@@ -102,6 +102,13 @@ function AppShell() {
   const [showInbox, setShowInbox] = useState(false)
   const messages = useMessages()
   const markRead = useMarkMessageRead()
+  const confirm = useConfirm()
+  // Sign out sits one tap deep in the mobile More sheet, right under Backups — a mis-tap used to
+  // cost a full re-login (audit §4.7). Same guard on the desktop header link for consistency.
+  const confirmSignOut = async () => {
+    if (await confirm({ title: 'Sign out of Todoclaw?', confirmLabel: 'Sign out' }))
+      void supabase.auth.signOut()
+  }
 
   // Guarantee a user_schedule row exists on first authenticated load — the daily reset depends on
   // its timezone. Idempotent (upsert ignoreDuplicates); runs once on mount.
@@ -381,7 +388,7 @@ function AppShell() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void supabase.auth.signOut()}
+                        onClick={() => void confirmSignOut()}
                         className="hover:text-ink"
                       >
                         Sign out
@@ -549,7 +556,7 @@ function AppShell() {
                 onSettings={() => setShowSettings(true)}
                 onBackups={() => setShowBackups(true)}
                 onAdmin={isOwner ? () => navigate('admin') : undefined}
-                onSignOut={() => void supabase.auth.signOut()}
+                onSignOut={() => void confirmSignOut()}
                 onClose={() => setShowMore(false)}
               />
             </>

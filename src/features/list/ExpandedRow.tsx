@@ -28,6 +28,9 @@ interface ExpandedRowProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: () => void
+  /** Enter the row's inline text edit — the mobile-visible Rename chip (audit §4.1): the row's
+   *  other edit gestures are double-click (mouse) and F2 (keyboard), neither reachable by touch. */
+  onRename: () => void
 }
 
 export function ExpandedRow({
@@ -37,6 +40,7 @@ export function ExpandedRow({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  onRename,
 }: ExpandedRowProps) {
   // Local, live coords (percent 0–100). Null x/y default to grid center (50), matching scoring.
   // These initialize from the task once; when a committed write lands and the task coords
@@ -88,6 +92,16 @@ export function ExpandedRow({
         >
           {live.label}
         </span>
+
+        {/* Rename — the touch path into the row's inline text edit. Hidden at `wide:` where
+            double-click / F2 already cover it and the chip would just be noise. */}
+        <button
+          type="button"
+          onClick={onRename}
+          className="rounded border border-border-strong px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-bg hover:text-ink wide:hidden"
+        >
+          <span aria-hidden>✎</span> Rename
+        </button>
       </div>
 
       <RecurringSection

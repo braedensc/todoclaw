@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useSetupGuide } from './use-setup-guide'
+import { useIsMobile } from '../../hooks/use-is-mobile'
 
 // SetupGuide — the first-run "Get set up" card, rendered at the top of the home shell on both
 // desktop and mobile. It walks a new user through the three things that make Todoclaw feel like
@@ -7,6 +8,11 @@ import { useSetupGuide } from './use-setup-guide'
 // step auto-checking itself off (see use-setup-guide.ts). Deliberately a quiet parchment card in
 // the PlanBox idiom, not a modal: the install gesture happens outside the page, so the card has
 // to survive the user leaving and coming back in a different context.
+//
+// On a PHONE the full card ate ~55% of the first screen and pushed the actual task matrix below
+// the fold on every launch until dismissed (mobile audit §4.6) — so below 720px it starts as a
+// one-line "🐾 Get set up · 1/3 ▸" banner that expands on tap (and can be collapsed again).
+// Desktop always renders the full card; the collapse state is session-local by design.
 
 function Step({
   index,
@@ -83,6 +89,10 @@ export function SetupGuide({
   onOpenNotificationSettings: () => void
 }) {
   const guide = useSetupGuide(planReady)
+  const isMobile = useIsMobile()
+  // Mobile launches collapsed (initializer captures mount-time breakpoint; a mid-session
+  // resize across 720px is a desktop-devtools case, not a phone one).
+  const [expanded, setExpanded] = useState(() => !isMobile)
   if (!guide.visible) return null
 
   const { install } = guide
@@ -90,6 +100,44 @@ export function SetupGuide({
   const iosNeedsInstall = install.context === 'ios' && !install.done
   let stepNo = 0
   const next = (): number => ++stepNo
+
+  const heading = guide.allDone ? 'You’re all set!' : 'Get set up'
+
+  // Collapsed banner (mobile only): one tappable line — title + progress + a chevron — with the
+  // ✕ dismiss still available. Everything else waits behind the tap.
+  if (isMobile && !expanded) {
+    return (
+      <section
+        aria-label="Setup guide"
+        className="relative mb-3 rounded-[14px] border border-border bg-panel px-4 py-1.5"
+      >
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          className="flex min-h-[44px] w-full items-center gap-2 pr-8 text-left"
+        >
+          <span aria-hidden>🐾</span>
+          <span className="font-serif text-[15px] font-semibold text-ink">{heading}</span>
+          <span className="text-xs text-muted-light">
+            {guide.doneCount}/{guide.stepCount}
+          </span>
+          <span aria-hidden className="ml-auto text-muted">
+            ▸
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={guide.dismiss}
+          aria-label="Dismiss setup guide"
+          title="Hide this guide (you can bring it back from Settings)"
+          className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded text-muted hover:text-ink"
+        >
+          ✕
+        </button>
+      </section>
+    )
+  }
 
   return (
     <section
@@ -111,11 +159,22 @@ export function SetupGuide({
           <span aria-hidden className="mr-1.5">
             🐾
           </span>
-          {guide.allDone ? 'You’re all set!' : 'Get set up'}
+          {heading}
         </h2>
         <span className="text-xs text-muted-light">
           {guide.doneCount}/{guide.stepCount}
         </span>
+        {/* Fold the card back to the banner — phones only (desktop has no collapsed state). */}
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            aria-expanded
+            className="ml-auto flex h-8 items-center gap-1 rounded px-2 text-xs text-muted hover:text-ink"
+          >
+            Collapse <span aria-hidden>▴</span>
+          </button>
+        )}
       </div>
       <p className="mt-0.5 text-[13px] text-muted">
         {guide.allDone
