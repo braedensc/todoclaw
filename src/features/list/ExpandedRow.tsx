@@ -137,6 +137,7 @@ function AxisControl({ label, value, onChange, onCommit, accent }: AxisControlPr
       />
       <input
         type="number"
+        inputMode="numeric"
         min={0}
         max={100}
         value={value}
