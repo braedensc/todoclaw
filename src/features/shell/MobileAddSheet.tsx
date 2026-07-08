@@ -15,12 +15,28 @@ import { AddTaskForm } from './AddTaskSheet'
 // stays a plain manual form. (It used to carry a BabyClaw ⇄ Manual toggle; that was dropped once
 // Chat became the AI capture path. The shared BabyClawInput still powers the desktop inline widget.)
 //
-// Rendered as a FULL-SCREEN sheet (BottomSheet fullScreen): the quadrant picker sits up top and the
-// text input + Add button form a composer row anchored to the BOTTOM edge (thumb zone, just above
+// Rendered as a FULL-SCREEN sheet (BottomSheet fullScreen): the whole form is bottom-clustered in
+// the thumb zone — quadrant picker directly above the text-input + Add composer row (just above
 // the on-screen keyboard). BottomSheet owns dvh sizing + safe-area insets, and its body scrolls
 // internally if the keyboard compresses the viewport — the page itself never scrolls.
+//
+// `defaultQuadrant` pre-selects the quadrant the user is already looking at (the focused quadrant
+// from use-quadrant-focus) — adding from inside "Do Now" shouldn't make you re-pick Do Now. It's
+// read on each open (the form remounts, BottomSheet renders nothing while closed). `onAdded`
+// reports the destination up so App can flash the "Added to …" confirmation (the sheet closes
+// instantly, and the new task may land in a quadrant you can't see).
 
-export function MobileAddSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function MobileAddSheet({
+  open,
+  defaultQuadrant,
+  onAdded,
+  onClose,
+}: {
+  open: boolean
+  defaultQuadrant: QuadrantKey | null
+  onAdded?: (dest: QuadrantKey) => void
+  onClose: () => void
+}) {
   const { data: tasks } = useTasks()
   const addTask = useAddTask()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -30,6 +46,7 @@ export function MobileAddSheet({ open, onClose }: { open: boolean; onClose: () =
     const placed = (tasks ?? []).filter((t) => !t.staged)
     const { x, y } = placeInQuadrant(dest, placed)
     addTask.mutate({ text, x, y, staged: false })
+    onAdded?.(dest)
     onClose()
   }
 
@@ -41,7 +58,7 @@ export function MobileAddSheet({ open, onClose }: { open: boolean; onClose: () =
       fullScreen
       initialFocusRef={inputRef}
     >
-      <AddTaskForm defaultQuadrant={null} onAdd={handleManualAdd} inputRef={inputRef} />
+      <AddTaskForm defaultQuadrant={defaultQuadrant} onAdd={handleManualAdd} inputRef={inputRef} />
     </BottomSheet>
   )
 }

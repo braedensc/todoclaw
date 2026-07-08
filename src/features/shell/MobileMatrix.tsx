@@ -14,6 +14,7 @@ import {
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import { ListView } from '../list/ListView'
 import { MoveToQuadrantSheet } from './MoveToQuadrantSheet'
+import type { QuadrantFocus } from './use-quadrant-focus'
 
 // MobileMatrix — the phone (< 720px) reinterpretation of the priority matrix (Concept C, ADR-0025).
 // On mobile this is the ONLY task surface (no grid, no Grid/List toggle — ADR-0028): the two jobs
@@ -34,14 +35,23 @@ function meta(key: QuadrantKey) {
 
 const shell = 'rounded-xl border border-border-strong bg-panel p-4'
 
-export function MobileMatrix() {
+export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }) {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
   const updateTask = useUpdateTask()
-  const [focus, setFocus] = useState<QuadrantKey | null>(null)
+  // Which quadrant is focused lives at the App level (use-quadrant-focus): Back pops it, and the
+  // add sheet pre-selects it. This component just renders + drives it.
+  const { focus } = quadrantFocus
   // The task whose quadrant is being changed via the tap picker (null = sheet closed).
   const [moveTask, setMoveTask] = useState<Task | null>(null)
+
+  // Entering a focus list from an overview cell: the cell might be at the bottom of a scrolled
+  // page — snap the app scroller back to the top so the focus header/pager land in view.
+  const enterFocus = (key: QuadrantKey) => {
+    quadrantFocus.enter(key)
+    document.getElementById('root')?.scrollTo({ top: 0 })
+  }
 
   if (isLoading) {
     return (
@@ -89,7 +99,7 @@ export function MobileMatrix() {
         <div className="flex items-center gap-2.5 px-1">
           <button
             type="button"
-            onClick={() => setFocus(null)}
+            onClick={quadrantFocus.exit}
             aria-label="Back to quadrant overview"
             className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-card text-lg text-ink transition-colors hover:bg-bg"
           >
@@ -114,7 +124,7 @@ export function MobileMatrix() {
               <button
                 key={key}
                 type="button"
-                onClick={() => setFocus(key)}
+                onClick={() => quadrantFocus.switchTo(key)}
                 aria-current={isActive ? 'page' : undefined}
                 className={
                   'flex flex-1 flex-col items-center gap-1 rounded-lg px-1 py-2 text-[11px] font-semibold transition-colors ' +
@@ -152,7 +162,7 @@ export function MobileMatrix() {
             <button
               key={key}
               type="button"
-              onClick={() => setFocus(key)}
+              onClick={() => enterFocus(key)}
               aria-label={`${m.label}, ${count} ${count === 1 ? 'task' : 'tasks'}`}
               className={
                 'flex min-h-[128px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +

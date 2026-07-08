@@ -8,6 +8,7 @@ import { ListView } from '../list/ListView'
 import { MobileMatrix } from './MobileMatrix'
 import { TaskInputWidget } from './TaskInputWidget'
 import type { ChatController } from '../ai/use-chat-controller'
+import type { QuadrantFocus } from './use-quadrant-focus'
 
 // The work region of the shell (B8). On DESKTOP it owns the shared grid drag/placement state
 // (useGrid) and the Grid⇄List `view`, laying out the one input widget above the swapped Grid/List
@@ -25,11 +26,14 @@ export function WorkArea({
   onOpenChat,
   gridOnly,
   onExitGridOnly,
+  quadrantFocus,
 }: {
   chat: ChatController
   onOpenChat: () => void
   gridOnly: boolean
   onExitGridOnly: () => void
+  /** Mobile overview→focus state (App-owned so Back pops it and the add sheet reads it). */
+  quadrantFocus: QuadrantFocus
 }) {
   // The canvas surface ref — created here, shared between useGrid (drag hooks) and GridSurface.
   const gridRef = useRef<HTMLDivElement>(null)
@@ -42,7 +46,7 @@ export function WorkArea({
   if (isMobile) {
     return (
       <section aria-label="Workspace" className="flex flex-col">
-        <MobileMatrix />
+        <MobileMatrix quadrantFocus={quadrantFocus} />
       </section>
     )
   }

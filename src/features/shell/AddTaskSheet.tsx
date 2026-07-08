@@ -15,8 +15,9 @@ import { BottomSheet } from '../../components/BottomSheet'
 // no reset-in-effect.
 //
 // AddTaskForm is column-fill-aware: inside MobileAddSheet's full-screen flex column, flex-1 makes
-// it take the leftover height and mt-auto pins the text-input + Add composer row to the bottom edge
-// (thumb zone, just above the on-screen keyboard) with the quadrant picker above it. In a plain
+// it take the leftover height and mt-auto bottom-clusters the WHOLE form — quadrant picker
+// directly above the text-input + Add composer row — in the thumb zone just above the on-screen
+// keyboard (audit §4.4; the picker used to sit alone at the top of the takeover). In a plain
 // block/auto-height parent both are inert, so the same markup serves both.
 
 function display(key: QuadrantKey) {
@@ -67,7 +68,11 @@ export function AddTaskForm({
 
   return (
     <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-3">
-      <div>
+      {/* mt-auto bottom-clusters the WHOLE form (picker + composer) in a full-height flex column
+          (MobileAddSheet's full-screen sheet): the picker used to sit alone at the top — the
+          hardest one-handed reach zone — with dead space down to the composer (audit §4.4). In a
+          plain auto-height parent mt-auto is inert, so the same markup serves both. */}
+      <div className="mt-auto">
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-light">
           Which quadrant?
         </p>
@@ -102,10 +107,9 @@ export function AddTaskForm({
         </div>
       </div>
 
-      {/* Composer row anchored to the bottom edge (thumb zone / just above the on-screen keyboard):
-          the text input is the primary, bottom-most typing target, with Add beside it. mt-auto
-          pushes the row down when the parent is a flex column (MobileAddSheet's full-screen sheet). */}
-      <div className="mt-auto flex items-end gap-2">
+      {/* Composer row at the very bottom edge (thumb zone / just above the on-screen keyboard):
+          the text input is the primary, bottom-most typing target, with Add beside it. */}
+      <div className="flex items-end gap-2">
         <input
           ref={inputRef}
           value={text}
