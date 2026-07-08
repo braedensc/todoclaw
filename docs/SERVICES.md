@@ -3,6 +3,10 @@
 Every external account and service Todoclaw uses: what each does, how they connect,
 which keys live where, and links to dashboards. Updated as each service is added.
 
+> **Looking for the at-a-glance list?** [INVENTORY.md](INVENTORY.md) is the value-free roster —
+> every service, account, and env var/secret in tables, with where each one lives. This file is the
+> narrative detail (the _why_, provisioning steps, and runbooks) behind that roster.
+
 ---
 
 ## GitHub — source, CI, security scanning

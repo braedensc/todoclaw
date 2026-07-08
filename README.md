@@ -75,7 +75,7 @@ src/features/   grid · list · clustering · recurring · habits (reminders) ·
 src/lib/        pure logic — scoring, dates, clustering math
 src/components/ shared UI primitives
 supabase/       versioned migrations + Edge Functions
-docs/           architecture, setup, style, and collaboration guides
+docs/           setup · services · inventory · architecture · style · collaboration
 ```
 
 Deeper design notes live in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
