@@ -8,16 +8,21 @@ import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import type { Habit } from '../../types/habit'
 
-// The main-page minified form of Daily reminders: a compact inline row of ACTIVE reminder names,
-// each a small hyperlink-like link (the palette has no blue, so this uses the app's interactive
-// accent — `primary`). It sits near the top of the work area where the full habits strip used to
-// live. The full surface (all reminders + add/queue) is the Reminders page (RemindersPage, ADR-0027);
-// this is the glanceable at-a-glance list.
+// The main-page minified form of Daily reminders: a compact inline row of ACTIVE reminder pills,
+// near the top of the work area where the full habits strip used to live. The full surface (all
+// reminders + add/queue) is the Reminders page (RemindersPage, ADR-0027); this is the glanceable
+// at-a-glance list.
 //
-// Clicking a name opens a DETAILS modal for THAT single reminder, reusing HabitRow (defaultExpanded)
-// as a popup card — checkbox + steps panel + add-step form. It owns only the "which reminder is
-// open" selection; all reminder/step reads + writes go through the shared hooks (same as HabitsView),
-// so a toggle here and the same toggle in the full popup stay in lockstep via the query cache.
+// Each pill is two touch targets sharing one rounded shell:
+//   - a state indicator on the left — a hollow ring when NOT done today, a filled ✓ when done —
+//     that ALSO marks the reminder done/undone in place (no need to open anything). Done today is
+//     read from today's daily_state habit_done map, so it resets each local day.
+//   - the reminder name on the right, which opens a DETAILS modal for THAT single reminder, reusing
+//     HabitRow (defaultExpanded) as a popup card — checkbox + steps panel + add-step form.
+//
+// It owns only the "which reminder is open" selection; all reminder/step reads + writes go through
+// the shared hooks (same as HabitsView), so a toggle here and the same toggle in the full popup (or
+// on the Reminders page) stay in lockstep via the query cache.
 
 export function RemindersInline() {
   const timeZone = useTimeZone()
@@ -72,19 +77,51 @@ export function RemindersInline() {
       <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-light">
         Reminders
       </span>
-      {active.map((habit) => (
-        <button
-          key={habit.id}
-          type="button"
-          onClick={() => setSelectedId(habit.id)}
-          title={`Open reminder: ${habit.text}`}
-          // Roomier on phones (a 26px chip is an easy mis-tap); desktop keeps the compact pill.
-          className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-[13px] font-medium text-primary transition-colors hover:border-primary/60 hover:bg-primary/20 wide:px-2.5 wide:py-1 wide:text-xs"
-        >
-          <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80" />
-          {habit.text}
-        </button>
-      ))}
+      {active.map((habit) => {
+        const isDone = Boolean(habitDone[habit.id])
+        return (
+          <span
+            key={habit.id}
+            className={`inline-flex items-center rounded-full border transition-colors ${
+              isDone ? 'border-primary/50 bg-primary/15' : 'border-primary/30 bg-primary/10'
+            }`}
+          >
+            {/* State indicator + mark-done-in-place. Hollow ring = not done, filled ✓ = done today;
+                tapping toggles today's done flag (same set_daily_flag path as the detail card). */}
+            <button
+              type="button"
+              aria-pressed={isDone}
+              aria-label={`Mark reminder "${habit.text}" done today`}
+              title={isDone ? 'Done today — tap to undo' : 'Tap to mark done today'}
+              onClick={() => toggleHabit(habit, !isDone)}
+              className="flex shrink-0 items-center rounded-l-full py-3 pl-3.5 pr-2 hover:bg-primary/15 wide:py-1 wide:pl-2.5 wide:pr-1.5"
+            >
+              <span
+                aria-hidden
+                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold leading-none transition-colors wide:h-4 wide:w-4 wide:text-[10px] ${
+                  isDone
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-primary/50 text-transparent'
+                }`}
+              >
+                ✓
+              </span>
+            </button>
+
+            {/* Name → per-reminder detail card (checkbox + steps + delete). */}
+            <button
+              type="button"
+              onClick={() => setSelectedId(habit.id)}
+              title={`Open reminder: ${habit.text}`}
+              className={`rounded-r-full py-3 pl-1 pr-3.5 text-[13px] font-medium transition-colors hover:bg-primary/15 wide:py-1 wide:pr-2.5 wide:text-xs ${
+                isDone ? 'text-muted line-through decoration-muted/50' : 'text-primary'
+              }`}
+            >
+              {habit.text}
+            </button>
+          </span>
+        )
+      })}
 
       {selected &&
         (() => {

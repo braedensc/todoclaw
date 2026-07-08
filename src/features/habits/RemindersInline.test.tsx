@@ -74,6 +74,40 @@ describe('RemindersInline', () => {
     expect(screen.queryByRole('button', { name: 'Queued' })).not.toBeInTheDocument()
   })
 
+  it('marks a reminder done in place (no modal) via set_daily_flag when its indicator is tapped', () => {
+    setHabits([habit({ id: 'h1', text: 'Alpha' })])
+    renderInline()
+    const toggle = screen.getByRole('button', { name: /Mark reminder "Alpha" done today/i })
+    // Not done today → pressed reflects that, and no dialog opened by the toggle.
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(toggle)
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'habit_done',
+      key: 'h1',
+      value: true,
+      timeZone: 'America/New_York',
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it("reflects today's done state on the tag and undoes it on a second tap", () => {
+    dailyMock.mockReturnValue({
+      data: { done: {}, done_at: {}, habit_done: { h1: true }, subtask_done: {} },
+    })
+    setHabits([habit({ id: 'h1', text: 'Alpha' })])
+    renderInline()
+    const toggle = screen.getByRole('button', { name: /Mark reminder "Alpha" done today/i })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // Tapping a done tag clears it (value: false).
+    fireEvent.click(toggle)
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'habit_done',
+      key: 'h1',
+      value: false,
+      timeZone: 'America/New_York',
+    })
+  })
+
   it('opens a per-reminder detail modal (steps expanded) when a name is clicked', () => {
     setHabits([habit()])
     renderInline()
