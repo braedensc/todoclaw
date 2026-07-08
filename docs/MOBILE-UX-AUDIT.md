@@ -156,29 +156,31 @@ push registration state). **Fix:** reuse the existing confirm dialog.
 
 ## 5. The sheet system
 
-### 5.1 Grab handles promise a gesture that doesn't exist (P1)
-Every `BottomSheet` renders the standard grab handle, but there is no swipe-to-dismiss — the
-handle is decoration; only scrim-tap/Escape close. On iOS this reads as "broken" because every
-system sheet drags.
-**Fix:** pointer-based drag-to-dismiss on `BottomSheet` (follow the finger below the origin,
-close past distance/velocity threshold, spring back otherwise; respects reduced-motion by
-snapping). One primitive fixes Move/More/Add/Reminders at once.
-— `src/components/BottomSheet.tsx`
+> **Resolved mid-audit by PR #166** (merged 2026-07-08 ~12:40, while this audit was in flight —
+> the findings below were observed on a pre-#166 checkout and are kept for the record). #166
+> shipped `useSwipeDismiss` (threshold/flick + spring-back, reduced-motion aware) wired into
+> `BottomSheet` (both modes), `ChatPanel`, and the mobile `ConfirmDialog`; dropped the mobile ✕
+> buttons in favor of the gesture; and converted Settings / Backups / Inbox / reminder-pill
+> detail / Done into slide-up sheets on mobile (centered modals stay on desktop). That covers
+> §5.1, §5.2, and §5.3 — including the part flagged below as an owner decision.
+>
+> One caveat it introduced: 3 golden specs covering the new gesture fail on clean `main` (CI
+> doesn't run the golden suite), flagged as a separate fix task.
 
-### 5.2 Chat is a sheet without the sheet affordances (P2)
-`ChatPanel` is hand-rolled: rounded top corners like a sheet, but no grab handle and no swipe.
-**Fix:** add the handle + the same drag-to-dismiss (its header is a natural drag region).
-— `src/features/ai/ChatPanel.tsx`
+### 5.1 Grab handles promise a gesture that doesn't exist (P1) — ✅ shipped in #166
+Observed pre-#166: every `BottomSheet` rendered the standard grab handle with no
+swipe-to-dismiss — the handle was decoration; only scrim-tap/Escape closed. `useSwipeDismiss`
+now provides the drag/flick dismiss on every sheet.
 
-### 5.3 Three overlay dialects (P2 / partly Owner)
-Current inventory: bottom sheets (Move/More/Add/Reminders), top-anchored card modals
-(Inbox, reminder-pill detail), centered scrolling modal (Settings, Backups). The reminder-pill
-detail modal additionally lacks focus trap and scroll lock.
-**Fix now:** convert the reminder-pill detail to `BottomSheet` (small, isolated).
-**Owner decision:** whether Settings/Backups/Inbox should become sheets too — bigger visual
-change, desktop shares the code.
-— `src/features/habits/RemindersInline.tsx:86-91`, `src/features/settings/SettingsPanel.tsx:216`,
-`src/features/notifications/InboxPanel.tsx:24`
+### 5.2 Chat is a sheet without the sheet affordances (P2) — ✅ shipped in #166
+`ChatPanel` was hand-rolled with no grab handle and no swipe; it now carries the draggable
+handle and the shared gesture.
+
+### 5.3 Three overlay dialects (P2 / partly Owner) — ✅ shipped in #166
+Pre-#166 inventory: bottom sheets (Move/More/Add/Reminders), top-anchored card modals (Inbox,
+reminder-pill detail — the latter without focus trap or scroll lock), centered scrolling modal
+(Settings, Backups). All of these now present as mobile sheets over the still-mounted home;
+desktop keeps the centered modals.
 
 ---
 
@@ -256,8 +258,10 @@ visual-direction project; the status-bar contrast could be mitigated sooner if d
 | Dark mode | Worth a full dark palette pass? (§7.3 — also fixes the standalone status-bar glyphs) |
 | Swipe actions on rows | Swipe-right = Done / swipe-left = Delete is the native todo-app idiom; high value, but a gesture-conflict + golden-spec project of its own |
 | Rapid multi-add | Should the add sheet stay open after adding (clear + "Added ✓") for batch entry? Today it closes per task |
-| Settings/Backups/Inbox as sheets | Unify the last three non-sheet overlays? (§5.3) |
 | Quadrant focus as a route | The history-entry fix (§4.5) ships; full `#/q/do-now` deep links are possible later |
+
+*(Removed from this list mid-audit: "Settings/Backups/Inbox as sheets" — PR #166 already made
+that call and shipped it.)*
 
 ---
 
@@ -265,12 +269,12 @@ visual-direction project; the status-bar contrast could be mitigated sooner if d
 
 | PR | Scope | Findings |
 |---|---|---|
-| **A. docs** | This report + stale-doc fixes (STYLE.md responsive section, grid README tap-to-place, CLAUDE.md breakpoint note — all still describe the pre-ADR-0028 mobile grid) | §doc-drift |
-| **B. fix: mobile layout bugs** | Expanded-row overflow; 320px header overflow | 1.1, 1.2 |
-| **C. feat: mobile ergonomics** | 44px targets (rows, done page, habits, pills); 16px inputs; `enterkeyhint`/`inputMode`; slider styling + size; chat `break-words`; empty-state copy; global focus-visible ring; muted-token contrast | 2.1–2.3, 3.1, 3.2, 6.1, 6.3, 6.4, 6.2, 7.2 |
-| **D. feat: one sheet system** | Swipe-to-dismiss in BottomSheet; chat handle + swipe; reminder-detail modal → BottomSheet | 5.1, 5.2, 5.3 |
-| **E. feat: add-task flow** | Thumb-zone form layout; added-toast; pre-selected focus quadrant; Back pops quadrant focus | 4.2, 4.3, 4.4, 4.5 |
-| **F. feat: small flows** | Mobile rename affordance; collapsed setup guide on mobile; sign-out confirm; chat keyboard (visualViewport) | 4.1, 4.6, 4.7, 3.3 |
+| **A. docs — #168** | This report + stale-doc fixes (STYLE.md responsive section, grid README tap-to-place, CLAUDE.md breakpoint note — all still described the pre-ADR-0028 mobile grid) | §doc-drift |
+| **B. fix — #169** | Expanded-row overflow; 320px header overflow; axis-input numeric keypad | 1.1, 1.2 |
+| **C. feat — #170** | 44px targets (rows, done page, habits, pills); 16px inputs; `enterkeyhint`/`inputMode`; slider styling + size; chat `break-words`; empty-state copy; global focus-visible ring; muted-token contrast | 2.1–2.3, 3.1, 3.2, 6.1, 6.3, 6.4, 6.2, 7.2 |
+| **D. one sheet system — ~~superseded~~** | Shipped independently as PR #166 mid-audit (see §5); its 3 red golden specs are flagged as a separate fix task | 5.1, 5.2, 5.3 |
+| **E. feat — #171** (stacked on #170) | Thumb-zone form layout; added-toast; pre-selected focus quadrant; Back pops quadrant focus | 4.2, 4.3, 4.4, 4.5 |
+| **F. feat — #172** (stacked on #171) | Mobile rename affordance; collapsed setup guide on mobile; sign-out confirm; chat keyboard (visualViewport) | 4.1, 4.6, 4.7, 3.3 |
 
 Constraints honored throughout: golden-test hooks preserved (`nav[aria-label="Account"]` +
 "Done" button, `aria-expanded` rows, existing labels); desktop behavior untouched except where
