@@ -489,16 +489,17 @@ function AppShell() {
               )}
 
               {/* The setup guide's spotlight tour — an overlay pointing at the live shell, so it
-                  mounts beside the content it spotlights. Finishing the FULL tour latches its
-                  checklist step; skipping (or the one-step add-task spotlight) latches nothing. */}
+                  mounts beside the content it spotlights. ANY close of the FULL tour (finish or a
+                  deliberate skip) latches its checklist step — someone who skipped shouldn't be
+                  nagged by an eternal unchecked box. The add-task spotlight latches nothing. */}
               {tour && (
                 <ErrorBoundary>
                   <FeatureTour
                     steps={
                       tour === 'full' ? (isMobile ? MOBILE_TOUR : DESKTOP_TOUR) : ADD_TASK_SPOTLIGHT
                     }
-                    onClose={(completed) => {
-                      if (completed && tour === 'full') markTourDone()
+                    onClose={() => {
+                      if (tour === 'full') markTourDone()
                       setTour(null)
                     }}
                   />

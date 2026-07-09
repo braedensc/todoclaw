@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-// SafariTroubleshooting comes from NotificationSettings, whose module graph reaches
-// src/lib/supabase — which THROWS at import without env vars (CI runs with none). Stub the
-// client module itself so every transitive importer is satisfied.
+// The wizard + SafariTroubleshooting reach src/lib/supabase through their module graphs — and
+// that module THROWS at import without env vars (CI runs with none). Stub the client module
+// itself so every transitive importer is satisfied.
 vi.mock('../../lib/supabase', () => ({ supabase: {} }))
 
 // Mock the state hook wholesale — the component test only cares about rendering each state; the
@@ -33,7 +33,6 @@ const baseState = (over: Partial<SetupGuideState> = {}): SetupGuideState => ({
   visible: true,
   tourDone: false,
   install: {
-    shown: true,
     done: false,
     context: 'ios',
     canPrompt: false,
@@ -43,7 +42,7 @@ const baseState = (over: Partial<SetupGuideState> = {}): SetupGuideState => ({
   taskAdded: false,
   planDone: false,
   doneCount: 0,
-  stepCount: 5,
+  stepCount: 3,
   allDone: false,
   dismiss: vi.fn(),
   ...over,
@@ -71,17 +70,17 @@ describe('SetupGuide', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('renders the five step titles, the pitch line, and the progress count', () => {
+  it('renders the three step titles, the pitch line, and the progress count', () => {
     mockGuide.mockReturnValue(baseState())
     render(<SetupGuide {...noopProps} />)
     expect(screen.getByRole('region', { name: 'Setup guide' })).toBeInTheDocument()
     expect(screen.getByText('See how Todoclaw works')).toBeInTheDocument()
-    expect(screen.getByText('Add Todoclaw to your Home Screen')).toBeInTheDocument()
-    expect(screen.getByText('Turn on daily notifications')).toBeInTheDocument()
-    expect(screen.getByText('Add your first task')).toBeInTheDocument()
-    expect(screen.getByText('Try Plan My Day')).toBeInTheDocument()
+    expect(
+      screen.getByText('Put Todoclaw on your Home Screen & turn on notifications'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Add a task, then let Todoclaw plan your day')).toBeInTheDocument()
     expect(screen.getByText(/to-do list on a map/)).toBeInTheDocument()
-    expect(screen.getByText('0/5')).toBeInTheDocument()
+    expect(screen.getByText('0/3')).toBeInTheDocument()
   })
 
   it('launches the tour from step 1', () => {
@@ -92,34 +91,37 @@ describe('SetupGuide', () => {
     expect(onStartTour).toHaveBeenCalledOnce()
   })
 
-  it('"Show me how" opens the illustrated install walkthrough', () => {
-    mockGuide.mockReturnValue(baseState())
-    render(<SetupGuide {...noopProps} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Show me how' }))
-    // The iOS walkthrough names the real buttons to tap.
-    expect(screen.getByText(/“Add to Home Screen”/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
-    expect(screen.queryByText(/“Add to Home Screen”/)).not.toBeInTheDocument()
-  })
-
-  it('on iOS before install, gates the notifications step behind the Home-Screen add', () => {
+  it('in a browser tab, step 2 offers the wizard — not a bare notifications button', () => {
     mockGuide.mockReturnValue(baseState())
     render(<SetupGuide {...noopProps} />)
     expect(screen.queryByRole('button', { name: /Turn on notifications/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/Home Screen first/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Set it up' }))
+    // The iOS walkthrough names the real buttons to tap.
+    expect(screen.getByText(/“Add to Home Screen”/)).toBeInTheDocument()
   })
 
-  it('the notifications button enables in place once the context allows it', () => {
+  it('inside the installed app, step 2 turns notifications on right on the card', () => {
     mockEnable.mockResolvedValue(true)
-    mockGuide.mockReturnValue(
-      baseState({ install: { ...baseState().install, context: 'macos-safari' } }),
-    )
+    mockGuide.mockReturnValue(baseState({ install: { ...baseState().install, done: true } }))
     render(<SetupGuide {...noopProps} />)
+    expect(screen.getByText(/You’re in the app ✓/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Turn on notifications/ }))
     expect(mockEnable).toHaveBeenCalledOnce()
   })
 
-  it('surfaces the enabler’s error inline', () => {
+  it('with no install gesture (unknown context), step 2 is just the notifications button', () => {
+    mockEnable.mockResolvedValue(true)
+    mockGuide.mockReturnValue(
+      baseState({ install: { ...baseState().install, context: 'unknown' } }),
+    )
+    render(<SetupGuide {...noopProps} />)
+    expect(screen.getByText('Turn on daily notifications')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Set it up' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Turn on notifications/ }))
+    expect(mockEnable).toHaveBeenCalledOnce()
+  })
+
+  it('surfaces the enabler’s error inline (installed card state)', () => {
     mockNotif.mockReturnValue({
       enable: mockEnable,
       busy: false,
@@ -127,47 +129,29 @@ describe('SetupGuide', () => {
       setupFailed: false,
       supported: true,
     })
-    mockGuide.mockReturnValue(
-      baseState({ install: { ...baseState().install, context: 'macos-safari' } }),
-    )
+    mockGuide.mockReturnValue(baseState({ install: { ...baseState().install, done: true } }))
     render(<SetupGuide {...noopProps} />)
     expect(screen.getByText(/blocked in your browser/)).toBeInTheDocument()
   })
 
-  it('offers a native install button when Chromium handed us the deferred prompt', () => {
-    const promptInstall = vi.fn()
-    mockGuide.mockReturnValue(
-      baseState({
-        install: { shown: true, done: false, context: 'chromium', canPrompt: true, promptInstall },
-      }),
-    )
-    render(<SetupGuide {...noopProps} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Install now' }))
-    expect(promptInstall).toHaveBeenCalledOnce()
-  })
-
-  it('the first-task step points at the capture surface', () => {
+  it('step 3 evolves: Show me where → Plan my day once a task exists', () => {
     const onShowAddTask = vi.fn()
-    mockGuide.mockReturnValue(baseState())
-    render(<SetupGuide {...noopProps} onShowAddTask={onShowAddTask} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Show me where' }))
-    expect(onShowAddTask).toHaveBeenCalledOnce()
-  })
-
-  it('holds the Plan step behind the first task, then fires plan generation', () => {
     const onPlan = vi.fn()
     mockGuide.mockReturnValue(baseState())
-    const { rerender } = render(<SetupGuide {...noopProps} onPlan={onPlan} />)
-    // No task yet → no plan button, a pointer back to the add step instead.
-    expect(screen.queryByRole('button', { name: /Generate today’s plan/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/Add a task first/)).toBeInTheDocument()
+    const { rerender } = render(
+      <SetupGuide {...noopProps} onShowAddTask={onShowAddTask} onPlan={onPlan} />,
+    )
+    expect(screen.queryByRole('button', { name: /Plan my day/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show me where' }))
+    expect(onShowAddTask).toHaveBeenCalledOnce()
 
-    mockGuide.mockReturnValue(baseState({ taskAdded: true, doneCount: 1 }))
-    rerender(<SetupGuide {...noopProps} onPlan={onPlan} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Generate today’s plan' }))
+    mockGuide.mockReturnValue(baseState({ taskAdded: true }))
+    rerender(<SetupGuide {...noopProps} onShowAddTask={onShowAddTask} onPlan={onPlan} />)
+    expect(screen.queryByRole('button', { name: 'Show me where' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Plan my day' }))
     expect(onPlan).toHaveBeenCalledOnce()
 
-    mockGuide.mockReturnValue(baseState({ taskAdded: true, doneCount: 1 }))
+    mockGuide.mockReturnValue(baseState({ taskAdded: true }))
     rerender(<SetupGuide {...noopProps} onPlan={onPlan} planPending />)
     expect(screen.getByRole('button', { name: 'Planning…' })).toBeDisabled()
   })
@@ -177,11 +161,10 @@ describe('SetupGuide', () => {
     mockGuide.mockReturnValue(
       baseState({
         tourDone: true,
-        install: { ...baseState().install, done: true },
         notificationsDone: true,
         taskAdded: true,
         planDone: true,
-        doneCount: 5,
+        doneCount: 3,
         allDone: true,
         dismiss,
       }),
@@ -190,6 +173,7 @@ describe('SetupGuide', () => {
     expect(screen.getByText('You’re all set!')).toBeInTheDocument()
     // Finished steps drop their hints/actions.
     expect(screen.queryByRole('button', { name: 'Take the tour' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Set it up' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }))
     expect(dismiss).toHaveBeenCalledOnce()
   })

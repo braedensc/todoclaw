@@ -1,23 +1,27 @@
 import { useState, type ReactNode } from 'react'
 import { useSetupGuide, type InstallContext } from './use-setup-guide'
-import { InstallGuide } from './InstallGuide'
+import { AppSetupWizard } from './AppSetupWizard'
 import { useEnableNotifications } from '../notifications/use-enable-notifications'
 import { SafariTroubleshooting } from '../notifications/NotificationSettings'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 
 // SetupGuide — the first-run "Get set up" card, rendered at the top of the home shell on both
-// desktop and mobile. Reworked for non-technical users (2026-07-08): it now opens with a
-// one-line pitch of what Todoclaw IS, then walks five steps in plain words — take the guided
-// tour, install (with a "Show me how" walkthrough of the exact buttons to tap), turn on
-// notifications (a button that really enables them, no Settings detour), add a first task
-// (spotlights the Task Manager / opens the ➕ sheet), and only then try Plan My Day — with each
-// step auto-checking itself off (see use-setup-guide.ts). Deliberately a quiet parchment card in
+// desktop and mobile. Three steps, as few and as plain as they can be (2026-07-08 workshop):
+//   1. Take the guided tour (what the app IS).
+//   2. Put Todoclaw in the Dock/Home Screen AND turn on daily notifications — ONE step, because
+//      they are one job in the order that actually works: on Apple platforms the installed app
+//      has its own sign-in and its own notification permission, so the wizard installs first,
+//      moves the user into the app (where this card auto-reappears with install pre-checked),
+//      and hands them the notifications button there. Chromium/unknown enable right here.
+//   3. Add a first task, then generate today's plan — one step whose button EVOLVES from
+//      "Show me where" to "✦ Plan my day" as the task appears.
+// Each step auto-checks itself (see use-setup-guide.ts). Deliberately a quiet parchment card in
 // the PlanBox idiom, not a modal: the install gesture happens outside the page, so the card has
 // to survive the user leaving and coming back in a different context.
 //
 // On a PHONE the full card ate ~55% of the first screen and pushed the actual task matrix below
 // the fold on every launch until dismissed (mobile audit §4.6) — so below 720px it starts as a
-// one-line "🐾 Get set up · 1/5 ▸" banner that expands on tap (and can be collapsed again).
+// one-line "🐾 Get set up · 1/3 ▸" banner that expands on tap (and can be collapsed again).
 // Desktop always renders the full card; the collapse state is session-local by design.
 
 function Step({
@@ -79,19 +83,20 @@ function StepButton({
   )
 }
 
-// Plain-words step titles/hints per install gesture — "Install as an app" is browser jargon;
-// "Add to your Home Screen" is the words on the actual button.
-const INSTALL_TITLE: Record<InstallContext, string> = {
-  ios: 'Add Todoclaw to your Home Screen',
-  'macos-safari': 'Add Todoclaw to your Dock',
-  chromium: 'Install the Todoclaw app',
-  unknown: 'Install the Todoclaw app',
+// Step-2 wording per install gesture — the words on the actual buttons, never "install as a PWA".
+const APP_STEP_TITLE: Record<InstallContext, string> = {
+  ios: 'Put Todoclaw on your Home Screen & turn on notifications',
+  'macos-safari': 'Put Todoclaw in your Dock & turn on notifications',
+  chromium: 'Install the app & turn on notifications',
+  unknown: 'Turn on daily notifications',
 }
-const INSTALL_HINT: Record<InstallContext, string> = {
-  ios: 'It becomes a real app — its own icon, full screen. On iPhone & iPad this is also the only way to get notifications.',
-  'macos-safari': 'Todoclaw gets its own window in your Dock, with steadier notifications.',
-  chromium: 'Todoclaw gets its own window and dock icon, ready for notifications.',
-  unknown: '',
+const APP_STEP_HINT: Record<InstallContext, string> = {
+  ios: 'Two quick minutes: add Todoclaw to your Home Screen (iPhone needs that for notifications), then flip them on inside the app. The guide shows every tap.',
+  'macos-safari':
+    'Two quick steps: add Todoclaw to your Dock, then turn notifications on inside it. The guide shows exactly what to click.',
+  chromium:
+    'Give Todoclaw its own window and dock icon, then turn on your morning plan and evening recap.',
+  unknown: 'Your plan each morning and a recap each evening, sent right to this device.',
 }
 
 export function SetupGuide({
@@ -103,7 +108,7 @@ export function SetupGuide({
   onStartTour,
   onShowAddTask,
 }: {
-  /** A plan exists for today (drives the auto-check of the Plan step). */
+  /** A plan exists for today (drives the auto-check of the last step). */
   planReady: boolean
   planPending: boolean
   canPlan: boolean
@@ -121,12 +126,14 @@ export function SetupGuide({
   // Mobile launches collapsed (initializer captures mount-time breakpoint; a mid-session
   // resize across 720px is a desktop-devtools case, not a phone one).
   const [expanded, setExpanded] = useState(() => !isMobile)
-  const [showInstallGuide, setShowInstallGuide] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
   if (!guide.visible) return null
 
   const { install } = guide
-  // iOS can't receive push from a browser tab at all — gate the step on the install until then.
-  const iosNeedsInstall = install.context === 'ios' && !install.done
+  // Installed (or no install gesture exists): the enable button lives right on the card — no
+  // wizard detour. This is also the moment the wizard promised: the user just arrived in the
+  // installed app and the card greets them with the one remaining button.
+  const enableInPlace = install.done || install.context === 'unknown'
   let stepNo = 0
   const next = (): number => ++stepNo
 
@@ -209,7 +216,7 @@ export function SetupGuide({
       <p className="mt-0.5 text-[13px] leading-snug text-muted">
         {guide.allDone
           ? 'You know your way around, Todoclaw is installed, and your daily plan will find you. Go get it.'
-          : 'Welcome! Todoclaw is your to-do list on a map — tasks land by how urgent and important they are, so what to do next is always obvious. A few quick steps:'}
+          : 'Welcome! Todoclaw is your to-do list on a map — tasks land by how urgent and important they are, so what to do next is always obvious. Three quick steps:'}
       </p>
 
       <ol className="mt-3 flex flex-col gap-3">
@@ -221,27 +228,14 @@ export function SetupGuide({
           <StepButton onClick={onStartTour}>Take the tour</StepButton>
         </Step>
 
-        {install.shown && (
-          <Step index={next()} done={install.done} title={INSTALL_TITLE[install.context]}>
-            <StepHint>{INSTALL_HINT[install.context]}</StepHint>
-            {install.canPrompt && (
-              <StepButton onClick={install.promptInstall}>Install now</StepButton>
-            )}{' '}
-            <StepButton onClick={() => setShowInstallGuide(true)}>Show me how</StepButton>
-          </Step>
-        )}
-
-        <Step index={next()} done={guide.notificationsDone} title="Turn on daily notifications">
-          <StepHint>
-            Your plan each morning and a recap each evening, sent right to this device.
-          </StepHint>
-          {iosNeedsInstall ? (
-            <StepHint>
-              <span aria-hidden>↑</span> Add Todoclaw to your Home Screen first, then come back
-              here.
-            </StepHint>
-          ) : (
+        <Step index={next()} done={guide.notificationsDone} title={APP_STEP_TITLE[install.context]}>
+          {enableInPlace ? (
             <>
+              <StepHint>
+                {install.done
+                  ? 'You’re in the app ✓ — one last thing: your plan each morning and a recap each evening.'
+                  : APP_STEP_HINT.unknown}
+              </StepHint>
               <StepButton onClick={() => void notif.enable()} disabled={notif.busy}>
                 <span aria-hidden>🔔</span> {notif.busy ? 'Turning on…' : 'Turn on notifications'}
               </StepButton>
@@ -263,36 +257,43 @@ export function SetupGuide({
                 .
               </StepHint>
             </>
+          ) : (
+            <>
+              <StepHint>{APP_STEP_HINT[install.context]}</StepHint>
+              <StepButton onClick={() => setShowWizard(true)}>Set it up</StepButton>
+            </>
           )}
         </Step>
 
-        <Step index={next()} done={guide.taskAdded} title="Add your first task">
-          <StepHint>
-            {isMobile
-              ? 'Tap the ➕ at the bottom of the screen and describe it — or tell BabyClaw in Chat (“dentist Friday 2pm”) and he’ll add it for you.'
-              : 'Use the Task Manager box above the grid: tell BabyClaw in plain English (“dentist Friday 2pm”) and he’ll place it — or switch to Manual to do it yourself.'}
-          </StepHint>
-          <StepButton onClick={onShowAddTask}>
-            {isMobile ? 'Add a task' : 'Show me where'}
-          </StepButton>
-        </Step>
-
-        <Step index={next()} done={guide.planDone} title="Try Plan My Day">
-          <StepHint>
-            One tap reads your tasks, chores, and habits and drafts a realistic plan for today.
-          </StepHint>
-          {guide.taskAdded ? (
-            <StepButton onClick={onPlan} disabled={!canPlan || planPending}>
-              <span aria-hidden className="text-[#b58a3d]">
-                ✦
-              </span>{' '}
-              {planPending ? 'Planning…' : 'Generate today’s plan'}
-            </StepButton>
+        <Step
+          index={next()}
+          done={guide.planDone}
+          title="Add a task, then let Todoclaw plan your day"
+        >
+          {!guide.taskAdded ? (
+            <>
+              <StepHint>
+                {isMobile
+                  ? 'Tap the ➕ at the bottom of the screen and describe it — or tell BabyClaw in Chat (“dentist Friday 2pm”) and he’ll add it for you.'
+                  : 'Use the Task Manager box above the grid: tell BabyClaw in plain English (“dentist Friday 2pm”) and he’ll place it — or switch to Manual to do it yourself.'}
+              </StepHint>
+              <StepButton onClick={onShowAddTask}>
+                {isMobile ? 'Add a task' : 'Show me where'}
+              </StepButton>
+            </>
           ) : (
-            <StepHint>
-              <span aria-hidden>↑</span> Add a task first — the plan is built from what’s on your
-              grid.
-            </StepHint>
+            <>
+              <StepHint>
+                Nice — your first task is in. Now one tap turns your tasks, chores, and habits into
+                a realistic plan for today.
+              </StepHint>
+              <StepButton onClick={onPlan} disabled={!canPlan || planPending}>
+                <span aria-hidden className="text-[#b58a3d]">
+                  ✦
+                </span>{' '}
+                {planPending ? 'Planning…' : 'Plan my day'}
+              </StepButton>
+            </>
           )}
         </Step>
       </ol>
@@ -307,12 +308,13 @@ export function SetupGuide({
         </button>
       )}
 
-      {showInstallGuide && (
-        <InstallGuide
+      {showWizard && (
+        <AppSetupWizard
           context={install.context}
+          installed={install.done}
           canPrompt={install.canPrompt}
           onInstallNow={install.promptInstall}
-          onClose={() => setShowInstallGuide(false)}
+          onClose={() => setShowWizard(false)}
         />
       )}
     </section>

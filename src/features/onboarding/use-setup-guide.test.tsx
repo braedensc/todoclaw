@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock the dependency seams: the schedule row (account half of the notifications check), the task
-// list (the add-a-first-task step), and the platform/standalone detection from the push hook.
+// list (step 3's evolving button), and the platform/standalone detection from the push hook.
 // localStorage is jsdom's real one — each test starts from a cleared store.
 const mockSchedule = vi.fn<() => { data?: unknown; isLoading?: boolean }>()
 vi.mock('../schedule/use-user-schedule', () => ({
@@ -48,19 +48,19 @@ afterEach(() => {
 })
 
 describe('useSetupGuide', () => {
-  it('shows all five steps, none done, for a fresh iOS device', () => {
+  it('shows three steps, none done, for a fresh iOS device', () => {
     const { result } = renderHook(() => useSetupGuide(false))
     expect(result.current.visible).toBe(true)
-    expect(result.current.stepCount).toBe(5)
+    expect(result.current.stepCount).toBe(3)
     expect(result.current.doneCount).toBe(0)
-    expect(result.current.install).toMatchObject({ shown: true, done: false, context: 'ios' })
+    expect(result.current.install).toMatchObject({ done: false, context: 'ios' })
   })
 
-  it('hides the install step where no install gesture exists (jsdom UA is neither Apple nor Chromium)', () => {
+  it('still counts three steps where no install gesture exists (install is guidance, not a checkbox)', () => {
     mockPlatform.mockReturnValue('other')
     const { result } = renderHook(() => useSetupGuide(false))
-    expect(result.current.install.shown).toBe(false)
-    expect(result.current.stepCount).toBe(4)
+    expect(result.current.install.context).toBe('unknown')
+    expect(result.current.stepCount).toBe(3)
   })
 
   it('dismiss hides the card and persists across mounts', () => {
@@ -81,7 +81,7 @@ describe('useSetupGuide', () => {
     expect(localStorage.getItem(TOUR_DONE_KEY)).toBe('1')
   })
 
-  it('notifications step needs BOTH the config toggle and the browser permission', () => {
+  it('the app+notifications step needs BOTH the config toggle and the browser permission', () => {
     mockSchedule.mockReturnValue(loadedSchedule({ notifications: { enabled: true } }))
     const { result, rerender } = renderHook(() => useSetupGuide(false))
     // Config on, but no permission (jsdom has no Notification at all) → not done.
@@ -92,13 +92,23 @@ describe('useSetupGuide', () => {
     expect(result.current.notificationsDone).toBe(true)
   })
 
-  it('the first-task step auto-detects an existing task', () => {
+  it('installing alone does not check the app+notifications step — notifications are the trace', () => {
+    mockStandalone.mockReturnValue(true)
+    const { result } = renderHook(() => useSetupGuide(false))
+    expect(result.current.install.done).toBe(true)
+    expect(result.current.notificationsDone).toBe(false)
+    expect(result.current.doneCount).toBe(0)
+  })
+
+  it('taskAdded auto-detects an existing task (step 3 button state, not a step of its own)', () => {
     const { result, rerender } = renderHook(() => useSetupGuide(false))
     expect(result.current.taskAdded).toBe(false)
+    expect(result.current.stepCount).toBe(3)
 
     mockTasks.mockReturnValue({ data: [{ id: 't1' }], isLoading: false })
     rerender()
     expect(result.current.taskAdded).toBe(true)
+    expect(result.current.doneCount).toBe(0) // a task alone checks nothing — the plan does
   })
 
   it('plan step latches: once a plan has existed, the midnight clear does not regress it', () => {
@@ -116,9 +126,7 @@ describe('useSetupGuide', () => {
   })
 
   it('auto-dismisses silently for a user who is already fully set up', () => {
-    mockStandalone.mockReturnValue(true)
     mockSchedule.mockReturnValue(loadedSchedule({ notifications: { enabled: true } }))
-    mockTasks.mockReturnValue({ data: [{ id: 't1' }], isLoading: false })
     vi.stubGlobal('Notification', { permission: 'granted' })
     localStorage.setItem(PLAN_DONE_KEY, '1')
     localStorage.setItem(TOUR_DONE_KEY, '1')
@@ -129,9 +137,7 @@ describe('useSetupGuide', () => {
   })
 
   it('stays up in its finished state when the last step completes while open', () => {
-    mockStandalone.mockReturnValue(true)
     mockSchedule.mockReturnValue(loadedSchedule({ notifications: { enabled: true } }))
-    mockTasks.mockReturnValue({ data: [{ id: 't1' }], isLoading: false })
     vi.stubGlobal('Notification', { permission: 'granted' })
     localStorage.setItem(TOUR_DONE_KEY, '1')
 
