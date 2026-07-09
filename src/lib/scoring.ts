@@ -11,9 +11,25 @@ import { localDateInTZ } from './dates'
 
 const MS_PER_DAY = 86_400_000
 
+/** A bare `YYYY-MM-DD` calendar date with no time component. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
 /** Whole-number calendar days between a 'YYYY-MM-DD' string and the UTC-midnight epoch. */
 function dayNumber(ymd: string): number {
   return Date.parse(`${ymd}T00:00:00Z`) / MS_PER_DAY
+}
+
+/**
+ * The calendar date a `due` value falls on, in the user's timezone.
+ *
+ * A bare `YYYY-MM-DD` (what the date picker stores) is a *floating* calendar date — the day the
+ * user picked, in their own calendar — so it is used verbatim. It must NOT be routed through
+ * `new Date()`, which parses it as UTC midnight: west of UTC that lands on the previous local day,
+ * making a task read as overdue on its own due date. A `due` that carries a time component is a
+ * real instant, so it is projected into `timeZone` like "now".
+ */
+function dueCalendarDate(due: string, timeZone: string): string {
+  return DATE_ONLY.test(due) ? due : localDateInTZ(timeZone, new Date(due))
 }
 
 export interface ScoringOpts {
@@ -27,14 +43,15 @@ export interface ScoringOpts {
  * Whole-number calendar-day difference between `due` and "now", both evaluated in the
  * user's timezone. Returns `null` when there is no due date.
  *
- * Negative = overdue, 0 = due today, positive = days remaining. Because both ends are
- * collapsed to a calendar date in `timeZone` before diffing, the result is DST-safe and
- * independent of the time-of-day component of either instant.
+ * Negative = overdue, 0 = due today, positive = days remaining — so a task is overdue only the
+ * day *after* its due date, never on the due date itself. Because both ends are collapsed to a
+ * calendar date in `timeZone` before diffing, the result is DST-safe and independent of the
+ * time-of-day component of either instant.
  */
 export function daysUntil(due: string | null, opts: ScoringOpts): number | null {
   if (!due) return null
   const { timeZone, now = new Date() } = opts
-  const dueDay = dayNumber(localDateInTZ(timeZone, new Date(due)))
+  const dueDay = dayNumber(dueCalendarDate(due, timeZone))
   const nowDay = dayNumber(localDateInTZ(timeZone, now))
   return Math.round(dueDay - nowDay)
 }
