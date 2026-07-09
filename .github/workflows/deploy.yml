@@ -127,12 +127,18 @@ jobs:
 
       # SUPABASE_DB_URL holds the DB password — keep it in env and referenced as "$SUPABASE_DB_URL"
       # (never inline, never with `set -x` or `--debug`, or the DSN leaks into logs).
+      # --include-all: apply migrations whose version sorts BEFORE the last one already on remote.
+      # Parallel feature branches routinely merge migrations out of timestamp order (a branch cut
+      # before another's migration lands ends up "in the past"); without this, db push hard-stops on
+      # the first such file and NO further migration or function deploy reaches prod. Versions are
+      # still unique, so ordering within a push is deterministic; --include-all only relaxes the
+      # "must be newer than remote's latest" guard.
       - name: Preview pending migrations (dry-run, audit only)
         if: steps.pre.outputs.configured == 'true'
         continue-on-error: true # informational; never block the deploy on the preview
         env:
           SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
-        run: supabase db push --db-url "$SUPABASE_DB_URL" --dry-run
+        run: supabase db push --db-url "$SUPABASE_DB_URL" --include-all --dry-run
 
       - name: Apply migrations (db push)
         if: steps.pre.outputs.configured == 'true'
@@ -141,7 +147,7 @@ jobs:
         # `db push` has NO --yes flag and can hang on a "[Y/n]" prompt on some CI runners
         # (supabase/cli#2238); pipe `yes` to force non-interactive. Pipeline exit status is
         # db push's, so a failed migration still fails the step.
-        run: yes | supabase db push --db-url "$SUPABASE_DB_URL"
+        run: yes | supabase db push --db-url "$SUPABASE_DB_URL" --include-all
 
   deploy-functions:
     name: Deploy Edge Functions

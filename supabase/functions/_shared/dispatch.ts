@@ -103,9 +103,9 @@ export function isQuietHour(prefs: NotificationPrefs, hour: number): boolean {
 }
 
 // How many hours past a configured send-hour we'll still deliver, when earlier ticks were dropped.
-// The hourly trigger can skip ticks (GitHub Actions routinely does; even pg_cron can miss one across
-// a DB restart), and the exact-hour match this used to require meant a single skipped tick at the
-// user's morning hour silently lost the whole day's push. The daily claim (claim_message) makes every
+// The trigger can skip ticks (the GitHub Actions backup routinely does; even the per-minute pg_cron
+// can miss a stretch across a DB restart), and the exact-hour match this used to require meant a
+// single skipped tick at the user's morning hour silently lost the whole day's push. The daily claim (claim_message) makes every
 // tick idempotent, so widening the match to a short window is safe: the FIRST surviving tick at or
 // after the hour delivers, and a dropped tick is simply recovered by the next one. Bounded so a plan
 // never lands at night ("Good morning" at 9pm) — a digest hours late is noise, and the in-app inbox
