@@ -22,7 +22,7 @@ import { useTimeZone } from '../schedule/use-time-zone'
 //    calendar only unfolds when the task actually needs a date. The panel writes into this
 //    form's DRAFT state; nothing persists until "Add task".
 //  - A full-width Add button, and a quiet 🐾 tip that CHAT is the fastest capture path
-//    ("add call mom tomorrow, urgent, daily" — BabyClaw phrases, places, and schedules it).
+//    ("add water the plants tomorrow, urgent, daily" — BabyClaw phrases, places, and schedules it).
 //
 // The form remounts on each sheet open (BottomSheet renders nothing while closed), so useState
 // initializers reset the draft/selection with no reset-in-effect.

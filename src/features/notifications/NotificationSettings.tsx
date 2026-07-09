@@ -82,7 +82,7 @@ function ReminderDefaultSelect({
   )
 }
 
-// The greeting name ("Good morning Braeden! ☀️"). Optional; blank keeps the greeting generic.
+// The greeting name ("Good morning Alex! ☀️"). Optional; blank keeps the greeting generic.
 function NameField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const id = useId()
   return (
@@ -93,7 +93,7 @@ function NameField({ value, onChange }: { value: string; onChange: (v: string) =
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. Braeden"
+        placeholder="e.g. Alex"
         maxLength={40}
         className="rounded-lg border border-border-strong bg-card px-3 py-2 text-sm"
       />

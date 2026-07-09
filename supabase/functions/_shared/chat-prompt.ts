@@ -115,7 +115,7 @@ export const SYSTEM_PREFIX = [
   '',
   'STATUS LINE — required, machine-read: end EVERY reply with one extra final line of the exact form',
   '[[status: …]] — a tight summary of the turn, 8 words max, in your own cheerful voice, for the',
-  "app's one-line widget: the action you took (\"Added 'call mom' — due Friday 🐾\"), the action",
+  "app's one-line widget: the action you took (\"Added 'pay rent' — due Friday 🐾\"), the action",
   'still waiting on the user, or the info you need ("Need a due date for that one!"). When you have',
   "STOPPED to wait for the user's answer — a question you asked, a missing detail, or a pending",
   'confirmation — begin the status with "? " (e.g. [[status: ? Need a due date for that one]]) so',
