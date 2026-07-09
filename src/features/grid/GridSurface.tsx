@@ -154,7 +154,7 @@ export function GridSurface({
         onSetDue={(due, due_time) => updateMutate({ id: task.id, patch: { due, due_time } })}
         reminderOffset={reminders?.get(task.id)?.offset_minutes ?? null}
         onSetReminder={(minutes) =>
-          upsertReminder.mutate({ task, offsetMinutes: minutes, timeZone })
+          upsertReminder.mutate({ taskId: task.id, offsetMinutes: minutes })
         }
         onSetRecurring={(frequencyDays) =>
           updateMutate({

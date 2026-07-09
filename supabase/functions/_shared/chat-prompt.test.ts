@@ -77,6 +77,7 @@ Deno.test(
             y: 0.8,
             due: '2026-07-05',
             dueInDays: 1,
+            dueTime: null,
             staged: false,
             recurringLabel: null,
             doneToday: false,
@@ -88,9 +89,22 @@ Deno.test(
             y: 0.5,
             due: null,
             dueInDays: null,
+            dueTime: null,
             staged: false,
             recurringLabel: 'weekly',
             doneToday: true,
+          },
+          {
+            id: 't3',
+            text: 'Dentist',
+            x: 0.7,
+            y: 0.6,
+            due: '2026-07-04',
+            dueInDays: 0,
+            dueTime: '10:30:00',
+            staged: false,
+            recurringLabel: null,
+            doneToday: false,
           },
         ],
         habits: [
@@ -108,6 +122,7 @@ Deno.test(
     assertStringIncludes(sys, '[t1] "File taxes"')
     assertStringIncludes(sys, 'Do Now') // x 0.9 / y 0.8 → top-right quadrant
     assertStringIncludes(sys, 'due tomorrow')
+    assertStringIncludes(sys, 'due today at 10:30 AM') // a timed task reads as a fixed anchor
     assertStringIncludes(sys, '1 completed today: "Water plants"') // done partitioned out of active
     assertStringIncludes(sys, '[h1] "Meditate"')
     assertStringIncludes(sys, '[s1] "Sit" ✓')

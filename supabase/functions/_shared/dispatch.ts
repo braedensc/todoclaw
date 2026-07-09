@@ -8,6 +8,7 @@
 //     from that morning's plan ("which of these did you knock out?").
 
 import { dayNameInTZ, localDateInTZ } from './dates.ts'
+import { formatClockTime } from './reminder-content.ts'
 import type { PlanResult, Rock } from './plan-prompt.ts'
 
 // Notifications prefs, as the client writes them into user_schedule.config.notifications (PR8) and
@@ -65,6 +66,7 @@ export interface DispatchInputs {
     x: number | null
     y: number | null
     due: string | null
+    due_time: string | null
     // Coarse effort (S/M/L/XL) or null — provided by dispatch_inputs_for_user so the proactive
     // morning plan honors the same size guardrail as interactive Plan My Day.
     size: string | null
@@ -136,6 +138,7 @@ const SIGNOFF = '— BabyClaw 🐾'
 // anyway) and the plan is opaque jsonb, so never render an unbounded list: cap the sections.
 const QUICK_WINS_CAP = 10
 const CHECKIN_ITEMS_CAP = 10
+const TIMES_CAP = 8
 
 // One "• task (~duration)" line. Guards a malformed rock (opaque jsonb): no task text → no line.
 function rockLine(rock: DispatchPlanRock): string | null {
@@ -143,6 +146,19 @@ function rockLine(rock: DispatchPlanRock): string | null {
   if (!task) return null
   const duration = rock.duration?.trim()
   return duration ? `• ${task} (${duration})` : `• ${task}`
+}
+
+// "⏰ TODAY" lines — tasks with a due TIME landing on the user's local `today`, earliest first, not
+// done. The time is wall-clock (formatClockTime, no tz math). Capped like every other section.
+function timedTodayLines(inputs: DispatchInputs, localDate: string, cap = TIMES_CAP): string[] {
+  return inputs.tasks
+    .filter(
+      (t) =>
+        !inputs.done[t.id] && t.due != null && t.due.slice(0, 10) === localDate && !!t.due_time,
+    )
+    .sort((a, b) => (a.due_time! < b.due_time! ? -1 : a.due_time! > b.due_time! ? 1 : 0))
+    .slice(0, cap)
+    .map((t) => `• ${formatClockTime(t.due_time!)} — ${t.text}`)
 }
 
 // Active habits not yet done today — the 💪 section. Capped so the push body stays scannable.
@@ -163,6 +179,7 @@ function habitLines(inputs: DispatchInputs, cap = 8): string[] {
 export function buildMorningFromPlan(
   rawPlan: DispatchPlan,
   inputs: DispatchInputs,
+  localDate: string,
 ): MessageContent {
   const title = morningTitle(inputs)
   // Re-normalize even a typed argument — the value ultimately came from opaque jsonb and the cast
@@ -170,23 +187,31 @@ export function buildMorningFromPlan(
   const plan = normalizePlan(rawPlan) ?? {}
 
   const sections: string[] = []
-  const headline = plan.headline?.trim()
-  if (headline) sections.push(headline)
-
+  const times = timedTodayLines(inputs, localDate)
   const big = plan.bigRock ? rockLine(plan.bigRock) : null
-  if (big) sections.push(`🪨 BIG ROCK\n${big}`)
-
   const quick = (plan.smallRocks ?? [])
     .map(rockLine)
     .filter((line): line is string => line !== null)
     .slice(0, QUICK_WINS_CAP)
+
+  // The AI headline leads — EXCEPT when the plan is rock-less yet a timed anchor exists today: a
+  // headline like "nothing pressing" would then contradict the ⏰ TODAY list right below it, so
+  // drop it and let the anchor speak.
+  const headline = plan.headline?.trim()
+  const headlineContradicts = !big && quick.length === 0 && times.length > 0
+  if (headline && !headlineContradicts) sections.push(headline)
+
+  // Fixed anchors first — anything due at a specific time today, so the times are unmissable.
+  if (times.length > 0) sections.push(`⏰ TODAY\n${times.join('\n')}`)
+
+  if (big) sections.push(`🪨 BIG ROCK\n${big}`)
   if (quick.length > 0) sections.push(`⚡ QUICK WINS\n${quick.join('\n')}`)
 
   const habits = habitLines(inputs)
   if (habits.length > 0) sections.push(`💪 HABITS\n${habits.join('\n')}`)
 
-  // A plan with no rocks IS the message ("open day") — say so plainly if the headline didn't.
-  if (!big && quick.length === 0)
+  // A plan with no rocks IS the message ("open day") — but not if there's a timed anchor today.
+  if (!big && quick.length === 0 && times.length === 0)
     sections.push('Nothing pressing on the board — enjoy the open day 🙂')
 
   sections.push(SIGNOFF)
@@ -195,14 +220,19 @@ export function buildMorningFromPlan(
 
 // The deterministic morning fallback — ships when no plan exists and AI is paused/failed, so the
 // send never depends on the model. A load summary, not a fake plan.
-export function buildMorningMessage(inputs: DispatchInputs): MessageContent {
+export function buildMorningMessage(inputs: DispatchInputs, localDate: string): MessageContent {
   const open = openPlacedTasks(inputs)
   const habits = inputs.habits.filter((h) => h.active)
   const bits: string[] = []
   if (open.length > 0) bits.push(plural(open.length, 'task', 'tasks'))
   if (habits.length > 0) bits.push(plural(habits.length, 'habit', 'habits'))
   const load = bits.length > 0 ? `${bits.join(' and ')} on deck` : 'a clear slate'
-  return { title: morningTitle(inputs), body: `${load} today. Tap to plan your day.` }
+  const times = timedTodayLines(inputs, localDate)
+  const timesBlock = times.length > 0 ? `\n\n⏰ TODAY\n${times.join('\n')}` : ''
+  return {
+    title: morningTitle(inputs),
+    body: `${load} today. Tap to plan your day.${timesBlock}`,
+  }
 }
 
 /** What buildRecapMessage needs beyond the inputs bundle — the user's local "today". */

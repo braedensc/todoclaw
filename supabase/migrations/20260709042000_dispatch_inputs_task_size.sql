@@ -2,8 +2,10 @@
 -- proactive dispatcher so the pushed morning Plan My Day honors the same soft over-stuffing
 -- guardrail as the interactive one. dispatch_inputs_for_user builds each task's jsonb with an
 -- EXPLICIT key list (unlike a to_jsonb dump), so a new column is invisible to it until added here.
--- Everything else is verbatim from 20260708000000_dispatch_plan_content.sql — the ONLY change is
--- the added `'size', t.size` in the task jsonb_build_object.
+--
+-- Timestamped AFTER 20260709041944_reminder_rpcs_and_dispatch_duetime.sql (which re-created this
+-- same RPC to add `due_time`), so this replace LAYERS ON that version — it must keep `due_time` and
+-- only ADD `'size', t.size`. Running earlier would let 041944 clobber size back out.
 
 create or replace function public.dispatch_inputs_for_user(p_user_id uuid, p_local_date date)
 returns jsonb
@@ -28,7 +30,8 @@ begin
   select coalesce(
            jsonb_agg(jsonb_build_object(
              'id', t.id, 'text', t.text, 'x', t.x, 'y', t.y,
-             'due', t.due, 'staged', t.staged, 'recurring', t.recurring, 'size', t.size
+             'due', t.due, 'due_time', t.due_time, 'staged', t.staged,
+             'recurring', t.recurring, 'size', t.size
            )),
            '[]'::jsonb
          )
@@ -60,10 +63,10 @@ end;
 $$;
 
 -- Fence: service_role ONLY. CREATE OR REPLACE preserves the existing grant, but restate so this
--- file stands alone (matching 20260708000000_dispatch_plan_content.sql).
+-- file stands alone (matching 20260708000000 / 20260709041944).
 revoke all on function public.dispatch_inputs_for_user(uuid, date) from public;
 grant execute on function public.dispatch_inputs_for_user(uuid, date) to service_role;
 
 -- Down path (manual reversal):
---   -- restore the dispatch_inputs_for_user body from 20260708000000_dispatch_plan_content.sql
---   -- (i.e. drop `'size', t.size` from the task jsonb_build_object).
+--   -- re-create dispatch_inputs_for_user from 20260709041944_reminder_rpcs_and_dispatch_duetime.sql
+--   -- (i.e. drop `'size', t.size` from the task jsonb_build_object, keeping `due_time`).

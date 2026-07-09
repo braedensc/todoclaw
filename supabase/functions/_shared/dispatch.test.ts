@@ -72,12 +72,43 @@ Deno.test('dueKind: quiet hours suppress even a matching morning hour', () => {
   assertEquals(dueKind(p, 21), 'recap') // evening is outside quiet
 })
 
+// The user's local "today" the morning builders key their ⏰ TODAY section off (matches `ctx.now`
+// 2026-07-04 in the fixtures). Tasks below are due:null so no times appear unless a test sets them.
+const DAY = '2026-07-04'
+
 const inputs = (over: Partial<DispatchInputs> = {}): DispatchInputs => ({
   config: { location: 'Atlanta' },
   tasks: [
-    { id: 'a', text: 'Alpha', x: 0.8, y: 0.9, due: null, staged: false, recurring: null },
-    { id: 'b', text: 'Beta', x: 0.2, y: 0.3, due: null, staged: false, recurring: null },
-    { id: 's', text: 'Staged', x: null, y: null, due: null, staged: true, recurring: null },
+    {
+      id: 'a',
+      text: 'Alpha',
+      x: 0.8,
+      y: 0.9,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+    },
+    {
+      id: 'b',
+      text: 'Beta',
+      x: 0.2,
+      y: 0.3,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+    },
+    {
+      id: 's',
+      text: 'Staged',
+      x: null,
+      y: null,
+      due: null,
+      due_time: null,
+      staged: true,
+      recurring: null,
+    },
   ],
   habits: [
     { id: 'h1', text: 'Water', active: true },
@@ -110,7 +141,7 @@ Deno.test('dayNameInTZ: weekday in the user zone (date line vs UTC)', () => {
 Deno.test(
   'buildMorningFromPlan: full plan → headline + 🪨 + ⚡ + 💪 sections with durations',
   () => {
-    const m = buildMorningFromPlan(fullPlan, inputs())
+    const m = buildMorningFromPlan(fullPlan, inputs(), DAY)
     assertEquals(m.title, 'Good morning! ☀️')
     assertStringIncludes(m.body, 'Gas stove skills today')
     assertStringIncludes(m.body, '🪨 BIG ROCK\n• Learn to use gas stove + canister (~1h)')
@@ -127,6 +158,7 @@ Deno.test('buildMorningFromPlan: greeting uses the configured name', () => {
   const m = buildMorningFromPlan(
     fullPlan,
     inputs({ config: { notifications: { name: 'Braeden' } } }),
+    DAY,
   )
   assertEquals(m.title, 'Good morning Braeden! ☀️')
 })
@@ -136,6 +168,7 @@ Deno.test('buildMorningFromPlan: sparse plan renders light — no manufactured s
   const m = buildMorningFromPlan(
     { headline: 'Light day — nothing due for weeks. Enjoy it.', bigRock: null, smallRocks: [] },
     inputs(),
+    DAY,
   )
   assertStringIncludes(m.body, 'Light day')
   assertNotMatch(m.body, /🪨|⚡/)
@@ -144,7 +177,7 @@ Deno.test('buildMorningFromPlan: sparse plan renders light — no manufactured s
 })
 
 Deno.test('buildMorningFromPlan: done habits drop out of the 💪 section', () => {
-  const m = buildMorningFromPlan(fullPlan, inputs({ habit_done: { h1: true } }))
+  const m = buildMorningFromPlan(fullPlan, inputs({ habit_done: { h1: true } }), DAY)
   assertNotMatch(m.body, /💪/) // Water done, Old inactive → no habits section at all
 })
 
@@ -152,9 +185,92 @@ Deno.test('buildMorningFromPlan: malformed rocks (opaque jsonb) degrade, never t
   const m = buildMorningFromPlan(
     { headline: 'Hm.', bigRock: {}, smallRocks: [{ duration: '~5min' }, { task: 'Real one' }] },
     inputs(),
+    DAY,
   )
   assertNotMatch(m.body, /🪨/) // big rock had no task text → section omitted
   assertStringIncludes(m.body, '⚡ QUICK WINS\n• Real one') // taskless small rock dropped
+})
+
+Deno.test('buildMorningFromPlan: ⏰ TODAY lists timed tasks due today, earliest first', () => {
+  const timed = inputs({
+    tasks: [
+      // due today at times → shown, sorted; due:null and other-day excluded; done excluded.
+      {
+        id: 't1',
+        text: 'Dentist',
+        x: 0.5,
+        y: 0.5,
+        due: DAY,
+        due_time: '10:30:00',
+        staged: false,
+        recurring: null,
+      },
+      {
+        id: 't2',
+        text: 'Standup',
+        x: 0.5,
+        y: 0.5,
+        due: DAY,
+        due_time: '09:00:00',
+        staged: false,
+        recurring: null,
+      },
+      {
+        id: 't3',
+        text: 'Later day',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-05',
+        due_time: '08:00:00',
+        staged: false,
+        recurring: null,
+      },
+      {
+        id: 't4',
+        text: 'No time',
+        x: 0.5,
+        y: 0.5,
+        due: DAY,
+        due_time: null,
+        staged: false,
+        recurring: null,
+      },
+      {
+        id: 't5',
+        text: 'Done one',
+        x: 0.5,
+        y: 0.5,
+        due: DAY,
+        due_time: '07:00:00',
+        staged: false,
+        recurring: null,
+      },
+    ],
+    done: { t5: true },
+  })
+  const m = buildMorningFromPlan(fullPlan, timed, DAY)
+  assertStringIncludes(m.body, '⏰ TODAY\n• 9:00 AM — Standup\n• 10:30 AM — Dentist')
+  assertNotMatch(m.body, /Later day|No time|Done one/)
+})
+
+Deno.test('buildMorningFromPlan: a timed task today overrides the open-day line', () => {
+  const timed = inputs({
+    tasks: [
+      {
+        id: 't1',
+        text: 'Meeting',
+        x: 0.5,
+        y: 0.5,
+        due: DAY,
+        due_time: '15:00:00',
+        staged: false,
+        recurring: null,
+      },
+    ],
+  })
+  const m = buildMorningFromPlan({ headline: 'Quiet.', bigRock: null, smallRocks: [] }, timed, DAY)
+  assertStringIncludes(m.body, '⏰ TODAY\n• 3:00 PM — Meeting')
+  assertNotMatch(m.body, /open day/) // an anchor exists → not an "open day"
 })
 
 // ---- Morning: deterministic fallback -------------------------------------------------------------
@@ -162,14 +278,14 @@ Deno.test('buildMorningFromPlan: malformed rocks (opaque jsonb) degrade, never t
 Deno.test(
   'buildMorningMessage: counts placed, open, active — excludes staged/done/inactive',
   () => {
-    const m = buildMorningMessage(inputs())
+    const m = buildMorningMessage(inputs(), DAY)
     assertEquals(m.title, 'Good morning! ☀️')
     assertStringIncludes(m.body, '2 tasks and 1 habit on deck') // Alpha+Beta (not Staged), Water only
   },
 )
 
 Deno.test('buildMorningMessage: everything done/none placed → clear slate', () => {
-  const m = buildMorningMessage(inputs({ done: { a: true, b: true }, habits: [] }))
+  const m = buildMorningMessage(inputs({ done: { a: true, b: true }, habits: [] }), DAY)
   assertStringIncludes(m.body, 'a clear slate today')
 })
 
@@ -217,10 +333,20 @@ Deno.test(
             x: 0.5,
             y: 0.5,
             due: null,
+            due_time: null,
             staged: false,
             recurring: { frequencyDays: 7, lastDoneAt: '2026-07-07T15:00:00Z', doneCount: 3 },
           },
-          { id: 'b', text: 'Beta', x: 0.2, y: 0.3, due: null, staged: false, recurring: null },
+          {
+            id: 'b',
+            text: 'Beta',
+            x: 0.2,
+            y: 0.3,
+            due: null,
+            due_time: null,
+            staged: false,
+            recurring: null,
+          },
         ],
       }),
       ctx(), // UTC, localDate 2026-07-07 → lastDoneAt is "today"
@@ -241,6 +367,7 @@ Deno.test('buildRecapMessage: a recurring chore done YESTERDAY stays on the list
           x: 0.5,
           y: 0.5,
           due: null,
+          due_time: null,
           staged: false,
           recurring: { frequencyDays: 7, lastDoneAt: '2026-07-06T23:00:00Z', doneCount: 3 },
         },
@@ -307,7 +434,7 @@ Deno.test(
   'builders never throw on a mis-typed plan (numbers/strings where objects expected)',
   () => {
     const evil = { headline: 42, bigRock: 7, smallRocks: [null, 'x', { task: 9, duration: {} }] }
-    const morning = buildMorningFromPlan(evil as unknown as DispatchPlan, inputs())
+    const morning = buildMorningFromPlan(evil as unknown as DispatchPlan, inputs(), DAY)
     assertStringIncludes(morning.body, 'open day') // degrades to the open-day line, no crash
     const evening = buildRecapMessage(inputs({ plan: evil as unknown as DispatchPlan }), ctx())
     assertEquals(evening.title, 'Evening check-in 👋') // no usable items → generic check-in
@@ -316,7 +443,7 @@ Deno.test(
 
 Deno.test('buildMorningFromPlan: quick wins capped at 10', () => {
   const smallRocks = Array.from({ length: 14 }, (_, i) => ({ task: `Win ${i + 1}` }))
-  const m = buildMorningFromPlan({ headline: 'Busy.', smallRocks }, inputs())
+  const m = buildMorningFromPlan({ headline: 'Busy.', smallRocks }, inputs(), DAY)
   assertStringIncludes(m.body, '• Win 10')
   assertNotMatch(m.body, /• Win 11/)
 })

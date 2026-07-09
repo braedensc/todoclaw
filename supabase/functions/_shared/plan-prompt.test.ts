@@ -16,6 +16,15 @@ const base: PlanRequest = {
     { text: 'File taxes', importance: 80, urgency: 90, due: '2026-06-25', dueInDays: 1 },
     { text: 'Read paper', importance: 30, urgency: 10, due: null, dueInDays: null },
     { text: 'Renew passport', importance: 70, urgency: 20, due: '2026-06-20', dueInDays: -4 },
+    // A timed task → the due phrase carries the clock time (a fixed anchor for the plan).
+    {
+      text: 'Dentist',
+      importance: 60,
+      urgency: 60,
+      due: '2026-06-24',
+      dueInDays: 0,
+      dueTime: '10:30:00',
+    },
   ],
   recurringDue: [{ text: 'Water plants', status: 'due today' }],
   habits: ['Stretch', 'Read 10 pages'],
@@ -51,10 +60,11 @@ Deno.test('weekday prompt: slots + free-time + fixed commitments + habits + task
   assert(p.includes('School pickup — weekdays 3pm'))
   assert(p.includes('Stretch'))
   assert(p.includes('Water plants (due today)'))
-  // task line formatting: overdue, due-in-N, no-due
+  // task line formatting: overdue, due-in-N, no-due, and a timed anchor ("due today at 10:30 AM")
   assert(p.includes('due 4d ago'))
   assert(p.includes('due in 1d'))
   assert(p.includes('no due date'))
+  assert(p.includes('due today at 10:30 AM'))
 })
 
 Deno.test('commitments render as fixed blocks; an empty list omits the block entirely', () => {

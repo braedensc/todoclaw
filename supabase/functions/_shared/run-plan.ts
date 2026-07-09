@@ -73,7 +73,7 @@ export async function runPlanForUser(
       client.from('user_schedule').select('config').maybeSingle(),
       client
         .from('tasks')
-        .select('id, text, x, y, due, staged, recurring, size')
+        .select('id, text, x, y, due, due_time, staged, recurring, size')
         .is('deleted_at', null),
       client.from('habits').select('text, active').is('deleted_at', null),
       client.from('daily_state').select('done').eq('date', date).maybeSingle(),

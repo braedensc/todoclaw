@@ -5,7 +5,6 @@ import type { Recurring } from '../../types/task'
 import { placeInQuadrant } from '../../lib/quadrant-summary'
 import { BottomSheet } from '../../components/BottomSheet'
 import { AddTaskForm } from './AddTaskForm'
-import { useTimeZone } from '../schedule/use-time-zone'
 import { useUserSchedule } from '../schedule/use-user-schedule'
 import { useUpsertTaskReminder } from '../reminders/use-task-reminders'
 import { effectiveReminderDefault } from '../reminders/reminder-offsets'
@@ -41,7 +40,6 @@ export function MobileAddSheet({
 }) {
   const { data: tasks } = useTasks()
   const addTask = useAddTask()
-  const timeZone = useTimeZone()
   const upsertReminder = useUpsertTaskReminder()
   const reminderDefault = effectiveReminderDefault(
     useUserSchedule().data?.config.notifications?.reminderDefaultMinutes,
@@ -65,8 +63,8 @@ export function MobileAddSheet({
       { text, x, y, staged: false, recurring, due, due_time: dueTime },
       {
         onSuccess: (created) => {
-          if (dueTime && reminderMinutes !== null) {
-            upsertReminder.mutate({ task: created, offsetMinutes: reminderMinutes, timeZone })
+          if (dueTime && reminderMinutes !== null && !created.recurring) {
+            upsertReminder.mutate({ taskId: created.id, offsetMinutes: reminderMinutes })
           }
         },
       },

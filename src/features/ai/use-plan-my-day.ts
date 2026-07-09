@@ -22,6 +22,7 @@ export interface PlanRequest {
     urgency: number
     due: string | null
     dueInDays: number | null
+    dueTime: string | null
     size: TaskSize | null // coarse effort (S/M/L/XL), or null to let the planner infer it
   }[]
   recurringDue: { text: string; status: string }[]
@@ -47,6 +48,7 @@ export function buildPlanRequest(
       urgency: Math.round((t.x ?? 0.5) * 100),
       due: t.due,
       dueInDays: daysUntil(t.due, { timeZone, now }),
+      dueTime: t.due_time,
       size: t.size ?? null,
     }))
 

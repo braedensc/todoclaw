@@ -4,7 +4,6 @@ import { useAddTask } from '../tasks/use-tasks'
 import { useClickOutside } from '../../hooks/use-click-outside'
 import { formatDueTime } from '../../lib/dates'
 import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
-import { useTimeZone } from '../schedule/use-time-zone'
 import { useUserSchedule } from '../schedule/use-user-schedule'
 import { useUpsertTaskReminder } from '../reminders/use-task-reminders'
 import { ReminderPicker } from '../reminders/ReminderPicker'
@@ -120,7 +119,6 @@ type ChipId = 'due' | 'repeat'
 
 function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const addTask = useAddTask()
-  const timeZone = useTimeZone()
   const upsertReminder = useUpsertTaskReminder()
   // The user's configured add-flow default (1 hour unless changed / off). Pre-selects the picker
   // the moment a due time is set.
@@ -161,10 +159,10 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
       },
       {
         onSuccess: (created) => {
-          // A timed task with a chosen offset gets its reminder right after creation (the task
-          // must exist first — the reminder FKs its id).
-          if (dt && reminderMinutes !== null) {
-            upsertReminder.mutate({ task: created, offsetMinutes: reminderMinutes, timeZone })
+          // A timed, non-recurring task with a chosen offset gets its reminder right after creation
+          // (the task must exist first — the reminder FKs its id; reminders don't fire for repeats).
+          if (dt && reminderMinutes !== null && !created.recurring) {
+            upsertReminder.mutate({ taskId: created.id, offsetMinutes: reminderMinutes })
           }
           setText('')
           setDue(null)

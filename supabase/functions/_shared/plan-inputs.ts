@@ -21,6 +21,7 @@ interface TaskRow {
   x: number | null
   y: number | null
   due: string | null
+  due_time: string | null
   // Optional: run-plan.ts selects it, and the dispatch RPC provides it, but keeping it optional lets
   // an old-shaped source (deploy skew) still satisfy the type — toPlanSize maps a missing value to null.
   size?: string | null
@@ -65,6 +66,7 @@ export function buildPlanRequest(
       urgency: Math.round((t.x ?? 0.5) * 100),
       due: t.due,
       dueInDays: daysUntilInTZ(t.due, timeZone, now),
+      dueTime: t.due_time,
       size: toPlanSize(t.size),
     }))
 
