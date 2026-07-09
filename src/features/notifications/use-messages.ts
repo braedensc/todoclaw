@@ -10,7 +10,7 @@ const MESSAGES_KEY = ['messages'] as const
 
 export interface InboxMessage {
   id: string
-  kind: 'plan' | 'recap'
+  kind: 'plan' | 'recap' | 'reminder'
   local_date: string
   title: string
   body: string

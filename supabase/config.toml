@@ -435,6 +435,11 @@ verify_jwt = false
 [functions.dispatch-messages]
 verify_jwt = false
 
+# Per-task reminder sweep (ADR 2026-07-09). Triggered every minute by the pg_cron job with the
+# same DISPATCH_SECRET header — same gating story as dispatch-messages.
+[functions.dispatch-reminders]
+verify_jwt = false
+
 # Admin panel backend (owner-only). Owner-gated in-function via OWNER_USER_ID (isOwner), like
 # generate-invite, so verify_jwt=false is the same CORS-preflight fix — the function does the auth.
 [functions.admin]
