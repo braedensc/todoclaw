@@ -15,13 +15,9 @@
 
 import { useState } from 'react'
 import { useSaveScheduleConfig, useUserSchedule } from './use-user-schedule'
+import { zoneLabel } from './zone-label'
 
 const DISMISS_KEY = 'todoclaw.tz-mismatch.dismissed'
-
-/** 'America/New_York' → 'New York'; 'Pacific/Auckland' → 'Auckland'. Friendly but unambiguous. */
-function zoneLabel(zone: string): string {
-  return (zone.split('/').pop() ?? zone).replaceAll('_', ' ')
-}
 
 /** The wall-clock reading in `zone` right now, e.g. "2:34 PM" — makes the gap concrete. */
 function clockIn(zone: string): string {

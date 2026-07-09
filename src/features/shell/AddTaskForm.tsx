@@ -4,6 +4,7 @@ import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import { QUADRANT_ORDER, QUADRANT_CENTER, QUADRANT_SUBTITLE } from '../../lib/quadrant-summary'
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import type { Recurring } from '../../types/task'
+import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
 
 // AddTaskForm — the mobile "add a task" form (rendered inside MobileAddSheet's bottom sheet).
 // Reworked ground-up from the full-screen takeover after the 2026-07-08 feedback round:
@@ -41,8 +42,14 @@ export function AddTaskForm({
   inputRef,
 }: {
   defaultQuadrant: QuadrantKey | null
-  /** Create the task: text + quadrant + an optional fresh recurring schedule. */
-  onAdd: (text: string, dest: QuadrantKey, recurring: Recurring | null) => void
+  /** Create the task: text + quadrant + optional recurring schedule + optional due date/time. */
+  onAdd: (
+    text: string,
+    dest: QuadrantKey,
+    recurring: Recurring | null,
+    due: string | null,
+    dueTime: string | null,
+  ) => void
   /** Optional "fastest way is Chat" tip — tapping it closes this sheet and opens BabyClaw. */
   onOpenChat?: () => void
   /** The text field, exposed so the caller can focus it explicitly if ever needed (NOT focused
@@ -53,6 +60,8 @@ export function AddTaskForm({
   const [selected, setSelected] = useState<QuadrantKey | null>(defaultQuadrant)
   const [repeat, setRepeat] = useState<(typeof REPEAT_CHOICES)[number]['value']>(null)
   const [customDays, setCustomDays] = useState('')
+  const [due, setDue] = useState<string | null>(null)
+  const [dueTime, setDueTime] = useState<string | null>(null)
 
   const frequencyDays =
     repeat === 'custom' ? Math.floor(Number(customDays)) : repeat === null ? null : repeat
@@ -66,7 +75,8 @@ export function AddTaskForm({
       frequencyDays != null && frequencyDays >= 1
         ? { frequencyDays, lastDoneAt: null, doneCount: 0 }
         : null
-    onAdd(text.trim(), selected, recurring)
+    // A time never ships without a date (DB CHECK) — the control disables it, this guards it.
+    onAdd(text.trim(), selected, recurring, due, due ? dueTime : null)
   }
 
   return (
@@ -114,6 +124,39 @@ export function AddTaskForm({
               </button>
             )
           })}
+        </div>
+      </div>
+
+      {/* Due — optional date + time (time unlocks once a date is picked). text-base keeps iOS
+          from zooming the focused input (the 16px rule); 44px min-height for touch targets. */}
+      <div>
+        <p className="mb-1.5 text-[13px] font-semibold text-ink">
+          <span aria-hidden>📅</span> Due <span className="font-normal text-muted">(optional)</span>
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            aria-label="Due date"
+            value={due ?? ''}
+            onChange={(e) => {
+              const v = e.target.value === '' ? null : e.target.value
+              setDue(v)
+              if (!v) setDueTime(null)
+            }}
+            className="min-h-[44px] min-w-0 flex-1 rounded-xl border border-border-strong bg-card px-3 text-base text-ink focus:border-primary focus:outline-none"
+          />
+          <input
+            type="time"
+            aria-label="Due time"
+            value={dueTime ?? ''}
+            disabled={!due}
+            title={due ? undefined : 'Set a date first'}
+            onChange={(e) => setDueTime(e.target.value === '' ? null : e.target.value)}
+            className="min-h-[44px] rounded-xl border border-border-strong bg-card px-3 text-base text-ink focus:border-primary focus:outline-none disabled:opacity-40"
+          />
+        </div>
+        <div className="mt-1">
+          <DueTimezoneHint />
         </div>
       </div>
 
