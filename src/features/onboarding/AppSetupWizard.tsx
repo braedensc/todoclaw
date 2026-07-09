@@ -229,8 +229,9 @@ function NotificationsPage({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm leading-snug text-ink">
-        Your plan each morning (8 AM), a recap each evening (9 PM) — and a heads-up when a task with
-        a set time is coming due. Change any of it in Settings.
+        Every morning (8 AM) your day’s plan arrives on its own. Every evening (9 PM) BabyClaw
+        checks in — reply with what you got done and he marks it complete for you. Plus a heads-up
+        when a timed task comes due. Change any of it in Settings.
       </p>
       {enabled ? (
         <p className="text-sm font-medium text-primary">Notifications are on for this device ✓</p>
