@@ -2,6 +2,9 @@ import { useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
+import { minutesUntilDueTime } from '../../lib/dates'
+import { urgencyTier } from '../../lib/visual-urgency'
+import { useNow } from '../../hooks/use-now'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -10,6 +13,7 @@ import { boxClampBounds, clampPoint } from '../../hooks/use-free-drag'
 import { GridCanvas } from './GridCanvas'
 import { GridCard } from './GridCard'
 import { GridAxes } from './GridAxes'
+import { GridLegend } from './GridLegend'
 import { PawPrintShape } from './PawTrail'
 import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
@@ -75,6 +79,9 @@ export function GridSurface({
 
   const confirm = useConfirm()
 
+  // One shared clock for every card's countdown / timed-overdue tier (30s tick — see useNow).
+  const now = useNow()
+
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
   // clipped by the canvas's `overflow-hidden` (item 17). Applied at RENDER time (screen coords
@@ -132,6 +139,7 @@ export function GridSurface({
         screenX={p.x}
         screenY={1 - p.y}
         daysUntilDue={daysUntil(task.due, { timeZone })}
+        minutesUntilDue={minutesUntilDueTime(task.due, task.due_time, timeZone, now)}
         dragging={draggingId === task.id}
         cardRef={(node) => registerCardNode(task.id, node)}
         onPointerDown={startReposition(task.id)}
@@ -256,7 +264,9 @@ export function GridSurface({
                 accentColor={accentColor}
                 screenX={bp.x}
                 screenY={1 - bp.y}
-                glow={urgencyGlowStyle(clusterMinD)}
+                // Bubbles stay date-granular (nearest due day → tier): minute-level countdown on
+                // an aggregate bubble would imply a precision the group doesn't have.
+                glow={urgencyGlowStyle(urgencyTier(clusterMinD, null))}
                 open={open}
                 onToggle={() => selectCluster(open ? null : dominant.id)}
                 // Register the bubble node under the dominant id (same key `memberToNodeKey` uses)
@@ -302,6 +312,10 @@ export function GridSurface({
           ))}
         </GridCanvas>
       </div>
+
+      {/* Urgency-ladder legend — below the frame, clear of the URGENCY axis arrow that lives in
+          the bottom gutter (absolute at the frame's bottom edge; mt-7 steps past it). */}
+      <GridLegend />
     </div>
   )
 }

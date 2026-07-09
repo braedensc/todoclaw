@@ -4,6 +4,7 @@ import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useConfirm } from '../../components/use-confirm'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { useNow } from '../../hooks/use-now'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import type { Task } from '../../types/task'
@@ -42,6 +43,8 @@ export interface ListViewProps {
 export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {}) {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
+  // One shared clock for every row's countdown / timed-overdue badge (30s tick — see useNow).
+  const now = useNow()
   const { data: daily } = useDailyState(timeZone)
 
   const updateTask = useUpdateTask()
@@ -158,6 +161,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
       <ul className="flex flex-col gap-2">
         {ranked.map((task: Task, i) => (
           <ListRow
+            now={now}
             key={task.id}
             task={task}
             rank={i + 1}

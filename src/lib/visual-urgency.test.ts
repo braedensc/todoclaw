@@ -1,65 +1,132 @@
 import { describe, expect, it } from 'vitest'
-import { stalenessStyle, urgencyGlowStyle } from './visual-urgency'
+import {
+  dueChipStyle,
+  fmtCountdown,
+  fmtOverdueAmount,
+  gridChipLabel,
+  stalenessStyle,
+  urgencyGlowStyle,
+  urgencyTier,
+} from './visual-urgency'
 
-// These tests pin the ported EisenClaw constants (LOGIC-TO-PORT §4/§5, html:77-95). If a value
-// changes, that is a deliberate visual-parity decision — update the table AND the doc, not just
-// the assertion.
+// These tests pin the 2026-07-08 workshop ladder — the DELIBERATE ~2× amplification of the
+// original EisenClaw glow (its "much more obvious" ask) plus the time-of-day tiers. If a value
+// changes, that is a visual-design decision — update the table in visual-urgency.ts AND the
+// keyframes in index.css, not just the assertion. Staleness remains EisenClaw parity.
+
+describe('urgencyTier', () => {
+  it('null due → none; day boundaries land each tier', () => {
+    expect(urgencyTier(null, null)).toBe('none')
+    expect(urgencyTier(-1, null)).toBe('overdue')
+    expect(urgencyTier(0, null)).toBe('today')
+    expect(urgencyTier(1, null)).toBe('closing-in')
+    expect(urgencyTier(2, null)).toBe('closing-in')
+    expect(urgencyTier(3, null)).toBe('this-week')
+    expect(urgencyTier(7, null)).toBe('this-week')
+    expect(urgencyTier(8, null)).toBe('radar')
+    expect(urgencyTier(14, null)).toBe('radar')
+    expect(urgencyTier(15, null)).toBe('none')
+  })
+
+  it('a timed task flips to overdue when its instant passes, not at midnight', () => {
+    expect(urgencyTier(0, -5)).toBe('overdue')
+    // …but a future-dated task can never read overdue off a clock-skew minutes value.
+    expect(urgencyTier(1, -5)).toBe('closing-in')
+  })
+
+  it('the final two hours of a timed task get their own tier', () => {
+    expect(urgencyTier(0, 120)).toBe('final-hours')
+    expect(urgencyTier(0, 45)).toBe('final-hours')
+    expect(urgencyTier(0, 121)).toBe('today')
+    // Date-only tasks have no instant → plain today.
+    expect(urgencyTier(0, null)).toBe('today')
+  })
+})
 
 describe('urgencyGlowStyle', () => {
-  it('returns null when there is no due date', () => {
-    expect(urgencyGlowStyle(null)).toBeNull()
+  it('none → null', () => {
+    expect(urgencyGlowStyle('none')).toBeNull()
   })
 
-  it('overdue (d < 0): strongest ring + 14px glow + pulse animation', () => {
-    const glow = urgencyGlowStyle(-1)
-    expect(glow).toEqual({
+  it('overdue: strongest ring + pulse + warm card tint', () => {
+    expect(urgencyGlowStyle('overdue')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(194,105,63,0.60), 0 0 14px 5px rgba(194,105,63,0.28)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2.5px rgba(194,105,63,0.90), 0 0 24px 9px rgba(194,105,63,0.42)',
       animation: 'urgency-pulse 2s ease-in-out infinite',
+      background: '#fff8f3',
     })
   })
 
-  it('only the overdue tier pulses', () => {
-    expect(urgencyGlowStyle(-30)?.animation).toBe('urgency-pulse 2s ease-in-out infinite')
-    for (const d of [0, 1, 2, 7, 14]) {
-      expect(urgencyGlowStyle(d)?.animation).toBeUndefined()
-    }
-  })
-
-  it('due today (d === 0): ring + 12px glow, no pulse', () => {
-    expect(urgencyGlowStyle(0)).toEqual({
+  it('final-hours: today ring + the soft pulse (no tint)', () => {
+    expect(urgencyGlowStyle('final-hours')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(194,105,63,0.50), 0 0 12px 4px rgba(194,105,63,0.20)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)',
+      animation: 'urgency-pulse-soft 3s ease-in-out infinite',
     })
   })
 
-  it('d <= 2 (boundary at 1 and 2): gold ring + 10px glow', () => {
-    const expected = {
+  it('today / closing-in / this-week / radar: static rings, no pulse', () => {
+    expect(urgencyGlowStyle('today')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(184,134,42,0.45), 0 0 10px 3px rgba(184,134,42,0.16)',
-    }
-    expect(urgencyGlowStyle(1)).toEqual(expected)
-    expect(urgencyGlowStyle(2)).toEqual(expected)
-  })
-
-  it('d <= 7 (boundary at 3 and 7): dim ring + 8px glow', () => {
-    const expected = {
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)',
+    })
+    expect(urgencyGlowStyle('closing-in')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1px rgba(138,120,40,0.28), 0 0 8px 2px rgba(138,120,40,0.10)',
-    }
-    expect(urgencyGlowStyle(3)).toEqual(expected)
-    expect(urgencyGlowStyle(7)).toEqual(expected)
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(184,134,42,0.62), 0 0 14px 5px rgba(184,134,42,0.26)',
+    })
+    expect(urgencyGlowStyle('this-week')).toEqual({
+      boxShadow:
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(138,120,40,0.42), 0 0 11px 3px rgba(138,120,40,0.16)',
+    })
+    expect(urgencyGlowStyle('radar')).toEqual({
+      boxShadow: '0 2px 7px rgba(0,0,0,.08), 0 0 7px 2px rgba(138,120,40,0.14)',
+    })
+  })
+})
+
+describe('dueChipStyle', () => {
+  it('terracotta fill for the hot tiers, gold for closing-in, olive outline for this-week, muted otherwise', () => {
+    const hot = { backgroundColor: '#c2693f', color: '#fff' }
+    expect(dueChipStyle('overdue')).toEqual(hot)
+    expect(dueChipStyle('final-hours')).toEqual(hot)
+    expect(dueChipStyle('today')).toEqual(hot)
+    expect(dueChipStyle('closing-in')).toEqual({ backgroundColor: '#b8862a', color: '#fff' })
+    expect(dueChipStyle('this-week')).toEqual({
+      backgroundColor: 'transparent',
+      color: '#8a7828',
+      border: '1.5px solid rgba(138,120,40,0.55)',
+    })
+    expect(dueChipStyle('radar')).toEqual({ backgroundColor: '#8a8577', color: '#fff' })
+    expect(dueChipStyle('none')).toEqual({ backgroundColor: '#8a8577', color: '#fff' })
+  })
+})
+
+describe('chip label helpers', () => {
+  it('fmtCountdown: minutes, then h + m', () => {
+    expect(fmtCountdown(45)).toBe('in 45m')
+    expect(fmtCountdown(60)).toBe('in 1h')
+    expect(fmtCountdown(80)).toBe('in 1h 20m')
+    expect(fmtCountdown(0.4)).toBe('in 1m') // never "in 0m"
   })
 
-  it('d <= 14 (boundary at 8 and 14): subtle 5px glow only', () => {
-    const expected = { boxShadow: '0 2px 7px rgba(0,0,0,.08), 0 0 5px 1px rgba(138,120,40,0.09)' }
-    expect(urgencyGlowStyle(8)).toEqual(expected)
-    expect(urgencyGlowStyle(14)).toEqual(expected)
+  it('fmtOverdueAmount: hours for a timed task past its instant today, days otherwise', () => {
+    expect(fmtOverdueAmount(0, -125)).toBe('2h')
+    expect(fmtOverdueAmount(0, -30)).toBe('30m')
+    expect(fmtOverdueAmount(-3, null)).toBe('3d')
+    expect(fmtOverdueAmount(-3, -4000)).toBe('3d') // d < 0 → day-granular even when timed
   })
 
-  it('d > 14: no glow', () => {
-    expect(urgencyGlowStyle(15)).toBeNull()
-    expect(urgencyGlowStyle(100)).toBeNull()
+  it('gridChipLabel says WHEN by tier', () => {
+    expect(gridChipLabel('overdue', 0, '15:00:00', -125)).toBe('Overdue · 2h')
+    expect(gridChipLabel('overdue', -3, null, null)).toBe('Overdue · 3d')
+    expect(gridChipLabel('final-hours', 0, '15:00:00', 45)).toBe('⏰ in 45m')
+    expect(gridChipLabel('today', 0, '15:00:00', 300)).toBe('⏰ 3:00 PM')
+    expect(gridChipLabel('today', 0, null, null)).toBe('Today')
+    expect(gridChipLabel('closing-in', 1, '20:00:00', null)).toBe('Tomorrow 8:00 PM')
+    expect(gridChipLabel('closing-in', 1, null, null)).toBe('Tomorrow')
+    expect(gridChipLabel('closing-in', 2, null, null)).toBe('2d')
+    expect(gridChipLabel('this-week', 5, null, null)).toBe('5d')
+    expect(gridChipLabel('radar', 12, null, null)).toBe('12d')
   })
 })
 
