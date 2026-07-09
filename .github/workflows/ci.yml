@@ -129,6 +129,30 @@ jobs:
       - name: Run E2E smoke
         run: npm run test:e2e
 
+  # Migration guard — hard, deterministic feedback on the two mistakes that wedged the prod deploy
+  # on 2026-07-09: a DUPLICATE migration version (schema_migrations PK collision) or an OUT-OF-ORDER
+  # one (sorts before main's latest → `supabase db push` hard-stops and applies nothing further).
+  # PR-only and compares against the freshly-fetched main tip, so a parallel branch that grabbed the
+  # same/earlier timestamp fails HERE instead of silently after merge. See scripts/check-migrations.mjs.
+  migration-guard:
+    name: Migration guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch main (the base to compare against)
+        run: git fetch --no-tags --depth=1 origin main
+
+      - name: Check migration versions (no duplicates, newest-last)
+        env:
+          BASE_REF: FETCH_HEAD
+        run: node scripts/check-migrations.mjs
+
   # GAP 1 (audit 2026-07-06) CI backstop. `.claude/settings.json` sets
   # defaultMode=bypassPermissions, so the PreToolUse hook is the only local runtime gate.
   # Even if that local guard is somehow disabled, a PR that changes the guard machinery

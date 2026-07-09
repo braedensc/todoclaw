@@ -1,0 +1,46 @@
+name: Deploy failure alert
+
+# The 2026-07-09 incident stayed invisible for hours because a PR's CI going green is SEPARATE from
+# the post-merge prod deploy — the deploy failed in the Actions tab with nothing surfacing it. This
+# reacts to the "Deploy (prod)" workflow finishing with `failure` and opens (or comments on) a GitHub
+# issue so a broken deploy is loud instead of silent. Decoupled via workflow_run, so it needs no edit
+# to deploy.yml. NOTE: workflow_run uses the file on the DEFAULT branch — this only fires once merged.
+
+on:
+  workflow_run:
+    workflows: ['Deploy (prod)']
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  alert:
+    name: Open an issue on deploy failure
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const title = '🚨 Production deploy is failing'
+            const body = [
+              `**Deploy (prod)** run [#${run.run_number}](${run.html_url}) finished with \`failure\` on \`${run.head_branch}\` (commit \`${run.head_sha.slice(0, 7)}\`).`,
+              '',
+              'Migrations and/or Edge Functions did **not** reach prod. A common cause is a migration problem the `Migration guard` CI check now catches on PRs; another is a failing `db push`.',
+              '',
+              `Investigate the failing job: \`gh run view ${run.id} --log\` (start with the **Apply migrations to prod** step).`,
+            ].join('\n')
+            const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
+            const existing = open.data.find((i) => i.title === title && !i.pull_request)
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body })
+              core.info(`Commented on #${existing.number}`)
+            } else {
+              const created = await github.rest.issues.create({ owner, repo, title, body })
+              core.info(`Opened #${created.data.number}`)
+            }
