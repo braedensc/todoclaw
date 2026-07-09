@@ -1,0 +1,125 @@
+name: Cron health check
+
+# Watches the in-database pg_cron jobs (dispatch-messages, dispatch-reminders) that fire every
+# minute. The trap this closes: pg_cron reports a run "succeeded" as long as the SQL runs — but the
+# HTTP call that SQL makes (via pg_net) can still fail, and that failure is otherwise SILENT. That's
+# exactly how the 2026-07-09 morning push stayed broken: the job ran every minute but the function
+# returned 403 (wrong DISPATCH_SECRET) / 404 (function not deployed) and nobody knew.
+#
+# This checks net._http_response for recent non-2xx responses (pg_net is used ONLY by these crons, so
+# any sustained non-2xx == a cron failing) and cron.job_run_details for failed runs, then opens/updates
+# a GitHub issue. Read-only. Runs on Actions' best-effort schedule, so it catches SUSTAINED failures
+# (a job down for a while), not a single blip — which is what matters for an always-on minute cron.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # every 15 min (GH may run it less often; fine for catching sustained failures)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  health:
+    name: Check pg_cron / dispatch health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preflight — is the DB URL configured?
+        id: pre
+        env:
+          SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning::BACKUP_DATABASE_URL not set — skipping cron health check."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The DB URL carries the password — keep it in env, never inline / never with `set -x`.
+      - name: Query recent cron/dispatch failures
+        id: check
+        if: steps.pre.outputs.configured == 'true'
+        env:
+          PGURL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          # Window: last 30 min. HTTP failures need >=3 (a minute cron fails ~30x in 30 min when
+          # broken, ~0 when healthy — 3 cleanly ignores a one-off blip). Any FAILED pg_cron run counts.
+          report=$(psql "$PGURL" -At -F '|' <<'SQL'
+          with http as (
+            select coalesce(status_code::text, 'error') as code, count(*) n
+            from net._http_response
+            where created > now() - interval '30 minutes'
+              and (status_code is null or status_code < 200 or status_code >= 300)
+            group by 1 having count(*) >= 3
+          ),
+          runs as (
+            select j.jobname, count(*) n
+            from cron.job_run_details rd
+            join cron.job j on j.jobid = rd.jobid
+            where rd.start_time > now() - interval '30 minutes' and rd.status = 'failed'
+            group by 1
+          )
+          select 'http:' || code, n from http
+          union all
+          select 'cron:' || jobname, n from runs;
+          SQL
+          )
+          echo "$report"
+          if [ -n "$report" ]; then
+            echo "failing=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "report<<REPORT_EOF"
+              echo "$report"
+              echo "REPORT_EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "failing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open/update a cron-health issue
+        if: steps.pre.outputs.configured == 'true' && steps.check.outputs.failing == 'true'
+        uses: actions/github-script@v7
+        env:
+          REPORT: ${{ steps.check.outputs.report }}
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const title = '🚨 Cron / dispatch jobs are failing'
+            const hint = {
+              '403': 'wrong/missing `DISPATCH_SECRET` — the Vault `dispatch_secret` must match the function env',
+              '404': 'the target function is not deployed, or its `*_url` Vault secret is wrong',
+              '401': 'auth rejected by the function',
+              error: 'the request never got a response (network/timeout)',
+            }
+            const rows = (process.env.REPORT || '')
+              .trim()
+              .split('\n')
+              .filter(Boolean)
+              .map((l) => {
+                const [label, n] = l.split('|')
+                if (label.startsWith('http:')) {
+                  const code = label.slice(5)
+                  return `- **${n}** HTTP \`${code}\` response(s) in the last 30 min — ${hint[code] || 'non-2xx'}`
+                }
+                return `- pg_cron job \`${label.slice(5)}\` had **${n}** failed run(s) in the last 30 min`
+              })
+            const body = [
+              'The cron health check found the minute-cron dispatch pipeline failing:',
+              '',
+              ...rows,
+              '',
+              'These jobs fire every minute but pg_cron reports "succeeded" even when the HTTP call fails — so this is otherwise silent. Check `net._http_response` and `cron.job_run_details` in the SQL editor.',
+            ].join('\n')
+            const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
+            const existing = open.data.find((i) => i.title === title && !i.pull_request)
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body })
+              core.info(`Updated #${existing.number}`)
+            } else {
+              const created = await github.rest.issues.create({ owner, repo, title, body })
+              core.info(`Opened #${created.data.number}`)
+            }
