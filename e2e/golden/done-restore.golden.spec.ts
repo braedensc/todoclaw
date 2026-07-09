@@ -1,9 +1,10 @@
 import { test, expect } from '../helpers/fixtures'
 import { placeTask, openDone, closeDone } from '../helpers/ui'
 
-// Golden path for the Done surface (a full page since ADR-0027, previously a modal): mark a placed
-// task done from the grid → it leaves the grid and appears in Done as a history row with a
-// timestamp → Restore returns it to the grid, and Delete (×) drops a record from the list.
+// Golden path for the Done surface (a centered popup on desktop / bottom sheet on mobile, over the
+// still-mounted home): mark a placed task done from the grid → it leaves the grid and appears in
+// Done as a history row with a timestamp → Restore returns it to the grid, and Delete (×) drops a
+// record from the list.
 //
 // Two behaviours, two tests, because Restore now ALSO removes the row (restore-removes-from-list —
 // DoneView fires deleteEntry on restore success), so a single completion can't exercise both.

@@ -130,7 +130,8 @@ export async function expandRow(row: Locator): Promise<void> {
   await row.getByRole('button', { expanded: false }).click()
 }
 
-/** Open the Done page from the Account nav (ADR-0027: Done is a route/page, not a modal). */
+/** Open the Done surface from the Account nav (a `#/done` route: a centered popup on desktop, a
+ * bottom sheet on mobile — either way it opens the region named "Done"). */
 export async function openDone(page: Page): Promise<void> {
   await page
     .getByRole('navigation', { name: 'Account' })
@@ -139,7 +140,7 @@ export async function openDone(page: Page): Promise<void> {
   await expect(page.getByRole('region', { name: 'Done' })).toBeVisible()
 }
 
-/** Close the Done page (its ✕ → browser Back), returning to the view underneath. */
+/** Close the Done surface (its ✕ → browser Back), returning to the view underneath. */
 export async function closeDone(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Close done' }).click()
   await expect(page.getByRole('region', { name: 'Done' })).toHaveCount(0)

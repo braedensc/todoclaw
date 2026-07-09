@@ -190,15 +190,16 @@ function AppShell() {
           }
         >
           {/* Home vs. a full page. 'home' renders the header, plan, inline reminders, and work
-              area; a Done / Daily-reminders page swaps all of that out (ADR-0027). The 'chat' route
-              is home + the chat overlay — a notification tap must land on the main screen with the
-              drawer open, not a blank shell. On MOBILE the 'reminders' AND 'done' routes are
-              likewise home + a slide-up sheet (RemindersSheet / DoneSheet below) rather than a page
-              swap, so the home screen stays visible behind them. The Settings / Backups overlays
-              and the mobile bottom nav below are route-independent. */}
+              area; the Daily-reminders page swaps all of that out (ADR-0027). The 'chat' route is
+              home + the chat overlay — a notification tap must land on the main screen with the
+              drawer open, not a blank shell. 'done' now stays home + an overlay on BOTH surfaces
+              (desktop popup DonePage / mobile sheet DoneSheet below), so the home screen stays
+              visible behind it; MOBILE 'reminders' is likewise home + a slide-up sheet. The
+              Settings / Backups overlays and the mobile bottom nav below are route-independent. */}
           {(route === 'home' ||
             route === 'chat' ||
-            (isMobile && (route === 'reminders' || route === 'done'))) && (
+            route === 'done' ||
+            (isMobile && route === 'reminders')) && (
             <>
               {/* Above the masthead on both surfaces: prompt when the device clock and the
                   stored timezone disagree (hidden in grid-only — that mode strips all chrome). */}
@@ -561,11 +562,11 @@ function AppShell() {
             </>
           )}
 
-          {/* Full pages (ADR-0027) — swapped in for the home content above when the route matches.
-              Each keeps its original body (DoneView / HabitsView); only the container changed from
-              modal to page. Back is the ✕ inside each (→ history.back) or the browser button.
-              Done: a full page on desktop; on mobile a bottom sheet over the still-mounted home
-              above (DoneSheet) — same `#/done` route either way, only the presentation differs. */}
+          {/* Done: an overlay over the still-mounted home above (which is why 'done' is in the home
+              condition) — a centered popup on desktop (DonePage), a bottom sheet on mobile
+              (DoneSheet). Same `#/done` route either way (deep links + browser Back work); only the
+              presentation differs. Back is the ✕ / scrim inside each (→ goBack) or the browser
+              button. Daily reminders below is still a full page on desktop (ADR-0027). */}
           {route === 'done' && (
             <ErrorBoundary>{isMobile ? <DoneSheet /> : <DonePage />}</ErrorBoundary>
           )}
