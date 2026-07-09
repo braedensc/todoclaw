@@ -7,6 +7,7 @@ import {
   buildSystem,
   DEFAULT_ASSISTANT_CONFIG,
   type ChatContext,
+  type PromptTask,
 } from './chat-prompt.ts'
 
 function baseContext(over: Partial<ChatContext> = {}): ChatContext {
@@ -81,6 +82,7 @@ Deno.test(
             staged: false,
             recurringLabel: null,
             doneToday: false,
+            completedAt: null,
           },
           {
             id: 't2',
@@ -93,6 +95,7 @@ Deno.test(
             staged: false,
             recurringLabel: 'weekly',
             doneToday: true,
+            completedAt: null,
           },
           {
             id: 't3',
@@ -105,6 +108,7 @@ Deno.test(
             staged: false,
             recurringLabel: null,
             doneToday: false,
+            completedAt: null,
           },
         ],
         habits: [
@@ -135,6 +139,48 @@ Deno.test('buildSystem handles an empty planner without breaking', () => {
   assertStringIncludes(sys, 'Nothing completed yet today.')
   assertStringIncludes(sys, 'No habits yet.')
 })
+
+Deno.test(
+  'contextBlock splits on completedAt like the grid: prior-day done hidden, today done kept',
+  () => {
+    const task = (over: Partial<PromptTask>): PromptTask => ({
+      id: 'x',
+      text: 'x',
+      x: 0.5,
+      y: 0.5,
+      due: null,
+      dueInDays: null,
+      dueTime: null,
+      staged: false,
+      recurringLabel: null,
+      doneToday: false,
+      completedAt: null,
+      ...over,
+    })
+    const sys = buildSystem(
+      baseContext({
+        tasks: [
+          task({ id: 'live', text: 'Live errand' }), // → ACTIVE
+          // Completed a PRIOR day: completedAt set, gone from today's done map → hidden everywhere.
+          task({ id: 'old', text: 'Old errand', completedAt: '2026-07-03T18:00:00Z' }),
+          // Completed TODAY: completedAt set AND in the done map → DONE TODAY, never ACTIVE.
+          task({
+            id: 'today',
+            text: 'Today errand',
+            completedAt: '2026-07-04T14:00:00Z',
+            doneToday: true,
+          }),
+        ],
+      }),
+    )
+    const active = sys.slice(sys.indexOf('=== ACTIVE TASKS'), sys.indexOf('=== DONE TODAY'))
+    assertStringIncludes(active, 'Live errand')
+    assert(!active.includes('Old errand'), 'prior-day completion must not appear as ACTIVE')
+    assert(!active.includes('Today errand'), "today's completion must not appear as ACTIVE")
+    // The prior-day completion is hidden from DONE TODAY too; only today's completion shows there.
+    assertStringIncludes(sys, '=== DONE TODAY ===\n1 completed today: "Today errand"')
+  },
+)
 
 Deno.test(
   'config folding: defaults add no preferences block; playful + custom instructions do',

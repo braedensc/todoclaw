@@ -98,7 +98,11 @@ export async function loadChatContext(
   const [tasksRes, habitsRes, dailyRes] = await Promise.all([
     client
       .from('tasks')
-      .select('id, text, x, y, due, due_time, staged, recurring')
+      // completed_at is fetched (not SQL-filtered) so the render can mirror the grid/list split:
+      // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
+      // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
+      // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
+      .select('id, text, x, y, due, due_time, staged, recurring, completed_at')
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
     client
@@ -133,6 +137,7 @@ export async function loadChatContext(
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       doneToday: doneMap[t.id as string] === true,
+      completedAt: (t.completed_at as string | null) ?? null,
     }
   })
 

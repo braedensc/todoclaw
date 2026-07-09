@@ -33,6 +33,7 @@ export interface PromptTask {
   staged: boolean
   recurringLabel: string | null // e.g. "every 7d", or null
   doneToday: boolean
+  completedAt: string | null // permanent one-off completion (tasks.completed_at); null = live
 }
 export interface PromptHabit {
   id: string
@@ -183,7 +184,10 @@ function contextBlock(ctx: ChatContext): string {
   const blocks: string[] = [`=== TODAY ===\n${ctx.today} (timezone ${ctx.timeZone}).`]
   if (ctx.scheduleSummary) blocks[0] += `\n${ctx.scheduleSummary}`
 
-  const active = ctx.tasks.filter((t) => !t.doneToday)
+  // Mirror the grid/list/mobile split: a one-off completion (completedAt) is hidden from ACTIVE on
+  // every day, but a task completed TODAY still shows under DONE TODAY via today's done map. A
+  // prior-day completion has completedAt set yet is absent from the done map, so it drops out of both.
+  const active = ctx.tasks.filter((t) => !t.doneToday && !t.completedAt)
   const done = ctx.tasks.filter((t) => t.doneToday)
 
   const shown = active.slice(0, MAX_TASKS_SHOWN)
