@@ -2,8 +2,8 @@
 
 **Status:** planning · drafted 2026-07-08 · MVP → broader audience
 
-Four workstreams to take Todoclaw from a handful of trusted testers to a paying
-audience, plus the infrastructure scaling triggers underneath them. The order is
+A sequenced set of workstreams to take Todoclaw from a handful of trusted testers to a
+paying audience, plus the infrastructure scaling triggers underneath them. The order is
 not arbitrary: each thread lowers the cost or unlocks the reach the next one needs.
 
 The detailed, file-level plan lives in [`ROADMAP-IMPLEMENTATION.md`](./ROADMAP-IMPLEMENTATION.md).
@@ -15,6 +15,8 @@ The detailed, file-level plan lives in [`ROADMAP-IMPLEMENTATION.md`](./ROADMAP-I
 The planner works fully without AI (a hard invariant), which makes the pricing
 model fall out naturally:
 
+- **Guest** — no login, one tap to try. A small, strictly-metered taste of the AI on the
+  cheapest model, in its own isolated budget bucket. The acquisition top of the funnel.
 - **Free** — full planner, no AI. ~$0 marginal cost.
 - **BYO-AI (via MCP)** — the user connects Todoclaw to their own Claude/ChatGPT
   subscription; **inference runs on their wallet**, only cheap RLS-scoped tool
@@ -25,6 +27,14 @@ model fall out naturally:
 **Consequence for launch:** "ship commercially to real users" ≠ "enable
 payments." Under the hybrid model we can launch broadly on **Free + BYO-AI with
 no billing system at all**. Stripe only gates the managed Pro tier.
+
+**Decisions locked (2026-07-08):**
+- **Payments last, decoupled from launch** — go live on Free + BYO-AI without Stripe.
+- **The admin panel is a control plane** — every operational setting (model, caps, budget
+  buckets, rate limits, tier mappings, feature flags) is a DB-backed, live-editable knob,
+  changeable from the in-app panel with no redeploy. It runs *across* every phase.
+- **Guest tier is dead last, behind a security audit** — it opens publicly-creatable
+  sessions, so it ships only on a hardened, audited base, with an isolated guest budget.
 
 ---
 
@@ -37,6 +47,12 @@ no billing system at all**. Stripe only gates the managed Pro tier.
 | **2 — then** | Reach every browser + install | Multi-browser + PWA on-ramp | S–M |
 | **3 — when growing** | Recoup + hold under load | Managed Pro tier + infra cutover | L billing · M infra |
 | **4 — separate project** | Go native | iOS, its own session | L |
+| **5 — dead last** | Guest / anonymous tier | Acquisition funnel (after a security audit) | M |
+
+> **Cross-cutting — the admin control plane.** Not a phase; it grows with every one. Each
+> phase's settings (model, caps, budget buckets, rate limits, tier mappings, feature flags)
+> become **live-editable knobs** in the owner panel — DB-backed config that takes effect on
+> the next request with no redeploy. See the implementation plan's "Admin control plane".
 
 ### Phase 0 — Stabilize the wallet *(cost optimization)*
 - Rework the shared **$20/mo global AI cap** so it scales with active users — two
@@ -76,6 +92,17 @@ no billing system at all**. Stripe only gates the managed Pro tier.
 - Backend reuse is total; the free-canvas drag grid is the entire lift.
 - Full native is the only path that unblocks the benched Apple Reminders / EventKit
   integration.
+
+### Phase 5 — Guest / anonymous tier *(dead last — behind a security audit)*
+- No-login "just try it" funnel: an anonymous visitor gets a small, cheap, strictly-metered
+  taste of the AI, then converts to Free/Pro.
+- Runs on **Supabase Anonymous Sign-Ins** (a real `auth.users` row + JWT, so RLS, tools,
+  and the budget ledger all work unchanged); **link-identity** on sign-up keeps their tasks
+  — the conversion hook.
+- **Isolated guest budget bucket + its own kill-switch** (never draws down the paid pool),
+  cheapest model, reduced toolset; **CAPTCHA + per-IP** creation throttle.
+- Sequenced last because it opens publicly-creatable sessions — the biggest attack-surface
+  change — so it ships only on a hardened, audited base.
 
 ---
 
