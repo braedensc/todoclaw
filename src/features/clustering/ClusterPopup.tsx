@@ -5,7 +5,7 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
-import { dueChipStyle, urgencyTier } from '../../lib/visual-urgency'
+import { dueChipStyle, urgencyGlowStyle, urgencyTier } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
 import { CLUSTER_POPUP_MAX_HEIGHT, CLUSTER_POPUP_WIDTH } from './cluster-constants'
 
@@ -216,9 +216,14 @@ function ClusterPopupRow({
   const rc = recurringStatus(task.recurring)
   const accent = rc ? RC_COLOR[rc.code] : quadrantMeta(task.x ?? 0.5, task.y ?? 0.5).color
   // Rows stay date-granular (no live clock in the dense popup); the tier still colors the chip
-  // consistently with the grid/list surfaces.
+  // consistently with the grid/list surfaces. A recurring row carries its own status color, so it
+  // takes no urgency tier (mirrors the grid card gating glow on non-recurring tasks).
   const d = daysUntil(task.due, { timeZone })
-  const tier = urgencyTier(d, null)
+  const tier = rc ? 'none' : urgencyTier(d, null)
+  // Warm card tint on an overdue/near-due folded task — the SAME graduated fill (visual-urgency
+  // `background`) a standalone grid card gets, so opening the cluster shows WHICH task is urgent,
+  // not merely that one is. Only the tint channel (not the loud ring/pulse) fits the dense list.
+  const glow = urgencyGlowStyle(tier)
 
   // Uncontrolled input (seeded by `defaultValue` when the editor mounts) so entering edit mode
   // needs no draft state — the value is read from the ref on commit. Select-all on mount.
@@ -242,7 +247,12 @@ function ClusterPopupRow({
       className={`mx-2 my-1.5 flex flex-col rounded-lg border border-border bg-card px-2.5 py-2 text-ink shadow-sm ${
         editing ? '' : 'cursor-grab active:cursor-grabbing'
       }`}
-      style={{ borderLeft: `3px solid ${accent}`, touchAction: 'none' }}
+      // The warm tint (when present) overrides the plain `bg-card` fill, exactly like a grid card.
+      style={{
+        borderLeft: `3px solid ${accent}`,
+        touchAction: 'none',
+        ...(glow?.background ? { background: glow.background } : {}),
+      }}
     >
       {editing ? (
         <input
