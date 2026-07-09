@@ -172,3 +172,112 @@ Deno.test('search_history honors a custom limit and rejects one over the cap', a
   const tooBig = await executeTool('search_history', { limit: 100 }, ctx) // schema caps at 50
   assert(tooBig.is_error)
 })
+
+// ---- complete_task / make_recurring: recurring correctness ------------------------------------
+// A mutation fake: the first from().…maybeSingle() returns the seeded task row; an .update(patch)
+// captures the patch and its trailing .select('text').maybeSingle() confirms a match; rpc() calls
+// are recorded so a test can prove set_task_done was (or was NOT) invoked.
+const TASK_ID = '11111111-1111-4111-8111-111111111111'
+function makeMutCtx(seedTask: Row | null) {
+  const rpcCalls: { name: string; args: Record<string, unknown> }[] = []
+  let updatePatch: Record<string, unknown> | undefined
+  const client = {
+    from() {
+      let isUpdate = false
+      // deno-lint-ignore no-explicit-any
+      const b: any = {
+        select: () => b,
+        update: (p: Record<string, unknown>) => {
+          isUpdate = true
+          updatePatch = p
+          return b
+        },
+        eq: () => b,
+        is: () => b,
+        maybeSingle: () =>
+          Promise.resolve(
+            isUpdate
+              ? { data: { text: (seedTask?.text as string) ?? 'x' }, error: null }
+              : { data: seedTask, error: null },
+          ),
+      }
+      return b
+    },
+    rpc: (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args })
+      return Promise.resolve({ data: null, error: null })
+    },
+  } as unknown as ToolContext['client']
+  const ctx: ToolContext = {
+    client,
+    timeZone: 'America/New_York',
+    now: new Date('2026-07-04T15:00:00Z'),
+  }
+  return { ctx, rpcCalls, getPatch: () => updatePatch }
+}
+
+Deno.test('complete_task advances a recurring task’s cycle, never set_task_done', async () => {
+  const { ctx, rpcCalls, getPatch } = makeMutCtx({
+    text: 'Laundry',
+    bucket: 'oneoff',
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-06-01T00:00:00Z', doneCount: 2 },
+  })
+  const res = await executeTool('complete_task', { task_id: TASK_ID }, ctx)
+  assert(!res.is_error)
+  assertEquals(res.mutated, ['tasks']) // the recurrence lives on the task row
+  assertEquals(rpcCalls.length, 0) // set_task_done would stamp completed_at → never for recurring
+  const rec = getPatch()?.recurring as {
+    frequencyDays: number
+    lastDoneAt: string
+    doneCount: number
+  }
+  assertEquals(rec.frequencyDays, 7)
+  assertEquals(rec.doneCount, 3) // advanced
+  assertEquals(rec.lastDoneAt, '2026-07-04T15:00:00.000Z') // reset to now
+})
+
+Deno.test('complete_task marks a one-off done via set_task_done', async () => {
+  const { ctx, rpcCalls, getPatch } = makeMutCtx({
+    text: 'Call bank',
+    bucket: 'oneoff',
+    recurring: null,
+  })
+  const res = await executeTool('complete_task', { task_id: TASK_ID }, ctx)
+  assert(!res.is_error)
+  assertEquals(res.mutated, ['daily_state', 'history'])
+  assertEquals(getPatch(), undefined) // no recurring update
+  assertEquals(rpcCalls.length, 1)
+  assertEquals(rpcCalls[0].name, 'set_task_done')
+  assertEquals(rpcCalls[0].args.p_text, 'Call bank')
+})
+
+Deno.test('make_recurring preserves lastDoneAt/doneCount when retuning cadence', async () => {
+  const { ctx, getPatch } = makeMutCtx({
+    text: 'Water plants',
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-07-01T00:00:00Z', doneCount: 5 },
+  })
+  const res = await executeTool('make_recurring', { task_id: TASK_ID, frequency_days: 14 }, ctx)
+  assert(!res.is_error)
+  const rec = getPatch()?.recurring as {
+    frequencyDays: number
+    lastDoneAt: string
+    doneCount: number
+  }
+  assertEquals(rec.frequencyDays, 14) // retuned
+  assertEquals(rec.lastDoneAt, '2026-07-01T00:00:00Z') // preserved
+  assertEquals(rec.doneCount, 5) // preserved
+})
+
+Deno.test('make_recurring starts a fresh cycle for a non-recurring task', async () => {
+  const { ctx, getPatch } = makeMutCtx({ text: 'New chore', recurring: null })
+  const res = await executeTool('make_recurring', { task_id: TASK_ID, frequency_days: 7 }, ctx)
+  assert(!res.is_error)
+  const rec = getPatch()?.recurring as {
+    frequencyDays: number
+    lastDoneAt: null
+    doneCount: number
+  }
+  assertEquals(rec.frequencyDays, 7)
+  assertEquals(rec.lastDoneAt, null)
+  assertEquals(rec.doneCount, 0)
+})

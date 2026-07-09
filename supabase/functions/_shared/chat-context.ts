@@ -41,6 +41,20 @@ function fmtFrequency(days: number): string {
   return 'every ~3mo'
 }
 
+// Due/overdue phrase for a recurring task (mirrors src/lib/recurring.ts recurringStatus thresholds),
+// so BabyClaw can tell an overdue chore from one that isn't due yet — a recurring task never sits in
+// the daily done map, so without this it would read every recurrence as an active to-do.
+function recurringStatusPhrase(rec: Recurring | null, now: Date): string | null {
+  if (!rec || !rec.frequencyDays) return null
+  if (rec.lastDoneAt == null) return 'never done'
+  const daysSince = Math.floor((now.getTime() - Date.parse(rec.lastDoneAt)) / 86_400_000)
+  const daysLeft = rec.frequencyDays - daysSince
+  if (daysLeft < -1) return `overdue ${Math.abs(daysLeft)}d`
+  if (daysLeft <= 0) return 'due today'
+  if (daysLeft === 1) return 'due tomorrow'
+  return `due again in ${daysLeft}d`
+}
+
 function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {
   const raw = (config?.assistant ?? {}) as Record<string, unknown>
   const tone =
@@ -132,6 +146,7 @@ export async function loadChatContext(
       dueTime: t.due_time as string | null,
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
+      recurringStatus: recurringStatusPhrase(rec, now),
       doneToday: doneMap[t.id as string] === true,
     }
   })

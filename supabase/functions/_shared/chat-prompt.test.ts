@@ -91,6 +91,7 @@ Deno.test(
             dueTime: null,
             staged: false,
             recurringLabel: null,
+            recurringStatus: null,
             doneToday: false,
           },
           {
@@ -103,6 +104,7 @@ Deno.test(
             dueTime: null,
             staged: false,
             recurringLabel: 'weekly',
+            recurringStatus: 'due today',
             doneToday: true,
           },
           {
@@ -115,6 +117,7 @@ Deno.test(
             dueTime: '10:30:00',
             staged: false,
             recurringLabel: null,
+            recurringStatus: null,
             doneToday: false,
           },
         ],
@@ -146,6 +149,33 @@ Deno.test('buildSystem handles an empty planner without breaking', () => {
   assertStringIncludes(sys, 'Nothing completed yet today.')
   assertStringIncludes(sys, 'No habits yet.')
 })
+
+Deno.test(
+  'a recurring task renders its due-status next to the cadence, so it reads as not-yet-due',
+  () => {
+    const sys = buildSystem(
+      baseContext({
+        tasks: [
+          {
+            id: 'r1',
+            text: 'Water plants',
+            x: 0.5,
+            y: 0.5,
+            due: null,
+            dueInDays: null,
+            dueTime: null,
+            staged: false,
+            recurringLabel: 'weekly',
+            recurringStatus: 'due again in 4d',
+            doneToday: false,
+          },
+        ],
+      }),
+    )
+    // The cadence AND the live status both surface, so BabyClaw won't push a chore that isn't due.
+    assertStringIncludes(sys, 'recurring weekly (due again in 4d)')
+  },
+)
 
 Deno.test(
   'config folding: defaults add no preferences block; playful + custom instructions do',

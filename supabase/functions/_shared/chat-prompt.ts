@@ -32,6 +32,7 @@ export interface PromptTask {
   dueTime: string | null // 'HH:MM[:SS]' wall-clock time, or null
   staged: boolean
   recurringLabel: string | null // e.g. "every 7d", or null
+  recurringStatus: string | null // e.g. "overdue 3d" / "due today" / "due again in 4d", or null
   doneToday: boolean
 }
 export interface PromptHabit {
@@ -173,7 +174,9 @@ function taskLine(t: PromptTask): string {
   }
   const due = duePhrase(t)
   if (due) bits.push(due)
-  if (t.recurringLabel) bits.push(`recurring ${t.recurringLabel}`)
+  if (t.recurringLabel) {
+    bits.push(`recurring ${t.recurringLabel}${t.recurringStatus ? ` (${t.recurringStatus})` : ''}`)
+  }
   return `- [${t.id}] "${t.text}" — ${bits.join('; ')}`
 }
 

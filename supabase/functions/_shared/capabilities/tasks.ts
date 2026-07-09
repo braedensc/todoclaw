@@ -332,7 +332,8 @@ export const taskCapabilities: Capability[] = [
 
   defineCapability({
     name: 'make_recurring',
-    description: 'Make a task recurring with a cadence in days.',
+    description:
+      'Make a task recurring with a cadence in days. Retuning the cadence of an already-recurring task keeps its progress (last-done and count); it does not reset the clock.',
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -340,10 +341,27 @@ export const taskCapabilities: Capability[] = [
       })
       .strict(),
     async execute(ctx, i) {
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('recurring')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      // Preserve an existing cycle when only changing cadence (mirrors the list's onSetFrequency),
+      // so a retune doesn't snap the task back to "never done". A fresh recurrence starts at null.
+      const prev = task.recurring as { lastDoneAt?: string | null; doneCount?: number } | null
       return updateTaskRow(
         ctx.client,
         i.task_id,
-        { recurring: { frequencyDays: i.frequency_days, lastDoneAt: null, doneCount: 0 } },
+        {
+          recurring: {
+            frequencyDays: i.frequency_days,
+            lastDoneAt: prev?.lastDoneAt ?? null,
+            doneCount: prev?.doneCount ?? 0,
+          },
+        },
         'Made recurring',
       )
     },
@@ -392,12 +410,37 @@ export const taskCapabilities: Capability[] = [
       const now = ctx.now ?? new Date()
       const { data: task, error: selErr } = await ctx.client
         .from('tasks')
-        .select('text, bucket')
+        .select('text, bucket, recurring')
         .eq('id', i.task_id)
         .is('deleted_at', null)
         .maybeSingle()
       if (selErr) return systemErr(selErr.message)
       if (!task) return err('That task no longer exists.')
+
+      // A recurring task is completed by ADVANCING its cycle (lastDoneAt + doneCount), never through
+      // set_task_done — exactly what the grid/list "Done" does (use-grid.ts handleDone). set_task_done
+      // would stamp tasks.completed_at, which hides the task permanently and freezes the recurrence,
+      // so a recurring completion must take this branch instead.
+      const rec = task.recurring as {
+        frequencyDays?: number
+        lastDoneAt?: string | null
+        doneCount?: number
+      } | null
+      if (rec?.frequencyDays) {
+        const patch = {
+          recurring: { ...rec, lastDoneAt: now.toISOString(), doneCount: (rec.doneCount ?? 0) + 1 },
+        }
+        const { error } = await ctx.client
+          .from('tasks')
+          .update(patch)
+          .eq('id', i.task_id)
+          .is('deleted_at', null)
+          .select('text')
+          .maybeSingle()
+        if (error) return systemErr(error.message)
+        return ok(`Checked off recurring "${task.text}" — back on its cycle.`, ['tasks'])
+      }
+
       const { error } = await ctx.client.rpc('set_task_done', {
         p_date: localDateInTZ(ctx.timeZone, now),
         p_task_id: i.task_id,
