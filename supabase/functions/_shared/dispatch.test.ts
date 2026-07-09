@@ -51,16 +51,29 @@ Deno.test('isQuietHour: unset or degenerate window is never quiet', () => {
   assertEquals(isQuietHour({ quietStartHour: 5, quietEndHour: 5 }, 5), false)
 })
 
-Deno.test('dueKind: matches morning/evening hours only when enabled', () => {
+Deno.test('dueKind: fires at the configured hour, only when enabled', () => {
   const p: NotificationPrefs = { enabled: true, morningHour: 8, eveningHour: 21 }
   assertEquals(dueKind(p, 8), 'plan')
   assertEquals(dueKind(p, 21), 'recap')
-  assertEquals(dueKind(p, 9), null)
   assertEquals(dueKind({ ...p, enabled: false }, 8), null)
   assertEquals(dueKind({ enabled: true }, 8), null) // no hours configured
 })
 
-Deno.test('dueKind: quiet hours suppress even a matching morning hour', () => {
+Deno.test('dueKind: a dropped tick is recovered within the catch-up window (the bug)', () => {
+  // The exact failure this fixes: the cron skipped the user's 8am tick, so the OLD exact-hour match
+  // lost the plan for the whole day. Now any tick in [8, 12) still delivers it — once.
+  const p: NotificationPrefs = { enabled: true, morningHour: 8, eveningHour: 21 }
+  assertEquals(dueKind(p, 9), 'plan') // 1h late
+  assertEquals(dueKind(p, 11), 'plan') // 3h late — still inside the 4h window
+  assertEquals(dueKind(p, 12), null) // past the window: a plan this late is noise
+  assertEquals(dueKind(p, 7), null) // before the hour: not yet due
+  // Evening recovers the same way, wrapping past midnight ([21, 1)).
+  assertEquals(dueKind(p, 23), 'recap')
+  assertEquals(dueKind(p, 0), 'recap')
+  assertEquals(dueKind(p, 1), null)
+})
+
+Deno.test('dueKind: quiet hours suppress the hours they cover, catch-up delivers after', () => {
   const p: NotificationPrefs = {
     enabled: true,
     morningHour: 6,
@@ -68,8 +81,16 @@ Deno.test('dueKind: quiet hours suppress even a matching morning hour', () => {
     quietStartHour: 0,
     quietEndHour: 7, // 6am falls inside quiet → suppressed
   }
-  assertEquals(dueKind(p, 6), null)
+  assertEquals(dueKind(p, 6), null) // the configured hour is quiet
+  assertEquals(dueKind(p, 7), 'plan') // first non-quiet tick in [6, 10) delivers
   assertEquals(dueKind(p, 21), 'recap') // evening is outside quiet
+})
+
+Deno.test('dueKind: morning wins when tightly-spaced windows overlap', () => {
+  // morning [9, 13), evening [11, 15): at 11–12 both cover the hour → morning takes precedence.
+  const p: NotificationPrefs = { enabled: true, morningHour: 9, eveningHour: 11 }
+  assertEquals(dueKind(p, 11), 'plan')
+  assertEquals(dueKind(p, 13), 'recap') // past the morning window, still in evening's
 })
 
 // The user's local "today" the morning builders key their ⏰ TODAY section off (matches `ctx.now`
@@ -87,6 +108,7 @@ const inputs = (over: Partial<DispatchInputs> = {}): DispatchInputs => ({
       due: null,
       due_time: null,
       staged: false,
+      size: null,
       recurring: null,
     },
     {
@@ -97,6 +119,7 @@ const inputs = (over: Partial<DispatchInputs> = {}): DispatchInputs => ({
       due: null,
       due_time: null,
       staged: false,
+      size: null,
       recurring: null,
     },
     {
@@ -107,6 +130,7 @@ const inputs = (over: Partial<DispatchInputs> = {}): DispatchInputs => ({
       due: null,
       due_time: null,
       staged: true,
+      size: null,
       recurring: null,
     },
   ],
@@ -203,6 +227,7 @@ Deno.test('buildMorningFromPlan: ⏰ TODAY lists timed tasks due today, earliest
         due: DAY,
         due_time: '10:30:00',
         staged: false,
+        size: null,
         recurring: null,
       },
       {
@@ -213,6 +238,7 @@ Deno.test('buildMorningFromPlan: ⏰ TODAY lists timed tasks due today, earliest
         due: DAY,
         due_time: '09:00:00',
         staged: false,
+        size: null,
         recurring: null,
       },
       {
@@ -223,6 +249,7 @@ Deno.test('buildMorningFromPlan: ⏰ TODAY lists timed tasks due today, earliest
         due: '2026-07-05',
         due_time: '08:00:00',
         staged: false,
+        size: null,
         recurring: null,
       },
       {
@@ -233,6 +260,7 @@ Deno.test('buildMorningFromPlan: ⏰ TODAY lists timed tasks due today, earliest
         due: DAY,
         due_time: null,
         staged: false,
+        size: null,
         recurring: null,
       },
       {
@@ -243,6 +271,7 @@ Deno.test('buildMorningFromPlan: ⏰ TODAY lists timed tasks due today, earliest
         due: DAY,
         due_time: '07:00:00',
         staged: false,
+        size: null,
         recurring: null,
       },
     ],
@@ -264,6 +293,7 @@ Deno.test('buildMorningFromPlan: a timed task today overrides the open-day line'
         due: DAY,
         due_time: '15:00:00',
         staged: false,
+        size: null,
         recurring: null,
       },
     ],
@@ -382,6 +412,7 @@ Deno.test(
             due: null,
             due_time: null,
             staged: false,
+            size: null,
             recurring: { frequencyDays: 7, lastDoneAt: '2026-07-07T15:00:00Z', doneCount: 3 },
           },
           {
@@ -392,6 +423,7 @@ Deno.test(
             due: null,
             due_time: null,
             staged: false,
+            size: null,
             recurring: null,
           },
         ],
@@ -416,6 +448,7 @@ Deno.test('buildRecapMessage: a recurring chore done YESTERDAY stays on the list
           due: null,
           due_time: null,
           staged: false,
+          size: null,
           recurring: { frequencyDays: 7, lastDoneAt: '2026-07-06T23:00:00Z', doneCount: 3 },
         },
       ],
