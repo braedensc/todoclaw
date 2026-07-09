@@ -273,6 +273,53 @@ Deno.test('buildMorningFromPlan: a timed task today overrides the open-day line'
   assertNotMatch(m.body, /open day/) // an anchor exists → not an "open day"
 })
 
+Deno.test(
+  'morning excludes a permanently completed one-off task (completed_at, not the done map)',
+  () => {
+    // The prior-day-completion leak: a one-off task marked done on an EARLIER day keeps completed_at
+    // set but is absent from TODAY's done map (it reset at local midnight). dispatch_inputs_for_user
+    // filters it at the SQL WHERE clause; the builders self-guard on completed_at too — either way it
+    // must never reappear in the morning push.
+    const withCompleted = inputs({
+      tasks: [
+        {
+          id: 'live',
+          text: 'Live meeting',
+          x: 0.6,
+          y: 0.6,
+          due: DAY,
+          due_time: '09:00:00',
+          size: null,
+          staged: false,
+          recurring: null,
+        },
+        {
+          id: 'done-oneoff',
+          text: 'Finished errand',
+          x: 0.7,
+          y: 0.7,
+          due: DAY,
+          due_time: '10:00:00',
+          size: null,
+          staged: false,
+          recurring: null,
+          completed_at: '2026-07-03T18:00:00Z', // completed YESTERDAY; gone from today's done map
+        },
+      ],
+    })
+
+    // Plan-rich morning: the ⏰ TODAY anchor lists the live task only, never the completed one.
+    const rich = buildMorningFromPlan(fullPlan, withCompleted, DAY)
+    assertStringIncludes(rich.body, '⏰ TODAY\n• 9:00 AM — Live meeting')
+    assertNotMatch(rich.body, /Finished errand/)
+
+    // Deterministic fallback: the placed-task count and ⏰ TODAY both exclude the completed one.
+    const fallback = buildMorningMessage(withCompleted, DAY)
+    assertStringIncludes(fallback.body, '1 task and 1 habit on deck')
+    assertNotMatch(fallback.body, /Finished errand/)
+  },
+)
+
 // ---- Morning: deterministic fallback -------------------------------------------------------------
 
 Deno.test(

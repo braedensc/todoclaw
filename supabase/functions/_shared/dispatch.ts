@@ -70,6 +70,11 @@ export interface DispatchInputs {
     // Coarse effort (S/M/L/XL) or null — provided by dispatch_inputs_for_user so the proactive
     // morning plan honors the same size guardrail as interactive Plan My Day.
     size: string | null
+    // Permanent one-off completion marker (tasks.completed_at). dispatch_inputs_for_user already
+    // filters completed tasks out at the SQL WHERE clause, so this key is normally ABSENT here; the
+    // builders below still self-guard on it (belt-and-suspenders for the deploy-skew window where new
+    // function code runs against a not-yet-migrated RPC) — hence optional.
+    completed_at?: string | null
     staged: boolean
     recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
   }[]
@@ -127,9 +132,13 @@ function morningTitle(inputs: DispatchInputs): string {
   return `Good morning${name ? ` ${name}` : ''}! ☀️`
 }
 
-// "Open" = placed on the grid, not staged, not done today — mirrors buildPlanRequest's selection.
+// "Open" = placed on the grid, not staged, not completed, not done today — mirrors buildPlanRequest's
+// selection. completed_at is the permanent one-off marker (see DispatchInputs.tasks): normally already
+// filtered by the RPC, guarded here too so a completed task never surfaces.
 function openPlacedTasks(inputs: DispatchInputs): DispatchInputs['tasks'] {
-  return inputs.tasks.filter((t) => !t.staged && !inputs.done[t.id] && t.x != null && t.y != null)
+  return inputs.tasks.filter(
+    (t) => !t.staged && !t.completed_at && !inputs.done[t.id] && t.x != null && t.y != null,
+  )
 }
 
 const SIGNOFF = '— BabyClaw 🐾'
@@ -154,7 +163,11 @@ function timedTodayLines(inputs: DispatchInputs, localDate: string, cap = TIMES_
   return inputs.tasks
     .filter(
       (t) =>
-        !inputs.done[t.id] && t.due != null && t.due.slice(0, 10) === localDate && !!t.due_time,
+        !t.completed_at &&
+        !inputs.done[t.id] &&
+        t.due != null &&
+        t.due.slice(0, 10) === localDate &&
+        !!t.due_time,
     )
     .sort((a, b) => (a.due_time! < b.due_time! ? -1 : a.due_time! > b.due_time! ? 1 : 0))
     .slice(0, cap)
