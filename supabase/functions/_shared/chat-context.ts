@@ -11,6 +11,7 @@ import {
   type AssistantConfig,
   type ChatContext,
   type PromptHabit,
+  type PromptPlan,
   type PromptTask,
 } from './chat-prompt.ts'
 
@@ -53,6 +54,36 @@ function recurringStatusPhrase(rec: Recurring | null, now: Date): string | null 
   if (daysLeft <= 0) return 'due today'
   if (daysLeft === 1) return 'due tomorrow'
   return `due again in ${daysLeft}d`
+}
+
+// Compact summary of today's saved Plan My Day (daily_state.plan jsonb, DayPlan shape — see
+// src/types/plan.ts), read defensively so a malformed/partial plan never breaks the chat. Null when
+// there's no plan today, so BabyClaw can answer "what's my big rock?" instead of being blind to it.
+interface RawRock {
+  task?: unknown
+  duration?: unknown
+  when?: unknown
+}
+export function planSummary(raw: unknown): PromptPlan | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as { headline?: unknown; bigRock?: RawRock | null; smallRocks?: unknown }
+  const rockLabel = (r: RawRock | null | undefined): string | null => {
+    if (!r || typeof r.task !== 'string' || !r.task.trim()) return null
+    const extra = [r.when, r.duration].filter(
+      (x): x is string => typeof x === 'string' && !!x.trim(),
+    )
+    return extra.length ? `${r.task.trim()} (${extra.join(', ')})` : r.task.trim()
+  }
+  const headline = typeof p.headline === 'string' && p.headline.trim() ? p.headline.trim() : null
+  const bigRock = rockLabel(p.bigRock)
+  const smallRocks = (Array.isArray(p.smallRocks) ? p.smallRocks : [])
+    .map((r) =>
+      r && typeof (r as RawRock).task === 'string' ? ((r as RawRock).task as string) : '',
+    )
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0)
+  if (!headline && !bigRock && smallRocks.length === 0) return null
+  return { headline, bigRock, smallRocks }
 }
 
 function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {
@@ -109,7 +140,7 @@ export async function loadChatContext(
   const config = (sched?.config ?? null) as Record<string, unknown> | null
   const date = localDateInTZ(timeZone, now)
 
-  const [tasksRes, habitsRes, dailyRes] = await Promise.all([
+  const [tasksRes, habitsRes, dailyRes, remindersRes] = await Promise.all([
     client
       .from('tasks')
       .select('id, text, x, y, due, due_time, staged, recurring')
@@ -122,14 +153,22 @@ export async function loadChatContext(
       .order('created_at', { ascending: true }),
     client
       .from('daily_state')
-      .select('done, habit_done, subtask_done')
+      .select('done, habit_done, subtask_done, plan')
       .eq('date', date)
       .maybeSingle(),
+    // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks already
+    // have one — otherwise it can't answer "do I have a reminder on X?" or that set_reminder replaces.
+    client.from('task_reminders').select('task_id, offset_minutes').is('sent_at', null),
   ])
 
   const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
   const habitDone = (dailyRes.data?.habit_done ?? {}) as Record<string, boolean>
   const subtaskDone = (dailyRes.data?.subtask_done ?? {}) as Record<string, boolean>
+
+  const reminderByTask = new Map<string, number>()
+  for (const r of (remindersRes.data ?? []) as { task_id: string; offset_minutes: number }[]) {
+    reminderByTask.set(r.task_id, r.offset_minutes)
+  }
 
   const labelById = new Map<string, string>()
 
@@ -147,6 +186,7 @@ export async function loadChatContext(
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       recurringStatus: recurringStatusPhrase(rec, now),
+      reminderOffset: reminderByTask.get(t.id as string) ?? null,
       doneToday: doneMap[t.id as string] === true,
     }
   })
@@ -179,6 +219,7 @@ export async function loadChatContext(
     scheduleSummary: scheduleSummary(config, dayOfWeek),
     tasks,
     habits,
+    plan: planSummary(dailyRes.data?.plan),
     assistant: parseAssistant(config),
   }
 

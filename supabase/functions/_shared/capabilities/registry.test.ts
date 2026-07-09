@@ -115,6 +115,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'set_habit_step_done',
     'delete_habit',
     'generate_plan',
+    'dismiss_plan',
     'set_assistant_preference',
   ]
   for (const n of expected) assert(names.has(n), `missing capability: ${n}`)

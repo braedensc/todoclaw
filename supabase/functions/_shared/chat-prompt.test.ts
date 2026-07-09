@@ -16,6 +16,7 @@ function baseContext(over: Partial<ChatContext> = {}): ChatContext {
     scheduleSummary: null,
     tasks: [],
     habits: [],
+    plan: null,
     assistant: DEFAULT_ASSISTANT_CONFIG,
     ...over,
   }
@@ -92,6 +93,7 @@ Deno.test(
             staged: false,
             recurringLabel: null,
             recurringStatus: null,
+            reminderOffset: null,
             doneToday: false,
           },
           {
@@ -105,6 +107,7 @@ Deno.test(
             staged: false,
             recurringLabel: 'weekly',
             recurringStatus: 'due today',
+            reminderOffset: null,
             doneToday: true,
           },
           {
@@ -118,6 +121,7 @@ Deno.test(
             staged: false,
             recurringLabel: null,
             recurringStatus: null,
+            reminderOffset: null,
             doneToday: false,
           },
         ],
@@ -167,6 +171,7 @@ Deno.test(
             staged: false,
             recurringLabel: 'weekly',
             recurringStatus: 'due again in 4d',
+            reminderOffset: null,
             doneToday: false,
           },
         ],
@@ -176,6 +181,50 @@ Deno.test(
     assertStringIncludes(sys, 'recurring weekly (due again in 4d)')
   },
 )
+
+Deno.test('a task with a reminder surfaces its lead time so BabyClaw knows one exists', () => {
+  const sys = buildSystem(
+    baseContext({
+      tasks: [
+        {
+          id: 'r1',
+          text: 'Dentist',
+          x: 0.7,
+          y: 0.6,
+          due: '2026-07-04',
+          dueInDays: 0,
+          dueTime: '10:30:00',
+          staged: false,
+          recurringLabel: null,
+          recurringStatus: null,
+          reminderOffset: 60,
+          doneToday: false,
+        },
+      ],
+    }),
+  )
+  assertStringIncludes(sys, 'reminder 1 hour before')
+})
+
+Deno.test("today's saved plan renders in its own block so BabyClaw can reference it", () => {
+  const sys = buildSystem(
+    baseContext({
+      plan: {
+        headline: 'Focused morning, easy afternoon.',
+        bigRock: 'Draft the deck (this morning, ~2h)',
+        smallRocks: ['Reply to Sam', 'Book flights'],
+      },
+    }),
+  )
+  assertStringIncludes(sys, "=== TODAY'S PLAN (already generated) ===")
+  assertStringIncludes(sys, 'Big rock: Draft the deck (this morning, ~2h).')
+  assertStringIncludes(sys, 'Then: Reply to Sam, Book flights.')
+})
+
+Deno.test('no plan block when the day has not been planned', () => {
+  const sys = buildSystem(baseContext())
+  assert(!sys.includes("TODAY'S PLAN"))
+})
 
 Deno.test(
   'config folding: defaults add no preferences block; playful + custom instructions do',
