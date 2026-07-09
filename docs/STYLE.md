@@ -1,18 +1,18 @@
 # STYLE.md
 
-Code style, naming conventions, component patterns, state patterns, and UI/UX design choices (color palette, typography, spacing) carried over from EisenClaw.
+Todoclaw's code style, naming conventions, component patterns, state patterns, and UI/UX design system (color palette, typography, spacing). The visual language originated from EisenClaw but is now Todoclaw's own — the tokens below and the code that uses them are authoritative; EisenClaw is historical provenance, not a target.
 
-> Filled in during Stage 2 (ESLint/Prettier config finalized) and Stage 3 (design tokens implemented). The EisenClaw palette and font choices are documented in `planning/EISENCLAW-LOGIC-TO-PORT.md` § 13.
+> Design tokens were implemented in Stage 3. Their original source hex/font values are recorded in `planning/EISENCLAW-LOGIC-TO-PORT.md` § 13 (provenance only) — the live tokens in `tailwind.config.js` are the source of truth.
 
 ---
 
 ## Design tokens
 
-The EisenClaw "warm paper" palette and fonts are implemented as Tailwind theme tokens in
+The "warm paper" palette and fonts are Todoclaw's design tokens, defined in
 `tailwind.config.js` (`theme.extend`). Use the token names below — never raw hex in
 components. The body base (background + text + body font) is applied in `src/index.css`
-(`@layer base { body { ... } }`); exact source hex values are in
-`planning/EISENCLAW-LOGIC-TO-PORT.md` § 13.
+(`@layer base { body { ... } }`). (The original source hex values live in
+`planning/EISENCLAW-LOGIC-TO-PORT.md` § 13 — provenance only; the tokens here are authoritative.)
 
 ### Fonts
 
@@ -56,9 +56,10 @@ third party). Families are declared as Tailwind tokens.
 "Position = your decision. Warmth = the data." A placed card carries two independent, purely
 visual signals layered on top of its quadrant color. Both are **non-interactive** and apply only
 to **non-recurring** cards (a recurring task shows its `RC_COLOR` status badge instead) — and never
-to a done card (it has already left the grid). The exact tiers/constants are ported verbatim from
-EisenClaw (`EISENCLAW-LOGIC-TO-PORT.md` §4/§5) and pinned in `src/lib/visual-urgency.test.ts`; the
-logic itself is `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle`).
+to a done card (it has already left the grid). The exact tiers/constants live in
+`src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle`) and are pinned (authoritative) by
+`src/lib/visual-urgency.test.ts`; they originated from EisenClaw (`EISENCLAW-LOGIC-TO-PORT.md` §4/§5)
+but have since been tuned on Todoclaw's own merits (e.g. the amplified glow ladder).
 
 - **Urgency glow** — a `box-shadow` ring that intensifies as the due date approaches, keyed on
   `daysUntil(due)` (timezone-aware). Overdue → strongest terracotta ring **+ pulse**; due today →
@@ -105,12 +106,12 @@ tap-to-place path, but nothing mounts the grid below 720px.)
 
 ---
 
-## Visual parity reference (screenshots)
+## Historical UI screenshots
 
-Ground-truth screenshots of the original EisenClaw UI live in
-`planning/eisenclaw-export/pics/` (gitignored — local reference, never published).
-Use them alongside the parity spec (`eisenclaw.md`) and the exact tokens in
-`EISENCLAW-LOGIC-TO-PORT.md` § 13 when building each surface in Stage 3.
+Screenshots of the **original** EisenClaw UI live in
+`planning/eisenclaw-export/pics/` (gitignored — historical reference, never published, never a
+target). They record where the visual language came from; the shipped Todoclaw UI is the reference
+now. The table below is a historical index of what each capture showed.
 
 | File | Surface shown |
 |---|---|
@@ -121,6 +122,7 @@ Use them alongside the parity spec (`eisenclaw.md`) and the exact tokens in
 | `Todopic5.jpeg` | **Done tab** — permanent completion history; ↩ restores tasks marked done today, × removes from history only |
 | `Todopic6.jpeg` | **List view** (≈ duplicate of `Todopic4`) |
 
-Confirmed visuals: warm paper palette (bg `#f4efe6`), Fraunces serif headings + IBM Plex
+Visuals: warm paper palette (bg `#f4efe6`), Fraunces serif headings + IBM Plex
 Sans body, green primary buttons (`#5b8a72`), dark header buttons, terracotta recurring/urgency
-accents (`#c2693f`). Exact hex values: `EISENCLAW-LOGIC-TO-PORT.md` § 13.
+accents (`#c2693f`). Authoritative hex values: the token table above / `tailwind.config.js`
+(EisenClaw's originals are recorded in `EISENCLAW-LOGIC-TO-PORT.md` § 13 as provenance).
