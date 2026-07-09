@@ -20,6 +20,7 @@
     "seed:eisenclaw": "tsx scripts/eisenclaw-seed/import.ts",
     "legacy-ui": "tsx scripts/legacy-ui.ts",
     "gen:icons": "node scripts/generate-pwa-icons.mjs",
+    "check:migrations": "node scripts/check-migrations.mjs",
     "prepare": "husky"
   },
   "lint-staged": {
