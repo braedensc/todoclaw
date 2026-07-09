@@ -123,22 +123,41 @@ input[type='range'] {
   }
 }
 
-/* Visual-urgency pulse for overdue cards / cluster bubbles (planning/EISENCLAW-LOGIC-TO-PORT.md
-   §4, html:912-915). Applied inline via urgencyGlowStyle().animation; the keyframe itself must
-   be global. The ring color is terracotta (#c2693f = accent). */
+/* Visual-urgency pulses for cards / cluster bubbles. Applied inline via
+   urgencyGlowStyle().animation; the keyframes must be global. Values mirror the amplified
+   2026-07-08 workshop ladder in src/lib/visual-urgency.ts (the 0%/100% frames = that tier's
+   static ring, so the pulse breathes DOWN from it and reduced-motion freezes it at full).
+   The ring color is terracotta (#c2693f = accent). */
 @keyframes urgency-pulse {
   0%,
   100% {
     box-shadow:
       0 2px 7px rgba(0, 0, 0, 0.08),
-      0 0 0 2px rgba(194, 105, 63, 0.6),
-      0 0 14px 5px rgba(194, 105, 63, 0.28);
+      0 0 0 2.5px rgba(194, 105, 63, 0.9),
+      0 0 24px 9px rgba(194, 105, 63, 0.42);
   }
   50% {
     box-shadow:
       0 2px 7px rgba(0, 0, 0, 0.08),
-      0 0 0 3px rgba(194, 105, 63, 0.78),
-      0 0 22px 8px rgba(194, 105, 63, 0.42);
+      0 0 0 2px rgba(194, 105, 63, 0.62),
+      0 0 13px 4px rgba(194, 105, 63, 0.24);
+  }
+}
+
+/* The gentler final-hours pulse (a timed task within 2h of its due instant). */
+@keyframes urgency-pulse-soft {
+  0%,
+  100% {
+    box-shadow:
+      0 2px 7px rgba(0, 0, 0, 0.08),
+      0 0 0 2px rgba(194, 105, 63, 0.72),
+      0 0 18px 6px rgba(194, 105, 63, 0.32);
+  }
+  50% {
+    box-shadow:
+      0 2px 7px rgba(0, 0, 0, 0.08),
+      0 0 0 1.5px rgba(194, 105, 63, 0.5),
+      0 0 11px 3px rgba(194, 105, 63, 0.18);
   }
 }
 

@@ -3,6 +3,10 @@ import type { Task } from '../../types/task'
 import { useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
+import { useNow } from '../../hooks/use-now'
+import { daysUntil } from '../../lib/scoring'
+import { minutesUntilDueTime } from '../../lib/dates'
+import { urgencyTier } from '../../lib/visual-urgency'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
   summarizeQuadrants,
@@ -40,6 +44,9 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
   const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
   const updateTask = useUpdateTask()
+  // One shared clock for the overview tiles' due badges (timed tasks flip to overdue when their
+  // instant passes — same tier logic as every chip).
+  const now = useNow()
   // Which quadrant is focused lives at the App level (use-quadrant-focus): Back pops it, and the
   // add sheet pre-selects it. This component just renders + drives it.
   const { focus } = quadrantFocus
@@ -71,6 +78,23 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
   const doneToday = daily?.done ?? {}
   const active = tasks.filter((t) => !doneToday[t.id])
   const { buckets } = summarizeQuadrants(active, { timeZone })
+
+  // Per-quadrant "on fire" counts for the overview badges: due today (incl. the final hours)
+  // and overdue. Recurring tasks are excluded — their cadence badge is a different system.
+  const dueCounts = (key: QuadrantKey): { today: number; overdue: number } => {
+    let today = 0
+    let overdue = 0
+    for (const t of active) {
+      if (t.recurring || quadrantMeta(t.x ?? 0.5, t.y ?? 0.5).key !== key) continue
+      const tier = urgencyTier(
+        daysUntil(t.due, { timeZone }),
+        minutesUntilDueTime(t.due, t.due_time, timeZone, now),
+      )
+      if (tier === 'overdue') overdue += 1
+      else if (tier === 'today' || tier === 'final-hours') today += 1
+    }
+    return { today, overdue }
+  }
 
   // Commit a tap-picker move: snap to the chosen quadrant's center, collision-resolve against all
   // active tasks, write the coords, and close the sheet. Same coord path as a list-slider commit.
@@ -158,6 +182,13 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
           const m = meta(key)
           const { count, top } = buckets[key]
           const empty = count === 0
+          const due = dueCounts(key)
+          const dueBadge = [
+            due.today > 0 ? `${due.today} today` : null,
+            due.overdue > 0 ? `${due.overdue} overdue` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')
           return (
             <button
               key={key}
@@ -183,6 +214,17 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
                 </span>
               </div>
               <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
+              {/* Due-urgency badge — the mobile stand-in for the grid's glow: what's on fire in
+                  this quadrant, at a glance from the overview. */}
+              {dueBadge && (
+                <span
+                  className="inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                  style={{ color: '#c2693f', backgroundColor: 'rgba(194,105,63,0.10)' }}
+                >
+                  <span aria-hidden>⏰</span>
+                  {dueBadge}
+                </span>
+              )}
               {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar. */}
               {empty ? (
                 <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>

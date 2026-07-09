@@ -5,6 +5,7 @@ import { QUADRANT_ORDER, QUADRANT_CENTER, QUADRANT_SUBTITLE } from '../../lib/qu
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import type { Recurring } from '../../types/task'
 import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
+import { ReminderPicker } from '../reminders/ReminderPicker'
 
 // AddTaskForm — the mobile "add a task" form (rendered inside MobileAddSheet's bottom sheet).
 // Reworked ground-up from the full-screen takeover after the 2026-07-08 feedback round:
@@ -38,18 +39,23 @@ const REPEAT_CHOICES = [
 export function AddTaskForm({
   defaultQuadrant,
   onAdd,
+  reminderDefault,
   onOpenChat,
   inputRef,
 }: {
   defaultQuadrant: QuadrantKey | null
-  /** Create the task: text + quadrant + optional recurring schedule + optional due date/time. */
+  /** Create the task: text + quadrant + optional recurring + optional due date/time + an optional
+   *  reminder offset (minutes before the due instant; null = none). */
   onAdd: (
     text: string,
     dest: QuadrantKey,
     recurring: Recurring | null,
     due: string | null,
     dueTime: string | null,
+    reminderMinutes: number | null,
   ) => void
+  /** The add-flow reminder default (from settings) — pre-selects the picker once a time is set. */
+  reminderDefault: number | null
   /** Optional "fastest way is Chat" tip — tapping it closes this sheet and opens BabyClaw. */
   onOpenChat?: () => void
   /** The text field, exposed so the caller can focus it explicitly if ever needed (NOT focused
@@ -62,6 +68,7 @@ export function AddTaskForm({
   const [customDays, setCustomDays] = useState('')
   const [due, setDue] = useState<string | null>(null)
   const [dueTime, setDueTime] = useState<string | null>(null)
+  const [reminderMinutes, setReminderMinutes] = useState<number | null>(reminderDefault)
 
   const frequencyDays =
     repeat === 'custom' ? Math.floor(Number(customDays)) : repeat === null ? null : repeat
@@ -76,7 +83,8 @@ export function AddTaskForm({
         ? { frequencyDays, lastDoneAt: null, doneCount: 0 }
         : null
     // A time never ships without a date (DB CHECK) — the control disables it, this guards it.
-    onAdd(text.trim(), selected, recurring, due, due ? dueTime : null)
+    const dt = due ? dueTime : null
+    onAdd(text.trim(), selected, recurring, due, dt, dt ? reminderMinutes : null)
   }
 
   return (
@@ -158,6 +166,15 @@ export function AddTaskForm({
         <div className="mt-1">
           <DueTimezoneHint />
         </div>
+        {/* Reminder — shown once a time is set; pre-selected to the user's default. */}
+        {due && dueTime && (
+          <div className="mt-2.5 flex flex-col gap-1.5">
+            <p className="text-[13px] font-semibold text-ink">
+              <span aria-hidden>⏰</span> Remind me
+            </p>
+            <ReminderPicker value={reminderMinutes} onChange={setReminderMinutes} idPrefix="madd" />
+          </div>
+        )}
       </div>
 
       {/* Repeats — creates the task with a recurring schedule (daily chores etc.) in one step. */}

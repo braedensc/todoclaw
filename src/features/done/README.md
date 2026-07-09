@@ -4,8 +4,9 @@ Done tab + the Done data layer (history table + atomic `daily_state` merge RPCs)
 
 ## Files
 
-- `DoneView.tsx` — the Done surface (its own header + ✕ close live inside the parchment card;
-  `DonePage` is just the narrow page wrapper — ADR-0027). Renders `useHistory()` newest-first as
+- `DoneView.tsx` — the Done surface (its own dog-themed header banner + ✕ close live inside the
+  parchment card). Presented as a centered popup on desktop (`DonePage`, a scrim + max-w-lg card)
+  and a bottom sheet on mobile (`DoneSheet`), both off the `#/done` route. Renders `useHistory()` newest-first as
   mini grid-cards: the row's left accent is the live task's quadrant color (from x/y), plus a
   recurring indicator and a due badge when the task has them. **Restore** (`↩`) appears for any
   completion whose task is still **live** (`canRestore` = the task is in `useTasks`) and calls

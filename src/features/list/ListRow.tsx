@@ -3,7 +3,14 @@ import type { KeyboardEvent, MouseEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { daysUntil } from '../../lib/scoring'
-import { formatDueTime } from '../../lib/dates'
+import { formatDueTime, minutesUntilDueTime } from '../../lib/dates'
+import {
+  dueChipStyle,
+  fmtCountdown,
+  fmtOverdueAmount,
+  urgencyTier,
+  type UrgencyTier,
+} from '../../lib/visual-urgency'
 import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
 import { resolveCollision } from '../../lib/collision'
 import { IconButton } from '../../components/IconButton'
@@ -37,6 +44,8 @@ interface ListRowProps {
   /** All active tasks — passed to resolveCollision so the committed spot avoids overlaps. */
   allTasks: Task[]
   timeZone: string
+  /** Shared clock from the parent's useNow — drives the countdown / timed-overdue badge. */
+  now: Date
   onUpdateText: (id: string, text: string) => void
   onUpdateCoords: (id: string, x: number, y: number) => void
   onUpdateDue: (id: string, due: string | null, dueTime: string | null) => void
@@ -58,6 +67,11 @@ interface ListRowProps {
    * ListView omits it, so the row is unchanged there.
    */
   onMove?: (task: Task) => void
+  /** This task's reminder offset (minutes before due), or null. Shown in the expanded row when
+   *  the task has a due time; from ListView's shared reminders query. */
+  reminderOffset: number | null
+  /** Set/clear this task's reminder (minutes-before, null = off). */
+  onSetReminder: (minutes: number | null) => void
 }
 
 export function ListRow({
@@ -65,6 +79,7 @@ export function ListRow({
   rank,
   allTasks,
   timeZone,
+  now,
   onUpdateText,
   onUpdateCoords,
   onUpdateDue,
@@ -75,6 +90,8 @@ export function ListRow({
   onRemoveRecurring,
   onDelete,
   onMove,
+  reminderOffset,
+  onSetReminder,
 }: ListRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -84,6 +101,8 @@ export function ListRow({
   // scoring.
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
   const due = daysUntil(task.due, { timeZone })
+  const minutesUntil = minutesUntilDueTime(task.due, task.due_time, timeZone, now)
+  const tier = urgencyTier(due, minutesUntil)
   const status = recurringStatus(task.recurring)
   const showCount = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
@@ -189,8 +208,11 @@ export function ListRow({
         </span>
       ) : (
         due !== null && (
-          <span className="shrink-0 rounded bg-bg px-2 py-0.5 text-xs font-medium text-muted">
-            {dueLabel(due, task.due_time)}
+          <span
+            className="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
+            style={dueChipStyle(tier)}
+          >
+            {dueLabel(tier, due, task.due_time, minutesUntil)}
           </span>
         )
       )}
@@ -317,19 +339,34 @@ export function ListRow({
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
           onRename={startEdit}
+          reminderOffset={reminderOffset}
+          onSetReminder={onSetReminder}
         />
       )}
     </li>
   )
 }
 
-// Human-friendly due badge from a calendar-day delta: negative = overdue, 0 = today. A set
-// due time surfaces only when it's near enough to act on (today/tomorrow) — "in 12 days at
-// 3:00 PM" is noise, "due tomorrow · 3:00 PM" is the plan.
-function dueLabel(d: number, dueTime: string | null): string {
+// Human-friendly due badge by urgency tier. A set due time surfaces only when it's near enough
+// to act on (today/tomorrow) — "in 12 days at 3:00 PM" is noise, "due tomorrow · 3:00 PM" is
+// the plan; inside the final two hours the badge counts down live.
+function dueLabel(
+  tier: UrgencyTier,
+  d: number,
+  dueTime: string | null,
+  minutesUntil: number | null,
+): string {
   const at = dueTime ? ` · ${formatDueTime(dueTime)}` : ''
-  if (d < 0) return `overdue ${Math.abs(d)}d`
-  if (d === 0) return `due today${at}`
-  if (d === 1) return `due tomorrow${at}`
-  return `${d}d`
+  switch (tier) {
+    case 'overdue':
+      return `overdue · ${fmtOverdueAmount(d, minutesUntil)}`
+    case 'final-hours':
+      return `due ${fmtCountdown(minutesUntil ?? 0)}`
+    case 'today':
+      return `due today${at}`
+    case 'closing-in':
+      return d === 1 ? `due tomorrow${at}` : `${d}d`
+    default:
+      return `${d}d`
+  }
 }

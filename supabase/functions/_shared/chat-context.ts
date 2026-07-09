@@ -98,7 +98,7 @@ export async function loadChatContext(
   const [tasksRes, habitsRes, dailyRes] = await Promise.all([
     client
       .from('tasks')
-      .select('id, text, x, y, due, staged, recurring')
+      .select('id, text, x, y, due, due_time, staged, recurring')
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
     client
@@ -129,6 +129,7 @@ export async function loadChatContext(
       y: t.y as number | null,
       due: t.due as string | null,
       dueInDays: daysUntilInTZ(t.due as string | null, timeZone, now),
+      dueTime: t.due_time as string | null,
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       doneToday: doneMap[t.id as string] === true,

@@ -16,6 +16,15 @@ const base: PlanRequest = {
     { text: 'File taxes', importance: 80, urgency: 90, due: '2026-06-25', dueInDays: 1 },
     { text: 'Read paper', importance: 30, urgency: 10, due: null, dueInDays: null },
     { text: 'Renew passport', importance: 70, urgency: 20, due: '2026-06-20', dueInDays: -4 },
+    // A timed task → the due phrase carries the clock time (a fixed anchor for the plan).
+    {
+      text: 'Dentist',
+      importance: 60,
+      urgency: 60,
+      due: '2026-06-24',
+      dueInDays: 0,
+      dueTime: '10:30:00',
+    },
   ],
   recurringDue: [{ text: 'Water plants', status: 'due today' }],
   habits: ['Stretch', 'Read 10 pages'],
@@ -51,10 +60,11 @@ Deno.test('weekday prompt: slots + free-time + fixed commitments + habits + task
   assert(p.includes('School pickup — weekdays 3pm'))
   assert(p.includes('Stretch'))
   assert(p.includes('Water plants (due today)'))
-  // task line formatting: overdue, due-in-N, no-due
+  // task line formatting: overdue, due-in-N, no-due, and a timed anchor ("due today at 10:30 AM")
   assert(p.includes('due 4d ago'))
   assert(p.includes('due in 1d'))
   assert(p.includes('no due date'))
+  assert(p.includes('due today at 10:30 AM'))
 })
 
 Deno.test('commitments render as fixed blocks; an empty list omits the block entirely', () => {
@@ -79,6 +89,41 @@ Deno.test('a commitment with no "when" still renders its label', () => {
 Deno.test('system prompt drops running and covers recurring commitments generically', () => {
   assert(!SYSTEM_PROMPT.toLowerCase().includes('running'))
   assert(SYSTEM_PROMPT.includes('recurring commitments'))
+})
+
+Deno.test('task size renders with its hour hint only when present; untagged lines omit it', () => {
+  const sized: PlanRequest = {
+    ...base,
+    tasks: [
+      { text: 'Deep work', importance: 80, urgency: 50, due: null, dueInDays: null, size: 'L' },
+      { text: 'Quick reply', importance: 20, urgency: 20, due: null, dueInDays: null, size: null },
+      { text: 'Unspecified', importance: 30, urgency: 30, due: null, dueInDays: null },
+    ],
+  }
+  const p = buildUserPrompt(sized, schedule, null)
+  assert(p.includes('Deep work (importance 80, urgency 50, no due date, size L (~2h))'))
+  // A null/absent size adds nothing to the line — the model estimates those itself.
+  assert(p.includes('Quick reply (importance 20, urgency 20, no due date)'))
+  assert(!p.includes('Quick reply (importance 20, urgency 20, no due date, size'))
+  assert(p.includes('Unspecified (importance 30, urgency 30, no due date)'))
+})
+
+Deno.test(
+  'system prompt frames size as a soft anti-over-stuffing guardrail, with the legend',
+  () => {
+    assert(SYSTEM_PROMPT.includes('guardrail against over-stuffing'))
+    assert(SYSTEM_PROMPT.includes('never a quota to fill'))
+    // The S/M/L/XL → hours legend and the "estimate a missing size" instruction both appear.
+    assert(SYSTEM_PROMPT.includes('S (~15m), M (~45m), L (~2h), XL (~half-day)'))
+    assert(SYSTEM_PROMPT.includes('estimate its effort yourself'))
+  },
+)
+
+Deno.test('PlanRequestSchema tolerates a missing size (deploy-skew safe)', () => {
+  // An old client that predates the field omits it entirely — the payload must still validate.
+  const legacy = { ...base, tasks: [{ ...base.tasks[0] }] } as unknown as PlanRequest
+  delete (legacy.tasks[0] as { size?: unknown }).size
+  assertEquals(PlanRequestSchema.parse(legacy).tasks.length, 1)
 })
 
 Deno.test('weather block appears only when weather is provided', () => {

@@ -5,6 +5,9 @@ import { useDeleteHistoryEntry, useHistory, useRestoreTask } from './use-history
 import { useConfirm } from '../../components/use-confirm'
 import { IconButton } from '../../components/IconButton'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
+import { PawPrint } from '../../components/PawPrint'
+import { BoneIcon } from '../../components/BoneIcon'
+import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { formatDateTime } from '../../lib/dates'
 import { daysUntil } from '../../lib/scoring'
 import { quadrantMeta } from '../../lib/quadrants'
@@ -167,19 +170,45 @@ export function DoneView({ onClose, bare = false }: { onClose?: () => void; bare
     if (ok) deleteEntry.mutate(entry.id)
   }
 
+  // Dog-themed banner: the Done tab is the pup's trophy shelf — every task he fetched, all in one
+  // place. A soft puppy-tint wash, a paw-print title mark + a warm tagline, a faint paw-trail /
+  // bone watermark behind it, and TodoClaw peeking in proudly from the corner. All decoration is
+  // aria-hidden and pointer-events-none, so it never gets between the user and the ✕ / the list.
   const header = (
-    <header className="mb-3 flex items-center justify-between">
-      <h2 className="font-serif text-lg font-semibold text-ink">Done</h2>
+    <header className="relative mb-4 overflow-hidden rounded-xl border border-puppy/25 bg-gradient-to-br from-puppy/[0.12] via-puppy/[0.05] to-transparent px-4 pb-3 pt-3">
+      {/* Decorative paw trail + ghosted bone — a paper-stamp look under the title. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <PawPrint className="absolute left-1 top-2 h-4 w-4 -rotate-[18deg] text-puppy opacity-[0.13]" />
+        <PawPrint className="absolute left-8 top-7 h-3.5 w-3.5 rotate-[8deg] text-puppy opacity-[0.10]" />
+        <PawPrint className="absolute left-16 top-3 h-3 w-3 -rotate-[6deg] text-puppy opacity-[0.08]" />
+        <BoneIcon className="absolute -bottom-2 right-14 h-9 w-auto rotate-[14deg] text-puppy opacity-[0.07]" />
+      </div>
+
       {onClose && (
         <button
           type="button"
           onClick={onClose}
           aria-label="Close done"
-          className="rounded text-lg text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
+          className="absolute right-2.5 top-2.5 z-10 rounded text-lg text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
         >
           ✕
         </button>
       )}
+
+      <div className="relative flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
+            <PawPrint className="h-4 w-4 shrink-0 text-puppy" />
+            Done
+          </h2>
+          <p className="mt-0.5 font-serif text-[13px] italic text-muted">
+            Good dog — every task you fetched, right here.
+          </p>
+        </div>
+        {/* Proud pup peeking in from the corner (decorative — the component is already aria-hidden).
+            Nudged so his rail tucks clear of the close button. */}
+        <TodoClawPeek className="pointer-events-none -mb-1 mr-6 h-12 w-12 shrink-0 drop-shadow-sm" />
+      </div>
     </header>
   )
 
@@ -198,9 +227,12 @@ export function DoneView({ onClose, bare = false }: { onClose?: () => void; bare
         </p>
 
         {entries.length === 0 ? (
-          <div className="flex flex-col items-center gap-1 py-2 text-center">
-            <SleepingPuppy className="h-16 w-28 text-muted-light" />
-            <p className="text-muted">Nothing done yet — completed tasks land here.</p>
+          <div className="flex flex-col items-center gap-1.5 py-4 text-center">
+            <SleepingPuppy className="h-16 w-28 text-puppy/40" />
+            <p className="font-serif text-[15px] italic text-muted">
+              Nothing done yet — the pup’s still waiting for his first trick.
+            </p>
+            <p className="text-xs text-muted-light">Completed tasks come curl up here.</p>
           </div>
         ) : (
           <ul className="space-y-2">
@@ -227,13 +259,27 @@ export function DoneView({ onClose, bare = false }: { onClose?: () => void; bare
 
   // `bare` drops the card chrome when the surface is supplied by a wrapper (the mobile DoneSheet's
   // BottomSheet already paints the panel + padding); the labelled region + content are unchanged.
+  // Non-bare is the desktop popup card (DonePage scrim) — it carries the modal shadow and a big
+  // ghosted bone stamped into the corner, so the surface itself reads as the pup's trophy shelf.
   return (
     <section
       aria-label="Done"
-      className={bare ? '' : 'rounded-xl border border-border-strong bg-panel p-6'}
+      className={
+        bare
+          ? ''
+          : 'relative overflow-hidden rounded-xl border border-border-strong bg-panel p-6 shadow-xl'
+      }
     >
-      {header}
-      {body}
+      {!bare && (
+        <BoneIcon
+          aria-hidden
+          className="pointer-events-none absolute -bottom-3 -right-4 h-24 w-auto -rotate-12 text-puppy opacity-[0.05]"
+        />
+      )}
+      <div className="relative">
+        {header}
+        {body}
+      </div>
     </section>
   )
 }

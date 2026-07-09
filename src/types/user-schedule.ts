@@ -78,6 +78,10 @@ const notificationsSchema = z.object({
   eveningHour: localHour.optional(), // when the recap is pushed
   quietStartHour: localHour.optional(),
   quietEndHour: localHour.optional(),
+  // Per-task reminder default (ADR 2026-07-09): minutes before a timed task is due to pre-select
+  // in the add flow. `null` = off (no auto reminder); ABSENT = the app default (1 hour) — so an
+  // untouched config never has to store it. Bounded to 28 days, like task_reminders.offset_minutes.
+  reminderDefaultMinutes: z.number().int().min(0).max(40320).nullable().optional(),
 })
 
 export const ScheduleConfigSchema = z.object({

@@ -3,6 +3,7 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RecurringSection } from '../recurring/RecurringSection'
 import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
+import { ReminderPicker } from '../reminders/ReminderPicker'
 
 // The expanded detail panel of a list row: urgency/importance sliders (each paired with a
 // number input), a due date + time picker, a live quadrant badge, and the recurring section
@@ -34,6 +35,10 @@ interface ExpandedRowProps {
   /** Enter the row's inline text edit — the mobile-visible Rename chip (audit §4.1): the row's
    *  other edit gestures are double-click (mouse) and F2 (keyboard), neither reachable by touch. */
   onRename: () => void
+  /** This task's reminder offset (minutes before due), or null. Shown once a due time exists. */
+  reminderOffset: number | null
+  /** Set/clear this task's reminder (minutes-before, null = off). */
+  onSetReminder: (minutes: number | null) => void
 }
 
 export function ExpandedRow({
@@ -44,6 +49,8 @@ export function ExpandedRow({
   onSetFrequency,
   onRemoveRecurring,
   onRename,
+  reminderOffset,
+  onSetReminder,
 }: ExpandedRowProps) {
   // Local, live coords (percent 0–100). Null x/y default to grid center (50), matching scoring.
   // These initialize from the task once; when a committed write lands and the task coords
@@ -123,6 +130,15 @@ export function ExpandedRow({
           <span aria-hidden>✎</span> Rename
         </button>
       </div>
+
+      {/* Reminder — only once the task has a due time to anchor to, and never for a recurring
+          task (the sweep doesn't fire reminders for repeats). */}
+      {dueValue && timeValue && !task.recurring && (
+        <div className="mt-3 flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted">Remind me</span>
+          <ReminderPicker value={reminderOffset} onChange={onSetReminder} idPrefix="list" />
+        </div>
+      )}
 
       <RecurringSection
         task={task}

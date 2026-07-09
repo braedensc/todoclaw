@@ -3,6 +3,8 @@
 // list_tasks round-trip. Pure string generation (no DB) → unit-testable; the DB fetch that feeds
 // it lives in ./chat-context.ts.
 
+import { formatClockTime } from './reminder-content.ts'
+
 // ---- per-user config (read-side "configurable to an extent") ---------------------------------
 // BabyClaw folds a small per-user config into the prompt when present, with safe defaults when
 // absent. The EDITOR UI is a separate task (B11); this defines the SHAPE + defaults and reads it
@@ -27,6 +29,7 @@ export interface PromptTask {
   y: number | null
   due: string | null
   dueInDays: number | null
+  dueTime: string | null // 'HH:MM[:SS]' wall-clock time, or null
   staged: boolean
   recurringLabel: string | null // e.g. "every 7d", or null
   doneToday: boolean
@@ -82,6 +85,10 @@ export const SYSTEM_PREFIX = [
   'not ask "are you sure?" yourself for those. The user may answer by clicking a button or by typing',
   'yes/no in chat; a decline may come with their words attached — respond to those, not the decline.',
   '',
+  'WHEN A TOOL FAILS: say sorry briefly in plain language and suggest trying again — NEVER repeat raw',
+  'error text, database messages, task/habit ids, or JSON back to the user. Those are for your eyes',
+  'only; keep every reply free of ids and technical detail.',
+  '',
   'STATUS LINE — required, machine-read: end EVERY reply with one extra final line of the exact form',
   '[[status: …]] — a tight summary of the turn, 8 words max, in your own cheerful voice, for the',
   "app's one-line widget: the action you took (\"Added 'call mom' — due Friday 🐾\"), the action",
@@ -134,11 +141,18 @@ function quadrant(x: number, y: number): string {
 
 function duePhrase(t: PromptTask): string | null {
   if (t.due == null) return null
-  if (t.dueInDays == null) return `due ${t.due}`
-  if (t.dueInDays < 0) return `due ${Math.abs(t.dueInDays)}d ago`
-  if (t.dueInDays === 0) return 'due today'
-  if (t.dueInDays === 1) return 'due tomorrow'
-  return `due in ${t.dueInDays}d`
+  const day =
+    t.dueInDays == null
+      ? `due ${t.due}`
+      : t.dueInDays < 0
+        ? `due ${Math.abs(t.dueInDays)}d ago`
+        : t.dueInDays === 0
+          ? 'due today'
+          : t.dueInDays === 1
+            ? 'due tomorrow'
+            : `due in ${t.dueInDays}d`
+  // A due time makes it a fixed anchor ("due today at 3:00 PM") so BabyClaw can reason about it.
+  return t.dueTime ? `${day} at ${formatClockTime(t.dueTime)}` : day
 }
 
 function taskLine(t: PromptTask): string {

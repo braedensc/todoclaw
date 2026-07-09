@@ -96,4 +96,24 @@ describe('settings-form', () => {
     expect(out.notifications?.morningHour).toBe(23)
     expect(out.notifications?.eveningHour).toBe(0)
   })
+
+  describe('reminder default (three-state)', () => {
+    it('EMPTY_DRAFT (the app default, 60) does not persist reminderDefaultMinutes', () => {
+      // Selecting/leaving the 1-hour default reads back as the default without bloating config.
+      expect(draftToConfig(EMPTY_DRAFT).notifications).toBeUndefined()
+      expect(configToDraft({}).reminderDefault).toBe('60')
+    })
+
+    it("'off' persists null and round-trips", () => {
+      const out = draftToConfig({ ...EMPTY_DRAFT, reminderDefault: 'off' })
+      expect(out.notifications).toEqual({ reminderDefaultMinutes: null })
+      expect(configToDraft(out).reminderDefault).toBe('off')
+    })
+
+    it('a non-default preset persists the number and round-trips', () => {
+      const out = draftToConfig({ ...EMPTY_DRAFT, reminderDefault: '10' })
+      expect(out.notifications).toEqual({ reminderDefaultMinutes: 10 })
+      expect(configToDraft(out).reminderDefault).toBe('10')
+    })
+  })
 })

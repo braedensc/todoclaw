@@ -5,6 +5,9 @@ import type { Recurring } from '../../types/task'
 import { placeInQuadrant } from '../../lib/quadrant-summary'
 import { BottomSheet } from '../../components/BottomSheet'
 import { AddTaskForm } from './AddTaskForm'
+import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useUpsertTaskReminder } from '../reminders/use-task-reminders'
+import { effectiveReminderDefault } from '../reminders/reminder-offsets'
 
 // MobileAddSheet — the single mobile "add a task" surface, opened by the bottom nav's "+".
 // Reworked (2026-07-08 feedback): a true SLIDE-UP bottom sheet, not a full-screen takeover —
@@ -37,20 +40,35 @@ export function MobileAddSheet({
 }) {
   const { data: tasks } = useTasks()
   const addTask = useAddTask()
+  const upsertReminder = useUpsertTaskReminder()
+  const reminderDefault = effectiveReminderDefault(
+    useUserSchedule().data?.config.notifications?.reminderDefaultMinutes,
+  )
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Manual add → placed task. Collision-resolve the quadrant center against existing placed
-  // tasks; Repeats and Due (date + optional time) ship on the same insert.
+  // tasks; Repeats and Due (date + optional time) ship on the same insert; a timed task with a
+  // chosen reminder offset gets its reminder once the row exists (it FKs the task id).
   const handleAdd = (
     text: string,
     dest: QuadrantKey,
     recurring: Recurring | null,
     due: string | null,
     dueTime: string | null,
+    reminderMinutes: number | null,
   ) => {
     const placed = (tasks ?? []).filter((t) => !t.staged)
     const { x, y } = placeInQuadrant(dest, placed)
-    addTask.mutate({ text, x, y, staged: false, recurring, due, due_time: dueTime })
+    addTask.mutate(
+      { text, x, y, staged: false, recurring, due, due_time: dueTime },
+      {
+        onSuccess: (created) => {
+          if (dueTime && reminderMinutes !== null && !created.recurring) {
+            upsertReminder.mutate({ taskId: created.id, offsetMinutes: reminderMinutes })
+          }
+        },
+      },
+    )
     onAdded?.(dest)
     onClose()
   }
@@ -60,6 +78,7 @@ export function MobileAddSheet({
       <AddTaskForm
         defaultQuadrant={defaultQuadrant}
         onAdd={handleAdd}
+        reminderDefault={reminderDefault}
         inputRef={inputRef}
         onOpenChat={
           onOpenChat

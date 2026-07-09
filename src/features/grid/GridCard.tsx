@@ -4,16 +4,17 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
 import {
-  DUE_BADGE_MUTED,
-  DUE_BADGE_URGENT,
+  dueChipStyle,
+  gridChipLabel,
   stalenessStyle,
   urgencyGlowStyle,
+  urgencyTier,
 } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
-import { formatDueTime } from '../../lib/dates'
 import { RecurringSection } from '../recurring/RecurringSection'
 import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
+import { ReminderPicker } from '../reminders/ReminderPicker'
 import { BUCKET_DOT, CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
 export interface GridCardProps {
@@ -27,6 +28,12 @@ export interface GridCardProps {
    * the timezone lives in one place (GridView) rather than being threaded into every card.
    */
   daysUntilDue: number | null
+  /**
+   * Minutes until the exact due INSTANT for tasks with a due time (negative = past), null for
+   * date-only tasks — from `minutesUntilDueTime` with the caller's shared `useNow` clock.
+   * Flips a timed task to overdue when its instant passes and drives the final-hours countdown.
+   */
+  minutesUntilDue: number | null
   /** True while this card is the one being dragged (so we can suppress its transition). */
   dragging: boolean
   /**
@@ -51,6 +58,11 @@ export interface GridCardProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: () => void
+  /** This task's current reminder offset (minutes before due), or null = none. Shown in the ⋯
+   *  menu once the task has a due time; computed by the caller from the shared reminders query. */
+  reminderOffset: number | null
+  /** Set/clear this task's reminder (minutes-before, null = off). Upserts task_reminders. */
+  onSetReminder: (minutes: number | null) => void
 }
 
 // Stops a pointer-down from bubbling to the card root (which would start a reposition drag).
@@ -84,6 +96,7 @@ export function GridCard({
   screenX,
   screenY,
   daysUntilDue,
+  minutesUntilDue,
   dragging,
   cardRef,
   onPointerDown,
@@ -94,6 +107,8 @@ export function GridCard({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  reminderOffset,
+  onSetReminder,
 }: GridCardProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.text)
@@ -122,9 +137,10 @@ export function GridCard({
 
   const showBadge = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
-  // Urgency glow + staleness dust apply only to non-recurring cards (a recurring task carries its
-  // own RC_COLOR status; done tasks never reach the grid). See lib/visual-urgency.
-  const glow = rc ? null : urgencyGlowStyle(daysUntilDue)
+  // Urgency tier → glow + chip, applied only to non-recurring cards (a recurring task carries
+  // its own RC_COLOR status; done tasks never reach the grid). See lib/visual-urgency.
+  const tier = rc ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
+  const glow = urgencyGlowStyle(tier)
   const stale = rc ? null : stalenessStyle(task)
 
   // Recurring cards get DASHED, slightly heavier accent side/bottom borders — a distinct "this
@@ -159,10 +175,15 @@ export function GridCard({
     touchAction: 'none',
     transition: dragging ? 'none' : 'box-shadow 120ms ease, transform 120ms ease',
     // Glow overrides the resting shadow (its string carries its own drop-shadow layer). Overdue
-    // cards also get the pulse animation; the keyframe is global (src/index.css). `animation` is
-    // spread only when present so a future base animation on this card can't be clobbered.
+    // cards also pulse and get a warm tint; the final hours pulse softly. Keyframes are global
+    // (src/index.css). `animation`/`background` spread only when present so a future base value
+    // on this card can't be clobbered.
     ...(glow
-      ? { boxShadow: glow.boxShadow, ...(glow.animation ? { animation: glow.animation } : {}) }
+      ? {
+          boxShadow: glow.boxShadow,
+          ...(glow.animation ? { animation: glow.animation } : {}),
+          ...(glow.background ? { background: glow.background } : {}),
+        }
       : {}),
     ...(stale ? { filter: stale.filter, opacity: stale.opacity } : {}),
     // Lift the card above its neighbors while its ⋯ menu is open so the popover isn't occluded.
@@ -280,21 +301,15 @@ export function GridCard({
         </p>
       )}
 
-      {/* Non-recurring due badge — the textual half of the urgency layer (html:590). Terracotta
-          when due within 2 days, muted grey otherwise. Recurring cards show their status badge
-          above instead, so this is suppressed when `rc` is set. */}
+      {/* Non-recurring due chip — the textual half of the urgency ladder: tier-colored, says
+          WHEN ("⏰ 3:00 PM", "in 45m", "Overdue · 2h") not just how many days. Recurring cards
+          show their status badge above instead, so this is suppressed when `rc` is set. */}
       {!editing && !rc && daysUntilDue !== null && (
         <span
-          className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold text-white"
-          style={{ backgroundColor: daysUntilDue <= 2 ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
+          className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
+          style={dueChipStyle(tier)}
         >
-          {daysUntilDue < 0
-            ? 'overdue'
-            : daysUntilDue === 0
-              ? task.due_time
-                ? formatDueTime(task.due_time)
-                : 'today'
-              : `${daysUntilDue}d`}
+          {gridChipLabel(tier, daysUntilDue, task.due_time, minutesUntilDue)}
         </span>
       )}
 
@@ -350,6 +365,21 @@ export function GridCard({
                   </div>
                   <DueTimezoneHint />
                 </div>
+
+                {/* Reminder — only once the task has a due time to anchor to, and never for a
+                    recurring task (the sweep doesn't fire reminders for repeats). */}
+                {dueValue && timeValue && !task.recurring && (
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
+                      Remind me
+                    </span>
+                    <ReminderPicker
+                      value={reminderOffset}
+                      onChange={onSetReminder}
+                      idPrefix="grid"
+                    />
+                  </div>
+                )}
 
                 <RecurringSection
                   task={task}

@@ -107,3 +107,24 @@ export function formatDueTime(hms: string): string {
   const local = new Date(2000, 0, 1, Number(m[1]), Number(m[2]))
   return local.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
+
+/**
+ * Whole minutes until a timed task's due instant (negative = past), or null when the task has
+ * no due time or the inputs don't parse. The tz-aware bridge between the wall-clock columns and
+ * the live countdown / timed-overdue tiers (visual-urgency.ts) — callers pass a shared `now`
+ * from useNow so a whole view ticks on one clock.
+ */
+export function minutesUntilDueTime(
+  due: string | null,
+  dueTime: string | null,
+  timeZone: string,
+  now: Date,
+): number | null {
+  if (!due || !dueTime) return null
+  try {
+    const instant = dueInstant(due.slice(0, 10), dueTime, timeZone)
+    return Math.round((instant.getTime() - now.getTime()) / 60_000)
+  } catch {
+    return null
+  }
+}

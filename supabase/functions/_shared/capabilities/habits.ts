@@ -6,7 +6,7 @@
 import { z } from 'npm:zod@4.4.3'
 import { localDateInTZ } from '../dates.ts'
 import { defineCapability, type Capability } from './types.ts'
-import { ok, err, updateHabitRow, loadHabitSubtasks } from './helpers.ts'
+import { ok, err, systemErr, updateHabitRow, loadHabitSubtasks } from './helpers.ts'
 
 const uuid = z.string().uuid()
 
@@ -22,8 +22,9 @@ export const habitCapabilities: Capability[] = [
         .select('id, text, active, subtasks')
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
-      if (error) return err(error.message)
-      return ok(JSON.stringify(data ?? []))
+      if (error) return systemErr(error.message)
+      // Row dump is for the model's eyes only (ids for follow-up edits) — hidden from the user.
+      return ok(JSON.stringify(data ?? []), undefined, null)
     },
   }),
 
@@ -33,7 +34,7 @@ export const habitCapabilities: Capability[] = [
     schema: z.object({ text: z.string().min(1).max(2000).describe('The habit name.') }).strict(),
     async execute(ctx, i) {
       const { error } = await ctx.client.from('habits').insert({ text: i.text })
-      if (error) return err(error.message)
+      if (error) return systemErr(error.message)
       return ok(`Added the habit "${i.text}".`, ['habits'])
     },
   }),
@@ -91,7 +92,7 @@ export const habitCapabilities: Capability[] = [
         p_key: i.habit_id,
         p_value: i.done,
       })
-      if (error) return err(error.message)
+      if (error) return systemErr(error.message)
       return ok(`Marked "${habit.text}" ${i.done ? 'done' : 'not done'} for today.`, [
         'daily_state',
       ])
@@ -173,7 +174,7 @@ export const habitCapabilities: Capability[] = [
         p_key: `${i.habit_id}:${i.step_id}`,
         p_value: i.done,
       })
-      if (error) return err(error.message)
+      if (error) return systemErr(error.message)
       return ok(`Marked a step of "${habit.text}" ${i.done ? 'done' : 'not done'} for today.`, [
         'daily_state',
       ])

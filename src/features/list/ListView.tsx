@@ -4,6 +4,8 @@ import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useConfirm } from '../../components/use-confirm'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { useNow } from '../../hooks/use-now'
+import { useTaskReminders, useUpsertTaskReminder } from '../reminders/use-task-reminders'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import type { Task } from '../../types/task'
@@ -42,11 +44,16 @@ export interface ListViewProps {
 export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {}) {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
+  // One shared clock for every row's countdown / timed-overdue badge (30s tick — see useNow).
+  const now = useNow()
   const { data: daily } = useDailyState(timeZone)
 
   const updateTask = useUpdateTask()
   const softDelete = useSoftDeleteTask()
   const markDone = useMarkTaskDone()
+  // Reminders for every row in one query; the expanded row reads/writes its task's via these.
+  const { data: reminders } = useTaskReminders()
+  const upsertReminder = useUpsertTaskReminder()
   const confirm = useConfirm()
   // Only for the empty-state copy: the add affordance is the header widget on desktop but the
   // bottom-nav ➕ on a phone — pointing a phone user at a header that isn't there is a dead end.
@@ -158,6 +165,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
       <ul className="flex flex-col gap-2">
         {ranked.map((task: Task, i) => (
           <ListRow
+            now={now}
             key={task.id}
             task={task}
             rank={i + 1}
@@ -173,6 +181,10 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
             onRemoveRecurring={handleRemoveRecurring}
             onDelete={handleDelete}
             onMove={onMoveToQuadrant}
+            reminderOffset={reminders?.get(task.id)?.offset_minutes ?? null}
+            onSetReminder={(minutes) =>
+              upsertReminder.mutate({ taskId: task.id, offsetMinutes: minutes })
+            }
           />
         ))}
       </ul>
