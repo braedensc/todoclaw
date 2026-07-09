@@ -40,11 +40,15 @@ beforeEach(() => {
 })
 
 describe('SettingsPanel', () => {
-  it('renders the schedule + preferences + BabyClaw fields', () => {
+  it('renders the schedule + preferences fields on the Plan tab; BabyClaw under the AI tab', () => {
     render(<SettingsPanel onClose={() => {}} />)
+    // Plan My Day is the default tab.
     expect(screen.getByLabelText('Location')).toBeInTheDocument()
     expect(screen.getByLabelText('Work start')).toBeInTheDocument()
     expect(screen.getByLabelText('Preferences')).toBeInTheDocument()
+    // BabyClaw tuning lives on the AI tab — absent until it's selected.
+    expect(screen.queryByLabelText('Tone')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'AI' }))
     expect(screen.getByLabelText('Tone')).toBeInTheDocument()
     expect(screen.getByLabelText('Custom instructions')).toBeInTheDocument()
   })
@@ -52,7 +56,15 @@ describe('SettingsPanel', () => {
   it('caps the freeform fields with a hard maxLength', () => {
     render(<SettingsPanel onClose={() => {}} />)
     expect(screen.getByLabelText('Preferences')).toHaveAttribute('maxlength', '500')
+    fireEvent.click(screen.getByRole('tab', { name: 'AI' }))
     expect(screen.getByLabelText('Custom instructions')).toHaveAttribute('maxlength', '500')
+  })
+
+  it('opens on the Notifications tab when deep-linked, showing the task-reminder default', () => {
+    render(<SettingsPanel onClose={() => {}} initialSection="notifications" />)
+    const select = screen.getByLabelText('Default reminder for tasks with a time')
+    // Unset config → the app default (1 hour before) is pre-selected.
+    expect(select).toHaveValue('60')
   })
 
   it('pre-fills fields from the existing config', () => {

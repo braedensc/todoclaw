@@ -72,7 +72,7 @@ export function useAddTask() {
         y = 0.5,
         staged,
       } = parsed
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tasks')
         // `staged` is omitted unless provided, so it keeps its DB default (true) for the widget's
         // staged-then-place flow; create-into-quadrant sends staged:false for a placed task.
@@ -85,7 +85,11 @@ export function useAddTask() {
           recurring,
           ...(staged === undefined ? {} : { staged }),
         })
+        // Return the created row so a caller can chain (e.g. attach a due-time reminder — PR 5).
+        .select('*')
+        .single()
       if (error) throw error
+      return TaskSchema.parse(data)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
   })

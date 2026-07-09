@@ -4,6 +4,11 @@ import { useAddTask } from '../tasks/use-tasks'
 import { useClickOutside } from '../../hooks/use-click-outside'
 import { formatDueTime } from '../../lib/dates'
 import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
+import { useTimeZone } from '../schedule/use-time-zone'
+import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useUpsertTaskReminder } from '../reminders/use-task-reminders'
+import { ReminderPicker } from '../reminders/ReminderPicker'
+import { effectiveReminderDefault } from '../reminders/reminder-offsets'
 import type { GridApi } from '../grid/use-grid'
 import { NewItemStrip } from './NewItemStrip'
 import type { ChatController } from '../ai/use-chat-controller'
@@ -115,9 +120,17 @@ type ChipId = 'due' | 'repeat'
 
 function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const addTask = useAddTask()
+  const timeZone = useTimeZone()
+  const upsertReminder = useUpsertTaskReminder()
+  // The user's configured add-flow default (1 hour unless changed / off). Pre-selects the picker
+  // the moment a due time is set.
+  const reminderDefault = effectiveReminderDefault(
+    useUserSchedule().data?.config.notifications?.reminderDefaultMinutes,
+  )
   const [text, setText] = useState('')
   const [due, setDue] = useState<string | null>(null)
   const [dueTime, setDueTime] = useState<string | null>(null)
+  const [reminderMinutes, setReminderMinutes] = useState<number | null>(reminderDefault)
   const [repeatDays, setRepeatDays] = useState<number | null>(null)
   // Which chip popover is open — a single value enforces one-open-at-a-time (opening one
   // closes the other). `null` = both closed.
@@ -135,21 +148,28 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
     e.preventDefault()
     const trimmed = text.trim()
     if (!trimmed) return
+    // A time never ships without a date (DB CHECK) — the control disables it, this guards it.
+    const dt = due ? dueTime : null
     addTask.mutate(
       {
         text: trimmed,
         due,
-        // A time never ships without a date (DB CHECK) — the control disables it, this guards it.
-        due_time: due ? dueTime : null,
+        due_time: dt,
         recurring: repeatDays
           ? { frequencyDays: repeatDays, lastDoneAt: null, doneCount: 0 }
           : null,
       },
       {
-        onSuccess: () => {
+        onSuccess: (created) => {
+          // A timed task with a chosen offset gets its reminder right after creation (the task
+          // must exist first — the reminder FKs its id).
+          if (dt && reminderMinutes !== null) {
+            upsertReminder.mutate({ task: created, offsetMinutes: reminderMinutes, timeZone })
+          }
           setText('')
           setDue(null)
           setDueTime(null)
+          setReminderMinutes(reminderDefault)
           setRepeatDays(null)
         },
       },
@@ -176,6 +196,8 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
             }}
             time={dueTime}
             onTimeChange={setDueTime}
+            reminderMinutes={reminderMinutes}
+            onReminderChange={setReminderMinutes}
             open={openChip === 'due'}
             onToggle={() => toggleChip('due')}
             onClose={closeChips}
@@ -269,6 +291,8 @@ function DueControl({
   onChange,
   time,
   onTimeChange,
+  reminderMinutes,
+  onReminderChange,
   open,
   onToggle,
   onClose,
@@ -277,6 +301,8 @@ function DueControl({
   onChange: (v: string | null) => void
   time: string | null
   onTimeChange: (v: string | null) => void
+  reminderMinutes: number | null
+  onReminderChange: (v: number | null) => void
 }) {
   // Compact chip: MM-DD, plus the clock time once one is set ("07-22 3:00 PM").
   const label = value ? `${value.slice(5)}${time ? ` ${formatDueTime(time)}` : ''}` : 'Due'
@@ -325,6 +351,15 @@ function DueControl({
             )}
           </div>
           <DueTimezoneHint />
+          {/* Reminder — appears once a due time is set; pre-selected to the user's default. */}
+          {value && time && (
+            <div className="flex flex-col gap-1.5 border-t border-border pt-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
+                Remind me
+              </span>
+              <ReminderPicker value={reminderMinutes} onChange={onReminderChange} idPrefix="add" />
+            </div>
+          )}
         </div>
       )}
     </ChipPopover>

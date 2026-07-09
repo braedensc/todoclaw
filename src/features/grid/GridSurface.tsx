@@ -5,6 +5,7 @@ import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
 import { urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
+import { useTaskReminders, useUpsertTaskReminder } from '../reminders/use-task-reminders'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -82,6 +83,10 @@ export function GridSurface({
   // One shared clock for every card's countdown / timed-overdue tier (30s tick — see useNow).
   const now = useNow()
 
+  // Reminders for the whole grid in one query; each card's ⋯ menu reads/writes its own via these.
+  const { data: reminders } = useTaskReminders()
+  const upsertReminder = useUpsertTaskReminder()
+
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
   // clipped by the canvas's `overflow-hidden` (item 17). Applied at RENDER time (screen coords
@@ -147,6 +152,10 @@ export function GridSurface({
         onDelete={() => handleDelete(task)}
         onDone={() => doneWithStamp(task)}
         onSetDue={(due, due_time) => updateMutate({ id: task.id, patch: { due, due_time } })}
+        reminderOffset={reminders?.get(task.id)?.offset_minutes ?? null}
+        onSetReminder={(minutes) =>
+          upsertReminder.mutate({ task, offsetMinutes: minutes, timeZone })
+        }
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,

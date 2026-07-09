@@ -53,6 +53,10 @@ vi.mock('../done/use-history', () => ({
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'UTC' } }),
 }))
+vi.mock('../reminders/use-task-reminders', () => ({
+  useTaskReminders: () => ({ data: new Map() }),
+  useUpsertTaskReminder: () => ({ mutate: vi.fn() }),
+}))
 vi.mock('../daily-state/use-daily-state', () => ({
   useDailyState: () => ({
     data: { done: doneToday, done_at: {}, habit_done: {}, subtask_done: {} },

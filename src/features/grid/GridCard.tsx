@@ -14,6 +14,7 @@ import { CardActionBar } from '../../components/CardActionBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
 import { RecurringSection } from '../recurring/RecurringSection'
 import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
+import { ReminderPicker } from '../reminders/ReminderPicker'
 import { BUCKET_DOT, CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
 export interface GridCardProps {
@@ -57,6 +58,11 @@ export interface GridCardProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: () => void
+  /** This task's current reminder offset (minutes before due), or null = none. Shown in the ⋯
+   *  menu once the task has a due time; computed by the caller from the shared reminders query. */
+  reminderOffset: number | null
+  /** Set/clear this task's reminder (minutes-before, null = off). Upserts task_reminders. */
+  onSetReminder: (minutes: number | null) => void
 }
 
 // Stops a pointer-down from bubbling to the card root (which would start a reposition drag).
@@ -101,6 +107,8 @@ export function GridCard({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  reminderOffset,
+  onSetReminder,
 }: GridCardProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.text)
@@ -357,6 +365,20 @@ export function GridCard({
                   </div>
                   <DueTimezoneHint />
                 </div>
+
+                {/* Reminder — only meaningful once the task has a due time to anchor to. */}
+                {dueValue && timeValue && (
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
+                      Remind me
+                    </span>
+                    <ReminderPicker
+                      value={reminderOffset}
+                      onChange={onSetReminder}
+                      idPrefix="grid"
+                    />
+                  </div>
+                )}
 
                 <RecurringSection
                   task={task}

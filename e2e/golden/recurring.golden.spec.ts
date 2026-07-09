@@ -38,7 +38,10 @@ test('set recurring → cycle-done resets the clock instead of archiving', async
   await expect(page.getByText('No tasks placed — add one above and drag it here.')).toBeVisible()
   await expect(page.getByTestId('grid-card')).toHaveCount(0)
 
-  // …and recurring completions never reach the permanent history.
+  // …and recurring completions never reach the permanent history. (Empty-state copy tracks
+  // DoneView — updated by the dog-theme pass in #185.)
   await openDone(page)
-  await expect(page.getByText('Nothing done yet — completed tasks land here.')).toBeVisible()
+  await expect(
+    page.getByText('Nothing done yet — the pup’s still waiting for his first trick.'),
+  ).toBeVisible()
 })
