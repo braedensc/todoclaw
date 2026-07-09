@@ -120,6 +120,23 @@ function AppShell() {
   const unread = useUnreadCount()
   const markRead = useMarkMessageRead()
   const confirm = useConfirm()
+  // The masthead plan pill flips to "Re-plan" once a plan is on screen (same sleek pill, one word).
+  // Re-planning discards the current plan, so a soft confirm guards an accidental regenerate; the
+  // first plan of the day has nothing to lose and generates straight away.
+  const hasPlan = Boolean(planner.displayPlan)
+  const handlePlanClick = async () => {
+    if (
+      hasPlan &&
+      !(await confirm({
+        title: 'Replace the current plan?',
+        message: 'This generates a new plan and replaces the one on screen.',
+        confirmLabel: 'Re-plan',
+        tone: 'default',
+      }))
+    )
+      return
+    planner.generate()
+  }
   // Sign out sits one tap deep in the mobile More sheet, right under Backups — a mis-tap used to
   // cost a full re-login (audit §4.7). Same guard on the desktop header link for consistency.
   const confirmSignOut = async () => {
@@ -332,9 +349,13 @@ function AppShell() {
                         </h1>
                         <button
                           type="button"
-                          onClick={planner.generate}
+                          onClick={handlePlanClick}
                           disabled={!planner.canGenerate}
-                          title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                          title={
+                            hasPlan
+                              ? 'Replace the current plan with a freshly generated one'
+                              : 'Generate a schedule-aware daily plan from your grid, recurring chores, and habits'
+                          }
                           data-tour="plan"
                           className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
                           style={planPillStyle}
@@ -346,7 +367,7 @@ function AppShell() {
                               <span aria-hidden className="text-[#e8c47a]">
                                 ✦
                               </span>{' '}
-                              Plan My Day
+                              {hasPlan ? 'Re-plan' : 'Plan My Day'}
                             </>
                           )}
                         </button>

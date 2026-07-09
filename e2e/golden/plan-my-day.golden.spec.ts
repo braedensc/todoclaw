@@ -3,9 +3,10 @@ import { detectEscapes, mockAiStatus, mockPlanMyDay } from '../mocks/ai'
 
 // Golden path: Plan My Day with the model call MOCKED (zero Anthropic spend, deterministic —
 // ADR-0018). The header button generates the plan into a PERSISTENT inline card above the grid
-// (not a modal); before generating, the card shows its empty state, and clicking the header
-// button again regenerates. (The card also hydrates from daily_state.plan on load — persistence
-// is covered by the unit tests; here we exercise the inline generate/regenerate flow.)
+// (not a modal); before generating, the card shows its empty state, and once a plan exists the
+// pill flips to "Re-plan" (a soft confirm guards the replace). (The card also hydrates from
+// daily_state.plan on load — persistence is covered by the unit tests; here we exercise the
+// inline generate/regenerate flow.)
 const PLAN = {
   headline: 'One big rock, then coast.',
   availableTime: '~4.5h of personal time',
@@ -48,8 +49,13 @@ test('generates a mocked plan into the inline card and regenerates on demand —
   await expect(card.getByText(PLAN.smallRocks[0].task)).toBeVisible()
   await expect(card.getByText(`↻ ${PLAN.habitNote}`)).toBeVisible()
 
-  // Regenerate via the same header button → a second (different) plan replaces the first.
-  await page.getByRole('button', { name: 'Plan My Day' }).click()
+  // Regenerate: with a plan on screen the header pill now reads "Re-plan", and a soft confirm
+  // guards the replace (so an accidental click can't silently discard the current plan).
+  await page.getByRole('button', { name: 'Re-plan' }).click()
+  await page
+    .getByRole('dialog', { name: 'Replace the current plan?' })
+    .getByRole('button', { name: 'Re-plan' })
+    .click()
   await expect(card.getByText(REGENERATED.headline)).toBeVisible()
   await expect(card.getByText(PLAN.headline)).toHaveCount(0)
 
