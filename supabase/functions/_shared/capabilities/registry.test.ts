@@ -196,6 +196,32 @@ Deno.test('a validation failure shows the user a generic line, not the zod dump'
   assert(typeof res.display === 'string' && !res.display!.includes('ZodError'))
 })
 
+Deno.test('a DB error keeps the raw message for the model but hides it from the user', async () => {
+  // A Postgres-style error must never reach the user — the model sees it (to self-correct), the
+  // user sees a generic line.
+  const raw = 'insert or update on table "tasks" violates foreign key constraint "tasks_user_fk"'
+  const res = await executeTool(
+    'create_task',
+    { text: 'x', due: null },
+    ctx({ onInsert: () => ({ data: null, error: { message: raw } }) }),
+  )
+  assert(res.is_error)
+  assert(res.content.includes('foreign key')) // model still gets the detail
+  assert(typeof res.display === 'string' && !res.display!.includes('foreign key'))
+})
+
+Deno.test('a friendly not-found error is shown verbatim (no generic override)', async () => {
+  // Hand-written user-safe messages stay as-is — only raw system text is sanitized.
+  const res = await executeTool(
+    'edit_task_text',
+    { task_id: UUID, text: 'new' },
+    ctx({ onUpdate: () => ({ data: null, error: null }) }), // zero rows matched → not found
+  )
+  assert(res.is_error)
+  assertEquals(res.display, undefined) // reuse content
+  assert(res.content.includes("couldn't find"))
+})
+
 Deno.test('add_habit_step read-modify-writes the subtasks array', async () => {
   let written: { id: string; text: string }[] | undefined
   const res = await executeTool(

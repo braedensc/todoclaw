@@ -87,9 +87,14 @@ export async function runPlanForUser(
     await recordUsage(client, gate.usageId, usage.input, usage.output, 'plan_my_day')
 
     const { error } = await client.rpc('save_daily_plan', { p_date: date, p_plan: plan })
-    if (error) return { ok: false, reason: error.message }
+    if (error) {
+      // Log the real DB error server-side; the user only ever gets a plain-language reason.
+      console.error('save_daily_plan failed:', error)
+      return { ok: false, reason: "I couldn't save your plan just now — please try again." }
+    }
     return { ok: true, headline: plan.headline }
   } catch (e) {
-    return { ok: false, reason: e instanceof Error ? e.message : 'Planning failed.' }
+    console.error('plan run failed:', e)
+    return { ok: false, reason: "I couldn't plan your day just now — please try again." }
   }
 }

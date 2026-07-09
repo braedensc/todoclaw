@@ -19,7 +19,22 @@ export const ok = (
   ...(display !== undefined ? { display } : {}),
 })
 
+// A hand-written, user-safe failure (e.g. "I couldn't find that task."). `content` is shown to
+// both the model and the user — only pass plain language here, never a raw system message.
 export const err = (content: string): CapabilityResult => ({ content, isError: true })
+
+// A DB / system failure: the raw message goes to the MODEL only (so it can self-correct or retry),
+// while the USER always sees a generic line — Postgres / system text is never chat. Use this at
+// every `if (error) ...` site so technical detail can never reach the user anywhere in the app.
+const GENERIC_ERROR = 'Something went wrong on my end — please try again.'
+export const systemErr = (
+  rawMessage: string,
+  display: string = GENERIC_ERROR,
+): CapabilityResult => ({
+  content: rawMessage,
+  isError: true,
+  display,
+})
 
 // Update a live task by id under RLS. Returns a `${verb} "text"` confirmation, or a not-found
 // error when zero rows matched. Always mutates the 'tasks' domain.
@@ -36,7 +51,7 @@ export async function updateTaskRow(
     .is('deleted_at', null)
     .select('text')
     .maybeSingle()
-  if (error) return err(error.message)
+  if (error) return systemErr(error.message)
   if (!data) return err("I couldn't find that task.")
   return ok(`${verb} "${data.text}".`, ['tasks'])
 }
@@ -55,7 +70,7 @@ export async function updateHabitRow(
     .is('deleted_at', null)
     .select('text')
     .maybeSingle()
-  if (error) return err(error.message)
+  if (error) return systemErr(error.message)
   if (!data) return err("I couldn't find that habit.")
   return ok(`${verb} "${data.text}".`, ['habits'])
 }
