@@ -74,7 +74,10 @@ export async function runPlanForUser(
       client
         .from('tasks')
         .select('id, text, x, y, due, due_time, staged, recurring, size')
-        .is('deleted_at', null),
+        .is('deleted_at', null)
+        // Exclude permanently completed one-off tasks (tasks.completed_at) so a task done on a prior
+        // day can't reappear in a generated plan — mirrors the dispatch RPC's completed_at filter.
+        .is('completed_at', null),
       client.from('habits').select('text, active').is('deleted_at', null),
       client.from('daily_state').select('done').eq('date', date).maybeSingle(),
     ])
