@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dueInstant, formatDueTime, localDateInTZ } from './dates'
+import { dueInstant, formatDueTime, localDateInTZ, reminderFireAt } from './dates'
 
 describe('localDateInTZ', () => {
   it('returns the calendar date for the instant in the given timezone', () => {
@@ -83,5 +83,28 @@ describe('formatDueTime', () => {
   it('returns empty string for unparseable input', () => {
     expect(formatDueTime('later')).toBe('')
     expect(formatDueTime('')).toBe('')
+  })
+})
+
+describe('reminderFireAt', () => {
+  it('subtracts the offset from the wall-clock due instant', () => {
+    // 10:30 NY in July (EDT, UTC-4) = 14:30Z; 60 min before = 13:30Z.
+    expect(reminderFireAt('2026-07-22', '10:30', 60, 'America/New_York').toISOString()).toBe(
+      '2026-07-22T13:30:00.000Z',
+    )
+    // offset 0 = at the due instant.
+    expect(reminderFireAt('2026-07-22', '10:30', 0, 'America/New_York').toISOString()).toBe(
+      '2026-07-22T14:30:00.000Z',
+    )
+    // A full day before.
+    expect(reminderFireAt('2026-07-22', '10:30', 1440, 'America/New_York').toISOString()).toBe(
+      '2026-07-21T14:30:00.000Z',
+    )
+  })
+
+  it('accepts a full ISO due (slices the date) and the HH:MM:SS wire time', () => {
+    expect(
+      reminderFireAt('2026-07-22T00:00:00Z', '10:30:00', 60, 'America/New_York').toISOString(),
+    ).toBe('2026-07-22T13:30:00.000Z')
   })
 })

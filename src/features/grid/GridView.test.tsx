@@ -58,6 +58,11 @@ vi.mock('../daily-state/use-daily-state', () => ({
     data: { done: doneTodayFixture, done_at: {}, habit_done: {}, subtask_done: {} },
   }),
 }))
+const upsertReminderMutate = vi.fn()
+vi.mock('../reminders/use-task-reminders', () => ({
+  useTaskReminders: () => ({ data: new Map() }),
+  useUpsertTaskReminder: () => ({ mutate: upsertReminderMutate }),
+}))
 
 // Build a Task with sane defaults; override per test.
 function makeTask(over: Partial<Task>): Task {

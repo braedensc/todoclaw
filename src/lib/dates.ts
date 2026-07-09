@@ -82,6 +82,23 @@ export function dueInstant(due: string, dueTime: string, timeZone: string): Date
 }
 
 /**
+ * The instant a per-task reminder should fire: the wall-clock due (`due` + `dueTime` in
+ * `timeZone`) minus `offsetMinutes` (0 = at the due time). The client materializes this into
+ * `task_reminders.fire_at` on write; the DB triggers recompute it identically when the due or the
+ * timezone changes (ADR 2026-07-09). Throws (via dueInstant) on unparseable inputs.
+ */
+export function reminderFireAt(
+  due: string,
+  dueTime: string,
+  offsetMinutes: number,
+  timeZone: string,
+): Date {
+  return new Date(
+    dueInstant(due.slice(0, 10), dueTime, timeZone).getTime() - offsetMinutes * 60_000,
+  )
+}
+
+/**
  * Human display of an ISO instant as `"May 19 at 12:18 AM"` (host-locale month/day + time).
  * Used by the Done tab and the Backups panel for completion/snapshot timestamps. Unlike
  * `localDateInTZ` (a correctness-critical partition key), this is presentation only — it follows

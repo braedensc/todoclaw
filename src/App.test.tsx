@@ -57,6 +57,12 @@ vi.mock('./features/daily-state/use-daily-state', () => ({
     data: { done: {}, done_at: {}, habit_done: {}, subtask_done: {}, plan: null },
   }),
 }))
+// GridView + ListView + the add sheet read/write task reminders (useQuery/useMutation). Stub so
+// the shell renders without a QueryClientProvider / network.
+vi.mock('./features/reminders/use-task-reminders', () => ({
+  useTaskReminders: () => ({ data: new Map() }),
+  useUpsertTaskReminder: () => ({ mutate: vi.fn() }),
+}))
 // The header "Plan My Day" button + inline PlanBox are driven by usePlanController, which reads
 // the AI status / plan mutation (useQuery/useMutation). Stub it so the shell renders without a
 // QueryClientProvider; PlanBox itself is pure and renders its empty state from displayPlan=null.
