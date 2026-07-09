@@ -33,8 +33,9 @@ export const DESKTOP_TOUR: TourStep[] = [
     target: 'habits',
     title: 'Daily habits',
     body:
-      'Small routines you repeat — stretch, meds, walk the dog — live here. Check each off ' +
-      'with a paw print every day; they reset each morning.',
+      'Small routines you repeat — stretch, meds, walk the dog. Create and organize them ' +
+      'here; once you have some, they appear on your home screen where you paw-check them ' +
+      'off each day. They reset every morning.',
   },
   {
     target: 'done',
@@ -84,8 +85,11 @@ export const MOBILE_TOUR: TourStep[] = [
   },
   {
     target: 'nav-more',
-    title: 'Everything else lives in More',
-    body: 'Daily habits, your inbox, Settings, and Backups are all one tap away in here.',
+    title: 'Daily habits (and everything else)',
+    body:
+      'Create daily habits here — small routines like stretch or meds. Once you have some, ' +
+      'they appear on your home screen to paw-check off each day. Your inbox, Settings, and ' +
+      'Backups live in More too.',
   },
 ]
 

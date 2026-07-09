@@ -422,6 +422,7 @@ function AppShell() {
                         type="button"
                         onClick={() => navigate('reminders')}
                         title="Daily habits"
+                        data-tour="habits"
                         className="hover:text-ink"
                       >
                         <BoneIcon className="inline h-2.5 w-auto align-[-1px]" /> Daily habits

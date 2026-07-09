@@ -175,7 +175,10 @@ export function RemindersInline() {
         </div>
       ) : (
         // DESKTOP — Variant C: a minimal inline row, no chip chrome. Bone label + paw check + name.
-        <div data-tour="habits" className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        // (The FeatureTour's habits anchor lives on the header's always-present "Daily habits"
+        // button, NOT here — this row doesn't render for a habit-less new user, i.e. the tour's
+        // whole audience.)
+        <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-light">
             <BoneIcon className="h-2.5 w-auto text-puppy/70" />
             Habit Reminders
