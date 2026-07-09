@@ -27,11 +27,12 @@ renders as a normal `GridCard`; a group of >1 becomes a bubble.
 - **`ClusterPopup.tsx`** — the floating panel (width 220, maxHeight 320, scrollable). It
   **flips above** the bubble when the dominant's **data-y > 0.55** (`CLUSTER_POPUP_FLIP_Y`,
   matching EisenClaw `html:616-617` — data-y high ⇒ bubble near the top of the y-inverted
-  screen), else opens below. Each task is a card-style row: **done ✓**, text, a status chip
-  (recurring `↻` or a due-day chip), **edit ↗**, **delete ×**. An overdue/near-due one-off row also
-  takes the same **warm tint** (`urgencyGlowStyle().background`) as its grid card, so an open cluster
-  shows _which_ task is urgent. The whole row is a drag handle; pressing and dragging it pulls the
-  task out of the cluster (see below).
+  screen), else opens below. The panel is **white** (not the cream `bg-panel`) so each row's own
+  color reads as the card's, not the menu's. Each task renders as its **grid-card twin**: the same
+  border scheme (status-colored top border, terracotta sides, dashed when recurring), the same
+  urgency **glow ring + pulse + warm tint + 🔥 flag** (`urgencyGlowStyle`/`urgencyIcon`), a status
+  chip (recurring `↻` or a due-day chip), and the shared CardActionBar. The whole row is a drag
+  handle; pressing and dragging it pulls the task out of the cluster (see below).
 - **`cluster-constants.ts`** — verbatim EisenClaw visual constants (bubble size, depth offset,
   popup width/height, flip threshold).
 

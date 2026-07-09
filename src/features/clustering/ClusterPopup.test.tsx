@@ -5,9 +5,10 @@ import { ClusterPopup } from './ClusterPopup'
 import type { Task } from '../../types/task'
 import type { Recurring } from '../../types/task'
 
-// A folded task inside an open cluster popup should read like its grid card: an overdue/near-due
-// one-off carries the SAME warm tint (urgencyGlowStyle().background) as the card, while a task with
-// no due date — or a recurring one (which owns its status color) — stays on the plain paper fill.
+// A folded task inside an open cluster popup is dressed as its grid-card TWIN: an overdue/near-due
+// one-off carries the SAME glow ring + pulse + warm tint as the card on the map, while a task with
+// no due date — or a recurring one (which owns its status color + dashed accent borders) — stays on
+// the plain paper fill. The panel behind the rows is white so each card's color reads as its own.
 
 function task(id: string, over: Partial<Task> = {}): Task {
   return {
@@ -54,17 +55,43 @@ function renderPopup(group: Task[]) {
   return { row }
 }
 
-describe('ClusterPopup row urgency tint', () => {
-  it('tints an overdue one-off row and leaves an undated row on plain paper', () => {
+describe('ClusterPopup row card-twin styling', () => {
+  it('gives an overdue one-off row the full card treatment; an undated row stays plain', () => {
     // '2026-07-01' is permanently in the past → always overdue relative to "now".
     const { row } = renderPopup([task('over', { due: '2026-07-01' }), task('plain')])
-    expect(row('over')?.style.background).toBeTruthy()
-    expect(row('plain')?.style.background).toBe('')
+    const over = row('over')
+    // Ring + pulse + warm tint — the same three channels a standalone grid card gets.
+    expect(over?.style.background).toBeTruthy()
+    expect(over?.style.boxShadow).toBeTruthy()
+    expect(over?.style.animation).toContain('urgency-pulse')
+    // Color-independent 🔥 corner flag on the hot tiers.
+    expect(over?.querySelector('[title="Overdue"]')?.textContent).toBe('🔥')
+    const plain = row('plain')
+    expect(plain?.style.background).toBe('')
+    expect(plain?.style.animation).toBe('')
+    expect(plain?.querySelector('[title="Overdue"]')).toBeNull()
   })
 
-  it('does not tint a recurring row (it carries its own status color)', () => {
+  it('borders every row like its grid card: status top border + accent sides', () => {
+    const { row } = renderPopup([task('over', { due: '2026-07-01' })])
+    const style = row('over')?.style
+    expect(style?.borderTopWidth).toBe('3px')
+    expect(style?.borderTopColor).toBeTruthy() // quadrant color for a one-off
+    expect(style?.borderRightColor).toBe('rgb(194, 105, 63)') // BUCKET_DOT terracotta sides
+  })
+
+  it('keeps a recurring row on plain paper with dashed accent sides (its own status color)', () => {
     // Even overdue-on-cadence, a recurring task takes no urgency tier here.
     const { row } = renderPopup([task('rec', { due: '2026-07-01', recurring })])
-    expect(row('rec')?.style.background).toBe('')
+    const rec = row('rec')
+    expect(rec?.style.background).toBe('')
+    expect(rec?.style.borderRightStyle).toBe('dashed')
+    expect(rec?.querySelector('[title="Overdue"]')).toBeNull()
+  })
+
+  it('renders the panel white so each card color reads as its own', () => {
+    renderPopup([task('a')])
+    const panel = document.querySelector('[data-testid="cluster-popup"]')
+    expect(panel?.className).toContain('bg-white')
   })
 })

@@ -5,8 +5,9 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
-import { dueChipStyle, urgencyGlowStyle, urgencyTier } from '../../lib/visual-urgency'
+import { dueChipStyle, urgencyGlowStyle, urgencyIcon, urgencyTier } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
+import { BUCKET_DOT } from '../grid/grid-constants'
 import { CLUSTER_POPUP_MAX_HEIGHT, CLUSTER_POPUP_WIDTH } from './cluster-constants'
 
 /** Gap (px) between the bubble and the popup, and min gap from any viewport edge. */
@@ -149,7 +150,10 @@ export function ClusterPopup({
       data-testid="cluster-popup"
       role="dialog"
       aria-label={`${group.length} clustered tasks`}
-      className="overflow-y-auto rounded-xl border border-border bg-panel shadow-[0_8px_28px_rgba(0,0,0,.18)]"
+      // WHITE panel (not the cream bg-panel): the rows inside are dressed as mini grid cards with
+      // their own urgency tints/glows, and against cream the whole menu read as one warm blob —
+      // white makes each card's color read as the card's, not the menu's (owner feedback 2026-07-09).
+      className="overflow-y-auto rounded-xl border border-border bg-white shadow-[0_8px_28px_rgba(0,0,0,.18)]"
       style={style}
       // Portaled to <body>, but React events still bubble to the bubble (which stops them). Stop
       // clicks/pointer-downs here too so nothing inside can ever reach the grid background (whose
@@ -195,13 +199,14 @@ interface ClusterPopupRowProps {
   onPointerDown: (event: PointerEvent) => void
 }
 
-// One card-style task row, laid out like a mini grid card: the task text (with its status chip) on
-// top, then the SHARED <CardActionBar> (outlined Done pill + ⋯/×) at the bottom — the same bar the
-// grid card renders, so a folded task reads identically here. A plain tap on the row opens inline
-// editing (handled upstream via the drag's onTap); a press-drag pulls the task out of the cluster;
-// every bar control stops propagation so a click on it is never read as a drag. Here ⋯ is the edit
-// trigger (the popup has no on-row due/recurring menu — tapping the row edits it). Quadrant/recurring
-// accent on the left border.
+// One card-style task row, dressed as its grid-card TWIN: the same border scheme (solid
+// status-colored top border, terracotta bucket sides — dashed when recurring), the same urgency
+// glow ring + pulse + warm tint + 🔥 corner flag, the task text (with its status chip) on top, then
+// the SHARED <CardActionBar> (outlined Done pill + ⋯/×) at the bottom — so a folded task reads
+// identically to its card on the map. A plain tap on the row opens inline editing (handled upstream
+// via the drag's onTap); a press-drag pulls the task out of the cluster; every bar control stops
+// propagation so a click on it is never read as a drag. Here ⋯ is the edit trigger (the popup has
+// no on-row due/recurring menu — tapping the row edits it).
 function ClusterPopupRow({
   task,
   timeZone,
@@ -214,16 +219,33 @@ function ClusterPopupRow({
   onPointerDown,
 }: ClusterPopupRowProps) {
   const rc = recurringStatus(task.recurring)
-  const accent = rc ? RC_COLOR[rc.code] : quadrantMeta(task.x ?? 0.5, task.y ?? 0.5).color
+  // The grid card's border scheme, mirrored exactly (see GridCard): a solid status-colored TOP
+  // border — recurring RC color, else quadrant color — with the terracotta bucket accent on the
+  // other three sides (dashed + heavier for a recurring card, its "this repeats" outline).
+  const borderColor = rc ? RC_COLOR[rc.code] : quadrantMeta(task.x ?? 0.5, task.y ?? 0.5).color
+  const sideColor = rc ? borderColor : BUCKET_DOT
   // Rows stay date-granular (no live clock in the dense popup); the tier still colors the chip
   // consistently with the grid/list surfaces. A recurring row carries its own status color, so it
   // takes no urgency tier (mirrors the grid card gating glow on non-recurring tasks).
   const d = daysUntil(task.due, { timeZone })
   const tier = rc ? 'none' : urgencyTier(d, null)
-  // Warm card tint on an overdue/near-due folded task — the SAME graduated fill (visual-urgency
-  // `background`) a standalone grid card gets, so opening the cluster shows WHICH task is urgent,
-  // not merely that one is. Only the tint channel (not the loud ring/pulse) fits the dense list.
+  // The card's FULL urgency dress — glow ring + pulse + warm tint (+ the 🔥 corner flag below) —
+  // so a folded overdue/near-due task reads identically to its standalone card on the map
+  // (owner feedback 2026-07-09: not just the tint).
   const glow = urgencyGlowStyle(tier)
+  const hotIcon = rc ? null : urgencyIcon(tier)
+
+  // Dashed, slightly heavier accent sides for a recurring row — same treatment as GridCard.
+  const recurringBorder: CSSProperties = rc
+    ? {
+        borderRightStyle: 'dashed',
+        borderBottomStyle: 'dashed',
+        borderLeftStyle: 'dashed',
+        borderRightWidth: 2,
+        borderBottomWidth: 2,
+        borderLeftWidth: 2,
+      }
+    : {}
 
   // Uncontrolled input (seeded by `defaultValue` when the editor mounts) so entering edit mode
   // needs no draft state — the value is read from the ref on commit. Select-all on mount.
@@ -244,16 +266,42 @@ function ClusterPopupRow({
       data-task-id={task.id}
       // While editing the row is not a drag handle (the input owns its pointer events).
       onPointerDown={editing ? undefined : onPointerDown}
-      className={`mx-2 my-1.5 flex flex-col rounded-lg border border-border bg-card px-2.5 py-2 text-ink shadow-sm ${
+      // `relative` anchors the 🔥 corner flag; `my-2` gives the urgency rings breathing room
+      // between stacked rows. Border colors/widths are all inline (grid-card scheme above).
+      className={`relative mx-2 my-2 flex flex-col rounded-lg border bg-card px-2.5 py-2 text-ink shadow-sm ${
         editing ? '' : 'cursor-grab active:cursor-grabbing'
       }`}
-      // The warm tint (when present) overrides the plain `bg-card` fill, exactly like a grid card.
       style={{
-        borderLeft: `3px solid ${accent}`,
+        borderTopWidth: 3,
+        borderTopColor: borderColor,
+        borderRightColor: sideColor,
+        borderBottomColor: sideColor,
+        borderLeftColor: sideColor,
+        ...recurringBorder,
         touchAction: 'none',
-        ...(glow?.background ? { background: glow.background } : {}),
+        // Glow overrides the resting shadow (its string carries its own layers); the warm tint
+        // replaces the plain paper fill — exactly the spread GridCard does.
+        ...(glow
+          ? {
+              boxShadow: glow.boxShadow,
+              ...(glow.animation ? { animation: glow.animation } : {}),
+              ...(glow.background ? { background: glow.background } : {}),
+            }
+          : {}),
       }}
     >
+      {/* Hot-tier corner flag (🔥 = overdue or due-today) — the color-independent cue, same as the
+          grid card's. Overhangs into the row's own margin, so it never clips the popup's scroller. */}
+      {hotIcon && (
+        <span
+          aria-hidden
+          title={hotIcon.label}
+          className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border bg-card text-[10px] leading-none shadow-sm"
+          style={{ borderColor: dueChipStyle(tier).backgroundColor }}
+        >
+          {hotIcon.glyph}
+        </span>
+      )}
       {editing ? (
         <input
           ref={inputRef}
