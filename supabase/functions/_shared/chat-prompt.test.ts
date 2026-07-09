@@ -18,6 +18,7 @@ function baseContext(over: Partial<ChatContext> = {}): ChatContext {
     scheduleSummary: null,
     tasks: [],
     habits: [],
+    plan: null,
     assistant: DEFAULT_ASSISTANT_CONFIG,
     ...over,
   }
@@ -99,6 +100,8 @@ Deno.test(
             dueTime: null,
             staged: false,
             recurringLabel: null,
+            recurringStatus: null,
+            reminderOffset: null,
             doneToday: false,
             completedAt: null,
           },
@@ -112,6 +115,8 @@ Deno.test(
             dueTime: null,
             staged: false,
             recurringLabel: 'weekly',
+            recurringStatus: 'due today',
+            reminderOffset: null,
             doneToday: true,
             completedAt: null,
           },
@@ -125,6 +130,8 @@ Deno.test(
             dueTime: '10:30:00',
             staged: false,
             recurringLabel: null,
+            recurringStatus: null,
+            reminderOffset: null,
             doneToday: false,
             completedAt: null,
           },
@@ -159,6 +166,78 @@ Deno.test('buildSystem handles an empty planner without breaking', () => {
 })
 
 Deno.test(
+  'a recurring task renders its due-status next to the cadence, so it reads as not-yet-due',
+  () => {
+    const sys = buildSystem(
+      baseContext({
+        tasks: [
+          {
+            id: 'r1',
+            text: 'Water plants',
+            x: 0.5,
+            y: 0.5,
+            due: null,
+            dueInDays: null,
+            dueTime: null,
+            staged: false,
+            recurringLabel: 'weekly',
+            recurringStatus: 'due again in 4d',
+            reminderOffset: null,
+            doneToday: false,
+          },
+        ],
+      }),
+    )
+    // The cadence AND the live status both surface, so BabyClaw won't push a chore that isn't due.
+    assertStringIncludes(sys, 'recurring weekly (due again in 4d)')
+  },
+)
+
+Deno.test('a task with a reminder surfaces its lead time so BabyClaw knows one exists', () => {
+  const sys = buildSystem(
+    baseContext({
+      tasks: [
+        {
+          id: 'r1',
+          text: 'Dentist',
+          x: 0.7,
+          y: 0.6,
+          due: '2026-07-04',
+          dueInDays: 0,
+          dueTime: '10:30:00',
+          staged: false,
+          recurringLabel: null,
+          recurringStatus: null,
+          reminderOffset: 60,
+          doneToday: false,
+        },
+      ],
+    }),
+  )
+  assertStringIncludes(sys, 'reminder 1 hour before')
+})
+
+Deno.test("today's saved plan renders in its own block so BabyClaw can reference it", () => {
+  const sys = buildSystem(
+    baseContext({
+      plan: {
+        headline: 'Focused morning, easy afternoon.',
+        bigRock: 'Draft the deck (this morning, ~2h)',
+        smallRocks: ['Reply to Sam', 'Book flights'],
+      },
+    }),
+  )
+  assertStringIncludes(sys, "=== TODAY'S PLAN (already generated) ===")
+  assertStringIncludes(sys, 'Big rock: Draft the deck (this morning, ~2h).')
+  assertStringIncludes(sys, 'Then: Reply to Sam, Book flights.')
+})
+
+Deno.test('no plan block when the day has not been planned', () => {
+  const sys = buildSystem(baseContext())
+  assert(!sys.includes("TODAY'S PLAN"))
+})
+
+Deno.test(
   'contextBlock splits on completedAt like the grid: prior-day done hidden, today done kept',
   () => {
     const task = (over: Partial<PromptTask>): PromptTask => ({
@@ -171,6 +250,8 @@ Deno.test(
       dueTime: null,
       staged: false,
       recurringLabel: null,
+      recurringStatus: null,
+      reminderOffset: null,
       doneToday: false,
       completedAt: null,
       ...over,

@@ -3,7 +3,7 @@
 // list_tasks round-trip. Pure string generation (no DB) → unit-testable; the DB fetch that feeds
 // it lives in ./chat-context.ts.
 
-import { formatClockTime } from './reminder-content.ts'
+import { formatClockTime, formatOffset } from './reminder-content.ts'
 
 // ---- per-user config (read-side "configurable to an extent") ---------------------------------
 // BabyClaw folds a small per-user config into the prompt when present, with safe defaults when
@@ -36,6 +36,8 @@ export interface PromptTask {
   dueTime: string | null // 'HH:MM[:SS]' wall-clock time, or null
   staged: boolean
   recurringLabel: string | null // e.g. "every 7d", or null
+  recurringStatus: string | null // e.g. "overdue 3d" / "due today" / "due again in 4d", or null
+  reminderOffset: number | null // minutes before due a push reminder fires, or null for none
   doneToday: boolean
   completedAt: string | null // permanent one-off completion (tasks.completed_at); null = live
 }
@@ -46,12 +48,20 @@ export interface PromptHabit {
   doneToday: boolean
   steps: { id: string; text: string; doneToday: boolean }[]
 }
+// Compact view of today's saved Plan My Day (daily_state.plan), so BabyClaw can reference the plan
+// it (or the user) generated without a tool round-trip. Null when the day hasn't been planned.
+export interface PromptPlan {
+  headline: string | null
+  bigRock: string | null // e.g. "Draft the deck (this morning, ~2h)"
+  smallRocks: string[] // secondary task names
+}
 export interface ChatContext {
   today: string // "Saturday, July 4, 2026"
   timeZone: string
   scheduleSummary: string | null
   tasks: PromptTask[]
   habits: PromptHabit[]
+  plan: PromptPlan | null
   assistant: AssistantConfig
 }
 
@@ -70,8 +80,9 @@ export const SYSTEM_PREFIX = [
   '',
   'WHAT YOU CAN DO: create, rename, move, schedule, and complete or delete tasks (and restore one you',
   'completed today); make tasks recurring; create, rename, pause, and delete habits, edit their steps,',
-  "and check habits or steps off for today; plan the user's day; and remember how they want you to",
-  'behave when they tell you (tone, brevity, or a short standing note). If a request needs a tool you',
+  'and check habits or steps off for today; look up when they finished something in the past (the Done',
+  "log); plan the user's day; and remember how they want you to behave when they tell you (tone,",
+  'brevity, or a short standing note). If a request needs a tool you',
   "don't have, say so plainly instead of pretending you did it.",
   '',
   "SCOPE — a hard limit. You ONLY help with managing THIS user's planner. Politely refuse anything",
@@ -184,7 +195,16 @@ function taskLine(t: PromptTask): string {
   }
   const due = duePhrase(t)
   if (due) bits.push(due)
-  if (t.recurringLabel) bits.push(`recurring ${t.recurringLabel}`)
+  if (t.recurringLabel) {
+    bits.push(`recurring ${t.recurringLabel}${t.recurringStatus ? ` (${t.recurringStatus})` : ''}`)
+  }
+  if (t.reminderOffset != null) {
+    bits.push(
+      t.reminderOffset === 0
+        ? 'reminder at due time'
+        : `reminder ${formatOffset(t.reminderOffset)} before`,
+    )
+  }
   return `- [${t.id}] "${t.text}" — ${bits.join('; ')}`
 }
 
@@ -220,6 +240,14 @@ function contextBlock(ctx: ChatContext): string {
     ? `${done.length} completed today: ${done.map((t) => `"${t.text}"`).join(', ')}`
     : 'Nothing completed yet today.'
   blocks.push(`=== DONE TODAY ===\n${doneBody}`)
+
+  if (ctx.plan) {
+    const planBits: string[] = []
+    if (ctx.plan.headline) planBits.push(ctx.plan.headline)
+    if (ctx.plan.bigRock) planBits.push(`Big rock: ${ctx.plan.bigRock}.`)
+    if (ctx.plan.smallRocks.length) planBits.push(`Then: ${ctx.plan.smallRocks.join(', ')}.`)
+    blocks.push(`=== TODAY'S PLAN (already generated) ===\n${planBits.join(' ')}`)
+  }
 
   const habitsShown = ctx.habits.slice(0, MAX_HABITS_SHOWN)
   const habitsBody = habitsShown.length

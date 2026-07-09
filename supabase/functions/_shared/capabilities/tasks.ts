@@ -16,22 +16,135 @@ const uuid = z.string().uuid()
 const reminderPhrase = (minutes: number): string =>
   minutes === 0 ? 'at the due time' : `${formatOffset(minutes)} before`
 
+// Format a completion instant (ISO from history.completed_at) in the user's zone, so BabyClaw can
+// answer "when did I…" without doing timezone math on a raw UTC string itself.
+function fmtInstant(iso: string, timeZone: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return iso
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(d)
+}
+
 export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'list_tasks',
     description:
-      "List the user's current tasks (id, text, grid position, due date, staged, recurring). Use to refresh your view before editing.",
+      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, and a `done` flag). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. Use to refresh your view before editing.",
     schema: z.object({}).strict(),
     async execute(ctx) {
-      const { data, error } = await ctx.client
-        .from('tasks')
-        .select('id, text, x, y, due, staged, recurring')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-      if (error) return systemErr(error.message)
+      const now = ctx.now ?? new Date()
+      const date = localDateInTZ(ctx.timeZone, now)
+      const [tasksRes, dailyRes] = await Promise.all([
+        ctx.client
+          .from('tasks')
+          .select('id, text, x, y, due, due_time, staged, recurring, completed_at')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false }),
+        ctx.client.from('daily_state').select('done').eq('date', date).maybeSingle(),
+      ])
+      if (tasksRes.error) return systemErr(tasksRes.error.message)
+      const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
+      // Mirror the grid/list/mobile filter (!completed_at && !doneToday): drop tasks completed on a
+      // prior day entirely, keep live tasks + today's completions, and tag each with a `done` flag so
+      // the model never treats a finished task as active (completed_at itself stays out of the payload
+      // — the flag is the actionable bit; search_history is where past completions live).
+      const rows = (tasksRes.data ?? [])
+        .filter((t) => !t.completed_at || doneMap[t.id as string] === true)
+        .map((t) => ({
+          id: t.id,
+          text: t.text,
+          x: t.x,
+          y: t.y,
+          due: t.due,
+          due_time: t.due_time,
+          staged: t.staged,
+          recurring: t.recurring,
+          done: !!t.completed_at || doneMap[t.id as string] === true,
+        }))
       // The JSON goes to the model so it can reference ids; hide it from the user (display: null) —
       // a raw row dump isn't an "action that occurred", it's the model refreshing its view.
-      return ok(JSON.stringify(data ?? []), undefined, null)
+      return ok(JSON.stringify(rows), undefined, null)
+    },
+  }),
+
+  defineCapability({
+    name: 'search_history',
+    description:
+      'Search the permanent completion log (the Done tab) for one-off tasks the user has finished, newest first. Use when they ask WHEN or WHETHER they completed something in the past — e.g. "when was my last dentist visit?" or "did I ever finish the taxes?". Pass `query` to match words in the completed task text, or omit it for the most recent completions. NOTE: only one-off task completions are logged here — recurring tasks and habits are not, so say so if asked about those.',
+    schema: z
+      .object({
+        query: z
+          .string()
+          .max(200)
+          .nullish()
+          .describe(
+            'Words to match in the completed task text (case-insensitive substring). Omit for the most recent completions.',
+          ),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(50)
+          .nullish()
+          .describe('Max completions to return (default 20, max 50).'),
+      })
+      .strict(),
+    async execute(ctx, i) {
+      const limit = Math.min(i.limit ?? 20, 50)
+      let q = ctx.client
+        .from('history')
+        .select('id, text, completed_at')
+        .order('completed_at', { ascending: false })
+        .limit(limit)
+      const term = i.query?.trim()
+      if (term) {
+        // Escape LIKE metacharacters so a literal % or _ in the query can't act as a wildcard.
+        const esc = term.replace(/[\\%_]/g, (c) => `\\${c}`)
+        q = q.ilike('text', `%${esc}%`)
+      }
+      const { data, error } = await q
+      if (error) return systemErr(error.message)
+      // `id` is included so delete_completion can target a specific entry; it stays model-only
+      // (display: null), never shown to the user, like every other id BabyClaw handles.
+      const rows = (data ?? []).map((r) => ({
+        id: r.id as string,
+        text: r.text as string,
+        completedAt: r.completed_at as string,
+        when: fmtInstant(r.completed_at as string, ctx.timeZone),
+      }))
+      // Read-only lookup: JSON to the model, hidden from the user (display: null) — the answer comes
+      // back in BabyClaw's own words, not a row dump.
+      return ok(JSON.stringify(rows), undefined, null)
+    },
+  }),
+
+  defineCapability({
+    name: 'delete_completion',
+    description:
+      'Permanently remove ONE entry from the Done log (the same as the × on a Done-tab row). Look up the entry id with search_history first. This only deletes the completion RECORD — it does not affect the live task. Destructive — the user is asked to confirm before it runs.',
+    destructive: true,
+    schema: z
+      .object({ completion_id: uuid.describe('The Done-log entry id (UUID) from search_history.') })
+      .strict(),
+    async execute(ctx, i) {
+      // Owner-scoped DELETE (history_delete_own policy); .select() confirms a row actually matched so
+      // a stale/hallucinated id becomes a clear not-found instead of a silent no-op.
+      const { data, error } = await ctx.client
+        .from('history')
+        .delete()
+        .eq('id', i.completion_id)
+        .select('text')
+        .maybeSingle()
+      if (error) return systemErr(error.message)
+      if (!data) return err("I couldn't find that entry in your Done log.")
+      return ok(`Removed "${data.text}" from your Done log.`, ['history'])
     },
   }),
 
@@ -245,7 +358,8 @@ export const taskCapabilities: Capability[] = [
 
   defineCapability({
     name: 'make_recurring',
-    description: 'Make a task recurring with a cadence in days.',
+    description:
+      'Make a task recurring with a cadence in days. Retuning the cadence of an already-recurring task keeps its progress (last-done and count); it does not reset the clock.',
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -253,10 +367,27 @@ export const taskCapabilities: Capability[] = [
       })
       .strict(),
     async execute(ctx, i) {
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('recurring')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      // Preserve an existing cycle when only changing cadence (mirrors the list's onSetFrequency),
+      // so a retune doesn't snap the task back to "never done". A fresh recurrence starts at null.
+      const prev = task.recurring as { lastDoneAt?: string | null; doneCount?: number } | null
       return updateTaskRow(
         ctx.client,
         i.task_id,
-        { recurring: { frequencyDays: i.frequency_days, lastDoneAt: null, doneCount: 0 } },
+        {
+          recurring: {
+            frequencyDays: i.frequency_days,
+            lastDoneAt: prev?.lastDoneAt ?? null,
+            doneCount: prev?.doneCount ?? 0,
+          },
+        },
         'Made recurring',
       )
     },
@@ -305,12 +436,37 @@ export const taskCapabilities: Capability[] = [
       const now = ctx.now ?? new Date()
       const { data: task, error: selErr } = await ctx.client
         .from('tasks')
-        .select('text, bucket')
+        .select('text, bucket, recurring')
         .eq('id', i.task_id)
         .is('deleted_at', null)
         .maybeSingle()
       if (selErr) return systemErr(selErr.message)
       if (!task) return err('That task no longer exists.')
+
+      // A recurring task is completed by ADVANCING its cycle (lastDoneAt + doneCount), never through
+      // set_task_done — exactly what the grid/list "Done" does (use-grid.ts handleDone). set_task_done
+      // would stamp tasks.completed_at, which hides the task permanently and freezes the recurrence,
+      // so a recurring completion must take this branch instead.
+      const rec = task.recurring as {
+        frequencyDays?: number
+        lastDoneAt?: string | null
+        doneCount?: number
+      } | null
+      if (rec?.frequencyDays) {
+        const patch = {
+          recurring: { ...rec, lastDoneAt: now.toISOString(), doneCount: (rec.doneCount ?? 0) + 1 },
+        }
+        const { error } = await ctx.client
+          .from('tasks')
+          .update(patch)
+          .eq('id', i.task_id)
+          .is('deleted_at', null)
+          .select('text')
+          .maybeSingle()
+        if (error) return systemErr(error.message)
+        return ok(`Checked off recurring "${task.text}" — back on its cycle.`, ['tasks'])
+      }
+
       const { error } = await ctx.client.rpc('set_task_done', {
         p_date: localDateInTZ(ctx.timeZone, now),
         p_task_id: i.task_id,
