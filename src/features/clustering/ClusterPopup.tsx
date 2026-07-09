@@ -5,7 +5,7 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
-import { DUE_BADGE_MUTED, DUE_BADGE_URGENT } from '../../lib/visual-urgency'
+import { dueChipStyle, urgencyTier } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
 import { CLUSTER_POPUP_MAX_HEIGHT, CLUSTER_POPUP_WIDTH } from './cluster-constants'
 
@@ -215,8 +215,10 @@ function ClusterPopupRow({
 }: ClusterPopupRowProps) {
   const rc = recurringStatus(task.recurring)
   const accent = rc ? RC_COLOR[rc.code] : quadrantMeta(task.x ?? 0.5, task.y ?? 0.5).color
+  // Rows stay date-granular (no live clock in the dense popup); the tier still colors the chip
+  // consistently with the grid/list surfaces.
   const d = daysUntil(task.due, { timeZone })
-  const urgent = d !== null && d <= 2
+  const tier = urgencyTier(d, null)
 
   // Uncontrolled input (seeded by `defaultValue` when the editor mounts) so entering edit mode
   // needs no draft state — the value is read from the ref on commit. Select-all on mount.
@@ -277,8 +279,8 @@ function ClusterPopupRow({
           ) : (
             d !== null && (
               <span
-                className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
-                style={{ backgroundColor: urgent ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
+                className="flex-shrink-0 rounded px-1 text-[9px] font-semibold"
+                style={dueChipStyle(tier)}
               >
                 {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
               </span>
