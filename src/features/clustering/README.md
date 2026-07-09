@@ -31,8 +31,10 @@ renders as a normal `GridCard`; a group of >1 becomes a bubble.
   color reads as the card's, not the menu's. Each task renders as its **grid-card twin**: the same
   border scheme (status-colored top border, terracotta sides, dashed when recurring), the same
   urgency **glow ring + pulse + warm tint + 🔥 flag** (`urgencyGlowStyle`/`urgencyIcon`), a status
-  chip (recurring `↻` or a due-day chip), and the shared CardActionBar. The whole row is a drag
-  handle; pressing and dragging it pulls the task out of the cluster (see below).
+  chip (recurring `↻` or a due-day chip), and the shared CardActionBar — whose **⋯ opens the same
+  portaled SchedulePanel a grid card's ⋯ does** (`useAnchoredMenu`), so a folded task is
+  schedulable in place (renaming stays on a plain row tap). The whole row is a drag handle;
+  pressing and dragging it pulls the task out of the cluster (see below).
 - **`cluster-constants.ts`** — verbatim EisenClaw visual constants (bubble size, depth offset,
   popup width/height, flip threshold).
 

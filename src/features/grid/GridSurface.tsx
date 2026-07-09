@@ -69,7 +69,6 @@ export function GridSurface({
     selectCluster,
     startPopupRowDrag,
     editingClusterRowId,
-    startClusterRowEdit,
     stopClusterRowEdit,
     handleGridPointerDown,
     clusterDominant,
@@ -296,12 +295,36 @@ export function GridSurface({
                     reflowKey={reflowKey}
                     timeZone={timeZone}
                     editingId={editingClusterRowId}
-                    onStartEdit={(task) => startClusterRowEdit(task.id)}
                     onStopEdit={stopClusterRowEdit}
                     onRename={(task, text) => updateMutate({ id: task.id, patch: { text } })}
                     onDone={doneWithStamp}
                     onDelete={handleDelete}
                     onRowPointerDown={startPopupRowDrag}
+                    // Row ⋯ schedule menu — the SAME write wiring renderGridCard gives a card's
+                    // ⋯ (a due write never touches x/y; Daily/Weekly preserve recurring history).
+                    onSetDue={(task, due, due_time) =>
+                      updateMutate({ id: task.id, patch: { due, due_time } })
+                    }
+                    onSetRecurring={(task, frequencyDays) =>
+                      updateMutate({
+                        id: task.id,
+                        patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
+                      })
+                    }
+                    onSetFrequency={(task, frequencyDays) => {
+                      if (task.recurring)
+                        updateMutate({
+                          id: task.id,
+                          patch: { recurring: { ...task.recurring, frequencyDays } },
+                        })
+                    }}
+                    onRemoveRecurring={(task) =>
+                      updateMutate({ id: task.id, patch: { recurring: null } })
+                    }
+                    reminderOffsetFor={(task) => reminders?.get(task.id)?.offset_minutes ?? null}
+                    onSetReminder={(task, minutes) =>
+                      upsertReminder.mutate({ taskId: task.id, offsetMinutes: minutes })
+                    }
                   />
                 )}
               </ClusterBubble>

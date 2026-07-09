@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
@@ -14,6 +14,7 @@ import {
 } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
+import { useAnchoredMenu } from '../../hooks/use-anchored-menu'
 import { SchedulePanel } from '../schedule/SchedulePanel'
 import { BUCKET_DOT, CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
@@ -217,44 +218,14 @@ export function GridCard({
 
   // The schedule menu is PORTALED to <body> and positioned from the ⋯ wrapper's live rect —
   // prefer below, flip above when there's more room, clamp on-screen, scroll internally when
-  // cramped (ClusterPopup's exact playbook). 306px fits the SchedulePanel's 7-column calendar
-  // (the old 220px in-card popover clipped its own date input — workshop finding #1).
+  // cramped (useAnchoredMenu, shared with the cluster-popup rows). 306px fits the SchedulePanel's
+  // 7-column calendar (the old 220px in-card popover clipped its own date input — workshop #1).
   const MENU_W = 306
   const MENU_MAX_H = 480
-  const MENU_GAP = 6
-  const MENU_MARGIN = 8
-  const [menuPos, setMenuPos] = useState<{
-    left: number
-    top?: number
-    bottom?: number
-    maxHeight: number
-  } | null>(null)
-
-  const positionMenu = useCallback(() => {
-    const anchor = menuRef.current
-    if (!anchor) return
-    const rect = anchor.getBoundingClientRect()
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    // Right-align the panel to the ⋯ cluster, then keep the whole width on-screen.
-    const left = Math.max(MENU_MARGIN, Math.min(rect.right - MENU_W, vw - MENU_W - MENU_MARGIN))
-    const spaceBelow = vh - rect.bottom - MENU_GAP - MENU_MARGIN
-    const spaceAbove = rect.top - MENU_GAP - MENU_MARGIN
-    const flipAbove = spaceBelow < Math.min(MENU_MAX_H, spaceAbove) && spaceAbove > spaceBelow
-    if (flipAbove) {
-      setMenuPos({
-        left,
-        bottom: vh - rect.top + MENU_GAP,
-        maxHeight: Math.max(0, Math.min(MENU_MAX_H, spaceAbove)),
-      })
-    } else {
-      setMenuPos({
-        left,
-        top: rect.bottom + MENU_GAP,
-        maxHeight: Math.max(0, Math.min(MENU_MAX_H, spaceBelow)),
-      })
-    }
-  }, [])
+  const { pos: menuPos, position: positionMenu } = useAnchoredMenu(menuRef, menuOpen, {
+    width: MENU_W,
+    maxHeight: MENU_MAX_H,
+  })
 
   // Opening measures the trigger rect IN THE HANDLER (never a bare setState-in-effect), so the
   // panel mounts already positioned — no flash, no stale spot on reopen.
@@ -262,18 +233,6 @@ export function GridCard({
     if (!menuOpen) positionMenu()
     setMenuOpen((o) => !o)
   }
-
-  // While open, re-anchor on anything that moves the card: window scroll (capture — the
-  // fullscreen grid overlay scrolls its own box) and resize.
-  useEffect(() => {
-    if (!menuOpen) return
-    window.addEventListener('scroll', positionMenu, true)
-    window.addEventListener('resize', positionMenu)
-    return () => {
-      window.removeEventListener('scroll', positionMenu, true)
-      window.removeEventListener('resize', positionMenu)
-    }
-  }, [menuOpen, positionMenu])
 
   return (
     <div
@@ -412,10 +371,10 @@ export function GridCard({
                 style={{
                   zIndex: 90,
                   width: MENU_W,
-                  left: menuPos?.left ?? MENU_MARGIN,
+                  left: menuPos?.left ?? 8,
                   ...(menuPos?.bottom != null
                     ? { bottom: menuPos.bottom }
-                    : { top: menuPos?.top ?? MENU_MARGIN }),
+                    : { top: menuPos?.top ?? 8 }),
                   maxHeight: menuPos?.maxHeight ?? MENU_MAX_H,
                   visibility: menuPos ? 'visible' : 'hidden',
                 }}
