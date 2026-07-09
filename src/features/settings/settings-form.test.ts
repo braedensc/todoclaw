@@ -64,7 +64,7 @@ describe('settings-form', () => {
     expect(out.planNotes).toBe('mornings')
   })
 
-  it('round-trips a notifications block (enabled + name + hours + quiet)', () => {
+  it('round-trips a notifications block (enabled + name + hours + quiet + quietWhenEmpty)', () => {
     const config: ScheduleConfig = {
       notifications: {
         enabled: true,
@@ -73,9 +73,16 @@ describe('settings-form', () => {
         eveningHour: 21,
         quietStartHour: 22,
         quietEndHour: 7,
+        quietWhenEmpty: true,
       },
     }
     expect(draftToConfig(configToDraft(config))).toEqual(config)
+  })
+
+  it('quietWhenEmpty=false never persists (defaults away, keeps jsonb minimal)', () => {
+    const out = draftToConfig({ ...EMPTY_DRAFT, notificationsEnabled: true, morningHour: '8' })
+    expect(out.notifications).toEqual({ enabled: true, morningHour: 8 })
+    expect(out.notifications).not.toHaveProperty('quietWhenEmpty')
   })
 
   it('a normal save preserves an existing notifications block (anti-clobber)', () => {
@@ -83,11 +90,16 @@ describe('settings-form', () => {
     // saving must NOT drop notifications — the regression this whole draft integration guards against.
     const config: ScheduleConfig = {
       location: 'Atlanta',
-      notifications: { enabled: true, morningHour: 8, eveningHour: 21 },
+      notifications: { enabled: true, morningHour: 8, eveningHour: 21, quietWhenEmpty: true },
     }
     const draft = configToDraft(config)
     const saved = draftToConfig({ ...draft, planNotes: 'new note' })
-    expect(saved.notifications).toEqual({ enabled: true, morningHour: 8, eveningHour: 21 })
+    expect(saved.notifications).toEqual({
+      enabled: true,
+      morningHour: 8,
+      eveningHour: 21,
+      quietWhenEmpty: true,
+    })
     expect(saved.planNotes).toBe('new note')
   })
 

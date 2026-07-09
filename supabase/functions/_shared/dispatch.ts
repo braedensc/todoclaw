@@ -20,6 +20,7 @@ export interface NotificationPrefs {
   eveningHour?: number // 0–23, local; when the recap push goes out
   quietStartHour?: number // inclusive; suppress pushes from here…
   quietEndHour?: number // …to here (exclusive). Wraps past midnight when start > end.
+  quietWhenEmpty?: boolean // opt-in: skip a digest that would have nothing to say (see isEmptyDigest)
 }
 
 export type DueKind = 'plan' | 'recap'
@@ -199,6 +200,39 @@ function habitLines(inputs: DispatchInputs, cap = 8): string[] {
     .filter((h) => h.active && !inputs.habit_done[h.id])
     .slice(0, cap)
     .map((h) => `• ${h.text}`)
+}
+
+// Does today's plan carry at least one real rock (big or quick) with task text? A finished plan
+// still has rocks — so this stays true even when everything's done (worth a celebratory recap).
+function planHasRocks(inputs: DispatchInputs): boolean {
+  const plan = normalizePlan(inputs.plan)
+  return (
+    !!plan &&
+    (!!plan.bigRock?.task?.trim() || (plan.smallRocks ?? []).some((r) => !!r.task?.trim()))
+  )
+}
+
+// Would today's morning push be an empty "clear slate" — nothing to plan, time, or nudge? Checked
+// BEFORE plan generation so an empty day also skips the AI call. A plan can only surface rocks from
+// existing tasks, so "no open task, no timed task today, no undone habit" ⇒ nothing to say.
+export function isEmptyMorning(inputs: DispatchInputs, localDate: string): boolean {
+  return (
+    !planHasRocks(inputs) &&
+    openPlacedTasks(inputs).length === 0 &&
+    timedTodayLines(inputs, localDate).length === 0 &&
+    habitLines(inputs).length === 0
+  )
+}
+
+// Would tonight's check-in be empty — no plan to ask about AND nothing on the board to nudge?
+export function isEmptyEvening(inputs: DispatchInputs): boolean {
+  return !planHasRocks(inputs) && openPlacedTasks(inputs).length === 0
+}
+
+// The dispatcher's opt-in "quiet when empty" gate (config.notifications.quietWhenEmpty): true ⇒ skip
+// this due digest entirely — no claim, no AI generation, no push.
+export function isEmptyDigest(kind: DueKind, inputs: DispatchInputs, localDate: string): boolean {
+  return kind === 'plan' ? isEmptyMorning(inputs, localDate) : isEmptyEvening(inputs)
 }
 
 /**

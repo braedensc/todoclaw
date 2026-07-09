@@ -42,6 +42,7 @@ export interface SettingsDraft {
   eveningHour: string
   quietStartHour: string
   quietEndHour: string
+  quietWhenEmpty: boolean // opt-in: skip a daily push that would have nothing to say
   // Per-task reminder default (ADR 2026-07-09). 'off' | minutes-as-string ('0'|'10'|…). Seeded
   // to the app default ('60') so the selector shows "1 hour before" until the user changes it.
   reminderDefault: string
@@ -71,6 +72,7 @@ export const EMPTY_DRAFT: SettingsDraft = {
   eveningHour: '',
   quietStartHour: '',
   quietEndHour: '',
+  quietWhenEmpty: false,
   reminderDefault: String(REMINDER_DEFAULT_MINUTES),
 }
 
@@ -110,6 +112,7 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
     eveningHour: numToStr(notif.eveningHour),
     quietStartHour: numToStr(notif.quietStartHour),
     quietEndHour: numToStr(notif.quietEndHour),
+    quietWhenEmpty: notif.quietWhenEmpty ?? false,
     // three-state → string: null → 'off'; absent → the app default; a number → itself.
     reminderDefault:
       notif.reminderDefaultMinutes === null
@@ -184,6 +187,7 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     eveningHour: hour24(draft.eveningHour),
     quietStartHour: hour24(draft.quietStartHour),
     quietEndHour: hour24(draft.quietEndHour),
+    quietWhenEmpty: draft.quietWhenEmpty || undefined,
     // 'off' → null (persisted); the app default → undefined (never stored — reads back as the
     // default); any other preset → the number. `compact` keeps null but drops undefined.
     reminderDefaultMinutes:

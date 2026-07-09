@@ -8,6 +8,9 @@ import {
   buildMorningMessage,
   buildRecapMessage,
   dueKind,
+  isEmptyDigest,
+  isEmptyEvening,
+  isEmptyMorning,
   isQuietHour,
   localHourInTZ,
   normalizePlan,
@@ -527,3 +530,57 @@ Deno.test('buildMorningFromPlan: quick wins capped at 10', () => {
   assertStringIncludes(m.body, '• Win 10')
   assertNotMatch(m.body, /• Win 11/)
 })
+
+// ---- "Quiet when empty" gate (opt-in: skip a digest that would have nothing to say) --------------
+
+Deno.test('isEmptyMorning: true only on a genuine blank slate', () => {
+  assertEquals(isEmptyMorning(inputs({ tasks: [], habits: [], plan: null }), DAY), true)
+  assertEquals(isEmptyMorning(inputs({ habits: [], plan: null }), DAY), false) // default tasks are open
+  assertEquals(isEmptyMorning(inputs({ tasks: [], plan: null }), DAY), false) // default habit is active
+  // an existing plan with a rock is content, even with no tasks/habits
+  assertEquals(
+    isEmptyMorning(inputs({ tasks: [], habits: [], plan: { bigRock: { task: 'X' } } }), DAY),
+    false,
+  )
+})
+
+Deno.test('isEmptyMorning: a timed task today (even unplaced) keeps it non-empty', () => {
+  const timed = inputs({
+    tasks: [
+      {
+        id: 't',
+        text: 'Call',
+        x: null,
+        y: null,
+        due: DAY,
+        due_time: '09:00:00',
+        staged: true,
+        size: null,
+        recurring: null,
+      },
+    ],
+    habits: [],
+    plan: null,
+  })
+  assertEquals(isEmptyMorning(timed, DAY), false)
+})
+
+Deno.test('isEmptyEvening: true only with no plan AND an empty board', () => {
+  assertEquals(isEmptyEvening(inputs({ tasks: [], plan: null })), true)
+  assertEquals(isEmptyEvening(inputs({ plan: null })), false) // default tasks on the board
+  // a plan to ask about (even if finished) is worth a recap
+  assertEquals(isEmptyEvening(inputs({ tasks: [], plan: { bigRock: { task: 'X' } } })), false)
+})
+
+Deno.test(
+  'isEmptyDigest: routes plan→morning, recap→evening (habits count for morning only)',
+  () => {
+    const blank = inputs({ tasks: [], habits: [], plan: null })
+    assertEquals(isEmptyDigest('plan', blank, DAY), true)
+    assertEquals(isEmptyDigest('recap', blank, DAY), true)
+    // habit-only day: the morning has the habit to nudge; the evening ignores habits → empty.
+    const habitOnly = inputs({ tasks: [], plan: null }) // default habit h1 is active
+    assertEquals(isEmptyDigest('plan', habitOnly, DAY), false)
+    assertEquals(isEmptyDigest('recap', habitOnly, DAY), true)
+  },
+)
