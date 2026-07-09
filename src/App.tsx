@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AuthGate } from './features/auth/AuthGate'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
+import { TimezoneMismatchBanner } from './features/schedule/TimezoneMismatchBanner'
 import { RemindersInline } from './features/habits/RemindersInline'
 import { RemindersPage } from './features/habits/RemindersPage'
 import { RemindersSheet } from './features/habits/RemindersSheet'
@@ -199,6 +200,9 @@ function AppShell() {
             route === 'chat' ||
             (isMobile && (route === 'reminders' || route === 'done'))) && (
             <>
+              {/* Above the masthead on both surfaces: prompt when the device clock and the
+                  stored timezone disagree (hidden in grid-only — that mode strips all chrome). */}
+              {!gridOnly && <TimezoneMismatchBanner />}
               {isMobile ? (
                 // Mobile masthead: mirrors the desktop paper look now that the top bar is freed up.
                 // A small-caps dateline, the wordmark grown around a bigger peeking pup with the

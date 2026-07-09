@@ -37,7 +37,13 @@ vi.mock('./features/done/use-history', () => ({
 }))
 vi.mock('./features/schedule/use-user-schedule', () => ({
   useEnsureUserSchedule: () => ({ mutate: vi.fn() }),
-  useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
+  // The stored zone is deliberately the HOST's own zone: TimezoneMismatchBanner renders whenever
+  // stored ≠ device, and these shell tests must be host-independent — stored == device keeps the
+  // banner out of the tree on any machine. (Banner behavior has its own test file.)
+  useUserSchedule: () => ({
+    data: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, config: {} },
+  }),
+  useSaveScheduleConfig: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 // The inbox bell/badge + deep-link seed effect read messages (useQuery/useMutation). Stub them so
 // the shell renders without a QueryClientProvider / network.

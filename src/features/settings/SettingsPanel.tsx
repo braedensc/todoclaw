@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from 'react'
+import { useCallback, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
@@ -144,6 +144,50 @@ function SelectField({
   )
 }
 
+// IANA timezone picker. The stored zone drives due chips, reminder fire times, and the daily
+// reset (useTimeZone) — so it must be visible and editable here, not just silently seeded at
+// sign-up. Options come from the runtime's own IANA table; the current value is prepended if the
+// runtime's list lacks it (legacy aliases), so the select never renders blank.
+function TimezoneField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const id = useId()
+  const zones = useMemo(() => {
+    const list =
+      typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
+    return value && !list.includes(value) ? [value, ...list] : list
+  }, [value])
+  let clock = ''
+  try {
+    clock = new Intl.DateTimeFormat(undefined, {
+      timeZone: value,
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date())
+  } catch {
+    // Unknown zone string — the select still renders it; the clock preview just stays blank.
+  }
+  return (
+    <label htmlFor={id} className="flex flex-col gap-1 text-sm">
+      <span className="text-muted">Timezone</span>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-border-strong bg-card px-3 py-2 text-sm"
+      >
+        {zones.map((z) => (
+          <option key={z} value={z}>
+            {z.replaceAll('_', ' ')}
+          </option>
+        ))}
+      </select>
+      <span className="text-xs text-muted-light">
+        {clock && <>Right now: {clock} · </>}due dates, reminders, and the daily reset all follow
+        this timezone.
+      </span>
+    </label>
+  )
+}
+
 function Section({
   title,
   hint,
@@ -190,6 +234,10 @@ export function SettingsPanel({
   }, [])
 
   const [draft, setDraft] = useState<SettingsDraft>(EMPTY_DRAFT)
+  // Timezone is its own column (not part of the config jsonb draft): seeded from the browser at
+  // first sign-in, edited only here. Initialize to the browser zone so a pre-seed render (row
+  // still null) never shows a blank select; the hydrate below overwrites it with the stored zone.
+  const [timezone, setTimezone] = useState(browserZone)
   const [hydrated, setHydrated] = useState(false)
 
   // Hydrate the form the first time the row loads, then let the user edit freely. Done as a
@@ -199,6 +247,7 @@ export function SettingsPanel({
   if (!hydrated && scheduleQuery.data) {
     setHydrated(true)
     setDraft(configToDraft(scheduleQuery.data.config))
+    setTimezone(scheduleQuery.data.timezone)
   }
 
   const set = <K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) =>
@@ -215,7 +264,6 @@ export function SettingsPanel({
     }))
 
   function handleSave() {
-    const timezone = scheduleQuery.data?.timezone ?? browserZone()
     save.mutate({ config: draftToConfig(draft), timezone }, { onSuccess: onClose })
   }
 
@@ -234,7 +282,10 @@ export function SettingsPanel({
         <p className="py-6 text-sm text-muted">Loading…</p>
       ) : (
         <div className="flex flex-col gap-5">
-          <Section title="Where you are" hint="Used for the weather line in your daily plan.">
+          <Section
+            title="Where you are"
+            hint="Location feeds the weather line in your daily plan; the timezone anchors every time in the app."
+          >
             <TextField
               label="Location"
               value={draft.location}
@@ -242,6 +293,7 @@ export function SettingsPanel({
               placeholder="e.g. Atlanta, GA"
               maxLength={120}
             />
+            <TimezoneField value={timezone} onChange={setTimezone} />
           </Section>
 
           <Section
