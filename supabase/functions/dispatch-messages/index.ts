@@ -19,6 +19,7 @@ import {
   buildMorningMessage,
   buildRecapMessage,
   dueKind,
+  isEmptyDigest,
   localHourInTZ,
   normalizePlan,
   type DispatchInputs,
@@ -95,6 +96,14 @@ Deno.serve(async (req) => {
       // The plan came through opaque jsonb — normalize once; builders re-guard but this keeps the
       // "does a plan exist?" branch honest against mis-typed rows.
       const existingPlan = normalizePlan(inputs.plan)
+
+      // Opt-in "quiet when empty" (config.notifications.quietWhenEmpty): if this digest would have
+      // nothing to say — an empty clear-slate morning, or a no-plan / empty-board evening — skip it
+      // HERE, before claiming or generating, so an empty day costs no AI call and no low-value push.
+      if ((c.notifications?.quietWhenEmpty ?? false) && isEmptyDigest(kind, inputs, localDate)) {
+        skipped++
+        continue
+      }
 
       // Initial content. Morning with a plan already on file (user planned early, or a prior partial
       // run generated it) formats the real plan immediately; otherwise the deterministic message —

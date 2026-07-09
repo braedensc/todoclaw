@@ -218,34 +218,62 @@ export function NotificationSettings({ draft, set }: { draft: SettingsDraft; set
               {showInstallTip && <InstallTip platform={push.applePlatform} />}
 
               {enabled && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <NameField
-                    value={draft.notificationsName}
-                    onChange={(v) => set('notificationsName', v)}
-                  />
-                  <HourSelect
-                    label="Morning plan"
-                    value={draft.morningHour}
-                    onChange={(v) => set('morningHour', v)}
-                  />
-                  <HourSelect
-                    label="Evening recap"
-                    value={draft.eveningHour}
-                    onChange={(v) => set('eveningHour', v)}
-                  />
-                  <HourSelect
-                    label="Quiet from"
-                    value={draft.quietStartHour}
-                    onChange={(v) => set('quietStartHour', v)}
-                    allowEmpty
-                  />
-                  <HourSelect
-                    label="Quiet until"
-                    value={draft.quietEndHour}
-                    onChange={(v) => set('quietEndHour', v)}
-                    allowEmpty
-                  />
-                </div>
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <NameField
+                      value={draft.notificationsName}
+                      onChange={(v) => set('notificationsName', v)}
+                    />
+                    <HourSelect
+                      label="Morning plan"
+                      value={draft.morningHour}
+                      onChange={(v) => set('morningHour', v)}
+                    />
+                    <HourSelect
+                      label="Evening recap"
+                      value={draft.eveningHour}
+                      onChange={(v) => set('eveningHour', v)}
+                    />
+                    <HourSelect
+                      label="Quiet from"
+                      value={draft.quietStartHour}
+                      onChange={(v) => set('quietStartHour', v)}
+                      allowEmpty
+                    />
+                    <HourSelect
+                      label="Quiet until"
+                      value={draft.quietEndHour}
+                      onChange={(v) => set('quietEndHour', v)}
+                      allowEmpty
+                    />
+                  </div>
+
+                  {/* Opt-in: suppress a daily push that would have nothing to say. */}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-ink">
+                      Only notify when there’s something to say
+                      <span className="mt-0.5 block text-xs text-muted">
+                        Skips the morning on an empty day and the evening when there’s no plan.
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={draft.quietWhenEmpty}
+                      aria-label="Only notify when there’s something to say"
+                      onClick={() => set('quietWhenEmpty', !draft.quietWhenEmpty)}
+                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                        draft.quietWhenEmpty ? 'bg-accent' : 'bg-border-strong'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-5 w-5 rounded-full bg-card shadow transition-all ${
+                          draft.quietWhenEmpty ? 'left-[1.375rem]' : 'left-0.5'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </>
               )}
             </>
           )}
