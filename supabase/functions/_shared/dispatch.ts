@@ -97,13 +97,32 @@ export function isQuietHour(prefs: NotificationPrefs, hour: number): boolean {
   return s < e ? hour >= s && hour < e : hour >= s || hour < e
 }
 
+// How many hours past a configured send-hour we'll still deliver, when earlier ticks were dropped.
+// The hourly trigger can skip ticks (GitHub Actions routinely does; even pg_cron can miss one across
+// a DB restart), and the exact-hour match this used to require meant a single skipped tick at the
+// user's morning hour silently lost the whole day's push. The daily claim (claim_message) makes every
+// tick idempotent, so widening the match to a short window is safe: the FIRST surviving tick at or
+// after the hour delivers, and a dropped tick is simply recovered by the next one. Bounded so a plan
+// never lands at night ("Good morning" at 9pm) — a digest hours late is noise, and the in-app inbox
+// already covers a fully missed day.
+const CATCHUP_HOURS = 4
+
+// Hours from `configuredHour` forward to `localHour`, wrapping past midnight (0 when equal, 23 one
+// hour before). Membership test for the [configuredHour, configuredHour + CATCHUP_HOURS) window.
+function inCatchupWindow(configuredHour: number | undefined, localHour: number): boolean {
+  if (configuredHour == null) return false
+  return (localHour - configuredHour + 24) % 24 < CATCHUP_HOURS
+}
+
 // What (if anything) is this user due for at `localHour`? Disabled or quiet → nothing. Otherwise the
-// hour must exactly match a configured morning/evening hour (the hourly cron lands once per hour).
+// hour must fall in the catch-up window at or after a configured morning/evening hour (CATCHUP_HOURS):
+// the first non-quiet tick in that window delivers, the daily claim keeps the rest idempotent. Morning
+// wins if both windows cover the hour (only reachable with tightly spaced prefs).
 export function dueKind(prefs: NotificationPrefs, localHour: number): DueKind | null {
   if (prefs.enabled !== true) return null
   if (isQuietHour(prefs, localHour)) return null
-  if (prefs.morningHour != null && localHour === prefs.morningHour) return 'plan'
-  if (prefs.eveningHour != null && localHour === prefs.eveningHour) return 'recap'
+  if (inCatchupWindow(prefs.morningHour, localHour)) return 'plan'
+  if (inCatchupWindow(prefs.eveningHour, localHour)) return 'recap'
   return null
 }
 

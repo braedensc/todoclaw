@@ -1,12 +1,14 @@
 name: Notify (proactive daily messages)
 
-# Hourly cron (ADR-0031) → POST the dispatch-messages Edge Function with the shared DISPATCH_SECRET.
-# The FUNCTION decides who is due this hour (each user's LOCAL morning/evening hour, quiet-hours
-# aware), claims today's message idempotently, generates the plan / recap, and pushes it. Hour-
-# granular timing is fine — the in-app inbox covers any missed hour. Mirrors keepalive.yml /
-# backup.yml: a preflight SKIPS (green) until DISPATCH_URL + DISPATCH_SECRET are set, so an
-# unconfigured fork/repo is never red. pg_cron + pg_net calling the same function is the documented
-# tighter-timing upgrade if hour granularity ever isn't enough.
+# BACKUP hourly cron (ADR-0031) → POST the dispatch-messages Edge Function with the shared
+# DISPATCH_SECRET. The PRIMARY trigger is now pg_cron + pg_net inside Postgres (migration
+# 20260709130000_dispatch_messages_pg_cron.sql) — GitHub Actions drops most scheduled ticks under
+# load, which is exactly what lost morning pushes, so this workflow is kept only as a redundant
+# backup. Both POST the same function and claim_message dedupes per (user, day, kind), so the pair
+# can never double-send. The FUNCTION decides who is due (each user's LOCAL morning/evening send-
+# window, quiet-hours aware), claims today's message idempotently, generates the plan / recap, and
+# pushes it. Mirrors keepalive.yml / backup.yml: a preflight SKIPS (green) until DISPATCH_URL +
+# DISPATCH_SECRET are set, so an unconfigured fork/repo is never red.
 #
 # Config (repo → Settings → Secrets and variables → Actions):
 #   - Variable `DISPATCH_URL`    = https://<prod-ref>.supabase.co/functions/v1/dispatch-messages
