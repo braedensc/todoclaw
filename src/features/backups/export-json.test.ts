@@ -10,6 +10,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   x: 0.5,
   y: 0.5,
   due: null,
+  due_time: null,
   staged: false,
   bucket: 'oneoff',
   recurring: null,

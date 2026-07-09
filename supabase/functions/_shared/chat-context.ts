@@ -5,7 +5,7 @@
 // every optional field has a fallback so a sparse profile never breaks the chat.
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
-import { dayNameInTZ, localDateInTZ } from './dates.ts'
+import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
 import {
   DEFAULT_ASSISTANT_CONFIG,
   type AssistantConfig,
@@ -14,7 +14,6 @@ import {
   type PromptTask,
 } from './chat-prompt.ts'
 
-const MS_PER_DAY = 86_400_000
 const MAX_CUSTOM_INSTRUCTIONS = 500
 
 interface Recurring {
@@ -27,14 +26,6 @@ export interface LoadedChatContext {
   context: ChatContext
   timeZone: string
   labelById: Map<string, string> // task + habit id → text, for destructive-confirmation summaries
-}
-
-// Whole-number calendar-day diff in the user's timezone (mirrors src/lib/scoring.ts daysUntil).
-function daysUntil(due: string | null, timeZone: string, now: Date): number | null {
-  if (!due) return null
-  const dueDay = Date.parse(`${localDateInTZ(timeZone, new Date(due))}T00:00:00Z`) / MS_PER_DAY
-  const nowDay = Date.parse(`${localDateInTZ(timeZone, now)}T00:00:00Z`) / MS_PER_DAY
-  return Math.round(dueDay - nowDay)
 }
 
 // Cadence label (mirrors src/lib/recurring.ts fmtFrequency).
@@ -137,7 +128,7 @@ export async function loadChatContext(
       x: t.x as number | null,
       y: t.y as number | null,
       due: t.due as string | null,
-      dueInDays: daysUntil(t.due as string | null, timeZone, now),
+      dueInDays: daysUntilInTZ(t.due as string | null, timeZone, now),
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       doneToday: doneMap[t.id as string] === true,

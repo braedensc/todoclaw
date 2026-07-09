@@ -3,7 +3,7 @@
 // client or server (LOGIC-TO-PORT Discrepancy #5), so it's implemented fresh here from the spec
 // table and used by the chat's create_task / set_due_date tools. Pure → exhaustively deno-tested.
 
-import { localDateInTZ } from './dates.ts'
+import { daysUntilInTZ } from './dates.ts'
 
 export interface Placement {
   x: number
@@ -20,7 +20,7 @@ export function placeByDue(
   now: Date = new Date(),
 ): Placement {
   if (!due) return { x: 0.5, y: 0.5, staged: true }
-  const d = daysUntilLocal(due, timeZone, now)
+  const d = daysUntilInTZ(due, timeZone, now) as number // non-null: due checked above
   const x =
     d <= 0
       ? 0.9 // overdue / today      → Do Now
@@ -45,13 +45,4 @@ export function urgencyToX(word: UrgencyWord): number {
 }
 export function importanceToY(word: ImportanceWord): number {
   return word === 'high' ? 0.75 : 0.5
-}
-
-// Same calendar-day diff as src/lib/scoring.ts daysUntil: collapse both ends to a date in the
-// user's timezone before diffing, so it's DST-safe and time-of-day independent.
-function daysUntilLocal(due: string, timeZone: string, now: Date): number {
-  const MS = 86_400_000
-  const dueDay = Date.parse(`${localDateInTZ(timeZone, new Date(due))}T00:00:00Z`) / MS
-  const nowDay = Date.parse(`${localDateInTZ(timeZone, now)}T00:00:00Z`) / MS
-  return Math.round(dueDay - nowDay)
 }

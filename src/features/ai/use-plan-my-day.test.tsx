@@ -25,6 +25,7 @@ function task(over: Partial<Task> = {}): Task {
     x: 0.8,
     y: 0.7,
     due: null,
+    due_time: null,
     staged: false,
     bucket: 'oneoff',
     recurring: null,

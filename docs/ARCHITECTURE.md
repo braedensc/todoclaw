@@ -51,3 +51,4 @@ index.
 | [ADR-0029](adr/0029-per-user-ai-spend-alert-owner-webhook.md) | 2026-07-07 | Per-user AI spend alert: owner webhook on threshold crossing |
 | [ADR-0030](adr/0030-self-service-invite-codes.md) | 2026-07-07 | Self-service invite codes: text a link to onboard users |
 | [ADR-0031](adr/0031-proactive-daily-messaging-web-push.md) | 2026-07-07 | Proactive daily messaging + end-of-day chat via Web Push (opt-in) |
+| [ADR 2026-07-08](adr/2026-07-08-due-dates-wall-clock.md) | 2026-07-08 | Due dates are wall-clock: floating `date` + optional local `time` (completes #178) |

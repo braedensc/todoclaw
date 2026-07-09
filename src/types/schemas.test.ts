@@ -15,6 +15,7 @@ describe('TaskSchema', () => {
     x: null,
     y: null,
     due: null,
+    due_time: null,
     staged: true,
     bucket: null,
     recurring: null,
