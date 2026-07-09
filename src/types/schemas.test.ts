@@ -21,6 +21,7 @@ describe('TaskSchema', () => {
     recurring: null,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
+    completed_at: null,
   }
 
   it('parses a valid row (null bucket from Stage 1)', () => {

@@ -30,9 +30,9 @@ export interface PlanRequest {
 }
 
 // Build the request payload from the same data the grid/list use, reusing src/lib scoring +
-// recurring so the on-grid filtering and date math live in ONE place. Mirrors EisenClaw's
-// planMyDay selection: on-grid = not staged, not done today, not recurring; plus recurring
-// chores that are overdue/due/soon; plus active habits. Pure → unit-tested.
+// recurring so the on-grid filtering and date math live in ONE place. Selection: on-grid =
+// not staged, not completed (permanent tasks.completed_at), not done today, not recurring; plus
+// recurring chores that are overdue/due/soon; plus active habits. Pure → unit-tested.
 export function buildPlanRequest(
   tasks: Task[],
   habits: Habit[],
@@ -41,7 +41,15 @@ export function buildPlanRequest(
   now: Date = new Date(),
 ): PlanRequest {
   const planTasks = tasks
-    .filter((t) => !t.staged && !doneMap[t.id] && !t.recurring && t.x != null && t.y != null)
+    .filter(
+      (t) =>
+        !t.staged &&
+        !t.completed_at &&
+        !doneMap[t.id] &&
+        !t.recurring &&
+        t.x != null &&
+        t.y != null,
+    )
     .map((t) => ({
       text: t.text,
       importance: Math.round((t.y ?? 0.5) * 100),

@@ -77,6 +77,7 @@ function makeTask(over: Partial<Task>): Task {
     recurring: null,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
+    completed_at: null,
     ...over,
   }
 }
@@ -109,6 +110,28 @@ describe('MobileMatrix', () => {
     expect(screen.getByLabelText('Someday, 1 task')).toBeInTheDocument()
     // The dominant (top-score) Do Now task previews in the overview.
     expect(screen.getByText('ship the release')).toBeInTheDocument()
+  })
+
+  it('excludes completed tasks from counts/preview even when today’s daily state is empty', () => {
+    // Regression: a one-off completion lived only in today's daily_state.done map, so a fresh
+    // (empty) day resurrected it. completed_at makes the hide permanent — the completed task
+    // (higher score, so it would otherwise dominate the preview) stays out with doneToday empty.
+    tasksData = [
+      makeTask({ id: 'dn-open', text: 'ship the release', x: 0.9, y: 0.9 }),
+      makeTask({
+        id: 'dn-done',
+        text: 'completed thing',
+        x: 0.95,
+        y: 0.95,
+        completed_at: '2026-06-23T12:00:00Z',
+      }),
+    ]
+    doneToday = {}
+    renderMatrix()
+
+    expect(screen.getByLabelText('Do Now, 1 task')).toBeInTheDocument()
+    expect(screen.getByText('ship the release')).toBeInTheDocument()
+    expect(screen.queryByText('completed thing')).not.toBeInTheDocument()
   })
 
   it('drills into a quadrant focus list on tap, showing only that quadrant', () => {

@@ -28,8 +28,12 @@ import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 
 /**
  * Which tasks render on the grid: active (not soft-deleted — already excluded by useTasks),
- * non-staged, not done today, and — for recurring tasks — only when not "ok" (ok-recurring
+ * non-staged, not completed, and — for recurring tasks — only when not "ok" (ok-recurring
  * tasks are hidden to keep the grid uncluttered between cycles). x/y must be non-null.
+ *
+ * A one-off completion is PERMANENT via task.completed_at, so a completed task stays off the
+ * grid across days. `doneToday` (today's daily_state.done map) is kept as a belt-and-suspenders
+ * hide for the same-day window before the tasks query refetches with completed_at set.
  */
 function isPlaced(
   task: Task,
@@ -37,6 +41,7 @@ function isPlaced(
 ): task is Task & { x: number; y: number } {
   if (task.staged) return false
   if (task.x == null || task.y == null) return false
+  if (task.completed_at) return false
   if (doneToday[task.id]) return false
   const rc = recurringStatus(task.recurring)
   if (rc && rc.code === 'ok') return false

@@ -24,6 +24,7 @@ function makeTask(over: Partial<Task>): Task {
     recurring: null,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
+    completed_at: null,
     ...over,
   }
 }

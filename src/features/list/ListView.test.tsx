@@ -68,6 +68,7 @@ function makeTask(over: Partial<Task>): Task {
     recurring: null,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
+    completed_at: null,
     ...over,
   }
 }
@@ -208,6 +209,21 @@ describe('ListView', () => {
     renderList()
 
     expect(screen.queryByText('done today')).not.toBeInTheDocument()
+    expect(screen.getByText('still open')).toBeInTheDocument()
+  })
+
+  it('excludes completed tasks even when today’s daily state is empty (the next-day case)', () => {
+    // Regression: a one-off completion used to live only in today's daily_state.done map, so a
+    // fresh (empty) day resurrected it. completed_at makes the hide permanent — with doneToday
+    // empty (a new day), a completed task must still stay out of the list.
+    tasksData = [
+      makeTask({ id: 'done', text: 'completed task', completed_at: '2026-06-23T12:00:00Z' }),
+      makeTask({ id: 'open', text: 'still open' }),
+    ]
+    doneToday = {}
+    renderList()
+
+    expect(screen.queryByText('completed task')).not.toBeInTheDocument()
     expect(screen.getByText('still open')).toBeInTheDocument()
   })
 

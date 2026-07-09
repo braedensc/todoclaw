@@ -31,6 +31,7 @@ function task(over: Partial<Task> = {}): Task {
     recurring: null,
     created_at: '2026-06-01T00:00:00.000Z',
     deleted_at: null,
+    completed_at: null,
     ...over,
   }
 }
@@ -51,7 +52,7 @@ const NOW = new Date('2026-06-24T12:00:00.000Z') // Wed Jun 24 2026 (08:00 in Ne
 const TZ = 'America/New_York'
 
 describe('buildPlanRequest', () => {
-  it('keeps only on-grid (non-staged, non-done, non-recurring) tasks and maps the axes', () => {
+  it('keeps only on-grid (non-staged, non-completed, non-done, non-recurring) tasks and maps the axes', () => {
     const onGrid = task({
       id: 'keep',
       text: 'Keep',
@@ -64,6 +65,9 @@ describe('buildPlanRequest', () => {
       onGrid,
       task({ id: 'staged', staged: true }),
       task({ id: 'done', text: 'Done' }),
+      // Completed (permanent completed_at) but NOT in today's done map — must still be excluded so
+      // a completed task can't leak back into the AI plan on a fresh day.
+      task({ id: 'completed', text: 'Completed', completed_at: '2026-06-23T12:00:00Z' }),
       task({ id: 'rec', recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } }),
     ]
     const req = buildPlanRequest(tasks, [], { done: true }, TZ, NOW)
