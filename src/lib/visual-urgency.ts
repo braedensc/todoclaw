@@ -77,7 +77,8 @@ export interface GlowStyle {
   /**
    * A warm card tint replacing the plain paper fill — a whole-card fill channel that survives
    * even when a neighbour overlaps the ring. Graduated across the warm tiers (loudest = warmest),
-   * absent on `radar`/`none`. Only the grid card reads this today; the cluster bubble ignores it.
+   * absent on `radar`/`none`. Read by the grid card, the closed cluster bubble, and each
+   * cluster-popup row so a clustered urgent task matches a standalone card.
    */
   background?: string
 }

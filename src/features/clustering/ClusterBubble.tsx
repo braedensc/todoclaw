@@ -13,7 +13,8 @@ export interface ClusterBubbleProps {
   screenY: number
   /**
    * Urgency glow for the whole cluster, from the nearest due date among its non-recurring tasks
-   * (null = none). Applied only in the CLOSED state — an open bubble uses its raised popup shadow.
+   * (null = none). Applied only in the CLOSED state (ring + pulse + warm tint, matching a standalone
+   * card) — an open bubble drops it for its raised popup shadow.
    */
   glow?: GlowStyle | null
   /** True while the popup for this bubble is open (raises z-index + deepens the shadow). */
@@ -69,11 +70,13 @@ export function ClusterBubble({
     height: CLUSTER_BUBBLE_SIZE,
     border: `2px solid ${accentColor}`,
     // Open → raised popup shadow. Closed → the cluster's urgency glow if any, else the resting
-    // shadow. An overdue cluster also pulses (only while closed).
+    // shadow. An overdue cluster also pulses AND takes the warm card tint (only while closed), so a
+    // cluster holding an urgent task reads with the SAME ring + pulse + tint a standalone card gets.
     boxShadow: open
       ? '0 6px 20px rgba(0,0,0,.18)'
       : (glow?.boxShadow ?? '0 2px 8px rgba(0,0,0,.10)'),
     ...(!open && glow?.animation ? { animation: glow.animation } : {}),
+    ...(!open && glow?.background ? { background: glow.background } : {}),
   }
 
   return (

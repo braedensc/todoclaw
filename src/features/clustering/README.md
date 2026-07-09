@@ -22,14 +22,16 @@ renders as a normal `GridCard`; a group of >1 becomes a bubble.
   which is passed in as `children` so it anchors to the bubble's positioned wrapper. Accepts an
   optional **`glow`** prop (`urgencyGlowStyle` result) that `GridView` computes from the nearest
   due date among the group's non-recurring tasks (`clusterNearestDue` in `src/lib/clustering.ts`) —
-  applied only while **closed** (an open bubble uses its raised popup shadow). See `docs/STYLE.md`
-  → _Visual urgency_.
+  applied only while **closed** as the full **ring + pulse + warm tint** a standalone card gets (an
+  open bubble uses its raised popup shadow). See `docs/STYLE.md` → _Visual urgency_.
 - **`ClusterPopup.tsx`** — the floating panel (width 220, maxHeight 320, scrollable). It
   **flips above** the bubble when the dominant's **data-y > 0.55** (`CLUSTER_POPUP_FLIP_Y`,
   matching EisenClaw `html:616-617` — data-y high ⇒ bubble near the top of the y-inverted
   screen), else opens below. Each task is a card-style row: **done ✓**, text, a status chip
-  (recurring `↻` or a due-day chip), **edit ↗**, **delete ×**. The whole row is a drag handle;
-  pressing and dragging it pulls the task out of the cluster (see below).
+  (recurring `↻` or a due-day chip), **edit ↗**, **delete ×**. An overdue/near-due one-off row also
+  takes the same **warm tint** (`urgencyGlowStyle().background`) as its grid card, so an open cluster
+  shows _which_ task is urgent. The whole row is a drag handle; pressing and dragging it pulls the
+  task out of the cluster (see below).
 - **`cluster-constants.ts`** — verbatim EisenClaw visual constants (bubble size, depth offset,
   popup width/height, flip threshold).
 
