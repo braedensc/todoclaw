@@ -85,6 +85,28 @@ Deno.test('rejects an invalid verbosity at the validation gate', async () => {
   assert(res.is_error)
 })
 
+Deno.test(
+  "rejects the retired 'normal' verbosity (unified to balanced/detailed, 2026-07-09)",
+  async () => {
+    const { ctx } = makeCtx({})
+    const res = await executeTool('set_assistant_preference', { verbosity: 'normal' }, ctx)
+    assert(res.is_error)
+  },
+)
+
+Deno.test('accepts the unified superset: tone=direct, verbosity=detailed', async () => {
+  const { ctx, getWritten } = makeCtx({})
+  const res = await executeTool(
+    'set_assistant_preference',
+    { tone: 'direct', verbosity: 'detailed' },
+    ctx,
+  )
+  assert(!res.is_error)
+  const a = assistantOf(getWritten())
+  assertEquals(a.tone, 'direct')
+  assertEquals(a.verbosity, 'detailed')
+})
+
 Deno.test('rejects an unknown field (schema is .strict())', async () => {
   const { ctx } = makeCtx({})
   const res = await executeTool('set_assistant_preference', { color: 'blue' }, ctx)
@@ -141,13 +163,13 @@ Deno.test('preserves all other config keys when saving a preference', async () =
 // ---- partial updates -------------------------------------------------------------------------
 Deno.test('partial update: {tone} changes only tone', async () => {
   const { ctx, getWritten } = makeCtx({
-    assistant: { tone: 'warm', verbosity: 'normal', customInstructions: 'keep it snappy' },
+    assistant: { tone: 'warm', verbosity: 'balanced', customInstructions: 'keep it snappy' },
   })
   const res = await executeTool('set_assistant_preference', { tone: 'neutral' }, ctx)
   assert(!res.is_error)
   const a = assistantOf(getWritten())
   assertEquals(a.tone, 'neutral')
-  assertEquals(a.verbosity, 'normal')
+  assertEquals(a.verbosity, 'balanced')
   assertEquals(a.customInstructions, 'keep it snappy')
 })
 

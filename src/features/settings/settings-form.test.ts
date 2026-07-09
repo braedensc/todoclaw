@@ -27,9 +27,19 @@ describe('settings-form', () => {
       },
       commitments: [{ label: 'Gym', when: 'Tue/Thu 6pm' }, { label: 'School pickup' }],
       planNotes: 'Front-load deep work.',
-      babyclaw: { tone: 'warm', customInstructions: 'Keep it short.' },
+      assistant: { tone: 'playful', customInstructions: 'Keep it short.' },
     }
     expect(draftToConfig(configToDraft(config))).toEqual(config)
+  })
+
+  it('migrates the legacy `babyclaw` key forward to `assistant` on save', () => {
+    // Old configs wrote `babyclaw` (with a divergent vocab that the server never read). configToDraft
+    // reads it so the value pre-fills the editor; draftToConfig writes ONLY `assistant`, dropping the
+    // dead key — so the first save after this fix self-heals the config. (2026-07-09)
+    const legacy = { babyclaw: { tone: 'direct', verbosity: 'balanced' } } as ScheduleConfig
+    const saved = draftToConfig(configToDraft(legacy))
+    expect(saved.assistant).toEqual({ tone: 'direct', verbosity: 'balanced' })
+    expect('babyclaw' in saved).toBe(false)
   })
 
   it('parses number fields and clamps out-of-range values', () => {
