@@ -37,15 +37,22 @@ beforeEach(() => {
 })
 
 describe('MobileAddSheet', () => {
-  it('shows the manual text + quadrant + repeats form, with no AI/BabyClaw toggle', () => {
+  it('shows the manual text + quadrant + schedule form, with no AI/BabyClaw toggle', () => {
     renderSheet()
     // AI capture lives in the Chat tab now — the add sheet is manual-only, no mode switcher.
     expect(screen.queryByRole('group', { name: 'Add mode' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Manual/ })).not.toBeInTheDocument()
-    // The manual form is present from the start: text, quadrant picker, repeats presets.
+    // The manual form is present from the start: text, quadrant picker, and the schedule
+    // DISCLOSURE (the SchedulePanel unfolds on demand so plain capture stays one screen tall).
     expect(screen.getByLabelText('Task text')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Schedule' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Schedule' })).toBeInTheDocument() // the quadrant
+    const disclosure = screen.getByRole('button', { name: /Add schedule/ })
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('group', { name: 'Repeats' })).not.toBeInTheDocument()
+
+    fireEvent.click(disclosure)
     expect(screen.getByRole('group', { name: 'Repeats' })).toBeInTheDocument()
+    expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
   })
 
   it('does NOT auto-focus the text field (the keyboard must not pop on open)', () => {
@@ -80,6 +87,7 @@ describe('MobileAddSheet', () => {
 
     fireEvent.change(screen.getByLabelText('Task text'), { target: { value: 'stretch' } })
     fireEvent.click(screen.getByRole('button', { name: 'Do Now' }))
+    fireEvent.click(screen.getByRole('button', { name: /Add schedule/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Daily' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
 
@@ -87,19 +95,19 @@ describe('MobileAddSheet', () => {
     expect(arg.recurring).toEqual({ frequencyDays: 1, lastDoneAt: null, doneCount: 0 })
   })
 
-  it('a Custom repeat takes its cadence from the days input (and gates Add until valid)', () => {
+  it('an Every… repeat commits its seed cadence and ± adjusts it before Add', () => {
     renderSheet()
 
     fireEvent.change(screen.getByLabelText('Task text'), { target: { value: 'water plants' } })
     fireEvent.click(screen.getByRole('button', { name: 'Errands' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Custom' }))
-    // No days yet → Add disabled.
-    expect(screen.getByRole('button', { name: 'Add task' })).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('Days between repeats'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: /Add schedule/ }))
+    // Every… commits the 3-day seed immediately (consistent with Daily/Weekly); + bumps to 4.
+    fireEvent.click(screen.getByRole('button', { name: 'Every…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'More days between repeats' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
 
     const arg = addMutate.mock.calls[0]![0] as { recurring: Recurring | null }
-    expect(arg.recurring).toEqual({ frequencyDays: 3, lastDoneAt: null, doneCount: 0 })
+    expect(arg.recurring).toEqual({ frequencyDays: 4, lastDoneAt: null, doneCount: 0 })
   })
 
   it('the 🐾 chat tip closes the sheet and opens the chat', () => {

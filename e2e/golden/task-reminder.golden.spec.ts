@@ -13,8 +13,11 @@ test('a timed task gets the default reminder; the editor reads it back and can c
 
   await selectManualMode(page)
   await page.getByLabel('Add a task').fill('Team meeting')
-  await page.getByRole('button', { name: 'Due' }).click()
+  // One Schedule chip → the shared SchedulePanel (date behind More dates…, 15:00 via Custom…).
+  await page.getByRole('button', { name: /schedule/i }).click()
+  await page.getByRole('button', { name: /More dates/ }).click()
   await page.getByLabel('Due date').fill(tomorrow)
+  await page.getByRole('button', { name: 'Custom…' }).click()
   await page.getByLabel('Due time').fill('15:00')
 
   // The default (1 hour before) is pre-selected the moment a time exists.

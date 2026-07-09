@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAddTask } from '../tasks/use-tasks'
 import { useClickOutside } from '../../hooks/use-click-outside'
-import { formatDueTime } from '../../lib/dates'
-import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
+import type { Recurring } from '../../types/task'
+import { SchedulePanel } from '../schedule/SchedulePanel'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useUserSchedule } from '../schedule/use-user-schedule'
 import { useUpsertTaskReminder } from '../reminders/use-task-reminders'
-import { ReminderPicker } from '../reminders/ReminderPicker'
 import { effectiveReminderDefault } from '../reminders/reminder-offsets'
 import type { GridApi } from '../grid/use-grid'
 import { NewItemStrip } from './NewItemStrip'
+import { scheduleSummary } from './AddTaskForm'
 import type { ChatController } from '../ai/use-chat-controller'
 import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
 import type { BabyClawStatus, BabyClawTone } from './babyclaw-status'
@@ -172,7 +173,6 @@ function ModeToggle({
 }
 
 // --- Manual mode -------------------------------------------------------------------------
-type ChipId = 'due' | 'repeat'
 
 function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const addTask = useAddTask()
@@ -182,16 +182,16 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const reminderDefault = effectiveReminderDefault(
     useUserSchedule().data?.config.notifications?.reminderDefaultMinutes,
   )
+  const timeZone = useTimeZone()
   const [text, setText] = useState('')
+  // Schedule DRAFT — the shared SchedulePanel (workshop 2026-07-09) writes here through its
+  // usual callback shapes; the whole draft ships on Add. One chip replaces the old Due+Repeat
+  // pair so the widget speaks the same vocabulary as every other schedule surface.
   const [due, setDue] = useState<string | null>(null)
   const [dueTime, setDueTime] = useState<string | null>(null)
+  const [recurring, setRecurring] = useState<Recurring | null>(null)
   const [reminderMinutes, setReminderMinutes] = useState<number | null>(reminderDefault)
-  const [repeatDays, setRepeatDays] = useState<number | null>(null)
-  // Which chip popover is open — a single value enforces one-open-at-a-time (opening one
-  // closes the other). `null` = both closed.
-  const [openChip, setOpenChip] = useState<ChipId | null>(null)
-  const toggleChip = (id: ChipId) => setOpenChip((cur) => (cur === id ? null : id))
-  const closeChips = () => setOpenChip(null)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
 
   // Card-in-place (B2): a just-added task surfaces as a draggable card that REPLACES the input
   // (the pending strip below). One todo at a time — the input stays hidden until the pending card
@@ -210,9 +210,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
         text: trimmed,
         due,
         due_time: dt,
-        recurring: repeatDays
-          ? { frequencyDays: repeatDays, lastDoneAt: null, doneCount: 0 }
-          : null,
+        recurring,
       },
       {
         onSuccess: (created) => {
@@ -225,7 +223,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           setDue(null)
           setDueTime(null)
           setReminderMinutes(reminderDefault)
-          setRepeatDays(null)
+          setRecurring(null)
         },
       },
     )
@@ -243,27 +241,46 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
             aria-label="Add a task"
             className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm"
           />
-          <DueControl
-            value={due}
-            onChange={(v) => {
-              setDue(v)
-              if (!v) setDueTime(null)
-            }}
-            time={dueTime}
-            onTimeChange={setDueTime}
-            reminderMinutes={reminderMinutes}
-            onReminderChange={setReminderMinutes}
-            open={openChip === 'due'}
-            onToggle={() => toggleChip('due')}
-            onClose={closeChips}
-          />
-          <RepeatControl
-            value={repeatDays}
-            onChange={setRepeatDays}
-            open={openChip === 'repeat'}
-            onToggle={() => toggleChip('repeat')}
-            onClose={closeChips}
-          />
+          {/* One Schedule chip → the shared SchedulePanel in a popover. The chip label echoes
+              the drafted schedule ("07-11 3:00 PM · weekly") once one exists. */}
+          <ChipPopover
+            label={scheduleSummary(due, dueTime, recurring) ?? 'Schedule'}
+            icon="📅"
+            active={due != null || recurring != null}
+            open={scheduleOpen}
+            onToggle={() => setScheduleOpen((o) => !o)}
+            onClose={() => setScheduleOpen(false)}
+          >
+            {() => (
+              <div className="w-[280px]">
+                <SchedulePanel
+                  taskText={text.trim() || 'New task'}
+                  due={due}
+                  dueTime={dueTime}
+                  recurring={recurring}
+                  timeZone={timeZone}
+                  onSetDue={(d, t) => {
+                    setDue(d)
+                    setDueTime(t)
+                  }}
+                  onSetRecurring={(n) =>
+                    setRecurring({ frequencyDays: n, lastDoneAt: null, doneCount: 0 })
+                  }
+                  onSetFrequency={(n) =>
+                    setRecurring((r) =>
+                      r
+                        ? { ...r, frequencyDays: n }
+                        : { frequencyDays: n, lastDoneAt: null, doneCount: 0 },
+                    )
+                  }
+                  onRemoveRecurring={() => setRecurring(null)}
+                  reminderOffset={reminderMinutes}
+                  onSetReminder={setReminderMinutes}
+                  idPrefix="add"
+                />
+              </div>
+            )}
+          </ChipPopover>
           <button
             type="submit"
             disabled={addTask.isPending || !text.trim()}
@@ -332,170 +349,6 @@ function ChipPopover({
         </div>
       )}
     </div>
-  )
-}
-
-interface ChipControlProps {
-  open: boolean
-  onToggle: () => void
-  onClose: () => void
-}
-
-function DueControl({
-  value,
-  onChange,
-  time,
-  onTimeChange,
-  reminderMinutes,
-  onReminderChange,
-  open,
-  onToggle,
-  onClose,
-}: ChipControlProps & {
-  value: string | null
-  onChange: (v: string | null) => void
-  time: string | null
-  onTimeChange: (v: string | null) => void
-  reminderMinutes: number | null
-  onReminderChange: (v: number | null) => void
-}) {
-  // Compact chip: MM-DD, plus the clock time once one is set ("07-22 3:00 PM").
-  const label = value ? `${value.slice(5)}${time ? ` ${formatDueTime(time)}` : ''}` : 'Due'
-  return (
-    <ChipPopover
-      label={label}
-      icon="📅"
-      active={value != null}
-      open={open}
-      onToggle={onToggle}
-      onClose={onClose}
-    >
-      {(close) => (
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
-            Due date &amp; time
-          </span>
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              aria-label="Due date"
-              value={value ?? ''}
-              onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-              className="rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-sm text-ink focus:border-primary focus:outline-none"
-            />
-            <input
-              type="time"
-              aria-label="Due time"
-              value={time ?? ''}
-              disabled={!value}
-              title={value ? undefined : 'Set a date first'}
-              onChange={(e) => onTimeChange(e.target.value === '' ? null : e.target.value)}
-              className="rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-sm text-ink focus:border-primary focus:outline-none disabled:opacity-40"
-            />
-            {value && (
-              <button
-                type="button"
-                onClick={() => {
-                  onChange(null)
-                  close()
-                }}
-                className="rounded-md border border-border-strong px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-muted-faint hover:text-ink"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <DueTimezoneHint />
-          {/* Reminder — appears once a due time is set; pre-selected to the user's default. */}
-          {value && time && (
-            <div className="flex flex-col gap-1.5 border-t border-border pt-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
-                Remind me
-              </span>
-              <ReminderPicker value={reminderMinutes} onChange={onReminderChange} idPrefix="add" />
-            </div>
-          )}
-        </div>
-      )}
-    </ChipPopover>
-  )
-}
-
-function RepeatControl({
-  value,
-  onChange,
-  open,
-  onToggle,
-  onClose,
-}: ChipControlProps & {
-  value: number | null
-  onChange: (v: number | null) => void
-}) {
-  const [draft, setDraft] = useState('')
-  const [wasOpen, setWasOpen] = useState(open)
-  const label = value ? `every ${value}d` : 'Repeat'
-  // Seed the input with the current interval each time the popover opens so it reads as an edit
-  // of the existing value, not a blank re-entry. Done as a render-phase adjustment on the
-  // open→ transition (React's sanctioned alternative to a setState-in-effect).
-  if (open !== wasOpen) {
-    setWasOpen(open)
-    if (open) setDraft(value ? String(value) : '')
-  }
-  return (
-    <ChipPopover
-      label={label}
-      icon="↻"
-      active={value != null}
-      open={open}
-      onToggle={onToggle}
-      onClose={onClose}
-    >
-      {(close) => (
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
-            Repeat
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted">every</span>
-            <input
-              type="number"
-              min={1}
-              max={365}
-              placeholder="3"
-              aria-label="Repeat every N days"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              className="w-14 rounded-md border border-border-strong bg-card px-2 py-1.5 text-center text-sm text-ink focus:border-primary focus:outline-none"
-            />
-            <span className="text-sm text-muted">days</span>
-            <button
-              type="button"
-              onClick={() => {
-                const n = Number(draft)
-                if (Number.isFinite(n) && n >= 1) onChange(Math.floor(n))
-                close()
-              }}
-              className="rounded-md border border-primary px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
-            >
-              Set
-            </button>
-            {value && (
-              <button
-                type="button"
-                onClick={() => {
-                  onChange(null)
-                  setDraft('')
-                  close()
-                }}
-                className="rounded-md border border-border-strong px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-muted-faint hover:text-ink"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </ChipPopover>
   )
 }
 

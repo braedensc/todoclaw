@@ -155,16 +155,14 @@ describe('ListView', () => {
     expect(rowButton).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByLabelText('Urgency slider')).not.toBeInTheDocument()
 
-    // Clicking the row text (inside the row button) opens the panel…
-    fireEvent.click(screen.getByText('expand me'))
-    expect(screen.getByRole('button', { name: /expand me/ })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    )
+    // Clicking the row body opens the panel… (click the button element itself — once expanded,
+    // the SchedulePanel header also echoes the task text, so a text query would be ambiguous)
+    fireEvent.click(rowButton)
+    expect(rowButton).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByLabelText('Urgency slider')).toBeInTheDocument()
 
     // …and clicking again collapses it.
-    fireEvent.click(screen.getByText('expand me'))
+    fireEvent.click(rowButton)
     expect(screen.queryByLabelText('Urgency slider')).not.toBeInTheDocument()
   })
 
@@ -305,14 +303,13 @@ describe('ListView', () => {
     })
   })
 
-  describe('recurring section (expanded row)', () => {
-    it('Set makes a task recurring via useUpdateTask with a fresh recurring object', () => {
+  describe('recurring section (expanded row — SchedulePanel Repeats)', () => {
+    it('the Weekly preset makes a task recurring via useUpdateTask with a fresh recurring object', () => {
       tasksData = [makeTask({ id: 's1', text: 'make me recurring', recurring: null })]
       renderList()
 
       fireEvent.click(screen.getByText('make me recurring'))
-      fireEvent.change(screen.getByLabelText('Days between repeats'), { target: { value: '7' } })
-      fireEvent.click(screen.getByText('Set'))
+      fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
 
       expect(updateMutate).toHaveBeenCalledWith({
         id: 's1',
@@ -320,7 +317,7 @@ describe('ListView', () => {
       })
     })
 
-    it('Remove clears recurring (recurring: null) via useUpdateTask', () => {
+    it('Off clears recurring (recurring: null) via useUpdateTask', () => {
       tasksData = [
         makeTask({
           id: 'rm1',
@@ -331,7 +328,7 @@ describe('ListView', () => {
       renderList()
 
       fireEvent.click(screen.getByText('stop repeating'))
-      fireEvent.click(screen.getByText('Remove'))
+      fireEvent.click(screen.getByRole('button', { name: 'Off' }))
 
       expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
     })
@@ -351,10 +348,10 @@ describe('ListView', () => {
       // fmtFrequency(7) === 'weekly'; the recurring section renders the cadence word.
       expect(screen.getAllByText(/weekly/).length).toBeGreaterThan(0)
       // recurringStatus → "in 6d" (daysLeft 6). The label shows in both the collapsed row's
-      // status span and the expanded recurring section, so assert at least one is present.
-      expect(screen.getAllByText('in 6d').length).toBeGreaterThan(0)
-      // The editable frequency input reflects the current cadence.
-      expect(screen.getByLabelText('Recurring frequency in days')).toHaveValue(7)
+      // status span and the panel's garnish line, so assert at least one is present.
+      expect(screen.getAllByText(/in 6d/).length).toBeGreaterThan(0)
+      // The Repeats segmented control reflects the current cadence (7 → Weekly pressed).
+      expect(screen.getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true')
     })
 
     it('shows the ×N count badge once doneCount >= 3', () => {

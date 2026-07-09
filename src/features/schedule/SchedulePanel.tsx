@@ -96,18 +96,12 @@ export interface SchedulePanelProps {
   onSetReminder: (minutes: number | null) => void
   /** Namespaces the ReminderPicker testid when several panels mount (grid / list / add). */
   idPrefix?: string
+  /** Thumb-sized controls for touch surfaces (mobile add sheet / expanded row on a phone):
+   *  bigger chips, 40px calendar cells and segments. Desktop popovers stay compact. */
+  touch?: boolean
   /** Test seam: the instant "today" is computed from (defaults to now). */
   now?: Date
 }
-
-const chipBase =
-  'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-40'
-const chipOff = `${chipBase} border-border-strong bg-card text-muted hover:text-ink`
-const chipOn = `${chipBase} border-primary bg-primary text-white`
-
-const segBase = 'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors'
-const segOff = `${segBase} text-muted hover:text-ink`
-const segOn = `${segBase} bg-card text-ink shadow-sm`
 
 export function SchedulePanel({
   taskText,
@@ -122,10 +116,24 @@ export function SchedulePanel({
   reminderOffset,
   onSetReminder,
   idPrefix,
+  touch = false,
   now,
 }: SchedulePanelProps) {
   const dueValue = due ? due.slice(0, 10) : ''
   const timeValue = dueTime ? dueTime.slice(0, 5) : ''
+
+  // Two size grades from one prop: compact for desktop popovers, thumb-sized for touch surfaces.
+  const chipBase = `rounded-full border font-medium transition-colors disabled:opacity-40 ${
+    touch ? 'px-3.5 py-2 text-[13px]' : 'px-2.5 py-1 text-xs'
+  }`
+  const chipOff = `${chipBase} border-border-strong bg-card text-muted hover:text-ink`
+  const chipOn = `${chipBase} border-primary bg-primary text-white`
+  const segBase = `rounded-lg font-semibold transition-colors ${
+    touch ? 'min-h-[40px] flex-1 px-3 text-[13px]' : 'px-3 py-1.5 text-xs'
+  }`
+  const segOff = `${segBase} text-muted hover:text-ink`
+  const segOn = `${segBase} bg-card text-ink shadow-sm`
+  const cellH = touch ? 'h-10' : 'h-8'
 
   // Today in the USER's timezone — the same authority the daily reset uses. The fortnight starts
   // on this week's Monday so the row layout matches a wall calendar, not a rolling window.
@@ -181,18 +189,29 @@ export function SchedulePanel({
   }
 
   /** Repeats presets: preserve history on an already-recurring task, fresh schedule otherwise. */
-  const pickCadence = (days: number) => {
-    setCustomRepeatOpen(false)
+  const commitCadence = (days: number) => {
     if (recurring) onSetFrequency(days)
     else onSetRecurring(days)
+  }
+
+  const pickCadence = (days: number) => {
+    setCustomRepeatOpen(false)
+    commitCadence(days)
+  }
+
+  /** Opening Every… IS choosing a cadence (consistent with Daily/Weekly committing on tap):
+   *  it commits the seed (or the existing custom value) immediately; ± then adjusts it. */
+  const openCustomCadence = () => {
+    if (customRepeatOpen) return
+    setCustomRepeatOpen(true)
+    if (freq !== draftN) commitCadence(draftN)
   }
 
   /** ± on the Every… stepper: clamp to [2, 365] and commit each press (instant-commit panel). */
   const stepCustom = (delta: number) => {
     const next = Math.min(365, Math.max(2, draftN + delta))
     setDraftN(next)
-    if (recurring) onSetFrequency(next)
-    else onSetRecurring(next)
+    commitCadence(next)
   }
 
   const sectionLabel = 'block text-[10px] font-bold uppercase tracking-[0.09em] text-muted-light'
@@ -236,7 +255,7 @@ export function SchedulePanel({
                 aria-label={aria}
                 aria-pressed={selected}
                 onClick={() => pickDay(iso)}
-                className={`h-8 rounded-lg border text-xs transition-colors ${
+                className={`${cellH} rounded-lg border text-xs transition-colors ${
                   selected
                     ? 'border-primary bg-primary font-bold text-white'
                     : isToday
@@ -284,7 +303,9 @@ export function SchedulePanel({
       {/* ---- Time presets (a reminder needs an instant; chips wait for a date) ---- */}
       <div>
         <span className={sectionLabel}>Time</span>
-        <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label="Due time presets">
+        {/* "Time presets", NOT "Due time presets" — getByLabel/getByRole match by substring, so a
+            "Due time…" group label would collide with the native input's "Due time" in every spec. */}
+        <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label="Time presets">
           {TIME_PRESETS.map((p) => {
             // Exactly one pressed chip: while the Custom reveal is open it owns the pressed state
             // (even if the input still holds a preset value).
@@ -345,7 +366,7 @@ export function SchedulePanel({
         <div
           role="group"
           aria-label="Repeats"
-          className="mt-1.5 inline-flex gap-0.5 rounded-[10px] bg-bg p-0.5"
+          className={`mt-1.5 gap-0.5 rounded-[10px] bg-bg p-0.5 ${touch ? 'flex w-full' : 'inline-flex'}`}
         >
           <button
             type="button"
@@ -377,7 +398,7 @@ export function SchedulePanel({
           <button
             type="button"
             aria-pressed={repeatMode === 'custom'}
-            onClick={() => setCustomRepeatOpen(true)}
+            onClick={openCustomCadence}
             className={repeatMode === 'custom' ? segOn : segOff}
           >
             Every…

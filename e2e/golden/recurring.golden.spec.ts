@@ -10,13 +10,12 @@ const TASK = 'Weekly review'
 test('set recurring → cycle-done resets the clock instead of archiving', async ({ page }) => {
   await placeTask(page, TASK, 0.55, 0.45)
 
-  // Make it recurring from the expanded list row: 7 days → Set.
+  // Make it recurring from the expanded list row's SchedulePanel: the Weekly preset (= 7 days).
   await switchTab(page, 'List')
   const row = page.getByRole('listitem').filter({ hasText: TASK })
   await expandRow(row)
-  await row.getByLabel('Days between repeats').fill('7')
-  // Anchored: role-name matching is substring, and "Mark done (resets clock)" contains "set".
-  await row.getByRole('button', { name: /^Set$/ }).click()
+  // exact: the row-expand button's accessible name ('Rank 1 Weekly review') would substring-match.
+  await row.getByRole('button', { name: 'Weekly', exact: true }).click()
 
   // A never-completed recurring task reads as overdue ("never done"), with the cadence
   // formatted (7 → "weekly") and the done control now labelled as a clock reset.
