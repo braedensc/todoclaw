@@ -30,6 +30,9 @@ import { DonePage } from './features/done/DonePage'
 import { DoneSheet } from './features/done/DoneSheet'
 import { SettingsPanel } from './features/settings/SettingsPanel'
 import { SetupGuide } from './features/onboarding/SetupGuide'
+import { FeatureTour } from './features/onboarding/FeatureTour'
+import { ADD_TASK_SPOTLIGHT, DESKTOP_TOUR, MOBILE_TOUR } from './features/onboarding/tour-steps'
+import { markTourDone } from './features/onboarding/setup-guide-store'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
 import { useRoute, navigate, navigateToChat, chatMessageId } from './lib/route'
@@ -71,6 +74,10 @@ function AppShell() {
   // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  // The setup guide's spotlight walkthroughs: 'full' = the whole per-breakpoint tour, 'add-task'
+  // = the single-step "Show me where" spotlight on the Task Manager. Launched only from the
+  // guide (home route), so every anchor the scripts name is mounted.
+  const [tour, setTour] = useState<'full' | 'add-task' | null>(null)
   // Mobile overview→focus state (which quadrant list is open). App-owned so Back pops it and the
   // add sheet pre-selects it; inert on desktop (nothing ever calls enter there).
   const quadrantFocus = useQuadrantFocus()
@@ -325,6 +332,7 @@ function AppShell() {
                           onClick={planner.generate}
                           disabled={!planner.canGenerate}
                           title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
+                          data-tour="plan"
                           className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
                           style={planPillStyle}
                         >
@@ -425,6 +433,7 @@ function AppShell() {
                       <button
                         type="button"
                         onClick={() => setShowSettings(true)}
+                        data-tour="settings"
                         className="hover:text-ink"
                       >
                         <span aria-hidden>⚙</span> Settings
@@ -432,6 +441,7 @@ function AppShell() {
                       <button
                         type="button"
                         onClick={() => navigate('done')}
+                        data-tour="done"
                         className="hover:text-ink"
                       >
                         <span aria-hidden>✓</span> Done
@@ -471,6 +481,25 @@ function AppShell() {
                     onOpenNotificationSettings={() => {
                       setSettingsSection('notifications')
                       setShowSettings(true)
+                    }}
+                    onStartTour={() => setTour('full')}
+                    onShowAddTask={isMobile ? () => setShowAdd(true) : () => setTour('add-task')}
+                  />
+                </ErrorBoundary>
+              )}
+
+              {/* The setup guide's spotlight tour — an overlay pointing at the live shell, so it
+                  mounts beside the content it spotlights. Finishing the FULL tour latches its
+                  checklist step; skipping (or the one-step add-task spotlight) latches nothing. */}
+              {tour && (
+                <ErrorBoundary>
+                  <FeatureTour
+                    steps={
+                      tour === 'full' ? (isMobile ? MOBILE_TOUR : DESKTOP_TOUR) : ADD_TASK_SPOTLIGHT
+                    }
+                    onClose={(completed) => {
+                      if (completed && tour === 'full') markTourDone()
+                      setTour(null)
                     }}
                   />
                 </ErrorBoundary>
@@ -522,7 +551,7 @@ function AppShell() {
                   it; the moment a plan exists (or is generating / errored / paused) the card takes
                   the pill's place, so the button disappears while a plan is on screen. */}
               {!gridOnly && isMobile && (
-                <div className="mt-5">
+                <div className="mt-5" data-tour="plan">
                   {planner.displayPlan || planner.isPending || planner.isError || planner.paused ? (
                     <ErrorBoundary>
                       <PlanBox

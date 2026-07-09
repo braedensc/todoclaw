@@ -171,6 +171,7 @@ export function GridSurface({
     // mode it becomes a fixed fullscreen overlay; the canvas keeps its aspect ratio but grows to
     // fill the viewport height (max-width derived from the available height).
     <div
+      data-tour="grid"
       className={
         gridOnly
           ? 'fixed inset-0 z-50 flex flex-col items-center justify-center overflow-auto bg-bg pl-8 pr-4'

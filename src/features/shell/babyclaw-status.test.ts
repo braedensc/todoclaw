@@ -40,8 +40,8 @@ describe('deriveBabyClawStatus', () => {
       pending: { toolUseId: 'x', summary: 'Move "Call dentist" to the trash' },
     })
     expect(s.tone).toBe('pending')
+    expect(s.waiting).toBe(true)
     expect(s.text).toMatch(/call dentist/i)
-    expect(s.text).toMatch(/yes\/no/i)
   })
 
   it('surfaces a stream/HTTP error (chat.error) inline', () => {
@@ -99,13 +99,41 @@ describe('deriveBabyClawStatus', () => {
     expect(s.text).toBe("Couldn't find that task")
   })
 
-  it('uses the status line for a pure reply, and never shows the raw marker', () => {
+  it('treats a body question as waiting-on-you and shows the question itself', () => {
     const s = deriveBabyClawStatus({
       ...base,
       items: [user('add groceries'), reply('Sure! When is it due?\n[[status: Need a due date!]]')],
     })
-    expect(s.tone).toBe('idle')
-    expect(s.text).toBe('Need a due date!')
+    expect(s.tone).toBe('pending')
+    expect(s.waiting).toBe(true)
+    expect(s.text).toBe('Sure! When is it due?')
+  })
+
+  it('surfaces the "? "-flagged waiting status with the marker stripped', () => {
+    const s = deriveBabyClawStatus({
+      ...base,
+      items: [
+        user('add groceries'),
+        reply('Sure! Tell me when it should be done.\n[[status: ? Need a due date for that one]]'),
+      ],
+    })
+    expect(s.tone).toBe('pending')
+    expect(s.waiting).toBe(true)
+    expect(s.text).toBe('Need a due date for that one')
+  })
+
+  it('a waiting question outranks the turn’s successful tool outcome', () => {
+    const s = deriveBabyClawStatus({
+      ...base,
+      items: [
+        user('add x and y'),
+        tool('Created "x" on the grid.'),
+        reply('Added "x"! Where should "y" go?\n[[status: ? Where should "y" go]]'),
+      ],
+    })
+    expect(s.tone).toBe('pending')
+    expect(s.waiting).toBe(true)
+    expect(s.text).toMatch(/where should "y" go/i)
   })
 
   it('does not pre-clamp long text — width truncation is the CSS layer’s job', () => {
@@ -124,12 +152,13 @@ describe('deriveBabyClawStatus', () => {
     expect(s.icon).toBe('✕')
   })
 
-  it('shows a follow-up question when the latest turn is a pure reply', () => {
+  it('flags a bare follow-up question (no marker, no status) as waiting', () => {
     const s = deriveBabyClawStatus({
       ...base,
       items: [user('add groceries'), reply('Sure — add a due date?')],
     })
-    expect(s.tone).toBe('idle')
+    expect(s.tone).toBe('pending')
+    expect(s.waiting).toBe(true)
     expect(s.text).toMatch(/due date/i)
   })
 
@@ -144,8 +173,9 @@ describe('deriveBabyClawStatus', () => {
         reply('How about booking a dentist?'),
       ],
     })
-    // The newest turn produced no tool, so the reply — not the earlier success — is shown.
-    expect(s.tone).toBe('idle')
+    // The newest turn produced no tool, so the reply — not the earlier success — is shown
+    // (and this particular reply asks a question, so it reads as waiting).
+    expect(s.tone).toBe('pending')
     expect(s.text).toMatch(/dentist/i)
   })
 })

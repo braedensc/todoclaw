@@ -152,7 +152,7 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
 
   // ---- OVERVIEW: the read-only 2×2 minimap ----
   return (
-    <section aria-label="Quadrant overview" className={shell}>
+    <section aria-label="Quadrant overview" data-tour="matrix" className={shell}>
       <div className="grid grid-cols-2 gap-2.5">
         {QUADRANT_ORDER.map((key) => {
           const m = meta(key)

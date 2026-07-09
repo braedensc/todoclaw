@@ -38,6 +38,9 @@ vi.mock('./features/done/use-history', () => ({
 vi.mock('./features/schedule/use-user-schedule', () => ({
   useEnsureUserSchedule: () => ({ mutate: vi.fn() }),
   useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
+  // The setup guide's one-click notifications enabler (use-enable-notifications) composes this
+  // mutation; stub it so the guide renders without a QueryClientProvider / network.
+  useSaveScheduleConfig: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
 }))
 // The inbox bell/badge + deep-link seed effect read messages (useQuery/useMutation). Stub them so
 // the shell renders without a QueryClientProvider / network.

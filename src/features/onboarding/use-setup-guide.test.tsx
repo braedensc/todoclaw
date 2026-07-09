@@ -1,12 +1,17 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock the two dependency seams: the schedule row (account half of the notifications check) and
-// the platform/standalone detection from the push hook. localStorage is jsdom's real one — each
-// test starts from a cleared store.
+// Mock the dependency seams: the schedule row (account half of the notifications check), the task
+// list (the add-a-first-task step), and the platform/standalone detection from the push hook.
+// localStorage is jsdom's real one — each test starts from a cleared store.
 const mockSchedule = vi.fn<() => { data?: unknown; isLoading?: boolean }>()
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => mockSchedule(),
+}))
+
+const mockTasks = vi.fn<() => { data?: unknown[]; isLoading?: boolean }>()
+vi.mock('../tasks/use-tasks', () => ({
+  useTasks: () => mockTasks(),
 }))
 
 const mockPlatform = vi.fn<() => 'ios' | 'macos-safari' | 'other'>()
@@ -17,7 +22,13 @@ vi.mock('../notifications/use-push-subscription', () => ({
 }))
 
 import { useSetupGuide } from './use-setup-guide'
-import { DISMISSED_KEY, PLAN_DONE_KEY, resetSetupGuide } from './setup-guide-store'
+import {
+  DISMISSED_KEY,
+  PLAN_DONE_KEY,
+  TOUR_DONE_KEY,
+  markTourDone,
+  resetSetupGuide,
+} from './setup-guide-store'
 
 const loadedSchedule = (config: object = {}) => ({
   data: { timezone: 'America/New_York', config },
@@ -27,6 +38,7 @@ const loadedSchedule = (config: object = {}) => ({
 beforeEach(() => {
   localStorage.clear()
   mockSchedule.mockReturnValue(loadedSchedule())
+  mockTasks.mockReturnValue({ data: [], isLoading: false })
   mockPlatform.mockReturnValue('ios')
   mockStandalone.mockReturnValue(false)
 })
@@ -36,10 +48,10 @@ afterEach(() => {
 })
 
 describe('useSetupGuide', () => {
-  it('shows all three steps, none done, for a fresh iOS device', () => {
+  it('shows all five steps, none done, for a fresh iOS device', () => {
     const { result } = renderHook(() => useSetupGuide(false))
     expect(result.current.visible).toBe(true)
-    expect(result.current.stepCount).toBe(3)
+    expect(result.current.stepCount).toBe(5)
     expect(result.current.doneCount).toBe(0)
     expect(result.current.install).toMatchObject({ shown: true, done: false, context: 'ios' })
   })
@@ -48,7 +60,7 @@ describe('useSetupGuide', () => {
     mockPlatform.mockReturnValue('other')
     const { result } = renderHook(() => useSetupGuide(false))
     expect(result.current.install.shown).toBe(false)
-    expect(result.current.stepCount).toBe(2)
+    expect(result.current.stepCount).toBe(4)
   })
 
   it('dismiss hides the card and persists across mounts', () => {
@@ -60,6 +72,15 @@ describe('useSetupGuide', () => {
     expect(remounted.result.current.visible).toBe(false)
   })
 
+  it('the tour step latches through the store (markTourDone) and reacts live', () => {
+    const { result } = renderHook(() => useSetupGuide(false))
+    expect(result.current.tourDone).toBe(false)
+
+    act(() => markTourDone())
+    expect(result.current.tourDone).toBe(true)
+    expect(localStorage.getItem(TOUR_DONE_KEY)).toBe('1')
+  })
+
   it('notifications step needs BOTH the config toggle and the browser permission', () => {
     mockSchedule.mockReturnValue(loadedSchedule({ notifications: { enabled: true } }))
     const { result, rerender } = renderHook(() => useSetupGuide(false))
@@ -69,6 +90,15 @@ describe('useSetupGuide', () => {
     vi.stubGlobal('Notification', { permission: 'granted' })
     rerender()
     expect(result.current.notificationsDone).toBe(true)
+  })
+
+  it('the first-task step auto-detects an existing task', () => {
+    const { result, rerender } = renderHook(() => useSetupGuide(false))
+    expect(result.current.taskAdded).toBe(false)
+
+    mockTasks.mockReturnValue({ data: [{ id: 't1' }], isLoading: false })
+    rerender()
+    expect(result.current.taskAdded).toBe(true)
   })
 
   it('plan step latches: once a plan has existed, the midnight clear does not regress it', () => {
@@ -88,8 +118,10 @@ describe('useSetupGuide', () => {
   it('auto-dismisses silently for a user who is already fully set up', () => {
     mockStandalone.mockReturnValue(true)
     mockSchedule.mockReturnValue(loadedSchedule({ notifications: { enabled: true } }))
+    mockTasks.mockReturnValue({ data: [{ id: 't1' }], isLoading: false })
     vi.stubGlobal('Notification', { permission: 'granted' })
     localStorage.setItem(PLAN_DONE_KEY, '1')
+    localStorage.setItem(TOUR_DONE_KEY, '1')
 
     const { result } = renderHook(() => useSetupGuide(false))
     expect(result.current.visible).toBe(false)
@@ -99,7 +131,9 @@ describe('useSetupGuide', () => {
   it('stays up in its finished state when the last step completes while open', () => {
     mockStandalone.mockReturnValue(true)
     mockSchedule.mockReturnValue(loadedSchedule({ notifications: { enabled: true } }))
+    mockTasks.mockReturnValue({ data: [{ id: 't1' }], isLoading: false })
     vi.stubGlobal('Notification', { permission: 'granted' })
+    localStorage.setItem(TOUR_DONE_KEY, '1')
 
     const { result, rerender } = renderHook(({ ready }) => useSetupGuide(ready), {
       initialProps: { ready: false },
@@ -113,17 +147,26 @@ describe('useSetupGuide', () => {
     expect(localStorage.getItem(DISMISSED_KEY)).toBeNull()
   })
 
-  it('resetSetupGuide re-shows a dismissed card without a remount', () => {
+  it('resetSetupGuide re-shows a dismissed card without a remount, clearing the latches', () => {
+    localStorage.setItem(TOUR_DONE_KEY, '1')
     const { result } = renderHook(() => useSetupGuide(false))
     act(() => result.current.dismiss())
     expect(result.current.visible).toBe(false)
 
     act(() => resetSetupGuide())
     expect(result.current.visible).toBe(true)
+    expect(result.current.tourDone).toBe(false)
   })
 
   it('withholds judgment while the schedule row is still loading', () => {
     mockSchedule.mockReturnValue({ data: undefined, isLoading: true })
+    const { result } = renderHook(() => useSetupGuide(false))
+    expect(result.current.visible).toBe(false)
+    expect(localStorage.getItem(DISMISSED_KEY)).toBeNull()
+  })
+
+  it('withholds judgment while the task list is still loading', () => {
+    mockTasks.mockReturnValue({ data: undefined, isLoading: true })
     const { result } = renderHook(() => useSetupGuide(false))
     expect(result.current.visible).toBe(false)
     expect(localStorage.getItem(DISMISSED_KEY)).toBeNull()

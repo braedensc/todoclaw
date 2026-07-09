@@ -10,6 +10,7 @@
 
 export const DISMISSED_KEY = 'todoclaw.setup-guide.dismissed'
 export const PLAN_DONE_KEY = 'todoclaw.setup-guide.plan-done'
+export const TOUR_DONE_KEY = 'todoclaw.setup-guide.tour-done'
 
 // localStorage can throw (some private-browsing modes); the guide is best-effort chrome, so a
 // failed read shows the card again and a failed write means one extra dismissal — never a crash.
@@ -52,9 +53,16 @@ export function markPlanTried(): void {
   emit()
 }
 
+/** Mark the "See how Todoclaw works" tour finished on this device. */
+export function markTourDone(): void {
+  writeFlag(TOUR_DONE_KEY, true)
+  emit()
+}
+
 /** Re-show the guide on this device (Settings → "Show the setup guide"). */
 export function resetSetupGuide(): void {
   writeFlag(DISMISSED_KEY, false)
   writeFlag(PLAN_DONE_KEY, false)
+  writeFlag(TOUR_DONE_KEY, false)
   emit()
 }

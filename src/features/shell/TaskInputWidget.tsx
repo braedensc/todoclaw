@@ -6,18 +6,22 @@ import type { GridApi } from '../grid/use-grid'
 import { NewItemStrip } from './NewItemStrip'
 import type { ChatController } from '../ai/use-chat-controller'
 import { deriveBabyClawStatus, toolVerb } from './babyclaw-status'
-import type { BabyClawTone } from './babyclaw-status'
+import type { BabyClawStatus, BabyClawTone } from './babyclaw-status'
 import { PawSteps } from '../../components/Thinking'
 
-// The one slim input widget above the grid (B8, items 4/5/7/9). A Manual ⇄ BabyClaw pill toggle
-// swaps between two modes that share the row:
+// The one "Task Manager" widget above the grid (B8, items 4/5/7/9; identity pass 2026-07-08).
+// A framed, self-describing panel — the "Task Manager" title pill is notched into its top border
+// so a first-time user knows what the box IS. Left rail: the Manual ⇄ BabyClaw pill toggle with
+// "Open chat" right under it. The two modes share the row:
 //  - MANUAL: "manually add task…" + Due + Repeat + Add. A just-added task materializes IN PLACE
 //    as a draggable "Drag new item to grid" card (B2) that replaces the input; drag it onto the
 //    grid and the input returns. No staging tray.
 //  - BABYCLAW: a natural-language box routed through the EXISTING chat backend (the shared
-//    ChatController). After sending it shows ONLY the latest reply inline; full history opens in
-//    the chat drawer via "Open chat".
-// It replaces the old header add-form, the standalone Chat button, AND the right-column tray.
+//    ChatController). Every sub-line is attributed to 🐾 BabyClaw so it's obvious who's talking.
+//    When BabyClaw STOPS on a question or a destructive-tool confirmation, the whole frame turns
+//    terracotta and breathes, and a "waiting on your reply" strip (with inline Yes/No for
+//    confirmations) makes the blocked state unmissable — even from Manual mode, where the
+//    BabyClaw tab grows an attention dot. Full history opens in the chat drawer via "Open chat".
 
 type Mode = 'manual' | 'babyclaw'
 
@@ -32,41 +36,86 @@ interface TaskInputWidgetProps {
 
 export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputWidgetProps) {
   const [mode, setMode] = useState<Mode>('babyclaw')
+  const status = deriveBabyClawStatus(chat)
 
   return (
-    // On BabyClaw's side the whole widget picks up a whisper of his slate-blue — a tinted
-    // border, a one-hairline ring, and a wash fading down from the top edge. Inline (not
-    // Tailwind opacity modifiers) to match how this file already does translucent color, and
-    // within STYLE.md's rule for the `puppy` token: BabyClaw-mode accents only. Manual mode
-    // drops back to the plain warm-paper widget.
-    <div
-      className="rounded-[10px] border border-border bg-card p-2 transition-[border-color,box-shadow] duration-300"
-      style={
-        mode === 'babyclaw'
-          ? {
-              borderColor: 'rgba(95, 138, 163, 0.45)',
-              boxShadow:
-                '0 0 0 1px rgba(95, 138, 163, 0.14), 0 2px 10px -4px rgba(95, 138, 163, 0.25)',
-              backgroundImage:
-                'linear-gradient(180deg, rgba(95, 138, 163, 0.045), rgba(255, 255, 255, 0) 60%)',
-            }
-          : undefined
-      }
-    >
-      <div className="flex flex-wrap items-start gap-2">
-        <ModeToggle mode={mode} onSelect={setMode} />
-        {mode === 'manual' ? (
-          <ManualInput grid={grid} canPlace={canPlace} />
-        ) : (
-          <BabyClawInput chat={chat} onOpenChat={onOpenChat} />
-        )}
+    // mt-2.5 reserves room for the title pill straddling the top border. The section landmark
+    // names the widget for AT; the visible pill is decorative (aria-hidden) so the name isn't
+    // announced twice.
+    <section aria-label="Task manager" data-tour="task-input" className="relative mt-2.5">
+      {/* On BabyClaw's side the whole widget picks up a whisper of his slate-blue — a tinted
+          border, a one-hairline ring, and a wash fading down from the top edge. Inline (not
+          Tailwind opacity modifiers) to match how this file already does translucent color, and
+          within STYLE.md's rule for the `puppy` token: BabyClaw-mode accents only. Manual mode
+          drops back to the plain warm-paper widget. While BabyClaw is waiting on a reply the
+          frame escalates to the terracotta breathing treatment (index.css) instead. */}
+      <div
+        className={
+          'rounded-[10px] border bg-card p-2 transition-[border-color,box-shadow] duration-300 ' +
+          (status.waiting && mode === 'babyclaw' ? 'babyclaw-waiting-frame' : 'border-border')
+        }
+        style={
+          mode === 'babyclaw' && !status.waiting
+            ? {
+                borderColor: 'rgba(95, 138, 163, 0.45)',
+                boxShadow:
+                  '0 0 0 1px rgba(95, 138, 163, 0.14), 0 2px 10px -4px rgba(95, 138, 163, 0.25)',
+                backgroundImage:
+                  'linear-gradient(180deg, rgba(95, 138, 163, 0.045), rgba(255, 255, 255, 0) 60%)',
+              }
+            : undefined
+        }
+      >
+        <div className="flex flex-wrap items-start gap-2">
+          <div className="flex shrink-0 flex-col items-start gap-1">
+            <ModeToggle
+              mode={mode}
+              onSelect={setMode}
+              attention={status.waiting && mode === 'manual'}
+            />
+            <button
+              type="button"
+              onClick={onOpenChat}
+              title="Open the full BabyClaw conversation"
+              className={
+                'rounded px-2 py-0.5 text-[11px] transition-colors ' +
+                (status.waiting
+                  ? 'font-medium text-accent hover:opacity-80'
+                  : 'text-muted hover:text-ink')
+              }
+            >
+              Open chat <span aria-hidden>↗</span>
+            </button>
+          </div>
+          {mode === 'manual' ? (
+            <ManualInput grid={grid} canPlace={canPlace} />
+          ) : (
+            <BabyClawInput chat={chat} status={status} onOpenChat={onOpenChat} />
+          )}
+        </div>
       </div>
-    </div>
+      {/* The widget's name, notched into the top border like the grid's embedded view toggle. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-3.5 top-0 z-10 -translate-y-1/2 select-none rounded-full border border-border-strong bg-card px-2 py-px text-[9.5px] font-semibold uppercase tracking-[0.14em] text-muted"
+      >
+        Task Manager
+      </span>
+    </section>
   )
 }
 
 // --- Mode toggle -------------------------------------------------------------------------
-function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => void }) {
+function ModeToggle({
+  mode,
+  onSelect,
+  attention,
+}: {
+  mode: Mode
+  onSelect: (m: Mode) => void
+  /** BabyClaw is waiting on a reply while Manual is selected — dot his tab so it can't be missed. */
+  attention?: boolean
+}) {
   return (
     <div
       role="group"
@@ -86,14 +135,16 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
         // BabyClaw's own tab gets a whisper of his namesake's blue when active — everything else
         // (Manual, both tabs' resting state) stays on the neutral warm-paper ring.
         const activeRing = m.id === 'babyclaw' ? 'ring-puppy/60' : 'ring-border-strong'
+        const dotted = m.id === 'babyclaw' && attention
         return (
           <button
             key={m.id}
             type="button"
             onClick={() => onSelect(m.id)}
             aria-pressed={active}
+            title={dotted ? 'BabyClaw is waiting for your reply' : undefined}
             className={
-              'flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ' +
+              'relative flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ' +
               (active
                 ? `bg-card text-ink shadow-sm ring-1 ${activeRing}`
                 : 'text-muted hover:text-ink')
@@ -101,6 +152,12 @@ function ModeToggle({ mode, onSelect }: { mode: Mode; onSelect: (m: Mode) => voi
           >
             <span aria-hidden>{m.icon}</span>
             {m.label}
+            {dotted && (
+              <span
+                aria-hidden
+                className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent ring-2 ring-bg"
+              />
+            )}
           </button>
         )
       })}
@@ -395,20 +452,17 @@ const TONE_CLASS: Record<BabyClawTone, string> = {
   paused: 'text-muted',
 }
 
-// Exported so the mobile add sheet (MobileAddSheet) can reuse the exact BabyClaw capture UI.
-export function BabyClawInput({
+function BabyClawInput({
   chat,
+  status,
   onOpenChat,
 }: {
   chat: ChatController
+  status: BabyClawStatus
   onOpenChat: () => void
 }) {
   const [text, setText] = useState('')
-  const { send, busy, paused, pending, error, items } = chat
-
-  // One derived line reflecting BabyClaw's current state (busy / needs-confirmation / done ✓ /
-  // error ✕ / a follow-up question / idle) — see babyclaw-status.ts.
-  const status = deriveBabyClawStatus({ paused, busy, pending, error, items })
+  const { send, busy, paused, pending, items, confirm, deny } = chat
 
   // Transient "what just happened" chip: flash the newest tool outcome for ~2s, then let it fall
   // back to the resting status line. Keyed on the newest tool item's id so it fires once per
@@ -436,18 +490,29 @@ export function BabyClawInput({
     setFlash(null) // clear any prior chip so it doesn't linger over the new "Working…" line
   }
 
+  // While a confirmation is pending, a typed reply answers it (yes runs it, anything else
+  // declines) — same conversation as the Yes/No buttons below and the drawer's Confirm/Cancel.
+  const placeholder = pending
+    ? 'Yes or no — or say what to do instead…'
+    : status.waiting
+      ? 'Type your answer to BabyClaw…'
+      : 'Tell BabyClaw what to add, change, or check off…'
+
   return (
     <div className="flex min-w-[220px] flex-1 flex-col gap-1">
       <form onSubmit={handleSend} className="flex items-center gap-2">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          // While a confirmation is pending, a typed reply answers it (yes runs it, anything
-          // else declines) — same conversation as the drawer's Confirm/Cancel buttons.
-          placeholder={pending ? 'Yes or no?' : 'Tell BabyClaw what to add…'}
+          placeholder={placeholder}
           aria-label="Tell BabyClaw"
           disabled={paused}
-          className="min-w-0 flex-1 rounded-lg border border-border-strong bg-card px-3 py-1.5 text-sm focus:border-puppy focus:outline-none disabled:opacity-50"
+          className={
+            'min-w-0 flex-1 rounded-lg border bg-card px-3 py-1.5 text-sm focus:outline-none disabled:opacity-50 ' +
+            (status.waiting
+              ? 'border-accent/60 focus:border-accent'
+              : 'border-border-strong focus:border-puppy')
+          }
         />
         <button
           type="submit"
@@ -457,51 +522,104 @@ export function BabyClawInput({
           Send
         </button>
       </form>
-      <div className="flex items-center gap-2 px-1 text-[11px]">
-        <span
-          aria-hidden
-          className={`${TONE_CLASS[status.tone]} ${status.tone === 'busy' ? 'thinking-sparkle' : ''}`}
-        >
-          {status.icon}
-        </span>
-        <span
-          className={`min-w-0 flex-1 truncate ${TONE_CLASS[status.tone]}`}
+
+      {status.waiting ? (
+        // The unmissable "stopped on you" strip. role=status so the question is announced the
+        // moment BabyClaw asks it, without stealing focus from wherever the user is typing.
+        <div
+          role="status"
           aria-live="polite"
-          title={status.tone === 'busy' ? undefined : status.text}
+          className="rounded-lg border border-accent/40 px-2.5 py-1.5"
+          style={{ backgroundColor: 'rgba(194, 105, 63, 0.07)' }}
         >
-          {status.tone === 'busy' ? (
-            <>
-              Working
-              <PawSteps />
-            </>
-          ) : (
-            status.text
-          )}
-        </span>
-        {flash && (
-          <span
-            className={
-              'shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 font-medium ' +
-              (flash.ok ? 'text-primary' : 'text-accent')
-            }
-            style={{
-              // Faint tint behind the chip. Tailwind opacity modifiers aren't used in this codebase
-              // (it sets translucent colors inline — see index.css), so do the same here.
-              animation: 'babyclaw-flash 220ms ease-out',
-              backgroundColor: flash.ok ? 'rgba(91, 138, 114, 0.12)' : 'rgba(194, 105, 63, 0.12)',
-            }}
-          >
-            {flash.ok ? `${flash.verb} ✓` : 'error ✕'}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <p className="min-w-0 flex-1 text-[12px] leading-snug text-ink">
+              <span aria-hidden className="mr-1 select-none">
+                🐾
+              </span>
+              <span className="font-semibold text-accent">BabyClaw is waiting on your reply:</span>{' '}
+              {status.text}
+            </p>
+            {pending && (
+              <span className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={confirm}
+                  className="rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white hover:opacity-90"
+                >
+                  Yes, go ahead
+                </button>
+                <button
+                  type="button"
+                  onClick={deny}
+                  className="rounded-full border border-border-strong bg-card px-3 py-1 text-[11px] text-ink hover:border-ink"
+                >
+                  No
+                </button>
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-[11px] text-muted">
+            He won’t do anything until you answer — reply in the box above
+            {pending ? ', tap a button,' : ''} or{' '}
+            <button type="button" onClick={onOpenChat} className="underline hover:text-ink">
+              open the full chat
+            </button>
+            .
+          </p>
+        </div>
+      ) : (
+        // One derived line reflecting BabyClaw's current state (busy / done ✓ / error ✕ / idle
+        // hint — see babyclaw-status.ts), always signed with his name so it's obvious who's
+        // talking in this little window.
+        <div className="flex items-center gap-1.5 px-1 text-[11px]">
+          <span className="flex shrink-0 items-center gap-1 font-medium text-ink/75">
+            <span aria-hidden className="select-none text-[10px]">
+              🐾
+            </span>
+            BabyClaw
           </span>
-        )}
-        <button
-          type="button"
-          onClick={onOpenChat}
-          className="shrink-0 whitespace-nowrap text-muted hover:text-ink"
-        >
-          Open chat <span aria-hidden>↗</span>
-        </button>
-      </div>
+          <span aria-hidden className="text-muted-faint">
+            ·
+          </span>
+          <span
+            aria-hidden
+            className={`${TONE_CLASS[status.tone]} ${status.tone === 'busy' ? 'thinking-sparkle' : ''}`}
+          >
+            {status.icon}
+          </span>
+          <span
+            className={`min-w-0 flex-1 truncate ${TONE_CLASS[status.tone]}`}
+            aria-live="polite"
+            title={status.tone === 'busy' ? undefined : status.text}
+          >
+            {status.tone === 'busy' ? (
+              <>
+                Working
+                <PawSteps />
+              </>
+            ) : (
+              status.text
+            )}
+          </span>
+          {flash && (
+            <span
+              className={
+                'shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 font-medium ' +
+                (flash.ok ? 'text-primary' : 'text-accent')
+              }
+              style={{
+                // Faint tint behind the chip. Tailwind opacity modifiers aren't used in this codebase
+                // (it sets translucent colors inline — see index.css), so do the same here.
+                animation: 'babyclaw-flash 220ms ease-out',
+                backgroundColor: flash.ok ? 'rgba(91, 138, 114, 0.12)' : 'rgba(194, 105, 63, 0.12)',
+              }}
+            >
+              {flash.ok ? `${flash.verb} ✓` : 'error ✕'}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

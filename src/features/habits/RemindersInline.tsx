@@ -174,7 +174,7 @@ export function RemindersInline() {
         </div>
       ) : (
         // DESKTOP — Variant C: a minimal inline row, no chip chrome. Bone label + paw check + name.
-        <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <div data-tour="habits" className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-light">
             <BoneIcon className="h-2.5 w-auto text-puppy/70" />
             Habit Reminders

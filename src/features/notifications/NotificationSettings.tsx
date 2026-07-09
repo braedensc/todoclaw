@@ -95,7 +95,8 @@ function InstallTip({ platform }: { platform: ApplePlatform }) {
 
 // Shown after a subscribe attempt fails at Apple's push layer (the hollow-subscription case). These
 // are the steps that actually recover it, in order of likelihood — see ADR-0031 / PR history.
-function SafariTroubleshooting() {
+// Exported for the setup guide's inline enable button, which can hit the same wall.
+export function SafariTroubleshooting() {
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted">
       <p className="text-ink">Safari couldn’t reach Apple’s push service. Things that fix it:</p>
