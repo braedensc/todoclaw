@@ -22,8 +22,10 @@ import { DueTimezoneHint } from './DueTimezoneHint'
 // onSetRecurring). PR 1 mounts it in the grid card's ⋯ menu; the expanded list row, the add
 // form, and the mobile bottom sheet adopt it next so the surfaces can't drift again.
 //
-// The header phrasing and the 🦴 on an active repeat are the workshop's "subtle garnish" —
-// personality in the framing, never in the mechanics.
+// The 🦴 on an active repeat is the workshop's "subtle garnish" — personality in the readback,
+// never in the mechanics. (The header is deliberately PLAIN — "Set a due date": the workshop's
+// "When should this come back to you?" phrasing read unclear in practice; owner feedback
+// 2026-07-09.)
 
 /** Time preset chips: label → 'HH:MM' (null = clear the time). */
 const TIME_PRESETS: Array<{ label: string; value: string | null }> = [
@@ -218,10 +220,10 @@ export function SchedulePanel({
 
   return (
     <div className="flex flex-col gap-3 text-ink">
-      {/* Garnish lives in the framing, not the mechanics: the panel asks the product's actual
-          question, then behaves like a boring, fast scheduler. */}
+      {/* Plain header (owner feedback 2026-07-09: the "come back to you" phrasing read unclear) —
+          the panel says what it does and gets out of the way. The 🦴 garnish below stays. */}
       <div className="flex flex-col">
-        <span className="text-[13px] font-bold">When should this come back to you?</span>
+        <span className="text-[13px] font-bold">Set a due date</span>
         <span className="truncate text-[11px] text-muted-light">{taskText}</span>
       </div>
 

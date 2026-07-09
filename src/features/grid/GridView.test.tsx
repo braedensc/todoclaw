@@ -309,7 +309,7 @@ describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
     expect(screen.queryByTestId('schedule-calendar')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
-    expect(screen.getByText('When should this come back to you?')).toBeInTheDocument()
+    expect(screen.getByText('Set a due date')).toBeInTheDocument()
     expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Repeats' })).toBeInTheDocument()
   })

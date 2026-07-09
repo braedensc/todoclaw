@@ -211,7 +211,7 @@ export function AddTaskForm({
         >
           <span aria-hidden>🐾</span> <span className="font-semibold">Tip:</span> chatting is the
           fastest way to add — try{' '}
-          <span className="italic">“add call landlord tomorrow, urgent, repeat weekly”</span>
+          <span className="italic">“add take out the trash tomorrow, urgent, repeat weekly”</span>
         </button>
       )}
     </form>
