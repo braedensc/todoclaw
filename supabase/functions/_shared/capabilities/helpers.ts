@@ -5,10 +5,18 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import type { CapabilityResult, MutationDomain } from './types.ts'
 
-export const ok = (content: string, mutated?: MutationDomain[]): CapabilityResult => ({
+// `display` (optional) is the user-facing chat line when it must differ from the model-facing
+// `content`: pass a plain sentence to override, or null to hide the tool from the user entirely
+// (internal reads). Omit it to reuse `content` (already-plain confirmations don't need it).
+export const ok = (
+  content: string,
+  mutated?: MutationDomain[],
+  display?: string | null,
+): CapabilityResult => ({
   content,
   isError: false,
   ...(mutated ? { mutated } : {}),
+  ...(display !== undefined ? { display } : {}),
 })
 
 export const err = (content: string): CapabilityResult => ({ content, isError: true })

@@ -160,6 +160,42 @@ Deno.test('create_habit inserts and reports the habits domain mutated', async ()
   assertEquals(res.mutated, ['habits'])
 })
 
+// ---- user-facing display vs model-facing content ---------------------------------------------
+Deno.test('create_task keeps the id for the model but not for the user', async () => {
+  const res = await executeTool(
+    'create_task',
+    { text: 'SCP', due: '2026-07-08' },
+    ctx({ onInsert: () => ({ data: { id: UUID }, error: null }) }),
+  )
+  assert(!res.is_error)
+  // The model needs the id (to chain a follow-up edit/move); the user must never see it.
+  assert(res.content.includes(UUID))
+  assert(typeof res.display === 'string' && !res.display!.includes(UUID))
+  assert(res.display!.includes('SCP'))
+})
+
+Deno.test(
+  'read-only list tools stream JSON to the model but are hidden from the user',
+  async () => {
+    for (const name of ['list_tasks', 'list_habits']) {
+      const res = await executeTool(
+        name,
+        {},
+        ctx({ onSelect: () => ({ data: [{ id: UUID, text: 'x' }], error: null }) }),
+      )
+      assert(!res.is_error)
+      assert(res.content.includes(UUID)) // model sees the rows
+      assertEquals(res.display, null) // user sees nothing (no bubble)
+    }
+  },
+)
+
+Deno.test('a validation failure shows the user a generic line, not the zod dump', async () => {
+  const res = await executeTool('create_task', { text: '' }, ctx())
+  assert(res.is_error)
+  assert(typeof res.display === 'string' && !res.display!.includes('ZodError'))
+})
+
 Deno.test('add_habit_step read-modify-writes the subtasks array', async () => {
   let written: { id: string; text: string }[] | undefined
   const res = await executeTool(

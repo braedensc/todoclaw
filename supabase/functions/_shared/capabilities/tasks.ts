@@ -24,7 +24,9 @@ export const taskCapabilities: Capability[] = [
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (error) return err(error.message)
-      return ok(JSON.stringify(data ?? []))
+      // The JSON goes to the model so it can reference ids; hide it from the user (display: null) —
+      // a raw row dump isn't an "action that occurred", it's the model refreshing its view.
+      return ok(JSON.stringify(data ?? []), undefined, null)
     },
   }),
 
@@ -66,9 +68,12 @@ export const taskCapabilities: Capability[] = [
       }
       const { data, error } = await ctx.client.from('tasks').insert(row).select('id').single()
       if (error) return err(error.message)
+      const where = place.staged ? ' in the staging tray' : ' on the grid'
+      // The model keeps the id (to chain an edit/move next); the user just sees the plain result.
       return ok(
-        `Created "${i.text}"${place.staged ? ' in the staging tray' : ' on the grid'} (id ${data.id}).`,
+        `Created "${i.text}"${where} (id ${data.id}).`,
         ['tasks'],
+        `Created "${i.text}"${where}.`,
       )
     },
   }),

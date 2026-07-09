@@ -23,7 +23,8 @@ export const habitCapabilities: Capability[] = [
         .is('deleted_at', null)
         .order('created_at', { ascending: true })
       if (error) return err(error.message)
-      return ok(JSON.stringify(data ?? []))
+      // Row dump is for the model's eyes only (ids for follow-up edits) — hidden from the user.
+      return ok(JSON.stringify(data ?? []), undefined, null)
     },
   }),
 

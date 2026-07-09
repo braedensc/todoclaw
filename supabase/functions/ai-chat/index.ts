@@ -186,7 +186,8 @@ Deno.serve(async (req) => {
               tool_use_id: tu.id,
               name: tu.name,
               ok: !res.is_error,
-              summary: res.content,
+              summary: res.content, // model-facing (paired into history on a destructive resume)
+              display: res.display, // user-facing chat line: undefined → reuse summary, null → hide
               mutated: res.mutated ?? [], // which data domains changed → client live-refresh
             })
             results.push({
