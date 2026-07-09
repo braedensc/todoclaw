@@ -95,8 +95,9 @@ const APP_STEP_HINT: Record<InstallContext, string> = {
   'macos-safari':
     'Two quick steps: add Todoclaw to your Dock, then turn notifications on inside it. The guide shows exactly what to click.',
   chromium:
-    'Give Todoclaw its own window and dock icon, then turn on your morning plan and evening recap.',
-  unknown: 'Your plan each morning and a recap each evening, sent right to this device.',
+    'Give Todoclaw its own window and dock icon, then turn on your morning plan, evening recap, and task reminders.',
+  unknown:
+    'Your morning plan, evening recap, and reminders for timed tasks — sent right to this device.',
 }
 
 export function SetupGuide({
@@ -233,7 +234,7 @@ export function SetupGuide({
             <>
               <StepHint>
                 {install.done
-                  ? 'You’re in the app ✓ — one last thing: your plan each morning and a recap each evening.'
+                  ? 'You’re in the app ✓ — one last thing: your morning plan, evening recap, and reminders when a timed task comes due.'
                   : APP_STEP_HINT.unknown}
               </StepHint>
               <StepButton onClick={() => void notif.enable()} disabled={notif.busy}>
@@ -246,7 +247,7 @@ export function SetupGuide({
                 </div>
               )}
               <StepHint>
-                Comes set to 8 AM and 9 PM — change the times any time in{' '}
+                Comes set to 8 AM and 9 PM, with task reminders an hour before — tune it all in{' '}
                 <button
                   type="button"
                   onClick={onOpenNotificationSettings}

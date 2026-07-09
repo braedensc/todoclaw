@@ -229,8 +229,8 @@ function NotificationsPage({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm leading-snug text-ink">
-        Your plan each morning (8 AM) and a recap each evening (9 PM), sent right to this device —
-        change the times any time in Settings.
+        Your plan each morning (8 AM), a recap each evening (9 PM) — and a heads-up when a task with
+        a set time is coming due. Change any of it in Settings.
       </p>
       {enabled ? (
         <p className="text-sm font-medium text-primary">Notifications are on for this device ✓</p>

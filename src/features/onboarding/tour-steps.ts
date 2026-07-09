@@ -12,22 +12,25 @@ export const DESKTOP_TOUR: TourStep[] = [
     title: 'Your tasks live on a map',
     body:
       'Every task is a card on this grid. Further right = more urgent, higher up = more ' +
-      'important — so the top-right corner is always “do now”. Drag cards around as things change.',
+      'important — so the top-right corner is always “do now”. Cards glow warmer as a deadline ' +
+      'nears (the legend under the grid decodes the rings), and you can drag them around as ' +
+      'things change.',
   },
   {
     target: 'task-input',
     title: 'Add tasks by just saying them',
     body:
       'This is the Task Manager. Tell BabyClaw — your AI helper — things like “dentist Friday ' +
-      '2pm” and he adds and places them for you (Open chat shows the whole conversation). ' +
-      'Prefer full control? Switch to Manual.',
+      '2pm, remind me an hour before” and he handles the rest (Open chat shows the whole ' +
+      'conversation). Prefer full control? Switch to Manual.',
   },
   {
     target: 'plan',
     title: 'One tap plans your day',
     body:
-      'Plan My Day reads your tasks, habits, and schedule and drafts a realistic plan for ' +
-      'today. Add a task or two first, then give it a try.',
+      'Plan My Day turns your tasks, habits, and schedule into a realistic plan for today — it ' +
+      'even weighs how long each task takes, so your day never gets overstuffed. Add a task or ' +
+      'two first, then try it.',
   },
   {
     target: 'habits',
@@ -73,15 +76,16 @@ export const MOBILE_TOUR: TourStep[] = [
     target: 'nav-chat',
     title: 'Or just tell BabyClaw',
     body:
-      'Chat is BabyClaw, your AI helper — say “add vet appointment Friday, important” and it’s ' +
-      'done. He can also move, finish, and clean up tasks for you.',
+      'Chat is BabyClaw, your AI helper — say “add vet appointment Friday 3pm, remind me an ' +
+      'hour before” and it’s done. He can also move, finish, and clean up tasks for you.',
   },
   {
     target: 'plan',
     title: 'One tap plans your day',
     body:
-      'Plan My Day turns your tasks, habits, and schedule into a realistic plan for today. Add ' +
-      'a task or two first, then give it a try.',
+      'Plan My Day turns your tasks, habits, and schedule into a realistic plan for today — it ' +
+      'even weighs how long each task takes, so your day never gets overstuffed. Add a task or ' +
+      'two first, then try it.',
   },
   {
     target: 'nav-more',
