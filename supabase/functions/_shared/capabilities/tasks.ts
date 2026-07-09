@@ -33,7 +33,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'create_task',
     description:
-      'Create a new task. If a due date is given, the grid position is computed automatically (sooner = more urgent); if not, the task is staged at center for the user to place. Ask about a due date first when it is unclear whether one is needed.',
+      'Create a new task. If a due date is given, the grid position is computed automatically (sooner = more urgent); if not, the task is staged at center for the user to place. Ask about a due date first when it is unclear whether one is needed. Also estimate a rough size (S/M/L/XL) from the text when you reasonably can — it helps the daily planner gauge effort — but leave it off when unclear; never pester the user for it.',
     schema: z
       .object({
         text: z.string().min(1).max(2000).describe('The task text.'),
@@ -41,6 +41,12 @@ export const taskCapabilities: Capability[] = [
           .string()
           .nullish()
           .describe('ISO 8601 date (e.g. 2026-07-01) or null for no due date.'),
+        size: z
+          .enum(['S', 'M', 'L', 'XL'])
+          .nullish()
+          .describe(
+            'Rough effort estimate: S ≈ 15m, M ≈ 45m, L ≈ 2h, XL ≈ half-day. Infer from the task text; omit or null if genuinely unclear.',
+          ),
         recurring_frequency_days: z
           .number()
           .int()
@@ -59,6 +65,9 @@ export const taskCapabilities: Capability[] = [
         staged: place.staged,
         due: i.due ?? null,
       }
+      // Only write a size when the model supplied one; otherwise the column stays NULL and Plan My
+      // Day infers effort at plan time (the "hybrid" half of the sizing model).
+      if (i.size) row.size = i.size
       if (i.recurring_frequency_days) {
         row.recurring = {
           frequencyDays: i.recurring_frequency_days,

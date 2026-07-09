@@ -11,6 +11,14 @@ export const RecurringSchema = z.object({
 
 export type Recurring = z.infer<typeof RecurringSchema>
 
+// Coarse effort estimate — a soft, optional signal read ONLY by Plan My Day (as a guardrail
+// against over-stuffing a day), never shown in the task UI. Set by BabyClaw/MCP at creation;
+// NULL/absent means unestimated (the planner infers effort). The S/M/L/XL → hours mapping lives
+// with its consumer (supabase/functions/_shared/plan-prompt.ts), not here.
+export const TASK_SIZES = ['S', 'M', 'L', 'XL'] as const
+export const TaskSizeSchema = z.enum(TASK_SIZES)
+export type TaskSize = z.infer<typeof TaskSizeSchema>
+
 // One source of truth: the Zod schema validates rows at the Supabase boundary and
 // its inferred type IS the app's Task type. Mirrors supabase/migrations/*_create_tasks.sql.
 // date / time / timestamptz / jsonb come back over the wire as strings / parsed JSON.
@@ -31,6 +39,9 @@ export const TaskSchema = z.object({
   // yet). `recurring` is null for non-recurring tasks.
   bucket: z.literal('oneoff').nullable(),
   recurring: RecurringSchema.nullable(),
+  // Optional+nullable (not required): a soft, additive field. `.nullish()` keeps task fixtures and
+  // any pre-migration client (Vercel/Supabase deploy skew) parsing cleanly when `size` is absent.
+  size: TaskSizeSchema.nullish(),
   created_at: z.string(),
   deleted_at: z.string().nullable(),
 })

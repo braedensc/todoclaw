@@ -69,7 +69,18 @@ describe('buildPlanRequest', () => {
       due: '2026-06-26',
       // Delegated to the shared, tz-aware daysUntil (not re-derived here).
       dueInDays: daysUntil('2026-06-26', { timeZone: TZ, now: NOW }),
+      size: null, // untagged task → null, so the planner infers effort
     })
+  })
+
+  it('passes a task size through, and defaults an untagged task to null', () => {
+    const tasks = [
+      task({ id: 'sized', text: 'Big', size: 'L' }),
+      task({ id: 'unsized', text: 'Small' }),
+    ]
+    const req = buildPlanRequest(tasks, [], {}, TZ, NOW)
+    const byText = Object.fromEntries(req.tasks.map((t) => [t.text, t.size]))
+    expect(byText).toEqual({ Big: 'L', Small: null })
   })
 
   it('surfaces overdue/due/soon recurring chores and active habits, and the local date', () => {
