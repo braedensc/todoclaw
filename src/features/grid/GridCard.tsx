@@ -8,6 +8,7 @@ import {
   gridChipLabel,
   stalenessStyle,
   urgencyGlowStyle,
+  urgencyIcon,
   urgencyTier,
 } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
@@ -141,6 +142,7 @@ export function GridCard({
   // its own RC_COLOR status; done tasks never reach the grid). See lib/visual-urgency.
   const tier = rc ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const glow = urgencyGlowStyle(tier)
+  const hotIcon = urgencyIcon(tier)
   const stale = rc ? null : stalenessStyle(task)
 
   // Recurring cards get DASHED, slightly heavier accent side/bottom borders — a distinct "this
@@ -246,6 +248,23 @@ export function GridCard({
           style={{ borderColor, color: borderColor }}
         >
           ↻
+        </span>
+      )}
+
+      {/* Hot-tier corner flag (🔥 = overdue or due-today) — the color-independent half of the
+          urgency ladder, so a hot card reads apart from the gold/olive tiers even where the
+          hue-based glow/chip can't (colorblindness, glare). Paper disc + tier-colored border keeps
+          it legible on the warm tint. Decorative: the due chip below carries the same meaning as
+          text for screen readers. Only non-recurring cards reach a hot tier, so it never collides
+          with the ↻. */}
+      {!rc && hotIcon && (
+        <span
+          aria-hidden
+          title={hotIcon.label}
+          className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border bg-card text-[10px] leading-none shadow-sm"
+          style={{ borderColor: dueChipStyle(tier).backgroundColor }}
+        >
+          {hotIcon.glyph}
         </span>
       )}
 

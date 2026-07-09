@@ -221,14 +221,16 @@ describe('GridView card visuals', () => {
 
   // Visual urgency wired end-to-end onto the real card (the constant tiers themselves are pinned
   // in lib/visual-urgency.test.ts — here we only prove the card threads them onto the DOM node).
-  it('shows the overdue chip + pulse + warm tint for a past-due non-recurring card', () => {
+  it('shows the overdue chip + pulse + warm tint + 🔥 flag for a past-due non-recurring card', () => {
     tasksFixture = [makeTask({ id: 'od', text: 'Ship it', due: '2000-01-01', staged: false })]
     render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
     expect(within(card).getByText(/^Overdue · \d+d$/)).toBeInTheDocument()
     // The overdue tier pulses and warms the card; the keyframes live in src/index.css.
     expect(card.style.animation).toContain('urgency-pulse')
-    expect(card.style.background).toBe('rgb(255, 248, 243)') // #fff8f3
+    expect(card.style.background).toBe('rgb(255, 241, 232)') // #fff1e8
+    // …and the color-independent 🔥 corner flag threads onto the DOM (urgencyIcon).
+    expect(within(card).getByTitle('Overdue')).toHaveTextContent('🔥')
   })
 
   it('desaturates + fades a long-untouched (stale) card', () => {

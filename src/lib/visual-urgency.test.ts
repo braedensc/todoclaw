@@ -6,13 +6,15 @@ import {
   gridChipLabel,
   stalenessStyle,
   urgencyGlowStyle,
+  urgencyIcon,
   urgencyTier,
 } from './visual-urgency'
 
-// These tests pin the 2026-07-08 workshop ladder — the DELIBERATE ~2× amplification of the
-// original EisenClaw glow (its "much more obvious" ask) plus the time-of-day tiers. If a value
-// changes, that is a visual-design decision — update the table in visual-urgency.ts AND the
-// keyframes in index.css, not just the assertion. Staleness remains EisenClaw parity.
+// These tests pin the urgency ladder: the 2026-07-08 workshop tiers, the 2026-07-09 stronger
+// rings/halos, and the two reinforcing channels added alongside them — the graduated card tint
+// (urgencyGlowStyle.background) and the scarce hot-tier icon (urgencyIcon). If a value changes,
+// that is a visual-design decision — update the table in visual-urgency.ts AND the keyframes in
+// index.css, not just the assertion. Staleness remains EisenClaw parity.
 
 describe('urgencyTier', () => {
   it('null due → none; day boundaries land each tier', () => {
@@ -51,36 +53,57 @@ describe('urgencyGlowStyle', () => {
   it('overdue: strongest ring + pulse + warm card tint', () => {
     expect(urgencyGlowStyle('overdue')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2.5px rgba(194,105,63,0.90), 0 0 24px 9px rgba(194,105,63,0.42)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)',
       animation: 'urgency-pulse 2s ease-in-out infinite',
-      background: '#fff8f3',
+      background: '#fff1e8',
     })
   })
 
-  it('final-hours: today ring + the soft pulse (no tint)', () => {
+  it('final-hours: today ring + the soft pulse + tint', () => {
     expect(urgencyGlowStyle('final-hours')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)',
       animation: 'urgency-pulse-soft 3s ease-in-out infinite',
+      background: '#fff4ec',
     })
   })
 
-  it('today / closing-in / this-week / radar: static rings, no pulse', () => {
+  it('today / closing-in / this-week: static rings + graduated tint, no pulse', () => {
     expect(urgencyGlowStyle('today')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)',
+      background: '#fff7f0',
     })
     expect(urgencyGlowStyle('closing-in')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(184,134,42,0.62), 0 0 14px 5px rgba(184,134,42,0.26)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)',
+      background: '#fdf7ec',
     })
     expect(urgencyGlowStyle('this-week')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(138,120,40,0.42), 0 0 11px 3px rgba(138,120,40,0.16)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)',
+      background: '#faf7ee',
     })
+  })
+
+  it('radar: faintest ring, no tint (stays paper)', () => {
     expect(urgencyGlowStyle('radar')).toEqual({
-      boxShadow: '0 2px 7px rgba(0,0,0,.08), 0 0 7px 2px rgba(138,120,40,0.14)',
+      boxShadow:
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)',
     })
+  })
+})
+
+describe('urgencyIcon', () => {
+  it('a scarce 🔥 flag on the hot (terracotta) tiers only', () => {
+    expect(urgencyIcon('overdue')).toEqual({ glyph: '🔥', label: 'Overdue' })
+    expect(urgencyIcon('final-hours')).toEqual({ glyph: '🔥', label: 'Due today' })
+    expect(urgencyIcon('today')).toEqual({ glyph: '🔥', label: 'Due today' })
+    // The softer tiers lean on the glow + tint + chip — no icon.
+    expect(urgencyIcon('closing-in')).toBeNull()
+    expect(urgencyIcon('this-week')).toBeNull()
+    expect(urgencyIcon('radar')).toBeNull()
+    expect(urgencyIcon('none')).toBeNull()
   })
 })
 
