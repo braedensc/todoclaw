@@ -5,8 +5,10 @@ import type { ChangeEvent } from 'react'
 // habit never changes palette (the old native checkboxes rendered accent-green). The paw pops in
 // via CSS transitions only (nothing animates on mount, and motion-reduce neutralizes it).
 
-// The white paw print stamped inside a checked circle. Sized relative to its parent circle.
-function PawGlyph({ className = '' }: { className?: string }) {
+// The paw-print shape, on its own (fill = currentColor). Stamped white inside a checked circle by
+// PawMark, but also reused bare as the habit "details" disclosure glyph (it tilts open) and as the
+// little bullet on each detail — so the paw motif carries across the whole habits surface.
+export function PawGlyph({ className = '' }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 20 20"

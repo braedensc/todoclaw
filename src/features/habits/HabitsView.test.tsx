@@ -6,6 +6,10 @@ import type { Habit } from '../../types/habit'
 // Mock the data hooks (mirrors DoneView.test) so HabitsView renders under jsdom with no
 // Supabase. Each test overrides the per-hook return below. The toggle/update/add/delete
 // mutations are plain spies we assert against.
+//
+// HabitsView is the SETUP page: management only, NO daily checkboxes (habits are ticked off from
+// the home screen — see RemindersInline.test for the check-off behavior). So these tests cover
+// add/remove habit, activate queued, and add/remove details — not toggling.
 const habitsMock = vi.fn()
 const dailyMock = vi.fn()
 const addMutate = vi.fn()
@@ -87,157 +91,33 @@ describe('HabitsView', () => {
     expect(screen.getByText(/No habits yet/i)).toBeInTheDocument()
   })
 
-  it('renders an active habit with an UNCHECKED checkbox when not in habit_done', () => {
+  it('does NOT render a daily checkbox on the setup page (habits are checked from home)', () => {
     setHabits([habit()])
     renderView()
-    const checkbox = screen.getByRole('checkbox', {
-      name: /Mark "Wrist strengthening routine" done today/i,
-    })
-    expect(checkbox).not.toBeChecked()
-  })
-
-  it('reflects habit_done by rendering the daily checkbox as CHECKED', () => {
-    setHabits([habit()])
-    dailyMock.mockReturnValue({
-      data: { done: {}, done_at: {}, habit_done: { h1: true }, subtask_done: {} },
-    })
-    renderView()
-    const checkbox = screen.getByRole('checkbox', {
-      name: /Mark "Wrist strengthening routine" done today/i,
-    })
-    expect(checkbox).toBeChecked()
-  })
-
-  it('toggles a habit via set_daily_flag with map=habit_done and the habit id key', () => {
-    setHabits([habit()])
-    renderView()
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
-    )
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'habit_done',
-      key: 'h1',
-      value: true,
-      timeZone: 'America/New_York',
-    })
-  })
-
-  it('unchecks a habit (value=false) when it is already done today', () => {
-    setHabits([habit()])
-    dailyMock.mockReturnValue({
-      data: { done: {}, done_at: {}, habit_done: { h1: true }, subtask_done: {} },
-    })
-    renderView()
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
-    )
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'habit_done',
-      key: 'h1',
-      value: false,
-      timeZone: 'America/New_York',
-    })
-  })
-
-  it('checking a habit AUTO-checks every step too (master switch)', () => {
-    setHabits([
-      habit({
-        subtasks: [
-          { id: 's1', text: 'Rice bucket — 3 sets each direction' },
-          { id: 's2', text: 'Finger extensions' },
-        ],
-      }),
-    ])
-    renderView()
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
-    )
-    expect(toggleMutate).toHaveBeenCalledTimes(3)
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'habit_done',
-      key: 'h1',
-      value: true,
-      timeZone: 'America/New_York',
-    })
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'subtask_done',
-      key: 'h1:s1',
-      value: true,
-      timeZone: 'America/New_York',
-    })
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'subtask_done',
-      key: 'h1:s2',
-      value: true,
-      timeZone: 'America/New_York',
-    })
-  })
-
-  it('unchecking a habit clears its steps too (symmetric master switch)', () => {
-    setHabits([habit()])
-    dailyMock.mockReturnValue({
-      data: {
-        done: {},
-        done_at: {},
-        habit_done: { h1: true },
-        subtask_done: { 'h1:s1': true },
-      },
-    })
-    renderView()
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
-    )
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'habit_done',
-      key: 'h1',
-      value: false,
-      timeZone: 'America/New_York',
-    })
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'subtask_done',
-      key: 'h1:s1',
-      value: false,
-      timeZone: 'America/New_York',
-    })
-  })
-
-  it('toggles a subtask with map=subtask_done and the COMPOSITE "habitId:subtaskId" key', () => {
-    setHabits([habit()])
-    renderView()
-    // Expand the steps panel first.
-    fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
-    fireEvent.click(
-      screen.getByRole('checkbox', {
-        name: /Mark step "Rice bucket — 3 sets each direction" done today/i,
-      }),
-    )
-    expect(toggleMutate).toHaveBeenCalledWith({
-      map: 'subtask_done',
-      key: 'h1:s1',
-      value: true,
-      timeZone: 'America/New_York',
-    })
-  })
-
-  it('reflects subtask_done (composite key) by rendering the step checkbox CHECKED', () => {
-    setHabits([habit()])
-    dailyMock.mockReturnValue({
-      data: { done: {}, done_at: {}, habit_done: {}, subtask_done: { 'h1:s1': true } },
-    })
-    renderView()
-    fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
+    // The row shows the name + its management controls, but no habit/detail checkboxes.
+    expect(screen.getByText('Wrist strengthening routine')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('checkbox', {
-        name: /Mark step "Rice bucket — 3 sets each direction" done today/i,
-      }),
-    ).toBeChecked()
+      screen.queryByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
+    ).not.toBeInTheDocument()
   })
 
-  it('adds a step by appending to the habit subtasks via useUpdateHabit', () => {
+  it('renders a details toggle and a clear Remove button for each active habit', () => {
     setHabits([habit()])
     renderView()
-    fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
-    const input = screen.getByLabelText(/Add a step to "Wrist strengthening routine"/i)
+    expect(
+      screen.getByRole('button', { name: /Show details for "Wrist strengthening routine"/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Remove habit "Wrist strengthening routine"/i }),
+    ).toHaveTextContent(/Remove/i)
+  })
+
+  it('adds a detail by appending to the habit subtasks via useUpdateHabit', () => {
+    setHabits([habit()])
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Show details for/i }))
+    const input = screen.getByLabelText(/Add a detail to "Wrist strengthening routine"/i)
     fireEvent.change(input, { target: { value: 'Finger extensions' } })
     fireEvent.submit(input)
     expect(updateMutate).toHaveBeenCalledTimes(1)
@@ -248,6 +128,13 @@ describe('HabitsView', () => {
     expect(arg.id).toBe('h1')
     expect(arg.patch.subtasks).toHaveLength(2)
     expect(arg.patch.subtasks[1]!.text).toBe('Finger extensions')
+  })
+
+  it('shows the "details are optional" hint when a habit has no details', () => {
+    setHabits([habit({ subtasks: [] })])
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: /Show details for/i }))
+    expect(screen.getByText(/Details are optional/i)).toBeInTheDocument()
   })
 
   it('renders queued (inactive) habits as activate buttons that flip active=true', () => {
@@ -276,23 +163,23 @@ describe('HabitsView', () => {
     expect(addMutate).not.toHaveBeenCalled()
   })
 
-  it('soft-deletes a habit only after confirming in the dialog', async () => {
+  it('removes a habit only after confirming in the dialog', async () => {
     setHabits([habit()])
     renderView()
     fireEvent.click(
-      screen.getByRole('button', { name: /Delete habit "Wrist strengthening routine"/i }),
+      screen.getByRole('button', { name: /Remove habit "Wrist strengthening routine"/i }),
     )
-    // The themed confirm dialog appears; deletion fires only after its Delete button is clicked.
+    // The themed confirm dialog appears; removal fires only after its Remove button is clicked.
     const dialog = await screen.findByRole('dialog')
-    fireEvent.click(within(dialog).getByRole('button', { name: /^Delete$/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Remove$/ }))
     await waitFor(() => expect(deleteMutate).toHaveBeenCalledWith('h1'))
   })
 
-  it('does NOT delete when the confirm dialog is cancelled', async () => {
+  it('does NOT remove when the confirm dialog is cancelled', async () => {
     setHabits([habit()])
     renderView()
     fireEvent.click(
-      screen.getByRole('button', { name: /Delete habit "Wrist strengthening routine"/i }),
+      screen.getByRole('button', { name: /Remove habit "Wrist strengthening routine"/i }),
     )
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: /Cancel/i }))
@@ -300,14 +187,14 @@ describe('HabitsView', () => {
     expect(deleteMutate).not.toHaveBeenCalled()
   })
 
-  it('shows a per-step delete inside the expanded panel', () => {
+  it('shows a per-detail remove inside the expanded panel', () => {
     setHabits([habit()])
     renderView()
-    fireEvent.click(screen.getByRole('button', { name: /Show steps for/i }))
-    const stepRow = screen
+    fireEvent.click(screen.getByRole('button', { name: /Show details for/i }))
+    const detailRow = screen
       .getByText('Rice bucket — 3 sets each direction')
       .closest('li') as HTMLElement
-    fireEvent.click(within(stepRow).getByRole('button', { name: /Delete step/i }))
+    fireEvent.click(within(detailRow).getByRole('button', { name: /Remove detail/i }))
     expect(updateMutate).toHaveBeenCalledTimes(1)
     const arg = updateMutate.mock.calls[0]![0] as {
       id: string
@@ -316,19 +203,16 @@ describe('HabitsView', () => {
     expect(arg.patch.subtasks).toHaveLength(0)
   })
 
-  it('scopes busy to the mutating row — an in-flight edit never disables other rows or any checkbox', () => {
+  it('scopes busy to the mutating row — an in-flight edit never disables other rows', () => {
     setHabits([habit({ id: 'h1', text: 'Alpha' }), habit({ id: 'h2', text: 'Beta' })])
     // An edit is in flight on h1 only.
     updatePending = true
     updateVariables = { id: 'h1' }
     renderView()
 
-    // h1's structural control (delete) is disabled while its edit lands…
-    expect(screen.getByRole('button', { name: /Delete habit "Alpha"/i })).toBeDisabled()
+    // h1's structural control (remove) is disabled while its edit lands…
+    expect(screen.getByRole('button', { name: /Remove habit "Alpha"/i })).toBeDisabled()
     // …but h2's is untouched (per-row busy, not a global freeze).
-    expect(screen.getByRole('button', { name: /Delete habit "Beta"/i })).not.toBeDisabled()
-    // Checkboxes are NEVER disabled — toggling is optimistic, so it stays clickable throughout.
-    expect(screen.getByRole('checkbox', { name: /Mark "Alpha" done today/i })).not.toBeDisabled()
-    expect(screen.getByRole('checkbox', { name: /Mark "Beta" done today/i })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /Remove habit "Beta"/i })).not.toBeDisabled()
   })
 })
