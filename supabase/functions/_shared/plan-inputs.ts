@@ -14,6 +14,7 @@ interface TaskRow {
   x: number | null
   y: number | null
   due: string | null
+  due_time: string | null
   staged: boolean
   recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
 }
@@ -55,6 +56,7 @@ export function buildPlanRequest(
       urgency: Math.round((t.x ?? 0.5) * 100),
       due: t.due,
       dueInDays: daysUntilInTZ(t.due, timeZone, now),
+      dueTime: t.due_time,
     }))
 
   const recurringDue: { text: string; status: string }[] = []

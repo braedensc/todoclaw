@@ -52,7 +52,14 @@ const TZ = 'America/New_York'
 
 describe('buildPlanRequest', () => {
   it('keeps only on-grid (non-staged, non-done, non-recurring) tasks and maps the axes', () => {
-    const onGrid = task({ id: 'keep', text: 'Keep', x: 0.9, y: 0.6, due: '2026-06-26' })
+    const onGrid = task({
+      id: 'keep',
+      text: 'Keep',
+      x: 0.9,
+      y: 0.6,
+      due: '2026-06-26',
+      due_time: '15:00:00',
+    })
     const tasks = [
       onGrid,
       task({ id: 'staged', staged: true }),
@@ -69,6 +76,7 @@ describe('buildPlanRequest', () => {
       due: '2026-06-26',
       // Delegated to the shared, tz-aware daysUntil (not re-derived here).
       dueInDays: daysUntil('2026-06-26', { timeZone: TZ, now: NOW }),
+      dueTime: '15:00:00', // the wall-clock time passes straight through for the plan anchor
     })
   })
 

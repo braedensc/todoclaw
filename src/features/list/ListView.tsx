@@ -183,7 +183,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
             onMove={onMoveToQuadrant}
             reminderOffset={reminders?.get(task.id)?.offset_minutes ?? null}
             onSetReminder={(minutes) =>
-              upsertReminder.mutate({ task, offsetMinutes: minutes, timeZone })
+              upsertReminder.mutate({ taskId: task.id, offsetMinutes: minutes })
             }
           />
         ))}

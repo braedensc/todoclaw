@@ -102,8 +102,8 @@ Deno.serve(async (req) => {
       let content: MessageContent =
         kind === 'plan'
           ? existingPlan
-            ? buildMorningFromPlan(existingPlan, inputs)
-            : buildMorningMessage(inputs)
+            ? buildMorningFromPlan(existingPlan, inputs, localDate)
+            : buildMorningMessage(inputs, localDate)
           : buildRecapMessage(inputs, {
               dayName: dayNameInTZ(c.timezone, now),
               timeZone: c.timezone,
@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
       if (kind === 'plan' && !existingPlan) {
         const plan = await maybeGeneratePlan(admin, c.user_id, c.timezone, inputs, localDate, now)
         if (plan) {
-          const rich = buildMorningFromPlan(plan, inputs)
+          const rich = buildMorningFromPlan(plan, inputs, localDate)
           const { error: enrichError } = await admin.rpc('enrich_message', {
             p_id: msgId,
             p_title: rich.title,
