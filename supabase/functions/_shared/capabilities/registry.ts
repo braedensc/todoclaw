@@ -6,11 +6,13 @@ import type { Capability } from './types.ts'
 import { taskCapabilities } from './tasks.ts'
 import { habitCapabilities } from './habits.ts'
 import { planCapabilities } from './plan.ts'
+import { preferenceCapabilities } from './preferences.ts'
 
 export const CAPABILITIES: Capability[] = [
   ...taskCapabilities,
   ...habitCapabilities,
   ...planCapabilities,
+  ...preferenceCapabilities,
 ]
 
 export const capabilityByName: Map<string, Capability> = new Map(

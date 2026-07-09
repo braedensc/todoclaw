@@ -21,8 +21,9 @@ Functions (`supabase/functions/`).
 
 - **`ChatPanel.tsx`** + **`use-ai-chat.ts`** — **BabyClaw**, the in-app planning assistant. A right
   slide-over that streams BabyClaw's reply token-by-token and pauses for **confirmation before any
-  destructive action** (complete / delete task / delete habit). It drives the full ~20-capability
-  set — tasks, **habits** (create/rename/steps/check-off), and Plan My Day — via a transport-agnostic
+  destructive action** (complete / delete task / delete habit). It drives the full 24-capability
+  set — tasks, **habits** (create/rename/steps/check-off), Plan My Day, and **preference-setting**
+  (`set_assistant_preference`) — via a transport-agnostic
   capability registry (`supabase/functions/_shared/capabilities/`, MCP-ready). `use-ai-chat` fetches
   the `ai-chat` Edge Function directly (to read the SSE stream — `functions.invoke` doesn't stream),
   holds the conversation client-side, and drives the confirm/decline round-trip. On each successful
@@ -33,8 +34,14 @@ Functions (`supabase/functions/`).
   + `capabilities/README.md`.
 
   BabyClaw reads a small per-user config (`user_schedule.config.assistant`: `tone`, `verbosity`,
-  optional `customInstructions`) folded into its prompt with safe defaults; the editor UI is a
-  separate Settings task (custom instructions are treated as preferences and can never widen scope).
+  optional `customInstructions`) folded into its prompt with safe defaults, and can now **write it**
+  too: `set_assistant_preference` persists a preference the user states in chat ("keep it playful",
+  "stop suggesting morning tasks") so it survives across sessions — it re-reads on the next turn, so
+  the change lands on BabyClaw's next reply. This composes with the pending B11 Settings editor:
+  same `config.assistant` field, two surfaces (chat + Settings), just as a task is editable from both
+  chat and the grid. Custom instructions are always treated as **preferences** and can never widen
+  scope; the write is deliberately **bounded** (one scoped, 500-char, preferences-only field) — that
+  boundedness is the safety property. See `capabilities/README.md` (`set_assistant_preference`).
 
 - **`AiPrivacyNote.tsx`** — a short, honest disclosure kept in **Settings → "AI & privacy"**: AI
   runs on the owner's Anthropic key, your task/message text is sent to Anthropic, and chat isn't
