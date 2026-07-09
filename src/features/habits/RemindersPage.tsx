@@ -2,15 +2,24 @@ import { HabitsView } from './HabitsView'
 import { BoneIcon } from '../../components/BoneIcon'
 import { goBack } from '../../lib/route'
 
-// "Daily reminders" as a full page (ADR-0027) — replaces the old RemindersModal overlay. Same body
-// as before (the self-contained HabitsView: active rows + queued + add-a-reminder), just on a page
-// instead of a centered modal. This wrapper owns only the surface + title + back control; HabitsView
-// supplies the inner labelled `region "Daily reminders"` and all data. The ✕ routes through
-// `goBack`, matching the browser Back button.
+// "Daily habits" as a DESKTOP popup (the `#/reminders` route's wide-screen presentation; mobile
+// uses RemindersSheet). App leaves the home screen mounted underneath, so this floats over it as a
+// centered modal — clicking the scrim (or the ✕, or the browser Back button) routes through
+// `goBack` and closes it. No "Done"/save control: the setup surface auto-saves every add, so
+// dismissing IS finishing.
 export function RemindersPage() {
   return (
-    <div className="mx-auto max-w-3xl">
-      <section className="rounded-xl border border-border-strong bg-panel p-6 shadow-sm wide:p-8">
+    <div
+      role="dialog"
+      aria-label="Daily habits"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(3rem_+_env(safe-area-inset-top))]"
+      onClick={goBack}
+    >
+      <section
+        className="w-full max-w-2xl rounded-xl border border-border-strong bg-panel p-6 shadow-xl wide:p-8"
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
             <BoneIcon className="h-3 w-auto text-puppy/70" />

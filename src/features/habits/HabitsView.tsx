@@ -12,7 +12,6 @@ import { HabitRow } from './HabitRow'
 import { habitDayWrites } from './subtasks'
 import { useConfirm } from '../../components/use-confirm'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
-import { goBack } from '../../lib/route'
 import type { Habit } from '../../types/habit'
 
 // Daily habits — the body of the "Daily habits" page (RemindersPage, ADR-0027). UI copy now says
@@ -162,7 +161,7 @@ export function HabitsView() {
                       disabled={pendingHabitId === habit.id}
                       aria-label={`Remove habit "${habit.text}"`}
                       title="Remove this habit"
-                      className="rounded px-1 text-sm text-muted hover:text-accent disabled:opacity-50"
+                      className="rounded px-1 text-sm text-muted hover:text-danger disabled:opacity-50"
                     >
                       ×
                     </button>
@@ -192,19 +191,10 @@ export function HabitsView() {
         </button>
       </form>
 
-      {/* Finish bar. There's no "save" step — every habit persists the moment it's added — so this
-          is a plain closer (a dark button, distinct from the blue "Add habit"), plus a line that
-          says so, to answer the "is this saved?" question the bare list used to leave open. */}
-      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border-strong pt-3">
-        <p className="text-xs text-muted">Your habits save automatically as you add them.</p>
-        <button
-          type="button"
-          onClick={goBack}
-          className="shrink-0 rounded-lg bg-ink px-5 py-2 text-sm font-medium text-white hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
-        >
-          Done
-        </button>
-      </div>
+      {/* No save/close button — this setup surface is a popup you click out of (desktop) or swipe
+          away (mobile), and every add persists instantly. Just a quiet line so the missing "Save"
+          never reads as "unsaved". */}
+      <p className="mt-4 text-xs text-muted-light">Changes save automatically.</p>
     </section>
   )
 }

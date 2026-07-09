@@ -9,9 +9,12 @@ Two surfaces, split by job:
 
 - **Home** (`RemindersInline`) — where habits get **ticked off** for the day (the inline list +
   its per-habit detail popup). This is the only place checkboxes live.
-- **Daily habits page** (`RemindersPage` → `HabitsView`) — the **setup/management** surface: add /
-  remove habits and edit their details, activate queued ones. It has NO daily checkboxes (habits
-  aren't checked here). `HabitRow`'s `checkable` prop drives this: `true` on home, `false` here.
+- **Daily habits setup** (`HabitsView`) — the **setup/management** surface: add / remove habits and
+  edit their details, activate queued ones. It has NO daily checkboxes (habits aren't checked here).
+  It's an overlay over a still-mounted home you dismiss by clicking/swiping out — a centered popup on
+  desktop (`RemindersPage`), a bottom sheet on mobile (`RemindersSheet`); no explicit save/close
+  (every add persists instantly). `HabitRow`'s `checkable` prop drives the two: `true` on home,
+  `false` here (paw disclosure toggle + blue-paw detail bullets + a red "Remove").
 
 ## Model
 
