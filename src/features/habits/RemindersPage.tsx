@@ -9,8 +9,8 @@ import { goBack } from '../../lib/route'
 // `goBack`, matching the browser Back button.
 export function RemindersPage() {
   return (
-    <div className="mx-auto max-w-lg">
-      <section className="rounded-xl border border-border-strong bg-panel p-6 shadow-sm">
+    <div className="mx-auto max-w-3xl">
+      <section className="rounded-xl border border-border-strong bg-panel p-6 shadow-sm wide:p-8">
         <header className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
             <BoneIcon className="h-3 w-auto text-puppy/70" />

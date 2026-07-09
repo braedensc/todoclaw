@@ -12,6 +12,7 @@ import { HabitRow } from './HabitRow'
 import { habitDayWrites } from './subtasks'
 import { useConfirm } from '../../components/use-confirm'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
+import { goBack } from '../../lib/route'
 import type { Habit } from '../../types/habit'
 
 // Daily habits — the body of the "Daily habits" page (RemindersPage, ADR-0027). UI copy now says
@@ -97,7 +98,8 @@ export function HabitsView() {
   const activate = (habit: Habit) => updateHabit.mutate({ id: habit.id, patch: { active: true } })
 
   const deleteHabit = async (habit: Habit) => {
-    if (await confirm({ title: `Delete the habit "${habit.text}"?` })) softDelete.mutate(habit.id)
+    if (await confirm({ title: `Remove the habit "${habit.text}"?`, confirmLabel: 'Remove' }))
+      softDelete.mutate(habit.id)
   }
 
   return (
@@ -105,8 +107,9 @@ export function HabitsView() {
     // (RemindersPage), which supplies the surface and the title. Kept a labeled region for a11y.
     <section aria-label="Daily habits">
       <p className="mb-3 text-sm text-muted">
-        Daily habits are recurring things you want to do every day — check them off as you go and
-        they reset each morning, so they never clutter your task grid.
+        Set up the daily habits you want to build. Check them off each day from your home screen —
+        they reset every morning, so they never clutter your task grid. Any habit can have optional{' '}
+        <span className="font-medium text-ink">details</span> (small sub-steps) if it helps.
       </p>
 
       {active.length === 0 && queued.length === 0 ? (
@@ -125,6 +128,7 @@ export function HabitsView() {
                   habitChecked={Boolean(habitDone[habit.id])}
                   subtaskDone={subtaskDone}
                   busy={pendingHabitId === habit.id}
+                  checkable={false}
                   onToggleHabit={(checked) => toggleHabit(habit, checked)}
                   onToggleSubtask={(subtaskId, checked) => toggleSubtask(habit, subtaskId, checked)}
                   onSubtasksChange={(next) => changeSubtasks(habit, next)}
@@ -156,8 +160,8 @@ export function HabitsView() {
                       type="button"
                       onClick={() => deleteHabit(habit)}
                       disabled={pendingHabitId === habit.id}
-                      aria-label={`Delete habit "${habit.text}"`}
-                      title="Delete this habit"
+                      aria-label={`Remove habit "${habit.text}"`}
+                      title="Remove this habit"
                       className="rounded px-1 text-sm text-muted hover:text-accent disabled:opacity-50"
                     >
                       ×
@@ -182,11 +186,25 @@ export function HabitsView() {
         <button
           type="submit"
           disabled={addHabit.isPending}
-          className="rounded bg-puppy px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="shrink-0 rounded bg-puppy px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
-          Add
+          Add habit
         </button>
       </form>
+
+      {/* Finish bar. There's no "save" step — every habit persists the moment it's added — so this
+          is a plain closer (a dark button, distinct from the blue "Add habit"), plus a line that
+          says so, to answer the "is this saved?" question the bare list used to leave open. */}
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border-strong pt-3">
+        <p className="text-xs text-muted">Your habits save automatically as you add them.</p>
+        <button
+          type="button"
+          onClick={goBack}
+          className="shrink-0 rounded-lg bg-ink px-5 py-2 text-sm font-medium text-white hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
+        >
+          Done
+        </button>
+      </div>
     </section>
   )
 }
