@@ -19,7 +19,7 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   plan-inputs.ts # server-side buildPlanRequest (task/habit selection + date math, ported from src/lib)
   run-plan.ts    # in-process Plan My Day path (own plan_my_day gate); injected into BabyClaw's generate_plan
   placement.ts   # due-date → x/y/staged auto-placement table (Discrepancy #5)
-  capabilities/  # BabyClaw's transport-agnostic capability registry (~20 tools) — see its README
+  capabilities/  # BabyClaw's transport-agnostic capability registry (24 tools) — see its README
   chat-tools.ts  # thin ANTHROPIC ADAPTER over the registry (TOOL_DEFS + executeTool + confirm summary)
   chat-prompt.ts # BabyClaw persona + security rules + grid primer; renders the live context
   chat-context.ts# loads the per-request context (tasks + habits + today's completion + schedule + config)

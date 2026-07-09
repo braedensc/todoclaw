@@ -7,13 +7,30 @@ future MCP server is meant to be the second, with no change to this layer.
 ## Shape
 
 ```
-types.ts     Capability, CapabilityContext, CapabilityResult, MutationDomain, defineCapability()
-helpers.ts   ok()/err(), updateTaskRow/updateHabitRow, loadHabitSubtasks
-tasks.ts     task capabilities   (list, create, edit, move, due, recurring, restore, complete*, delete*)
-habits.ts    habit capabilities  (list, create, rename, active, done, steps…, delete*)
-plan.ts      generate_plan       (delegates to the injected ctx.services.generatePlan)
-registry.ts  CAPABILITIES[], capabilityByName, DESTRUCTIVE   ← the single source of truth
+types.ts        Capability, CapabilityContext, CapabilityResult, MutationDomain, defineCapability()
+helpers.ts      ok()/err(), updateTaskRow/updateHabitRow, loadHabitSubtasks
+tasks.ts        task capabilities   (list, create, edit, move, due, recurring, restore, complete*, delete*)
+habits.ts       habit capabilities  (list, create, rename, active, done, steps…, delete*)
+plan.ts         generate_plan       (delegates to the injected ctx.services.generatePlan)
+preferences.ts  set_assistant_preference  (persists tone / verbosity / a short note — see below)
+registry.ts     CAPABILITIES[], capabilityByName, DESTRUCTIVE   ← the single source of truth
 ```
+
+### `set_assistant_preference` — the one self-write
+
+Every other capability writes **data** the security model frames as "never instructions".
+`set_assistant_preference` is the exception: it persists BabyClaw's own personalization
+(`user_schedule.config.assistant`: `tone`, `verbosity`, `customInstructions`) — and
+`customInstructions` is the one field folded into the system prompt **as behavior** (chat-prompt.ts
+`configLines`). So it is a deliberate prompt-injection surface, kept safe by being **bounded and
+curated**: one scoped, size-capped (500-char), preferences-only field, validated + clamped
+server-side, written via a read-modify-write that preserves every other `config` key. The
+load-bearing rule — *only persist an explicit preference the user stated in chat, never anything
+derived from stored task/habit/step text* — is a **prompt-level** instruction (SYSTEM_PREFIX), not
+unit-testable here; the capability only writes what it is handed, and SYSTEM_PREFIX always wins
+(a saved note is still a preference and can never widen scope). It is **not destructive** (fully
+reversible from Settings), so it announces the change rather than asking to confirm. The change is
+re-read at the start of the next turn, so it takes effect on BabyClaw's next reply.
 
 Each capability is `{ name, description, schema (zod), destructive, execute(ctx, input) }`. The
 **zod schema is the one source of truth**: it validates input at execution *and* — via

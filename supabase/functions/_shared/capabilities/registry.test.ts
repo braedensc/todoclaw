@@ -88,40 +88,38 @@ function ctx(h: Handlers = {}, services?: ToolContext['services']): ToolContext 
 }
 
 // ---- registry composition --------------------------------------------------------------------
-Deno.test(
-  'registry exposes the full ~20-capability set (and NO set_bucket — buckets skipped)',
-  () => {
-    const names = new Set(CAPABILITIES.map((c) => c.name))
-    const expected = [
-      'list_tasks',
-      'create_task',
-      'edit_task_text',
-      'move_task',
-      'set_due_date',
-      'set_reminder',
-      'clear_reminder',
-      'make_recurring',
-      'clear_recurring',
-      'restore_task',
-      'complete_task',
-      'delete_task',
-      'list_habits',
-      'create_habit',
-      'rename_habit',
-      'set_habit_active',
-      'set_habit_done',
-      'add_habit_step',
-      'rename_habit_step',
-      'remove_habit_step',
-      'set_habit_step_done',
-      'delete_habit',
-      'generate_plan',
-    ]
-    for (const n of expected) assert(names.has(n), `missing capability: ${n}`)
-    assertEquals(names.size, expected.length)
-    assert(!names.has('set_bucket'))
-  },
-)
+Deno.test('registry exposes the full capability set (and NO set_bucket — buckets skipped)', () => {
+  const names = new Set(CAPABILITIES.map((c) => c.name))
+  const expected = [
+    'list_tasks',
+    'create_task',
+    'edit_task_text',
+    'move_task',
+    'set_due_date',
+    'set_reminder',
+    'clear_reminder',
+    'make_recurring',
+    'clear_recurring',
+    'restore_task',
+    'complete_task',
+    'delete_task',
+    'list_habits',
+    'create_habit',
+    'rename_habit',
+    'set_habit_active',
+    'set_habit_done',
+    'add_habit_step',
+    'rename_habit_step',
+    'remove_habit_step',
+    'set_habit_step_done',
+    'delete_habit',
+    'generate_plan',
+    'set_assistant_preference',
+  ]
+  for (const n of expected) assert(names.has(n), `missing capability: ${n}`)
+  assertEquals(names.size, expected.length)
+  assert(!names.has('set_bucket'))
+})
 
 Deno.test('exactly complete_task, delete_task, delete_habit are destructive', () => {
   assertEquals([...DESTRUCTIVE].sort(), ['complete_task', 'delete_habit', 'delete_task'])
