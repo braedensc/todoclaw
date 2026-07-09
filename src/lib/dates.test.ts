@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dueInstant, localDateInTZ } from './dates'
+import { dueInstant, formatDueTime, localDateInTZ } from './dates'
 
 describe('localDateInTZ', () => {
   it('returns the calendar date for the instant in the given timezone', () => {
@@ -64,5 +64,24 @@ describe('dueInstant', () => {
   it('throws RangeError on unparseable inputs', () => {
     expect(() => dueInstant('not-a-date', '10:30', 'UTC')).toThrow(RangeError)
     expect(() => dueInstant('2026-07-22', 'later', 'UTC')).toThrow(RangeError)
+  })
+})
+
+describe('formatDueTime', () => {
+  it("formats 'HH:MM' and the Postgres wire 'HH:MM:SS' identically (host locale)", () => {
+    // Locale-proof: assert against the same Intl formatter the function must reduce to,
+    // so the test pins behavior (a plain wall-clock reading) without pinning a locale.
+    const expected = new Date(2000, 0, 1, 15, 0).toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    expect(formatDueTime('15:00')).toBe(expected)
+    expect(formatDueTime('15:00:00')).toBe(expected)
+    expect(formatDueTime('15:00')).not.toBe('')
+  })
+
+  it('returns empty string for unparseable input', () => {
+    expect(formatDueTime('later')).toBe('')
+    expect(formatDueTime('')).toBe('')
   })
 })

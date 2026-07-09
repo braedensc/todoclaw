@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAddTask } from '../tasks/use-tasks'
 import { useClickOutside } from '../../hooks/use-click-outside'
+import { formatDueTime } from '../../lib/dates'
+import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
 import type { GridApi } from '../grid/use-grid'
 import { NewItemStrip } from './NewItemStrip'
 import type { ChatController } from '../ai/use-chat-controller'
@@ -115,6 +117,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const addTask = useAddTask()
   const [text, setText] = useState('')
   const [due, setDue] = useState<string | null>(null)
+  const [dueTime, setDueTime] = useState<string | null>(null)
   const [repeatDays, setRepeatDays] = useState<number | null>(null)
   // Which chip popover is open — a single value enforces one-open-at-a-time (opening one
   // closes the other). `null` = both closed.
@@ -136,6 +139,8 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
       {
         text: trimmed,
         due,
+        // A time never ships without a date (DB CHECK) — the control disables it, this guards it.
+        due_time: due ? dueTime : null,
         recurring: repeatDays
           ? { frequencyDays: repeatDays, lastDoneAt: null, doneCount: 0 }
           : null,
@@ -144,6 +149,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
         onSuccess: () => {
           setText('')
           setDue(null)
+          setDueTime(null)
           setRepeatDays(null)
         },
       },
@@ -164,7 +170,12 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           />
           <DueControl
             value={due}
-            onChange={setDue}
+            onChange={(v) => {
+              setDue(v)
+              if (!v) setDueTime(null)
+            }}
+            time={dueTime}
+            onTimeChange={setDueTime}
             open={openChip === 'due'}
             onToggle={() => toggleChip('due')}
             onClose={closeChips}
@@ -256,14 +267,19 @@ interface ChipControlProps {
 function DueControl({
   value,
   onChange,
+  time,
+  onTimeChange,
   open,
   onToggle,
   onClose,
 }: ChipControlProps & {
   value: string | null
   onChange: (v: string | null) => void
+  time: string | null
+  onTimeChange: (v: string | null) => void
 }) {
-  const label = value ? value.slice(5) : 'Due' // MM-DD, compact
+  // Compact chip: MM-DD, plus the clock time once one is set ("07-22 3:00 PM").
+  const label = value ? `${value.slice(5)}${time ? ` ${formatDueTime(time)}` : ''}` : 'Due'
   return (
     <ChipPopover
       label={label}
@@ -276,7 +292,7 @@ function DueControl({
       {(close) => (
         <div className="flex flex-col gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
-            Due date
+            Due date &amp; time
           </span>
           <div className="flex items-center gap-2">
             <input
@@ -285,6 +301,15 @@ function DueControl({
               value={value ?? ''}
               onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
               className="rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-sm text-ink focus:border-primary focus:outline-none"
+            />
+            <input
+              type="time"
+              aria-label="Due time"
+              value={time ?? ''}
+              disabled={!value}
+              title={value ? undefined : 'Set a date first'}
+              onChange={(e) => onTimeChange(e.target.value === '' ? null : e.target.value)}
+              className="rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-sm text-ink focus:border-primary focus:outline-none disabled:opacity-40"
             />
             {value && (
               <button
@@ -299,6 +324,7 @@ function DueControl({
               </button>
             )}
           </div>
+          <DueTimezoneHint />
         </div>
       )}
     </ChipPopover>

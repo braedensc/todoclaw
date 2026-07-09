@@ -120,6 +120,26 @@ describe('ListView', () => {
     expect(updateMutate).toHaveBeenCalledWith({ id: 'edit-me', patch: { text: 'new text' } })
   })
 
+  it('expanded-row due editors write BOTH due columns; clearing the date clears the time', () => {
+    tasksData = [makeTask({ id: 'x', text: 'timed task', due: '2026-08-01', due_time: '15:00:00' })]
+    renderList()
+    fireEvent.click(screen.getByText('timed task'))
+
+    // Badge surfaces the time for near dates via dueLabel — here just assert the inputs hydrate
+    // from the wire formats ('YYYY-MM-DD' / 'HH:MM:SS' → 'HH:MM').
+    expect(screen.getByLabelText('Due date')).toHaveValue('2026-08-01')
+    expect(screen.getByLabelText('Due time')).toHaveValue('15:00')
+
+    fireEvent.change(screen.getByLabelText('Due time'), { target: { value: '09:30' } })
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'x',
+      patch: { due: '2026-08-01', due_time: '09:30' },
+    })
+
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } })
+    expect(updateMutate).toHaveBeenCalledWith({ id: 'x', patch: { due: null, due_time: null } })
+  })
+
   it('single-clicking the row body toggles the expanded detail panel', () => {
     tasksData = [makeTask({ id: 'x', text: 'expand me' })]
     renderList()

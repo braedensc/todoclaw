@@ -97,7 +97,8 @@ export function HabitsView() {
   const activate = (habit: Habit) => updateHabit.mutate({ id: habit.id, patch: { active: true } })
 
   const deleteHabit = async (habit: Habit) => {
-    if (await confirm({ title: `Delete the habit "${habit.text}"?` })) softDelete.mutate(habit.id)
+    if (await confirm({ title: `Remove the habit "${habit.text}"?`, confirmLabel: 'Remove' }))
+      softDelete.mutate(habit.id)
   }
 
   return (
@@ -105,8 +106,9 @@ export function HabitsView() {
     // (RemindersPage), which supplies the surface and the title. Kept a labeled region for a11y.
     <section aria-label="Daily habits">
       <p className="mb-3 text-sm text-muted">
-        Daily habits are recurring things you want to do every day — check them off as you go and
-        they reset each morning, so they never clutter your task grid.
+        Set up the daily habits you want to build. Check them off each day from your home screen —
+        they reset every morning, so they never clutter your task grid. Any habit can have optional{' '}
+        <span className="font-medium text-ink">details</span> (small sub-steps) if it helps.
       </p>
 
       {active.length === 0 && queued.length === 0 ? (
@@ -125,6 +127,7 @@ export function HabitsView() {
                   habitChecked={Boolean(habitDone[habit.id])}
                   subtaskDone={subtaskDone}
                   busy={pendingHabitId === habit.id}
+                  checkable={false}
                   onToggleHabit={(checked) => toggleHabit(habit, checked)}
                   onToggleSubtask={(subtaskId, checked) => toggleSubtask(habit, subtaskId, checked)}
                   onSubtasksChange={(next) => changeSubtasks(habit, next)}
@@ -156,9 +159,9 @@ export function HabitsView() {
                       type="button"
                       onClick={() => deleteHabit(habit)}
                       disabled={pendingHabitId === habit.id}
-                      aria-label={`Delete habit "${habit.text}"`}
-                      title="Delete this habit"
-                      className="rounded px-1 text-sm text-muted hover:text-accent disabled:opacity-50"
+                      aria-label={`Remove habit "${habit.text}"`}
+                      title="Remove this habit"
+                      className="rounded px-1 text-sm text-muted hover:text-danger disabled:opacity-50"
                     >
                       ×
                     </button>
@@ -182,11 +185,16 @@ export function HabitsView() {
         <button
           type="submit"
           disabled={addHabit.isPending}
-          className="rounded bg-puppy px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="shrink-0 rounded bg-puppy px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
-          Add
+          Add habit
         </button>
       </form>
+
+      {/* No save/close button — this setup surface is a popup you click out of (desktop) or swipe
+          away (mobile), and every add persists instantly. Just a quiet line so the missing "Save"
+          never reads as "unsaved". */}
+      <p className="mt-4 text-xs text-muted-light">Changes save automatically.</p>
     </section>
   )
 }

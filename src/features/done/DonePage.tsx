@@ -13,7 +13,7 @@ export function DonePage() {
       role="dialog"
       aria-modal="true"
       aria-label="Done"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(4rem_+_env(safe-area-inset-top))]"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(3rem_+_env(safe-area-inset-top))]"
       onClick={goBack}
     >
       <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>

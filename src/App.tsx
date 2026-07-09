@@ -54,9 +54,10 @@ const planPillStyle = { backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #
 // reminders live off the main page now — the inline names open per-reminder detail cards. Kept
 // separate from App so the ensure-schedule effect only runs once a session exists.
 //
-// Done and Daily reminders are full pages, not modals (ADR-0027): a hash route (`useRoute`) swaps
-// the home content for the page and the browser Back button pops it. Settings / Backups / Chat stay
-// as route-independent overlays.
+// Done and Daily reminders are hash routes (`useRoute`, ADR-0027) presented as overlays over a
+// still-mounted home — a centered popup on desktop, a slide-up sheet on mobile — so the browser
+// Back button (or a scrim click) pops them back to home. Settings / Backups / Chat stay as
+// route-independent overlays.
 function AppShell() {
   const route = useRoute()
   const [showChat, setShowChat] = useState(false)
@@ -189,17 +190,14 @@ function AppShell() {
             'mx-auto max-w-3xl p-6 wide:max-w-[1280px] ' + (isMobile && !gridOnly ? 'pb-28' : '')
           }
         >
-          {/* Home vs. a full page. 'home' renders the header, plan, inline reminders, and work
-              area; the Daily-reminders page swaps all of that out (ADR-0027). The 'chat' route is
-              home + the chat overlay — a notification tap must land on the main screen with the
-              drawer open, not a blank shell. 'done' now stays home + an overlay on BOTH surfaces
-              (desktop popup DonePage / mobile sheet DoneSheet below), so the home screen stays
-              visible behind it; MOBILE 'reminders' is likewise home + a slide-up sheet. The
-              Settings / Backups overlays and the mobile bottom nav below are route-independent. */}
-          {(route === 'home' ||
-            route === 'chat' ||
-            route === 'done' ||
-            (isMobile && route === 'reminders')) && (
+          {/* Home vs. an overlay. 'home' renders the header, plan, inline reminders, and work area.
+              The 'chat' route is home + the chat overlay — a notification tap must land on the main
+              screen with the drawer open, not a blank shell. 'reminders' (Daily habits) AND 'done'
+              are ALWAYS overlays over a still-mounted home — a centered popup on desktop
+              (RemindersPage / DonePage), a slide-up sheet on mobile (RemindersSheet / DoneSheet) —
+              so you can click or swipe out of either back to home. Settings / Backups and the mobile
+              bottom nav below are route-independent. */}
+          {(route === 'home' || route === 'chat' || route === 'reminders' || route === 'done') && (
             <>
               {/* Above the masthead on both surfaces: prompt when the device clock and the
                   stored timezone disagree (hidden in grid-only — that mode strips all chrome). */}
@@ -566,14 +564,15 @@ function AppShell() {
               condition) — a centered popup on desktop (DonePage), a bottom sheet on mobile
               (DoneSheet). Same `#/done` route either way (deep links + browser Back work); only the
               presentation differs. Back is the ✕ / scrim inside each (→ goBack) or the browser
-              button. Daily reminders below is still a full page on desktop (ADR-0027). */}
+              button. Daily reminders below is the same shape (a desktop popup / mobile sheet). */}
           {route === 'done' && (
             <ErrorBoundary>{isMobile ? <DoneSheet /> : <DonePage />}</ErrorBoundary>
           )}
 
-          {/* Daily reminders: a full page on desktop; on mobile a bottom sheet over the
-              still-mounted home above. Same `#/reminders` route either way — deep links and the
-              browser Back button behave identically, only the presentation differs. */}
+          {/* Daily habits: an overlay over the still-mounted home — a centered popup on desktop
+              (RemindersPage), a bottom sheet on mobile (RemindersSheet). Same `#/reminders` route
+              either way — deep links and the browser Back button behave identically, and clicking
+              the scrim / swiping down / Back all close it. Only the presentation differs. */}
           {route === 'reminders' && (
             <ErrorBoundary>{isMobile ? <RemindersSheet /> : <RemindersPage />}</ErrorBoundary>
           )}
