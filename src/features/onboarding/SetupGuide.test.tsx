@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
+// SafariTroubleshooting comes from NotificationSettings, whose module graph reaches
+// src/lib/supabase — which THROWS at import without env vars (CI runs with none). Stub the
+// client module itself so every transitive importer is satisfied.
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
+
 // Mock the state hook wholesale — the component test only cares about rendering each state; the
 // detection/persistence logic has its own suite (use-setup-guide.test.tsx). Same for the
 // one-click notifications enabler (its own suite: use-enable-notifications.test.tsx).

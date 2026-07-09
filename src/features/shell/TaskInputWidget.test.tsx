@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
+
+// The widget pulls in use-tasks (→ src/lib/supabase, which THROWS at import without env vars —
+// CI runs with none). Stub the client module itself so every transitive importer is satisfied.
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
+
 import { TaskInputWidget } from './TaskInputWidget'
 import type { ChatController } from '../ai/use-chat-controller'
 import type { GridApi } from '../grid/use-grid'
