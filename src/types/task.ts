@@ -33,6 +33,11 @@ export const TaskSchema = z.object({
   recurring: RecurringSchema.nullable(),
   created_at: z.string(),
   deleted_at: z.string().nullable(),
+  // When a one-off (non-recurring) task was completed. null = live. PERMANENT (unlike the
+  // per-day daily_state.done map, which resets at local midnight) — set by set_task_done,
+  // cleared by set_task_undone (Restore). It's what keeps a completed task off the grid across
+  // days. Recurring tasks never set this (they reset recurring.lastDoneAt instead).
+  completed_at: z.string().nullable(),
 })
 
 export type Task = z.infer<typeof TaskSchema>

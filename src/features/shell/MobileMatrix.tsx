@@ -75,8 +75,10 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
     )
   }
 
+  // Completed tasks are excluded: a one-off completion is PERMANENT (task.completed_at, survives
+  // the daily reset); today's done map is a same-day belt-and-suspenders hide.
   const doneToday = daily?.done ?? {}
-  const active = tasks.filter((t) => !doneToday[t.id])
+  const active = tasks.filter((t) => !t.completed_at && !doneToday[t.id])
   const { buckets } = summarizeQuadrants(active, { timeZone })
 
   // Per-quadrant "on fire" counts for the overview badges: due today (incl. the final hours)

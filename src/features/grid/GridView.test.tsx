@@ -84,6 +84,7 @@ function makeTask(over: Partial<Task>): Task {
     // with a fixed far-past date (e.g. '2000-01-01') to assert the faded style deterministically.
     created_at: new Date(Date.now() - 86_400_000).toISOString(), // ~1 day ago
     deleted_at: null,
+    completed_at: null,
     ...over,
   }
 }
@@ -121,6 +122,23 @@ describe('GridView placement filter', () => {
   it('hides tasks marked done today', () => {
     tasksFixture = [makeTask({ id: 'done-task', text: 'Already done', staged: false })]
     doneTodayFixture = { 'done-task': true }
+    render(<GridHarness />)
+
+    expect(screen.queryByTestId('grid-card')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('No tasks placed — add one above and drag it here.'),
+    ).toBeInTheDocument()
+  })
+
+  it('hides completed tasks even when today’s daily state is empty (the next-day case)', () => {
+    // Regression for tasks reappearing on the grid after a daily reset: a one-off completion used
+    // to be tracked only in today's daily_state.done map, so a fresh (empty) day put the card
+    // back. task.completed_at makes the hide permanent — with doneTodayFixture empty (simulating
+    // the next day) a completed card must stay off the grid.
+    tasksFixture = [
+      makeTask({ id: 'done-task', text: 'Already done', completed_at: '2026-06-23T12:00:00Z' }),
+    ]
+    doneTodayFixture = {}
     render(<GridHarness />)
 
     expect(screen.queryByTestId('grid-card')).not.toBeInTheDocument()

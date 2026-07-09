@@ -75,10 +75,12 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
     )
   }
 
-  // Exclude tasks already completed today (daily.done is a map of task-id → true). Missing
-  // daily state means an empty day → nothing excluded.
+  // Exclude completed tasks. A one-off completion is PERMANENT (task.completed_at, survives the
+  // daily reset); today's daily.done map is kept as a same-day belt-and-suspenders hide before
+  // the tasks query refetches with completed_at set. Missing daily state = empty day → done map
+  // excludes nothing.
   const doneToday = daily?.done ?? {}
-  const active = tasks.filter((t) => !doneToday[t.id])
+  const active = tasks.filter((t) => !t.completed_at && !doneToday[t.id])
 
   // Optional per-quadrant scoping (mobile focus view). Only PLACED tasks carry a real quadrant,
   // so a staged task (null x/y) is never bucketed into one — the mobile overview handles unplaced

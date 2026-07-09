@@ -33,8 +33,9 @@ export function useHistory() {
 // (so there is no done-without-history window). user_id is auth.uid() server-side; the
 // client only supplies the task snapshot + the user-local date.
 //
-// Invalidates BOTH the history query and today's daily_state query (same date key the read
-// hook uses) so the Done tab and any consumer of today's `done` map refresh.
+// Invalidates the history query, today's daily_state query (same date key the read hook uses),
+// AND the tasks query — set_task_done now stamps tasks.completed_at, so the task must refetch to
+// leave the grid/list/mobile (its permanent, across-day hide).
 export function useMarkTaskDone() {
   const qc = useQueryClient()
   return useMutation({
@@ -62,16 +63,16 @@ export function useMarkTaskDone() {
     onSuccess: (date) => {
       qc.invalidateQueries({ queryKey: HISTORY_KEY })
       qc.invalidateQueries({ queryKey: ['daily_state', date] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
 }
 
-// Restore a completed task: calls set_task_undone, which flips TODAY's done[id]=false and
-// clears done_at[id] — un-marking it done for today so it returns to the grid at its stored
-// x/y. The grid hides a task only via today's `done` map, so clearing today's flag is what
-// brings it back, regardless of which day the completion happened on (a completion from a
-// prior day just makes this a harmless no-op on today's row). The history row is NOT touched
-// by restore (delete is a separate action), so we only invalidate today's daily_state query.
+// Restore a completed task: calls set_task_undone, which clears the task's permanent
+// completed_at AND flips TODAY's done[id]=false / clears done_at[id] — un-completing it so it
+// returns to the grid at its stored x/y. Since completed_at is the load-bearing across-day hide,
+// we invalidate BOTH today's daily_state query and the tasks query. The history row is NOT
+// touched by restore (delete is a separate action).
 export function useRestoreTask() {
   const qc = useQueryClient()
   return useMutation({
@@ -86,6 +87,7 @@ export function useRestoreTask() {
     },
     onSuccess: (date) => {
       qc.invalidateQueries({ queryKey: ['daily_state', date] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
 }

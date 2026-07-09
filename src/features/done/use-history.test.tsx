@@ -67,7 +67,7 @@ describe('useHistory', () => {
 })
 
 describe('useMarkTaskDone', () => {
-  it('calls set_task_done with the snapshot + user-local date and invalidates history + today', async () => {
+  it('calls set_task_done with the snapshot + user-local date and invalidates history, today, and tasks', async () => {
     rpc.mockResolvedValue({ error: null })
     const { wrapper, invalidateSpy } = makeWrapper()
     const { result } = renderHook(() => useMarkTaskDone(), { wrapper })
@@ -83,6 +83,9 @@ describe('useMarkTaskDone', () => {
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['history'] })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['daily_state', '2026-06-23'] })
+    // set_task_done now stamps tasks.completed_at, so the tasks query must refetch to drop the
+    // completed task from the grid/list/mobile (its permanent, across-day hide).
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] })
   })
 
   it('throws when the rpc errors', async () => {
@@ -96,7 +99,7 @@ describe('useMarkTaskDone', () => {
 })
 
 describe('useRestoreTask', () => {
-  it('calls set_task_undone and invalidates ONLY today (history is permanent)', async () => {
+  it('calls set_task_undone and invalidates today + tasks, but NOT history (history is permanent)', async () => {
     rpc.mockResolvedValue({ error: null })
     const { wrapper, invalidateSpy } = makeWrapper()
     const { result } = renderHook(() => useRestoreTask(), { wrapper })
@@ -109,6 +112,9 @@ describe('useRestoreTask', () => {
       p_task_id: 't1',
     })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['daily_state', '2026-06-23'] })
+    // set_task_undone clears tasks.completed_at, so the tasks query must refetch to bring the
+    // restored task back to the grid.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] })
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['history'] })
   })
 })
