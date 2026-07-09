@@ -92,6 +92,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
   const names = new Set(CAPABILITIES.map((c) => c.name))
   const expected = [
     'list_tasks',
+    'search_history',
     'create_task',
     'edit_task_text',
     'move_task',
