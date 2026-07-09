@@ -3,16 +3,21 @@
 // amplified and extended with time-of-day tiers in the 2026-07-08 due-times workshop, then pushed
 // HARDER on 2026-07-09 (thicker/more-opaque rings that out-weight a card's own border, brighter
 // halos) because "much more obvious / much stronger" was the standing, explicit ask — a considered
-// departure from strict visual parity, not drift. The exact thresholds and color math live in
-// ONE tested place; cards, cluster bubbles, list rows, and the grid legend only consume the
-// result.
+// departure from strict visual parity, not drift. That same pass added two channels that REINFORCE
+// the hue-based glow instead of leaning on it alone: a graduated whole-card tint (survives a
+// neighbour overlapping the ring) and a scarce 🔥 corner flag on the hot tiers (a color-independent
+// cue). The exact thresholds and color math live in ONE tested place; cards, cluster bubbles, list
+// rows, and the grid legend only consume the result.
 //
 //   - urgencyTier(d, minutesUntil): the single tier decision — days-until-due plus, for tasks
 //     with a due TIME, minutes until the exact instant (timed tasks go overdue when their
 //     instant passes, not at midnight; the final two hours get their own tier).
-//   - urgencyGlowStyle(tier): a box-shadow ring that intensifies tier by tier; overdue pulses
-//     (urgency-pulse) and gets a warm card tint; the final hours pulse softly
-//     (urgency-pulse-soft). Keyframes live in src/index.css with a reduced-motion kill-switch.
+//   - urgencyGlowStyle(tier): a box-shadow ring that intensifies tier by tier, plus a graduated
+//     warm card tint (background) on the warm tiers; overdue pulses (urgency-pulse), the final
+//     hours pulse softly (urgency-pulse-soft). Keyframes live in src/index.css with a
+//     reduced-motion kill-switch.
+//   - urgencyIcon(tier): a scarce 🔥 corner flag on the hot tiers (overdue + due-today) — the
+//     color-independent channel; null for the softer tiers.
 //   - dueChipStyle(tier) / chip label helpers: the textual half, shared by the grid card,
 //     cluster popup rows, and list rows so the surfaces never drift.
 //   - stalenessStyle(task): desaturates + fades a card that has sat untouched for weeks
@@ -69,7 +74,11 @@ export interface GlowStyle {
   boxShadow: string
   /** References the urgency-pulse / urgency-pulse-soft keyframes (src/index.css). */
   animation?: string
-  /** Overdue only: a warm card tint replacing the plain white. */
+  /**
+   * A warm card tint replacing the plain paper fill — a whole-card fill channel that survives
+   * even when a neighbour overlaps the ring. Graduated across the warm tiers (loudest = warmest),
+   * absent on `radar`/`none`. Only the grid card reads this today; the cluster bubble ignores it.
+   */
   background?: string
 }
 
@@ -81,15 +90,15 @@ const REST = '0 2px 7px rgba(0,0,0,.08)'
  * ask): thicker, more opaque rings that clearly out-weight the border, plus a bigger, brighter
  * halo. The tier-to-tier gradient is preserved so nearer-due still reads louder.
  *
- * | tier          | effect                                              |
- * |---------------|-----------------------------------------------------|
- * | `overdue`     | 4px solid ring + 32px glow + **pulse** + warm tint  |
- * | `final-hours` | today's ring + **soft pulse**                       |
- * | `today`       | 3px terracotta ring + 26px glow                     |
- * | `closing-in`  | 3px gold ring + 22px glow                           |
- * | `this-week`   | 2.5px olive ring + 18px glow                        |
- * | `radar`       | faint 1.5px olive ring + 14px haze                  |
- * | `none`        | none (`null`)                                       |
+ * | tier          | ring + glow                          | card tint |
+ * |---------------|--------------------------------------|-----------|
+ * | `overdue`     | 4px solid ring + 32px glow + **pulse** | `#fff1e8` |
+ * | `final-hours` | today's ring + **soft pulse**        | `#fff4ec` |
+ * | `today`       | 3px terracotta ring + 26px glow      | `#fff7f0` |
+ * | `closing-in`  | 3px gold ring + 22px glow            | `#fdf7ec` |
+ * | `this-week`   | 2.5px olive ring + 18px glow         | `#faf7ee` |
+ * | `radar`       | faint 1.5px olive ring + 14px haze   | —         |
+ * | `none`        | none (`null`)                        | —         |
  */
 export function urgencyGlowStyle(tier: UrgencyTier): GlowStyle | null {
   switch (tier) {
@@ -97,30 +106,57 @@ export function urgencyGlowStyle(tier: UrgencyTier): GlowStyle | null {
       return {
         boxShadow: `${REST}, 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)`,
         animation: 'urgency-pulse 2s ease-in-out infinite',
-        background: '#fff8f3',
+        background: '#fff1e8',
       }
     case 'final-hours':
       return {
         boxShadow: `${REST}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
         animation: 'urgency-pulse-soft 3s ease-in-out infinite',
+        background: '#fff4ec',
       }
     case 'today':
       return {
         boxShadow: `${REST}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
+        background: '#fff7f0',
       }
     case 'closing-in':
       return {
         boxShadow: `${REST}, 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)`,
+        background: '#fdf7ec',
       }
     case 'this-week':
       return {
         boxShadow: `${REST}, 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)`,
+        background: '#faf7ee',
       }
     case 'radar':
       return {
         boxShadow: `${REST}, 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)`,
       }
     case 'none':
+      return null
+  }
+}
+
+/** A small 🔥 corner flag for the whole terracotta "hot" band (overdue + due-today) — a
+ *  color-INDEPENDENT urgency cue that reads even where the hue-based glow/chip can't be told apart
+ *  (colorblindness, glare). Deliberately ONE glyph and scarce: the softer tiers lean on the glow +
+ *  tint + chip, so the flame itself means "act now." (We avoid ⏰ here — the chip already uses it
+ *  for "has a set time", so reusing it on a date-only today card would overload the symbol.) The
+ *  overdue/today split still reads in the chip text ("Overdue · 4d" vs "Today"). */
+export interface UrgencyIcon {
+  glyph: string
+  label: string
+}
+
+export function urgencyIcon(tier: UrgencyTier): UrgencyIcon | null {
+  switch (tier) {
+    case 'overdue':
+      return { glyph: '🔥', label: 'Overdue' }
+    case 'final-hours':
+    case 'today':
+      return { glyph: '🔥', label: 'Due today' }
+    default:
       return null
   }
 }
