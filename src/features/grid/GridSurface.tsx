@@ -138,7 +138,7 @@ export function GridSurface({
         onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
         onDelete={() => handleDelete(task)}
         onDone={() => doneWithStamp(task)}
-        onSetDue={(due) => updateMutate({ id: task.id, patch: { due } })}
+        onSetDue={(due, due_time) => updateMutate({ id: task.id, patch: { due, due_time } })}
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,

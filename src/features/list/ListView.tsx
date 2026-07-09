@@ -104,8 +104,8 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleUpdateText = (id: string, text: string) => updateTask.mutate({ id, patch: { text } })
   const handleUpdateCoords = (id: string, x: number, y: number) =>
     updateTask.mutate({ id, patch: { x, y } })
-  const handleUpdateDue = (id: string, due: string | null) =>
-    updateTask.mutate({ id, patch: { due } })
+  const handleUpdateDue = (id: string, due: string | null, dueTime: string | null) =>
+    updateTask.mutate({ id, patch: { due, due_time: dueTime } })
   // Delete now confirms first (was a silent soft-delete). The app-themed useConfirm gate names
   // the task so an accidental click can't quietly remove it; only "Delete" soft-deletes.
   const handleDelete = async (task: Task) => {

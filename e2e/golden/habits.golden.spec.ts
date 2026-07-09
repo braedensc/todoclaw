@@ -1,59 +1,63 @@
 import { test, expect } from '../helpers/fixtures'
 import { openReminders } from '../helpers/ui'
 
-// Golden path: add a daily reminder (habit), check it off for today, add a step (subtask) and
-// check that too — then reload to prove the checks persisted to daily_state (they reset each local
-// day by reading a fresh date-keyed row, so "checked" must survive a reload within the same day).
-// The full reminders view lives on the Daily reminders page (ADR-0027) — open it from the Account
-// nav first. UI copy says "reminders"; the underlying hooks/labels keep "habit" identifiers.
+// Golden path (post habits-setup redesign): the Daily habits page is a SETUP surface — you add
+// habits and their OPTIONAL details there, but you do NOT tick them off there (management only).
+// Habits are checked off from the HOME screen's inline list. So: add a habit + a detail on the
+// setup page, return home, check it off, open its detail popup to see the check cascade to the
+// detail, then reload to prove it persisted to daily_state (checks reset each local day by reading
+// a fresh date-keyed row, so "checked" must survive a reload within the same day).
 const HABIT = 'Morning stretch'
-const STEP = 'Neck rolls'
+const DETAIL = 'Neck rolls'
 
-test('add a reminder, check it and a step for today; checks survive a reload', async ({ page }) => {
+test('set up a habit + detail, check it off from home; checks survive a reload', async ({
+  page,
+}) => {
+  // 1) SETUP page — add the habit and one optional detail. No daily checkboxes live here.
   await openReminders(page)
   const habitsSection = page.getByRole('region', { name: 'Daily habits' })
 
-  // Add the habit — it lands in the active list with an unchecked daily checkbox.
   await habitsSection.getByPlaceholder('Add a habit…').fill(HABIT)
-  await habitsSection.getByRole('button', { name: /^Add$/ }).click()
-  const habitCheck = page.getByLabel(`Mark "${HABIT}" done today`)
-  await expect(habitCheck).toBeVisible()
-  await expect(habitCheck).not.toBeChecked()
+  await habitsSection.getByRole('button', { name: 'Add habit' }).click()
 
-  // Check it off for today. click() rather than check(): the checkbox is CONTROLLED — it only
-  // flips once the daily_state write + refetch land, so check()'s immediate post-click
-  // verification would see the React revert and fail. toBeChecked() retries until it flips.
-  await habitCheck.click()
-  await expect(habitCheck).toBeChecked()
-
-  // Expand the steps panel and add a step. Scope the Add button to the habit row — the
-  // add-a-habit form at the bottom of the section has its own Add button.
   const row = habitsSection.getByRole('listitem').filter({ hasText: HABIT })
-  await row.getByLabel(`Show steps for "${HABIT}"`).click()
-  await expect(row.getByText('No steps yet — add one below.')).toBeVisible()
-  await row.getByLabel(`Add a step to "${HABIT}"`).fill(STEP)
-  await row.getByRole('button', { name: /^Add$/ }).click()
+  await expect(row).toBeVisible()
+  // The setup page never shows a daily check — that only lives on home.
+  await expect(row.getByRole('checkbox')).toHaveCount(0)
 
-  // Check the step for today (click(), not check() — same controlled-checkbox semantics).
-  const stepCheck = row.getByLabel(`Mark step "${STEP}" done today`)
-  await expect(stepCheck).toBeVisible()
-  await stepCheck.click()
-  await expect(stepCheck).toBeChecked()
+  // Open the details panel: the "optional" hint shows until there's a detail. Then add one.
+  await row.getByRole('button', { name: `Show details for "${HABIT}"` }).click()
+  await expect(row.getByText(/Details are optional/i)).toBeVisible()
+  await row.getByLabel(`Add a detail to "${HABIT}"`).fill(DETAIL)
+  await row.getByRole('button', { name: /Add detail/ }).click()
+  await expect(row.getByText(DETAIL)).toBeVisible()
 
-  // Master switch: the habit checkbox cascades to its steps in BOTH directions — unchecking the
-  // habit clears the step, re-checking checks it again (each write is its own set_daily_flag).
-  await habitCheck.click()
-  await expect(habitCheck).not.toBeChecked()
-  await expect(stepCheck).not.toBeChecked()
-  await habitCheck.click()
-  await expect(habitCheck).toBeChecked()
-  await expect(stepCheck).toBeChecked()
+  // 2) Back to HOME (the ✕ → browser Back). The setup region goes away.
+  await page.getByRole('button', { name: 'Close habits' }).click()
+  await expect(page.getByRole('region', { name: 'Daily habits' })).toHaveCount(0)
 
-  // Reload: the session persists (storageState) and today's daily_state row still holds both
-  // checks — this proves the writes landed server-side, not just in component state.
-  // (Locators are lazy queries, so the pre-reload `row`/`habitCheck` re-resolve fine here.)
+  // 3) Check the habit off from the inline home list — the ONLY place habits get ticked. click()
+  // rather than a checkbox assertion: the toggle is CONTROLLED, flipping only once the daily_state
+  // write + refetch land, so aria-pressed retries until it flips.
+  const habitToggle = page.getByRole('button', { name: `Mark habit "${HABIT}" done today` })
+  await expect(habitToggle).toBeVisible()
+  await expect(habitToggle).toHaveAttribute('aria-pressed', 'false')
+  await habitToggle.click()
+  await expect(habitToggle).toHaveAttribute('aria-pressed', 'true')
+
+  // 4) Open the detail popup from home (the name button, exact — the toggle's label also contains
+  // the habit text). Checking the habit is a master switch, so the detail reads as checked too.
+  await page.getByRole('button', { name: HABIT, exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: `Habit: ${HABIT}` })
+  await expect(
+    dialog.getByRole('checkbox', { name: `Mark detail "${DETAIL}" done today` }),
+  ).toBeChecked()
+  await dialog.getByRole('button', { name: 'Close habit' }).click()
+
+  // 5) Reload: today's daily_state row still holds the check — proves the write landed server-side,
+  // not just in component state.
   await page.reload()
-  await expect(habitCheck).toBeChecked()
-  await row.getByLabel(`Show steps for "${HABIT}"`).click()
-  await expect(row.getByLabel(`Mark step "${STEP}" done today`)).toBeChecked()
+  await expect(
+    page.getByRole('button', { name: `Mark habit "${HABIT}" done today` }),
+  ).toHaveAttribute('aria-pressed', 'true')
 })

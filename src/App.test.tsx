@@ -37,10 +37,20 @@ vi.mock('./features/done/use-history', () => ({
 }))
 vi.mock('./features/schedule/use-user-schedule', () => ({
   useEnsureUserSchedule: () => ({ mutate: vi.fn() }),
-  useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
-  // The setup guide's one-click notifications enabler (use-enable-notifications) composes this
-  // mutation; stub it so the guide renders without a QueryClientProvider / network.
-  useSaveScheduleConfig: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
+  // The stored zone is deliberately the HOST's own zone: TimezoneMismatchBanner renders whenever
+  // stored ≠ device, and these shell tests must be host-independent — stored == device keeps the
+  // banner out of the tree on any machine. (Banner behavior has its own test file.)
+  useUserSchedule: () => ({
+    data: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, config: {} },
+  }),
+  // Exposes BOTH call shapes: Settings saves via mutate; the setup guide's one-click
+  // notifications enabler (use-enable-notifications) awaits mutateAsync.
+  useSaveScheduleConfig: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+  }),
 }))
 // The inbox bell/badge + deep-link seed effect read messages (useQuery/useMutation). Stub them so
 // the shell renders without a QueryClientProvider / network.
@@ -176,15 +186,17 @@ describe('App shell', () => {
     }
   })
 
-  it('on desktop, #/reminders keeps the full-page presentation (no dialog, home swapped out)', () => {
+  it('on desktop, #/reminders opens the habits popup OVER a still-mounted home (not a page swap)', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     window.location.hash = '#/reminders'
     try {
       render(<App />)
+      // The setup surface is now a centered popup (a modal dialog) — click the scrim to close it.
+      expect(screen.getByRole('dialog', { name: 'Daily habits' })).toBeInTheDocument()
       expect(screen.getByRole('region', { name: 'Daily habits' })).toBeInTheDocument()
-      expect(screen.queryByRole('dialog', { name: 'Daily habits' })).not.toBeInTheDocument()
-      // The page swap: home's work area is gone.
-      expect(screen.queryByRole('button', { name: 'Grid' })).not.toBeInTheDocument()
+      // Home stays mounted underneath (its work-area view toggle is still present), so you land
+      // back on it when the popup closes.
+      expect(screen.getByRole('button', { name: 'Grid' })).toBeInTheDocument()
     } finally {
       window.location.hash = ''
     }

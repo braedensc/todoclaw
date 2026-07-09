@@ -15,6 +15,7 @@ function makeTask(
     x,
     y,
     due: null,
+    due_time: null,
     staged: false,
     bucket: 'oneoff',
     recurring: null,

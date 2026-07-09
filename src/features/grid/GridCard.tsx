@@ -11,7 +11,9 @@ import {
 } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
+import { formatDueTime } from '../../lib/dates'
 import { RecurringSection } from '../recurring/RecurringSection'
+import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
 import { BUCKET_DOT, CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
 export interface GridCardProps {
@@ -40,7 +42,9 @@ export interface GridCardProps {
   /** Mark this task done — caller branches recurring (reset cycle) vs normal (write history). */
   onDone: () => void
   /** Commit a due date (ISO 'YYYY-MM-DD' or null) — writes `due` ONLY, never repositions. */
-  onSetDue: (due: string | null) => void
+  /** Write due date + time ('YYYY-MM-DD' / 'HH:MM', null to clear). Always both columns —
+   *  clearing the date clears the time with it (the DB CHECK forbids a time without a date). */
+  onSetDue: (due: string | null, dueTime: string | null) => void
   /** Set a fresh recurring schedule of N days (writes `recurring`, lastDoneAt null, count 0). */
   onSetRecurring: (frequencyDays: number) => void
   /** Change an already-recurring task's cadence (preserves lastDoneAt + doneCount). */
@@ -192,7 +196,9 @@ export function GridCard({
   }
 
   // The date picker wants 'YYYY-MM-DD'; `due` may be a full ISO timestamp, so slice the date.
+  // The time picker wants 'HH:MM'; `due_time` arrives as 'HH:MM:SS' off the wire.
   const dueValue = task.due ? task.due.slice(0, 10) : ''
+  const timeValue = task.due_time ? task.due_time.slice(0, 5) : ''
 
   return (
     <div
@@ -282,7 +288,13 @@ export function GridCard({
           className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold text-white"
           style={{ backgroundColor: daysUntilDue <= 2 ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
         >
-          {daysUntilDue < 0 ? 'overdue' : daysUntilDue === 0 ? 'today' : `${daysUntilDue}d`}
+          {daysUntilDue < 0
+            ? 'overdue'
+            : daysUntilDue === 0
+              ? task.due_time
+                ? formatDueTime(task.due_time)
+                : 'today'
+              : `${daysUntilDue}d`}
         </span>
       )}
 
@@ -311,16 +323,33 @@ export function GridCard({
                 onPointerDown={stopDrag}
                 onClick={(e) => e.stopPropagation()}
               >
-                <label className="flex items-center gap-2 text-xs">
-                  <span className="text-muted">Due</span>
-                  <input
-                    type="date"
-                    aria-label="Due date"
-                    value={dueValue}
-                    onChange={(e) => onSetDue(e.target.value === '' ? null : e.target.value)}
-                    className="flex-1 rounded border border-border-strong bg-card px-2 py-1 text-xs"
-                  />
-                </label>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted">Due</span>
+                    <input
+                      type="date"
+                      aria-label="Due date"
+                      value={dueValue}
+                      onChange={(e) => {
+                        const due = e.target.value === '' ? null : e.target.value
+                        onSetDue(due, due ? timeValue || null : null)
+                      }}
+                      className="min-w-0 flex-1 rounded border border-border-strong bg-card px-2 py-1 text-xs"
+                    />
+                    <input
+                      type="time"
+                      aria-label="Due time"
+                      value={timeValue}
+                      disabled={!dueValue}
+                      title={dueValue ? undefined : 'Set a date first'}
+                      onChange={(e) =>
+                        onSetDue(dueValue, e.target.value === '' ? null : e.target.value)
+                      }
+                      className="rounded border border-border-strong bg-card px-2 py-1 text-xs disabled:opacity-40"
+                    />
+                  </div>
+                  <DueTimezoneHint />
+                </div>
 
                 <RecurringSection
                   task={task}

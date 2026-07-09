@@ -11,6 +11,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     x: 0.5,
     y: 0.5,
     due: null,
+    due_time: null,
     staged: false,
     bucket: 'oneoff',
     recurring: null,
@@ -35,6 +36,18 @@ describe('daysUntil', () => {
     expect(daysUntil('2026-06-24T00:00:00Z', { timeZone: 'UTC', now })).toBe(1)
     expect(daysUntil('2026-06-30T00:00:00Z', { timeZone: 'UTC', now })).toBe(7)
     expect(daysUntil('2026-06-21T00:00:00Z', { timeZone: 'UTC', now })).toBe(-2)
+  })
+
+  it('treats a bare date-only due as a floating calendar date, not a UTC instant', () => {
+    // The date picker stores 'YYYY-MM-DD'. Parsed as a UTC instant it would be the previous local
+    // day west of UTC, making a task overdue on its own due date. It must read as due today.
+    const nyNow = new Date('2026-06-23T14:00:00Z') // 10am on the 23rd in New York
+    expect(daysUntil('2026-06-23', { timeZone: 'America/New_York', now: nyNow })).toBe(0)
+    expect(daysUntil('2026-06-24', { timeZone: 'America/New_York', now: nyNow })).toBe(1)
+    // Overdue only the day AFTER the due date.
+    expect(daysUntil('2026-06-22', { timeZone: 'America/New_York', now: nyNow })).toBe(-1)
+    // Same floating date is due-today regardless of the user's zone.
+    expect(daysUntil('2026-06-23', { timeZone: 'Asia/Tokyo', now: nyNow })).toBe(0)
   })
 
   it('evaluates both ends in the user timezone, not UTC', () => {

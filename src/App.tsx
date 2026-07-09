@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AuthGate } from './features/auth/AuthGate'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
+import { TimezoneMismatchBanner } from './features/schedule/TimezoneMismatchBanner'
 import { RemindersInline } from './features/habits/RemindersInline'
 import { RemindersPage } from './features/habits/RemindersPage'
 import { RemindersSheet } from './features/habits/RemindersSheet'
@@ -196,16 +197,21 @@ function AppShell() {
           }
         >
           {/* Home vs. a full page. 'home' renders the header, plan, inline reminders, and work
-              area; a Done / Daily-reminders page swaps all of that out (ADR-0027). The 'chat' route
-              is home + the chat overlay — a notification tap must land on the main screen with the
-              drawer open, not a blank shell. On MOBILE the 'reminders' AND 'done' routes are
-              likewise home + a slide-up sheet (RemindersSheet / DoneSheet below) rather than a page
-              swap, so the home screen stays visible behind them. The Settings / Backups overlays
-              and the mobile bottom nav below are route-independent. */}
+              area; the Done page swaps all of that out on desktop (ADR-0027). The 'chat' route is
+              home + the chat overlay — a notification tap must land on the main screen with the
+              drawer open, not a blank shell. 'reminders' (Daily habits) is ALWAYS an overlay over a
+              still-mounted home — a centered popup on desktop (RemindersPage), a slide-up sheet on
+              mobile (RemindersSheet) — so you can click or swipe out of it back to home. 'done' does
+              the same only on mobile (DoneSheet). Settings / Backups and the mobile bottom nav below
+              are route-independent. */}
           {(route === 'home' ||
             route === 'chat' ||
-            (isMobile && (route === 'reminders' || route === 'done'))) && (
+            route === 'reminders' ||
+            (isMobile && route === 'done')) && (
             <>
+              {/* Above the masthead on both surfaces: prompt when the device clock and the
+                  stored timezone disagree (hidden in grid-only — that mode strips all chrome). */}
+              {!gridOnly && <TimezoneMismatchBanner />}
               {isMobile ? (
                 // Mobile masthead: mirrors the desktop paper look now that the top bar is freed up.
                 // A small-caps dateline, the wordmark grown around a bigger peeking pup with the
@@ -596,9 +602,10 @@ function AppShell() {
             <ErrorBoundary>{isMobile ? <DoneSheet /> : <DonePage />}</ErrorBoundary>
           )}
 
-          {/* Daily reminders: a full page on desktop; on mobile a bottom sheet over the
-              still-mounted home above. Same `#/reminders` route either way — deep links and the
-              browser Back button behave identically, only the presentation differs. */}
+          {/* Daily habits: an overlay over the still-mounted home — a centered popup on desktop
+              (RemindersPage), a bottom sheet on mobile (RemindersSheet). Same `#/reminders` route
+              either way — deep links and the browser Back button behave identically, and clicking
+              the scrim / swiping down / Back all close it. Only the presentation differs. */}
           {route === 'reminders' && (
             <ErrorBoundary>{isMobile ? <RemindersSheet /> : <RemindersPage />}</ErrorBoundary>
           )}

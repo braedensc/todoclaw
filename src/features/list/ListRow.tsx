@@ -3,6 +3,7 @@ import type { KeyboardEvent, MouseEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { daysUntil } from '../../lib/scoring'
+import { formatDueTime } from '../../lib/dates'
 import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
 import { resolveCollision } from '../../lib/collision'
 import { IconButton } from '../../components/IconButton'
@@ -38,7 +39,7 @@ interface ListRowProps {
   timeZone: string
   onUpdateText: (id: string, text: string) => void
   onUpdateCoords: (id: string, x: number, y: number) => void
-  onUpdateDue: (id: string, due: string | null) => void
+  onUpdateDue: (id: string, due: string | null, dueTime: string | null) => void
   /** Mark a NORMAL task done (Done tab + history). Recurring tasks use onDoneRecurring. */
   onDone: (task: Task) => void
   /** Mark a RECURRING task done — resets its cycle (lastDoneAt/doneCount), no history. */
@@ -189,7 +190,7 @@ export function ListRow({
       ) : (
         due !== null && (
           <span className="shrink-0 rounded bg-bg px-2 py-0.5 text-xs font-medium text-muted">
-            {dueLabel(due)}
+            {dueLabel(due, task.due_time)}
           </span>
         )
       )}
@@ -311,7 +312,7 @@ export function ListRow({
           key={`${task.x}:${task.y}`}
           task={task}
           onCommitCoords={handleCommitCoords}
-          onCommitDue={(d) => onUpdateDue(task.id, d)}
+          onCommitDue={(d, t) => onUpdateDue(task.id, d, t)}
           onSetRecurring={(freq) => onSetRecurring(task.id, freq)}
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
@@ -322,10 +323,13 @@ export function ListRow({
   )
 }
 
-// Human-friendly due badge from a calendar-day delta: negative = overdue, 0 = today.
-function dueLabel(d: number): string {
+// Human-friendly due badge from a calendar-day delta: negative = overdue, 0 = today. A set
+// due time surfaces only when it's near enough to act on (today/tomorrow) — "in 12 days at
+// 3:00 PM" is noise, "due tomorrow · 3:00 PM" is the plan.
+function dueLabel(d: number, dueTime: string | null): string {
+  const at = dueTime ? ` · ${formatDueTime(dueTime)}` : ''
   if (d < 0) return `overdue ${Math.abs(d)}d`
-  if (d === 0) return 'due today'
-  if (d === 1) return 'due tomorrow'
+  if (d === 0) return `due today${at}`
+  if (d === 1) return `due tomorrow${at}`
   return `${d}d`
 }

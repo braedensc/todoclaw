@@ -76,7 +76,7 @@ export function RemindersInline() {
     updateHabit.mutate({ id: habit.id, patch: { subtasks: next } })
 
   const deleteHabit = async (habit: Habit) => {
-    if (await confirm({ title: `Delete the habit "${habit.text}"?` }))
+    if (await confirm({ title: `Remove the habit "${habit.text}"?`, confirmLabel: 'Remove' }))
       softDelete.mutate(habit.id, { onSuccess: close })
   }
 
@@ -95,7 +95,8 @@ export function RemindersInline() {
   )
 
   const detail = selected && (
-    // One habit's detail card (checkbox + steps + add-step), reused by both surfaces.
+    // One habit's detail card (checkbox + details + add-detail), reused by both surfaces. Opened
+    // FROM the home screen, so it stays checkable (that's where habits get ticked off).
     <ul>
       <HabitRow
         habit={selected}
