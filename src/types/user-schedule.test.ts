@@ -3,7 +3,7 @@ import {
   ScheduleConfigSchema,
   UserScheduleSchema,
   PLAN_NOTES_MAX,
-  BABYCLAW_INSTRUCTIONS_MAX,
+  ASSISTANT_INSTRUCTIONS_MAX,
   COMMITMENTS_MAX,
 } from './user-schedule'
 
@@ -33,10 +33,21 @@ describe('ScheduleConfigSchema', () => {
         { label: 'School pickup', when: 'weekdays 3pm' },
       ],
       planNotes: 'Front-load deep work.',
-      babyclaw: { tone: 'warm', verbosity: 'brief', customInstructions: 'Keep it short.' },
+      assistant: { tone: 'direct', verbosity: 'detailed', customInstructions: 'Keep it short.' },
     }
     expect(() => ScheduleConfigSchema.parse(config)).not.toThrow()
     expect(ScheduleConfigSchema.parse(config).weekday?.workStart).toBe('9:30')
+  })
+
+  it('accepts the full assistant vocabulary (superset tones + verbosity)', () => {
+    for (const tone of ['warm', 'neutral', 'playful', 'direct'] as const) {
+      expect(ScheduleConfigSchema.parse({ assistant: { tone } }).assistant?.tone).toBe(tone)
+    }
+    for (const verbosity of ['brief', 'balanced', 'detailed'] as const) {
+      expect(ScheduleConfigSchema.parse({ assistant: { verbosity } }).assistant?.verbosity).toBe(
+        verbosity,
+      )
+    }
   })
 
   it('rejects planNotes longer than the cap', () => {
@@ -45,16 +56,46 @@ describe('ScheduleConfigSchema', () => {
     ).toThrow()
   })
 
-  it('rejects babyclaw customInstructions longer than the cap', () => {
+  it('rejects assistant customInstructions longer than the cap', () => {
     expect(() =>
       ScheduleConfigSchema.parse({
-        babyclaw: { customInstructions: 'x'.repeat(BABYCLAW_INSTRUCTIONS_MAX + 1) },
+        assistant: { customInstructions: 'x'.repeat(ASSISTANT_INSTRUCTIONS_MAX + 1) },
       }),
     ).toThrow()
   })
 
-  it('rejects an unknown babyclaw tone', () => {
-    expect(() => ScheduleConfigSchema.parse({ babyclaw: { tone: 'sassy' } })).toThrow()
+  it('rejects an unknown assistant tone', () => {
+    expect(() => ScheduleConfigSchema.parse({ assistant: { tone: 'sassy' } })).toThrow()
+  })
+
+  it('reads the legacy `babyclaw` key (migration alias) with the same enums', () => {
+    // Old rows wrote `babyclaw`; the schema keeps it as a read-only alias so configToDraft can
+    // migrate the value into the editor. Its old values are all in the current superset.
+    const parsed = ScheduleConfigSchema.parse({
+      babyclaw: { tone: 'direct', verbosity: 'balanced' },
+    })
+    expect(parsed.babyclaw).toEqual({ tone: 'direct', verbosity: 'balanced' })
+  })
+
+  it("maps a legacy verbosity 'normal' to 'balanced' instead of failing", () => {
+    // set_assistant_preference wrote 'normal' before the vocab was unified. A hard reject here would
+    // trip UserScheduleSchema's config `.catch({})` and wipe the whole config — so it must map, not throw.
+    expect(ScheduleConfigSchema.parse({ assistant: { verbosity: 'normal' } }).assistant).toEqual({
+      verbosity: 'balanced',
+    })
+  })
+
+  it("a legacy assistant.verbosity 'normal' does NOT wipe the surrounding config", () => {
+    const row = {
+      user_id: 'u1',
+      timezone: 'America/New_York',
+      config: { location: 'Atlanta', assistant: { tone: 'playful', verbosity: 'normal' } },
+      created_at: 't',
+      updated_at: 't',
+    }
+    const cfg = UserScheduleSchema.parse(row).config
+    expect(cfg.location).toBe('Atlanta') // NOT nuked to {}
+    expect(cfg.assistant).toEqual({ tone: 'playful', verbosity: 'balanced' })
   })
 
   it('rejects out-of-range free-time hours', () => {

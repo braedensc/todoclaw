@@ -6,6 +6,7 @@ import {
   SYSTEM_PREFIX,
   buildSystem,
   DEFAULT_ASSISTANT_CONFIG,
+  type AssistantConfig,
   type ChatContext,
 } from './chat-prompt.ts'
 
@@ -20,6 +21,12 @@ function baseContext(over: Partial<ChatContext> = {}): ChatContext {
     ...over,
   }
 }
+
+// An AssistantConfig with the defaults overridden — for exercising individual folded prefs.
+const tune = (over: Partial<AssistantConfig>): AssistantConfig => ({
+  ...DEFAULT_ASSISTANT_CONFIG,
+  ...over,
+})
 
 Deno.test('persona introduces BabyClaw by name and stays concise', () => {
   assertStringIncludes(SYSTEM_PREFIX, 'You are BabyClaw')
@@ -155,7 +162,7 @@ Deno.test(
 
     const custom = buildSystem(
       baseContext({
-        assistant: { tone: 'playful', verbosity: 'normal', customInstructions: 'call me Cap' },
+        assistant: { tone: 'playful', verbosity: 'balanced', customInstructions: 'call me Cap' },
       }),
     )
     assertStringIncludes(custom, 'USER PREFERENCES')
@@ -165,6 +172,25 @@ Deno.test(
     assertStringIncludes(custom, 'PREFERENCES only')
   },
 )
+
+Deno.test('config folding: every superset tone + verbosity yields an acting prompt line', () => {
+  // Each non-default choice the UI/tool offers must fold into a real instruction — no dead options.
+  assertStringIncludes(
+    buildSystem(baseContext({ assistant: tune({ tone: 'neutral' }) })),
+    'businesslike',
+  )
+  assertStringIncludes(buildSystem(baseContext({ assistant: tune({ tone: 'direct' }) })), 'direct')
+  assertStringIncludes(
+    buildSystem(baseContext({ assistant: tune({ verbosity: 'balanced' }) })),
+    'extra detail',
+  )
+  assertStringIncludes(
+    buildSystem(baseContext({ assistant: tune({ verbosity: 'detailed' }) })),
+    'Fuller explanations',
+  )
+  // Defaults (warm + brief) add no preferences block.
+  assert(!buildSystem(baseContext({ assistant: tune({}) })).includes('USER PREFERENCES'))
+})
 
 Deno.test('default assistant config is warm + brief + no custom instructions', () => {
   assertEquals(DEFAULT_ASSISTANT_CONFIG, {

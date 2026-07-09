@@ -17,11 +17,12 @@ import { z } from 'npm:zod@4.4.3'
 import { defineCapability, type Capability } from './types.ts'
 import { ok, err, systemErr } from './helpers.ts'
 
-// Mirror chat-context.ts parseAssistant — these are the ONLY values BabyClaw's prompt understands.
+// Mirror chat-context.ts parseAssistant + src/types/user-schedule.ts (ASSISTANT_TONES /
+// ASSISTANT_VERBOSITY) — the ONE canonical vocabulary BabyClaw's prompt understands (configLines).
 // Kept in lockstep with DEFAULT_ASSISTANT_CONFIG / parseAssistant; a value outside these is dropped
 // back to the default when the prompt is next built, so we reject it at the gate here too.
-const TONES = ['warm', 'neutral', 'playful'] as const
-const VERBOSITY = ['brief', 'normal'] as const
+const TONES = ['warm', 'neutral', 'playful', 'direct'] as const
+const VERBOSITY = ['brief', 'balanced', 'detailed'] as const
 const MAX_CUSTOM_INSTRUCTIONS = 500 // same cap parseAssistant enforces on the read side
 
 export const preferenceCapabilities: Capability[] = [
@@ -42,15 +43,17 @@ export const preferenceCapabilities: Capability[] = [
           .enum(TONES)
           .nullish()
           .describe(
-            'How you sound: warm (default, encouraging), neutral (plain, businesslike), or playful ' +
-              '(upbeat, a little extra fun). Omit to leave the tone unchanged.',
+            'How you sound: warm (default, encouraging), neutral (plain, businesslike), playful ' +
+              '(upbeat, a little extra fun), or direct (no-frills, straight to the point). Omit to ' +
+              'leave the tone unchanged.',
           ),
         verbosity: z
           .enum(VERBOSITY)
           .nullish()
           .describe(
-            'How much you say: brief (default, a sentence or two) or normal (a little more detail, ' +
-              'still tight). Omit to leave verbosity unchanged.',
+            'How much you say: brief (default, a sentence or two), balanced (a little more detail, ' +
+              'still tight), or detailed (fuller explanations, never rambling). Omit to leave ' +
+              'verbosity unchanged.',
           ),
         note: z
           .string()

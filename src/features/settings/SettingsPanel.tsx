@@ -5,10 +5,10 @@ import { useIsMobile } from '../../hooks/use-is-mobile'
 import { resetSetupGuide } from '../onboarding/setup-guide-store'
 import { useUserSchedule, useSaveScheduleConfig } from '../schedule/use-user-schedule'
 import {
-  BABYCLAW_TONES,
-  BABYCLAW_VERBOSITY,
+  ASSISTANT_TONES,
+  ASSISTANT_VERBOSITY,
   PLAN_NOTES_MAX,
-  BABYCLAW_INSTRUCTIONS_MAX,
+  ASSISTANT_INSTRUCTIONS_MAX,
   COMMITMENTS_MAX,
 } from '../../types/user-schedule'
 import { EMPTY_DRAFT, configToDraft, draftToConfig, type SettingsDraft } from './settings-form'
@@ -501,7 +501,7 @@ export function SettingsPanel({
                     label="Tone"
                     value={draft.babyclawTone}
                     onChange={(v) => set('babyclawTone', v as SettingsDraft['babyclawTone'])}
-                    options={BABYCLAW_TONES}
+                    options={ASSISTANT_TONES}
                   />
                   <SelectField
                     label="Verbosity"
@@ -509,7 +509,7 @@ export function SettingsPanel({
                     onChange={(v) =>
                       set('babyclawVerbosity', v as SettingsDraft['babyclawVerbosity'])
                     }
-                    options={BABYCLAW_VERBOSITY}
+                    options={ASSISTANT_VERBOSITY}
                   />
                 </div>
                 <TextAreaField
@@ -517,7 +517,7 @@ export function SettingsPanel({
                   hint="Standing preferences for the assistant (e.g. “call me by my first name; keep replies short”). Layered on its fixed persona — it can't override the assistant's scope or safety rules."
                   value={draft.babyclawInstructions}
                   onChange={(v) => set('babyclawInstructions', v)}
-                  maxLength={BABYCLAW_INSTRUCTIONS_MAX}
+                  maxLength={ASSISTANT_INSTRUCTIONS_MAX}
                   placeholder="Keep replies concise. Ask before creating tasks without a due date."
                 />
               </Section>

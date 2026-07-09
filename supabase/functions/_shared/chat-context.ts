@@ -42,10 +42,17 @@ function fmtFrequency(days: number): string {
 }
 
 function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {
-  const raw = (config?.assistant ?? {}) as Record<string, unknown>
+  // `config.assistant` is canonical (both the Settings editor and set_assistant_preference write
+  // it). Fall back to the legacy `config.babyclaw` key the Settings editor wrote before the two
+  // vocabularies were unified (2026-07-09); remove the fallback once no stored config carries it.
+  const raw = (config?.assistant ?? config?.babyclaw ?? {}) as Record<string, unknown>
   const tone =
-    raw.tone === 'playful' || raw.tone === 'neutral' ? raw.tone : DEFAULT_ASSISTANT_CONFIG.tone
-  const verbosity = raw.verbosity === 'normal' ? 'normal' : DEFAULT_ASSISTANT_CONFIG.verbosity
+    raw.tone === 'playful' || raw.tone === 'neutral' || raw.tone === 'direct'
+      ? raw.tone
+      : DEFAULT_ASSISTANT_CONFIG.tone
+  // Legacy 'normal' (pre-unification set_assistant_preference) → 'balanced'.
+  const v = raw.verbosity === 'normal' ? 'balanced' : raw.verbosity
+  const verbosity = v === 'balanced' || v === 'detailed' ? v : DEFAULT_ASSISTANT_CONFIG.verbosity
   let customInstructions: string | null = null
   if (typeof raw.customInstructions === 'string' && raw.customInstructions.trim()) {
     customInstructions = raw.customInstructions.slice(0, MAX_CUSTOM_INSTRUCTIONS)

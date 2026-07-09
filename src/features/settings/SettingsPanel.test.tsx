@@ -101,6 +101,30 @@ describe('SettingsPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('saves BabyClaw tone + verbosity to config.assistant (one field, two surfaces)', () => {
+    // The bug this guards against: the editor used to write `config.babyclaw`, which the server
+    // never read. It must write `config.assistant` — the SAME key parseAssistant reads and the
+    // set_assistant_preference chat tool writes — using the unified superset vocabulary.
+    const onClose = vi.fn()
+    saveMutate.mockImplementation((_args, opts) => opts?.onSuccess?.())
+    render(<SettingsPanel onClose={onClose} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'AI' }))
+    fireEvent.change(screen.getByLabelText('Tone'), { target: { value: 'direct' } })
+    fireEvent.change(screen.getByLabelText('Verbosity'), { target: { value: 'detailed' } })
+    fireEvent.change(screen.getByLabelText('Custom instructions'), {
+      target: { value: 'Call me Cap.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }))
+
+    const [payload] = saveMutate.mock.calls[0]! as [{ config: { assistant?: unknown } }]
+    expect(payload.config.assistant).toEqual({
+      tone: 'direct',
+      verbosity: 'detailed',
+      customInstructions: 'Call me Cap.',
+    })
+  })
+
   it('does not close when the save does not succeed', () => {
     const onClose = vi.fn()
     render(<SettingsPanel onClose={onClose} />) // saveMutate never calls onSuccess

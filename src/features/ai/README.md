@@ -37,9 +37,10 @@ Functions (`supabase/functions/`).
   optional `customInstructions`) folded into its prompt with safe defaults, and can now **write it**
   too: `set_assistant_preference` persists a preference the user states in chat ("keep it playful",
   "stop suggesting morning tasks") so it survives across sessions — it re-reads on the next turn, so
-  the change lands on BabyClaw's next reply. This composes with the pending B11 Settings editor:
+  the change lands on BabyClaw's next reply. This composes with the Settings editor (Settings → AI):
   same `config.assistant` field, two surfaces (chat + Settings), just as a task is editable from both
-  chat and the grid. Custom instructions are always treated as **preferences** and can never widen
+  chat and the grid — one canonical vocabulary (`ASSISTANT_TONES` / `ASSISTANT_VERBOSITY`) shared by
+  both. Custom instructions are always treated as **preferences** and can never widen
   scope; the write is deliberately **bounded** (one scoped, 500-char, preferences-only field) — that
   boundedness is the safety property. See `capabilities/README.md` (`set_assistant_preference`).
 
