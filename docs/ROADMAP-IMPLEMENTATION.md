@@ -85,10 +85,66 @@ Honoring "payments last" and "BYO-AI/MCP before billing":
 5. **Deferred / decision-only — Phase 4 (iOS).** A scoping ladder, not a build. It waits
    on Phase 2 (delivered) and Phase 3's Apple-IAP-vs-web billing decision. No engineering
    slot until a go/no-go on EventKit forces rung 4.
+6. **Dead last — Phase 5 (guest tier), and only after a security audit.** It reuses RLS +
+   tools + guardrails, but is the single biggest attack-surface expansion (closed →
+   publicly-creatable sessions), so it ships after every other phase and a clean audit.
+
+The **admin control plane** (below) is not a phase — it grows with every phase; treat
+"expose it as a live-editable knob in the owner panel" as part of each phase's definition
+of done.
 
 After the Phase 0 root, the graph fans out — frontend (2) and external-AI + infra
 (1 + Infra) parallelize cleanly — then re-converges at the public-launch/payments gate
 (3a + Infra WS3/WS4).
+
+---
+
+## Admin control plane (cross-cutting — grows with every phase)
+
+_Added 2026-07-08 from the admin-control-plane workshop; design-level — not yet through the
+same adversarial code-verification as Phases 0–4._
+
+The owner runs the whole system from one in-app panel: every operational setting is
+**DB-backed config read live at request time**, never a hardcoded constant or env var — so
+a change takes effect on the **next request, no redeploy**. This is the existing
+`app_config` → `app_config_get` → `loadConfig` (30s per-isolate cache) path; Phase 0's
+`app_config_set` write path is the half that makes it _editable_. Every phase that adds a
+setting registers it here instead of hardcoding it.
+
+Today the panel is **read-only** (`admin/index.ts` implements only `get_overview`;
+`AdminPage.tsx` renders the model as a hardcoded literal).
+
+### WS-A1 — Editable config surface · `M`
+
+- [ ] Add a `set_config` action to the `admin` edge fn (owner-gated via `isOwner`, calls
+      `app_config_set`); validate every field server-side against its allowlist/bounds —
+      the table CHECK constraints are the second line, never the only one.
+- [ ] Settings UI: grouped toggles / sliders / number inputs, each showing the current
+      value and its hard bound, with optimistic write + confirmation.
+- [ ] Audit every change (`updated_by`, `updated_at`, plus an append-only
+      `app_config_audit` log) so a fat-finger is traceable and revertible.
+- **Knob registry (filled in per phase):** chat / plan / **guest** model (allowlist);
+  per-call `max_tokens`; global budget base + per-user increment; per-user sub-cap;
+  **guest budget bucket + guest kill-switch**; per-feature rate limits (chat / plan / mcp /
+  guest); tier → model/cap mapping + entitlements (Phase 3a); spend-alert threshold; feature
+  flags (enable MCP / enable guest / enable managed-AI).
+- **Done when:** the owner can change the model, any cap, and any rate limit from the panel
+  and see it take effect on the next AI request with no deploy.
+
+### WS-A2 — Scalable user & spend management · `M`
+
+- [ ] Replace the fixed overview roster with a **server-side paginated, searchable, sortable**
+      user table (never fetch-all — today's `get_overview` must not assume a small N).
+      Columns: tier, month-to-date spend, last active, status.
+- [ ] Per-user drawer with actions: view usage history; **adjust that user's cap /
+      grant-comp / change tier**; revoke; (Phase 5) inspect or kill a guest session.
+- [ ] Owner dashboards the phases assume but none builds: per-model spend, per-tier spend,
+      active-user count, guest-bucket burn, MRR / subscription roster.
+- **Done when:** the panel stays fast at thousands of users and the owner can act on any
+  single user without touching SQL.
+
+**Sequencing:** WS-A1 lands **with Phase 0** (it's the write path's first consumer); the knob
+registry and WS-A2 grow as Phases 1 / 3a / 5 add settings.
 
 ---
 
@@ -909,6 +965,81 @@ claim is false for push; corrected below)
 ### Depends on / feeds
 - **Depends on** Phase 2's delivered PWA/web-push rung-1 baseline (hardened, not built there) and Phase 3a's Apple-IAP-vs-web billing decision (must be settled before an App Store rung). **Depends on** the stable, client-agnostic backend contract (Supabase RLS + edge functions) reused at every rung, and on `planning/EISENCLAW-LOGIC-TO-PORT.md` + the `src/lib` Vitest suite as the Swift re-port oracle.
 - **Feeds** nothing downstream — this is the terminal, decision-only phase.
+
+---
+
+## Phase 5 — Guest / anonymous tier (FINAL — gated on a security audit)
+
+_Added 2026-07-08 from the guest-tier workshop; design-level — not yet through the same
+adversarial code-verification as Phases 0–4._
+
+**Goal:** A no-login "just try it" funnel — an anonymous visitor gets a small, cheap,
+strictly-metered taste of the AI, then converts to Free/Pro. The acquisition top of the
+funnel. · **Estimate:** M (reuses RLS + tools + guardrails; the new work is auth +
+abuse-bounding + funnel UI). · **Sequenced dead last** — after every other phase ships _and_
+a full security audit passes, because it is the single largest attack-surface expansion
+(closed invite-only → publicly-creatable sessions).
+
+### Current state
+
+- Auth is invite-only (`enable_signup = false`); anonymous sign-in is off. Every table is
+  `user_id = auth.uid()` RLS; the capability tools need a JWT-scoped `ctx.client`.
+- The global budget kill-switch is a **single shared bucket** — guest load would starve
+  paying users' AI. Phase 0's budget rework must add an **isolated guest bucket** first.
+- Reusable pattern: `redeem-invite` is a public (no-JWT) function with a per-IP throttle
+  (`invite_attempts`) — the template for per-IP guest limiting.
+
+### Workstreams
+
+#### WS1 — Anonymous identity + convert path · `M`
+
+- [ ] Enable Supabase Anonymous Sign-Ins (`signInAnonymously()` → real `auth.users` row,
+      `is_anonymous = true`, real JWT — so RLS, tools, and the budget ledger work unchanged).
+      Keep email signup invite-gated; anon is a separate toggle + CAPTCHA.
+- [ ] Link-identity on sign-up so the anon user's tasks carry over — the "don't lose your
+      work" conversion hook.
+- **Done when:** a guest uses the planner + a few AI turns with no login, then signs up and
+  keeps everything.
+
+#### WS2 — Strict, isolated guest metering · `M`
+
+- [ ] Separate guest budget bucket + guest kill-switch (extends Phase 0) so guest spend can
+      **never** draw down the authenticated pool.
+- [ ] Tight per-guest cap via the per-user ledger (a few messages / a few cents); guest model
+      = cheapest allowlisted; reduced `max_tokens`, fewer tool iterations, and a **reduced
+      toolset** (no destructive tools).
+- [ ] All of it editable from the admin control plane (guest model, cap, bucket, rate limit,
+      on/off flag).
+- **Done when:** total guest AI cost is hard-bounded regardless of abuse, isolated from paying
+  users.
+
+#### WS3 — Abuse bounding · `M`
+
+- [ ] CAPTCHA (Cloudflare Turnstile) on anonymous sign-in; per-IP ceiling on anon-session
+      _creation_ and guest spend (reuse the `invite_attempts` pattern).
+- [ ] Accept that determined re-rollers leak through — the global guest kill-switch is the
+      real backstop; bound cost, don't chase perfect enforcement.
+- **Done when:** a bot swarm can't create unbounded sessions or exceed the guest bucket.
+
+#### WS4 — Paywall + lifecycle · `S`
+
+- [ ] On cap-hit: AI locks, **the planner keeps working** (no-AI-required invariant); prompt
+      to sign up / go Pro.
+- [ ] Reaper: scheduled prune of inactive anon users + their data (extends Phase 3b
+      retention). Anon users count toward the 50k MAU ceiling — accepted.
+- **Done when:** capped guests are funnelled to conversion and stale guests are cleaned up.
+
+### Open decisions
+
+- Guest taste size (messages / spend) — set from real private-beta cost data before launch.
+- Keep guest tasks server-side (anon auth, Option A — current choice) vs client-only
+  (Option B) if MAU/abuse cost proves worse than expected.
+
+### Depends on / feeds
+
+- **Depends on** Phase 0's isolated guest bucket, the admin control plane's guest knobs,
+  Phase 3a's tiers/paywall, Phase 3b's reaper, and a passing security audit.
+- **Feeds** the acquisition top of the funnel into Free/Pro.
 
 ---
 
