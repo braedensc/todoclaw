@@ -159,11 +159,11 @@ describe('SchedulePanel repeats', () => {
     expect(p.onRemoveRecurring).toHaveBeenCalled()
   })
 
-  it('Every… opens the stepper; ± commits the clamped cadence', () => {
+  it('Every… commits the seed cadence on tap (like Daily/Weekly); ± adjusts it', () => {
     const p = renderPanel()
     fireEvent.click(screen.getByRole('button', { name: 'Every…' }))
-    // Seeded at 3; nothing written until a press.
-    expect(p.onSetRecurring).not.toHaveBeenCalled()
+    // Opening Every… IS choosing a cadence — the 3-day seed is committed immediately.
+    expect(p.onSetRecurring).toHaveBeenCalledWith(3)
     fireEvent.click(screen.getByRole('button', { name: 'More days between repeats' }))
     expect(p.onSetRecurring).toHaveBeenCalledWith(4)
   })

@@ -333,6 +333,7 @@ export function ListRow({
           // from props (its local slider state initializes from the task once per mount).
           key={`${task.x}:${task.y}`}
           task={task}
+          timeZone={timeZone}
           onCommitCoords={handleCommitCoords}
           onCommitDue={(d, t) => onUpdateDue(task.id, d, t)}
           onSetRecurring={(freq) => onSetRecurring(task.id, freq)}

@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RecurringSection } from '../recurring/RecurringSection'
-import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
-import { ReminderPicker } from '../reminders/ReminderPicker'
+import { useIsMobile } from '../../hooks/use-is-mobile'
+import { SchedulePanel } from '../schedule/SchedulePanel'
 
 // The expanded detail panel of a list row: urgency/importance sliders (each paired with a
-// number input), a due date + time picker, a live quadrant badge, and the recurring section
-// (set / edit / remove a repeat schedule — src/features/recurring/RecurringSection.tsx).
+// number input), a live quadrant badge, and the shared SchedulePanel (two-week calendar +
+// time chips + remind + repeats — the ONE schedule editor, workshop 2026-07-09). On mobile
+// this panel IS the task editor (no grid below 720px), so the schedule controls take the
+// touch size grade there.
 //
 // Slider/number semantics (parity spec "Expanded row"): the controls drive LOCAL state so
 // the badge and thumb track the drag live, but x/y are only COMMITTED on pointer-up / blur —
 // the grid must not jump while you adjust. Commit goes through `onCommitCoords`, which runs
-// collision resolution before writing (see ListRow). The date picker commits `due` on change.
+// collision resolution before writing (see ListRow). Schedule edits commit instantly through
+// the same callback contracts the old inline pickers used.
 
 // Data coords are 0–1; the sliders/inputs are 0–100 integers. These convert between them.
 const toPercent = (v: number): number => Math.round(v * 100)
@@ -20,6 +22,8 @@ const toData = (pct: number): number => pct / 100
 
 interface ExpandedRowProps {
   task: Task
+  /** IANA timezone — anchors the SchedulePanel calendar ("today" = the user's day). */
+  timeZone: string
   /** Commit resolved x/y (collision-resolved by the parent) — fired on pointer-up / blur. */
   onCommitCoords: (x: number, y: number) => void
   /** Commit due date + time ('YYYY-MM-DD' / 'HH:MM', null to clear) — fired on picker change.
@@ -43,6 +47,7 @@ interface ExpandedRowProps {
 
 export function ExpandedRow({
   task,
+  timeZone,
   onCommitCoords,
   onCommitDue,
   onSetRecurring,
@@ -64,10 +69,8 @@ export function ExpandedRow({
 
   const commit = () => onCommitCoords(toData(xPct), toData(yPct))
 
-  // The date picker wants 'YYYY-MM-DD'; `due` may be a full ISO timestamp, so slice the date.
-  // The time picker wants 'HH:MM'; `due_time` arrives as 'HH:MM:SS' off the wire.
-  const dueValue = task.due ? task.due.slice(0, 10) : ''
-  const timeValue = task.due_time ? task.due_time.slice(0, 5) : ''
+  // Below 720px this panel is the ONLY editor — thumb-sized schedule controls there.
+  const isMobile = useIsMobile()
 
   return (
     <div className="border-t border-border bg-panel px-4 py-3">
@@ -87,32 +90,6 @@ export function ExpandedRow({
           accent="#3d7a5f"
         />
 
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted">Due</span>
-            <input
-              type="date"
-              aria-label="Due date"
-              value={dueValue}
-              onChange={(e) => {
-                const due = e.target.value === '' ? null : e.target.value
-                onCommitDue(due, due ? timeValue || null : null)
-              }}
-              className="rounded border border-border-strong bg-card px-2 py-1 text-sm"
-            />
-            <input
-              type="time"
-              aria-label="Due time"
-              value={timeValue}
-              disabled={!dueValue}
-              title={dueValue ? undefined : 'Set a date first'}
-              onChange={(e) => onCommitDue(dueValue, e.target.value === '' ? null : e.target.value)}
-              className="rounded border border-border-strong bg-card px-2 py-1 text-sm disabled:opacity-40"
-            />
-          </div>
-          <DueTimezoneHint />
-        </div>
-
         <span
           className="rounded px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white"
           style={{ backgroundColor: live.color }}
@@ -131,21 +108,26 @@ export function ExpandedRow({
         </button>
       </div>
 
-      {/* Reminder — only once the task has a due time to anchor to, and never for a recurring
-          task (the sweep doesn't fire reminders for repeats). */}
-      {dueValue && timeValue && !task.recurring && (
-        <div className="mt-3 flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted">Remind me</span>
-          <ReminderPicker value={reminderOffset} onChange={onSetReminder} idPrefix="list" />
-        </div>
-      )}
-
-      <RecurringSection
-        task={task}
-        onSetRecurring={onSetRecurring}
-        onSetFrequency={onSetFrequency}
-        onRemoveRecurring={onRemoveRecurring}
-      />
+      {/* The ONE schedule editor — same panel as the grid card's ⋯ menu and the add surfaces,
+          so a due date reads and edits identically everywhere. Width-capped so the calendar
+          keeps wall-calendar proportions inside a wide desktop row. */}
+      <div className="mt-3 max-w-[340px]">
+        <SchedulePanel
+          taskText={task.text}
+          due={task.due}
+          dueTime={task.due_time}
+          recurring={task.recurring}
+          timeZone={timeZone}
+          onSetDue={onCommitDue}
+          onSetRecurring={onSetRecurring}
+          onSetFrequency={onSetFrequency}
+          onRemoveRecurring={onRemoveRecurring}
+          reminderOffset={reminderOffset}
+          onSetReminder={onSetReminder}
+          idPrefix="list"
+          touch={isMobile}
+        />
+      </div>
     </div>
   )
 }

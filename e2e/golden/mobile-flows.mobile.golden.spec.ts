@@ -80,15 +80,24 @@ test('the add sheet is a slide-up bottom sheet: no keyboard pop, repeats control
     .evaluate((el) => el === el.ownerDocument.activeElement)
   expect(focused).toBe(false)
 
-  // Manual-only (no AI/BabyClaw mode switcher) — but with a Repeats row (Off/Daily/Weekly/Custom)
-  // so recurring chores are creatable here, and the 🐾 tip pointing at Chat as the fastest path.
+  // Manual-only (no AI/BabyClaw mode switcher) — scheduling (due/remind/repeats) lives behind
+  // the "Add schedule" disclosure (the shared SchedulePanel unfolds on demand), and the 🐾 tip
+  // points at Chat as the fastest path.
   await expect(sheet.getByRole('group', { name: 'Add mode' })).toHaveCount(0)
-  await expect(sheet.getByRole('group', { name: 'Repeats' })).toBeVisible()
+  const disclosure = sheet.getByRole('button', { name: /Add schedule/ })
+  await expect(disclosure).toBeVisible()
   await expect(sheet.getByRole('button', { name: /fastest way to add/i })).toBeVisible()
 
-  // Everything reachable without scrolling: the whole form fits inside the viewport.
+  // Everything reachable without scrolling (with the schedule folded — the default): the whole
+  // form fits inside the viewport.
   const submit = (await sheet.getByRole('button', { name: 'Add task' }).boundingBox())!
   expect(submit.y + submit.height).toBeLessThanOrEqual(viewport.height)
+
+  // Unfolding the disclosure reveals the SchedulePanel (calendar + Repeats presets).
+  await disclosure.tap()
+  await expect(sheet.getByRole('group', { name: 'Repeats' })).toBeVisible()
+  await expect(sheet.getByTestId('schedule-calendar')).toBeVisible()
+  await disclosure.tap()
 
   // A swipe-down dismisses (scrim tap / Back too — there is no ✕).
   await expect(sheet.getByRole('button', { name: 'Close' })).toHaveCount(0)
@@ -103,6 +112,7 @@ test('a Daily repeat from the add sheet creates a live recurring task', async ({
 
   await sheet.getByLabel('Task text').fill('Morning stretch')
   await sheet.getByRole('button', { name: 'Do Now' }).tap()
+  await sheet.getByRole('button', { name: /Add schedule/ }).tap()
   await sheet.getByRole('button', { name: 'Daily' }).tap()
   await sheet.getByRole('button', { name: 'Add task' }).tap()
   await expect(sheet).toBeHidden()
