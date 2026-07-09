@@ -87,10 +87,17 @@ export function planSummary(raw: unknown): PromptPlan | null {
 }
 
 function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {
-  const raw = (config?.assistant ?? {}) as Record<string, unknown>
+  // `config.assistant` is canonical (both the Settings editor and set_assistant_preference write
+  // it). Fall back to the legacy `config.babyclaw` key the Settings editor wrote before the two
+  // vocabularies were unified (2026-07-09); remove the fallback once no stored config carries it.
+  const raw = (config?.assistant ?? config?.babyclaw ?? {}) as Record<string, unknown>
   const tone =
-    raw.tone === 'playful' || raw.tone === 'neutral' ? raw.tone : DEFAULT_ASSISTANT_CONFIG.tone
-  const verbosity = raw.verbosity === 'normal' ? 'normal' : DEFAULT_ASSISTANT_CONFIG.verbosity
+    raw.tone === 'playful' || raw.tone === 'neutral' || raw.tone === 'direct'
+      ? raw.tone
+      : DEFAULT_ASSISTANT_CONFIG.tone
+  // Legacy 'normal' (pre-unification set_assistant_preference) → 'balanced'.
+  const v = raw.verbosity === 'normal' ? 'balanced' : raw.verbosity
+  const verbosity = v === 'balanced' || v === 'detailed' ? v : DEFAULT_ASSISTANT_CONFIG.verbosity
   let customInstructions: string | null = null
   if (typeof raw.customInstructions === 'string' && raw.customInstructions.trim()) {
     customInstructions = raw.customInstructions.slice(0, MAX_CUSTOM_INSTRUCTIONS)
@@ -143,7 +150,11 @@ export async function loadChatContext(
   const [tasksRes, habitsRes, dailyRes, remindersRes] = await Promise.all([
     client
       .from('tasks')
-      .select('id, text, x, y, due, due_time, staged, recurring')
+      // completed_at is fetched (not SQL-filtered) so the render can mirror the grid/list split:
+      // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
+      // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
+      // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
+      .select('id, text, x, y, due, due_time, staged, recurring, completed_at')
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
     client
@@ -188,6 +199,7 @@ export async function loadChatContext(
       recurringStatus: recurringStatusPhrase(rec, now),
       reminderOffset: reminderByTask.get(t.id as string) ?? null,
       doneToday: doneMap[t.id as string] === true,
+      completedAt: (t.completed_at as string | null) ?? null,
     }
   })
 

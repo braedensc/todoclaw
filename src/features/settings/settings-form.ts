@@ -1,8 +1,8 @@
 import {
   ScheduleConfigSchema,
   type ScheduleConfig,
-  type BabyclawTone,
-  type BabyclawVerbosity,
+  type AssistantTone,
+  type AssistantVerbosity,
 } from '../../types/user-schedule'
 import { REMINDER_DEFAULT_MINUTES } from '../reminders/reminder-offsets'
 
@@ -32,8 +32,8 @@ export interface SettingsDraft {
   sundayNotes: string
   commitments: CommitmentDraft[]
   planNotes: string
-  babyclawTone: '' | BabyclawTone
-  babyclawVerbosity: '' | BabyclawVerbosity
+  babyclawTone: '' | AssistantTone
+  babyclawVerbosity: '' | AssistantVerbosity
   babyclawInstructions: string
   // Proactive notifications (ADR-0031). enabled is the toggle; hours are '' until set.
   notificationsEnabled: boolean
@@ -81,7 +81,10 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
   const wd = c.weekday ?? {}
   const sat = c.weekend?.saturday ?? {}
   const sun = c.weekend?.sunday ?? {}
-  const baby = c.babyclaw ?? {}
+  // `assistant` is canonical (Settings + the chat self-write both use it). Fall back to the legacy
+  // `babyclaw` key so an old value still pre-fills the editor; saving rewrites it as `assistant`
+  // and drops `babyclaw`. Remove the fallback once no stored config carries `babyclaw` (2026-07-09).
+  const baby = c.assistant ?? c.babyclaw ?? {}
   const notif = c.notifications ?? {}
   return {
     location: c.location ?? '',
@@ -165,7 +168,9 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     .map((c) => ({ label: str(c.label), when: str(c.when) }))
     .filter((c): c is { label: string; when: string | undefined } => c.label !== undefined)
     .map((c) => (c.when === undefined ? { label: c.label } : { label: c.label, when: c.when }))
-  const babyclaw = compact({
+  // Canonical key. We never write the legacy `babyclaw` key, so the first save after this change
+  // migrates an old config forward (configToDraft read it; draftToConfig drops it).
+  const assistant = compact({
     tone: draft.babyclawTone || undefined,
     verbosity: draft.babyclawVerbosity || undefined,
     customInstructions: str(draft.babyclawInstructions),
@@ -196,7 +201,7 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     weekend,
     commitments: commitments.length ? commitments : undefined,
     planNotes: str(draft.planNotes),
-    babyclaw,
+    assistant,
     notifications,
   })
   return ScheduleConfigSchema.parse(raw ?? {})

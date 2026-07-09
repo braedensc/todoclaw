@@ -6,7 +6,9 @@ import {
   SYSTEM_PREFIX,
   buildSystem,
   DEFAULT_ASSISTANT_CONFIG,
+  type AssistantConfig,
   type ChatContext,
+  type PromptTask,
 } from './chat-prompt.ts'
 
 function baseContext(over: Partial<ChatContext> = {}): ChatContext {
@@ -21,6 +23,12 @@ function baseContext(over: Partial<ChatContext> = {}): ChatContext {
     ...over,
   }
 }
+
+// An AssistantConfig with the defaults overridden — for exercising individual folded prefs.
+const tune = (over: Partial<AssistantConfig>): AssistantConfig => ({
+  ...DEFAULT_ASSISTANT_CONFIG,
+  ...over,
+})
 
 Deno.test('persona introduces BabyClaw by name and stays concise', () => {
   assertStringIncludes(SYSTEM_PREFIX, 'You are BabyClaw')
@@ -95,6 +103,7 @@ Deno.test(
             recurringStatus: null,
             reminderOffset: null,
             doneToday: false,
+            completedAt: null,
           },
           {
             id: 't2',
@@ -109,6 +118,7 @@ Deno.test(
             recurringStatus: 'due today',
             reminderOffset: null,
             doneToday: true,
+            completedAt: null,
           },
           {
             id: 't3',
@@ -123,6 +133,7 @@ Deno.test(
             recurringStatus: null,
             reminderOffset: null,
             doneToday: false,
+            completedAt: null,
           },
         ],
         habits: [
@@ -227,6 +238,50 @@ Deno.test('no plan block when the day has not been planned', () => {
 })
 
 Deno.test(
+  'contextBlock splits on completedAt like the grid: prior-day done hidden, today done kept',
+  () => {
+    const task = (over: Partial<PromptTask>): PromptTask => ({
+      id: 'x',
+      text: 'x',
+      x: 0.5,
+      y: 0.5,
+      due: null,
+      dueInDays: null,
+      dueTime: null,
+      staged: false,
+      recurringLabel: null,
+      recurringStatus: null,
+      reminderOffset: null,
+      doneToday: false,
+      completedAt: null,
+      ...over,
+    })
+    const sys = buildSystem(
+      baseContext({
+        tasks: [
+          task({ id: 'live', text: 'Live errand' }), // → ACTIVE
+          // Completed a PRIOR day: completedAt set, gone from today's done map → hidden everywhere.
+          task({ id: 'old', text: 'Old errand', completedAt: '2026-07-03T18:00:00Z' }),
+          // Completed TODAY: completedAt set AND in the done map → DONE TODAY, never ACTIVE.
+          task({
+            id: 'today',
+            text: 'Today errand',
+            completedAt: '2026-07-04T14:00:00Z',
+            doneToday: true,
+          }),
+        ],
+      }),
+    )
+    const active = sys.slice(sys.indexOf('=== ACTIVE TASKS'), sys.indexOf('=== DONE TODAY'))
+    assertStringIncludes(active, 'Live errand')
+    assert(!active.includes('Old errand'), 'prior-day completion must not appear as ACTIVE')
+    assert(!active.includes('Today errand'), "today's completion must not appear as ACTIVE")
+    // The prior-day completion is hidden from DONE TODAY too; only today's completion shows there.
+    assertStringIncludes(sys, '=== DONE TODAY ===\n1 completed today: "Today errand"')
+  },
+)
+
+Deno.test(
   'config folding: defaults add no preferences block; playful + custom instructions do',
   () => {
     const plain = buildSystem(baseContext())
@@ -234,7 +289,7 @@ Deno.test(
 
     const custom = buildSystem(
       baseContext({
-        assistant: { tone: 'playful', verbosity: 'normal', customInstructions: 'call me Cap' },
+        assistant: { tone: 'playful', verbosity: 'balanced', customInstructions: 'call me Cap' },
       }),
     )
     assertStringIncludes(custom, 'USER PREFERENCES')
@@ -244,6 +299,25 @@ Deno.test(
     assertStringIncludes(custom, 'PREFERENCES only')
   },
 )
+
+Deno.test('config folding: every superset tone + verbosity yields an acting prompt line', () => {
+  // Each non-default choice the UI/tool offers must fold into a real instruction — no dead options.
+  assertStringIncludes(
+    buildSystem(baseContext({ assistant: tune({ tone: 'neutral' }) })),
+    'businesslike',
+  )
+  assertStringIncludes(buildSystem(baseContext({ assistant: tune({ tone: 'direct' }) })), 'direct')
+  assertStringIncludes(
+    buildSystem(baseContext({ assistant: tune({ verbosity: 'balanced' }) })),
+    'extra detail',
+  )
+  assertStringIncludes(
+    buildSystem(baseContext({ assistant: tune({ verbosity: 'detailed' }) })),
+    'Fuller explanations',
+  )
+  // Defaults (warm + brief) add no preferences block.
+  assert(!buildSystem(baseContext({ assistant: tune({}) })).includes('USER PREFERENCES'))
+})
 
 Deno.test('default assistant config is warm + brief + no custom instructions', () => {
   assertEquals(DEFAULT_ASSISTANT_CONFIG, {
