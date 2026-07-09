@@ -5,11 +5,16 @@
 
 import { z } from 'npm:zod@4.4.3'
 import { localDateInTZ } from '../dates.ts'
+import { formatOffset } from '../reminder-content.ts'
 import { placeByDue, urgencyToX, importanceToY } from '../placement.ts'
 import { defineCapability, type Capability } from './types.ts'
 import { ok, err, systemErr, updateTaskRow } from './helpers.ts'
 
 const uuid = z.string().uuid()
+
+// "1 hour before" / "at the due time" — the confirmation phrase for a reminder offset.
+const reminderPhrase = (minutes: number): string =>
+  minutes === 0 ? 'at the due time' : `${formatOffset(minutes)} before`
 
 export const taskCapabilities: Capability[] = [
   defineCapability({
@@ -136,6 +141,96 @@ export const taskCapabilities: Capability[] = [
         { due: i.due, x: place.x, y: place.y, staged: place.staged },
         i.due ? 'Set the due date for' : 'Cleared the due date for',
       )
+    },
+  }),
+
+  defineCapability({
+    name: 'set_reminder',
+    description:
+      'Set a push reminder for a task a given number of minutes before it is due. The task must ' +
+      'already have a due date AND a due time (use set_due_date first if not). Replaces any ' +
+      'existing reminder on that task. Reminders arrive on devices where the user has ' +
+      'notifications turned on.',
+    schema: z
+      .object({
+        task_id: uuid.describe('The task id (UUID).'),
+        minutes_before: z
+          .number()
+          .int()
+          .min(0)
+          .max(40320)
+          .describe(
+            'Minutes before the due time to fire (0 = at the due time; max 40320 = 28 days).',
+          ),
+      })
+      .strict(),
+    async execute(ctx, i) {
+      // Pre-check for friendly messages (the RPC re-validates all of this as a backstop). RLS
+      // scopes the select to the caller's own live tasks.
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text, due, due_time, recurring')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      if (!task.due || !task.due_time) {
+        return err(
+          `"${task.text}" needs a due date and time before I can set a reminder — set those first, then ask again.`,
+        )
+      }
+      if (task.recurring) {
+        return err(
+          `"${task.text}" is a recurring task — reminders aren't delivered for repeats. Set one on a one-off task instead.`,
+        )
+      }
+      // set_task_reminder returns the materialized fire_at so we can flag an already-past lead time.
+      const { data: fireAt, error } = await ctx.client.rpc('set_task_reminder', {
+        p_task_id: i.task_id,
+        p_offset_minutes: i.minutes_before,
+      })
+      if (error) return systemErr(error.message)
+      // If the lead time already elapsed beyond the sweep's freshness window (60 min), it won't
+      // fire — say so rather than falsely confirming.
+      const now = ctx.now ?? new Date()
+      const stale =
+        typeof fireAt === 'string' && new Date(fireAt).getTime() < now.getTime() - 60 * 60 * 1000
+      const base = `Set a reminder ${reminderPhrase(i.minutes_before)} for "${task.text}".`
+      return ok(
+        stale
+          ? `${base} Heads up — that lead time is already in the past, so it won't fire; try a shorter one.`
+          : base,
+        ['reminders'],
+      )
+    },
+  }),
+
+  defineCapability({
+    name: 'clear_reminder',
+    description: 'Remove the push reminder from a task (leaves the due date and time as they are).',
+    schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
+    async execute(ctx, i) {
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      // Was there a reminder to remove? (RLS-scoped) — so the confirmation doesn't claim a
+      // removal that never happened.
+      const { data: existing, error: exErr } = await ctx.client
+        .from('task_reminders')
+        .select('task_id')
+        .eq('task_id', i.task_id)
+        .maybeSingle()
+      if (exErr) return systemErr(exErr.message)
+      if (!existing) return ok(`"${task.text}" didn't have a reminder set.`, ['reminders'])
+      const { error } = await ctx.client.rpc('clear_task_reminder', { p_task_id: i.task_id })
+      if (error) return systemErr(error.message)
+      return ok(`Removed the reminder from "${task.text}".`, ['reminders'])
     },
   }),
 

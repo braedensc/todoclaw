@@ -131,8 +131,9 @@ export function ExpandedRow({
         </button>
       </div>
 
-      {/* Reminder — only meaningful once the task has a due time to anchor to. */}
-      {dueValue && timeValue && (
+      {/* Reminder — only once the task has a due time to anchor to, and never for a recurring
+          task (the sweep doesn't fire reminders for repeats). */}
+      {dueValue && timeValue && !task.recurring && (
         <div className="mt-3 flex flex-col gap-1.5">
           <span className="text-xs font-medium text-muted">Remind me</span>
           <ReminderPicker value={reminderOffset} onChange={onSetReminder} idPrefix="list" />

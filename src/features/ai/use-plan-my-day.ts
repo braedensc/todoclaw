@@ -22,6 +22,7 @@ export interface PlanRequest {
     urgency: number
     due: string | null
     dueInDays: number | null
+    dueTime: string | null
   }[]
   recurringDue: { text: string; status: string }[]
   habits: string[]
@@ -54,6 +55,7 @@ export function buildPlanRequest(
       urgency: Math.round((t.x ?? 0.5) * 100),
       due: t.due,
       dueInDays: daysUntil(t.due, { timeZone, now }),
+      dueTime: t.due_time,
     }))
 
   const recurringDue: { text: string; status: string }[] = []

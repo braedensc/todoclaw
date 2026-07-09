@@ -98,6 +98,8 @@ Deno.test(
       'edit_task_text',
       'move_task',
       'set_due_date',
+      'set_reminder',
+      'clear_reminder',
       'make_recurring',
       'clear_recurring',
       'restore_task',
@@ -172,6 +174,174 @@ Deno.test('create_task keeps the id for the model but not for the user', async (
   assert(res.content.includes(UUID))
   assert(typeof res.display === 'string' && !res.display!.includes(UUID))
   assert(res.display!.includes('SCP'))
+})
+
+Deno.test(
+  'set_reminder routes through set_task_reminder and reports the reminders domain',
+  async () => {
+    rpcCalls.length = 0
+    const res = await executeTool(
+      'set_reminder',
+      { task_id: UUID, minutes_before: 60 },
+      ctx({
+        onSelect: () => ({
+          data: { text: 'Dentist', due: '2026-07-08', due_time: '10:30' },
+          error: null,
+        }),
+      }),
+    )
+    assert(!res.is_error)
+    assertEquals(res.mutated, ['reminders'])
+    assert(res.content.includes('1 hour before'))
+    assert(res.content.includes('Dentist'))
+    const call = rpcCalls.find((c) => c.name === 'set_task_reminder')
+    assertEquals(call?.args, { p_task_id: UUID, p_offset_minutes: 60 })
+  },
+)
+
+Deno.test('set_reminder refuses (no RPC) when the task has no due time', async () => {
+  rpcCalls.length = 0
+  const res = await executeTool(
+    'set_reminder',
+    { task_id: UUID, minutes_before: 60 },
+    ctx({
+      onSelect: () => ({
+        data: { text: 'Dentist', due: '2026-07-08', due_time: null },
+        error: null,
+      }),
+    }),
+  )
+  assert(res.is_error)
+  assert(res.content.includes('due date and time'))
+  assertEquals(rpcCalls.filter((c) => c.name === 'set_task_reminder').length, 0)
+})
+
+Deno.test(
+  'set_reminder refuses (no RPC) a recurring task — reminders never fire for repeats',
+  async () => {
+    rpcCalls.length = 0
+    const res = await executeTool(
+      'set_reminder',
+      { task_id: UUID, minutes_before: 60 },
+      ctx({
+        onSelect: () => ({
+          data: {
+            text: 'Water plants',
+            due: '2026-07-08',
+            due_time: '10:30',
+            recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+          },
+          error: null,
+        }),
+      }),
+    )
+    assert(res.is_error)
+    assert(res.content.includes('recurring'))
+    assertEquals(rpcCalls.filter((c) => c.name === 'set_task_reminder').length, 0)
+  },
+)
+
+Deno.test('set_reminder warns when the computed fire_at is already well in the past', async () => {
+  const res = await executeTool(
+    'set_reminder',
+    { task_id: UUID, minutes_before: 1440 },
+    ctx({
+      onSelect: () => ({
+        data: { text: 'Dentist', due: '2026-07-04', due_time: '10:30' },
+        error: null,
+      }),
+      // ctx.now is 2026-07-04T12:00:00Z → this fire_at is ~26h earlier → stale.
+      onRpc: () => ({ data: '2026-07-03T10:30:00Z', error: null }),
+    }),
+  )
+  assert(!res.is_error)
+  assert(res.content.includes("won't fire"))
+})
+
+Deno.test('set_reminder not-found short-circuits before any RPC', async () => {
+  rpcCalls.length = 0
+  const res = await executeTool(
+    'set_reminder',
+    { task_id: UUID, minutes_before: 0 },
+    ctx({ onSelect: () => ({ data: null, error: null }) }),
+  )
+  assert(res.is_error)
+  assert(res.content.includes("couldn't find"))
+  assertEquals(rpcCalls.filter((c) => c.name === 'set_task_reminder').length, 0)
+})
+
+Deno.test('set_reminder offset 0 confirms "at the due time"', async () => {
+  const res = await executeTool(
+    'set_reminder',
+    { task_id: UUID, minutes_before: 0 },
+    ctx({
+      onSelect: () => ({
+        data: { text: 'Meeting', due: '2026-09-01', due_time: '15:00' },
+        error: null,
+      }),
+      onRpc: () => ({ data: '2026-09-01T19:00:00Z', error: null }), // future → no stale warning
+    }),
+  )
+  assert(!res.is_error)
+  assert(res.content.includes('at the due time'))
+})
+
+Deno.test(
+  'set_reminder validation: minutes_before out of range is rejected at the gate',
+  async () => {
+    const res = await executeTool('set_reminder', { task_id: UUID, minutes_before: 999999 }, ctx())
+    assert(res.is_error)
+  },
+)
+
+Deno.test('set_reminder accepts the max offset boundary (40320 = 28 days)', async () => {
+  const res = await executeTool(
+    'set_reminder',
+    { task_id: UUID, minutes_before: 40320 },
+    ctx({
+      onSelect: () => ({
+        data: { text: 'Trip', due: '2026-12-01', due_time: '08:00' },
+        error: null,
+      }),
+      onRpc: () => ({ data: '2026-11-03T13:00:00Z', error: null }),
+    }),
+  )
+  assert(!res.is_error)
+})
+
+Deno.test(
+  'clear_reminder routes through clear_task_reminder and reports the reminders domain',
+  async () => {
+    rpcCalls.length = 0
+    // onSelect returns a row for BOTH the task lookup and the task_reminders existence check.
+    const res = await executeTool(
+      'clear_reminder',
+      { task_id: UUID },
+      ctx({ onSelect: () => ({ data: { text: 'Dentist' }, error: null }) }),
+    )
+    assert(!res.is_error)
+    assertEquals(res.mutated, ['reminders'])
+    const call = rpcCalls.find((c) => c.name === 'clear_task_reminder')
+    assertEquals(call?.args, { p_task_id: UUID })
+  },
+)
+
+Deno.test('clear_reminder no-ops honestly when the task had no reminder', async () => {
+  rpcCalls.length = 0
+  const res = await executeTool(
+    'clear_reminder',
+    { task_id: UUID },
+    // The task exists; the task_reminders lookup finds nothing.
+    ctx({
+      onSelect: (table) =>
+        table === 'task_reminders'
+          ? { data: null, error: null }
+          : { data: { text: 'Dentist' }, error: null },
+    }),
+  )
+  assert(!res.is_error)
+  assert(res.content.includes("didn't have a reminder"))
+  assertEquals(rpcCalls.filter((c) => c.name === 'clear_task_reminder').length, 0)
 })
 
 Deno.test(

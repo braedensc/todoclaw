@@ -3,6 +3,8 @@
 // list_tasks round-trip. Pure string generation (no DB) → unit-testable; the DB fetch that feeds
 // it lives in ./chat-context.ts.
 
+import { formatClockTime } from './reminder-content.ts'
+
 // ---- per-user config (read-side "configurable to an extent") ---------------------------------
 // BabyClaw folds a small per-user config into the prompt when present, with safe defaults when
 // absent. The EDITOR UI is a separate task (B11); this defines the SHAPE + defaults and reads it
@@ -27,6 +29,7 @@ export interface PromptTask {
   y: number | null
   due: string | null
   dueInDays: number | null
+  dueTime: string | null // 'HH:MM[:SS]' wall-clock time, or null
   staged: boolean
   recurringLabel: string | null // e.g. "every 7d", or null
   doneToday: boolean
@@ -135,11 +138,18 @@ function quadrant(x: number, y: number): string {
 
 function duePhrase(t: PromptTask): string | null {
   if (t.due == null) return null
-  if (t.dueInDays == null) return `due ${t.due}`
-  if (t.dueInDays < 0) return `due ${Math.abs(t.dueInDays)}d ago`
-  if (t.dueInDays === 0) return 'due today'
-  if (t.dueInDays === 1) return 'due tomorrow'
-  return `due in ${t.dueInDays}d`
+  const day =
+    t.dueInDays == null
+      ? `due ${t.due}`
+      : t.dueInDays < 0
+        ? `due ${Math.abs(t.dueInDays)}d ago`
+        : t.dueInDays === 0
+          ? 'due today'
+          : t.dueInDays === 1
+            ? 'due tomorrow'
+            : `due in ${t.dueInDays}d`
+  // A due time makes it a fixed anchor ("due today at 3:00 PM") so BabyClaw can reason about it.
+  return t.dueTime ? `${day} at ${formatClockTime(t.dueTime)}` : day
 }
 
 function taskLine(t: PromptTask): string {
