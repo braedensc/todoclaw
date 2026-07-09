@@ -326,7 +326,7 @@ export function SettingsPanel({
                   label="Location"
                   value={draft.location}
                   onChange={(v) => set('location', v)}
-                  placeholder="e.g. Atlanta, GA"
+                  placeholder="e.g. Portland, OR"
                   maxLength={120}
                 />
                 <TimezoneField value={timezone} onChange={setTimezone} />

@@ -6,8 +6,8 @@ link. It edits the single `user_schedule.config` jsonb blob — no new table, no
 ## What it configures
 
 - **Schedule** — location + weekday hours (wake/work/lunch/bedtime + free-time estimate), weekend
-  free-time and Sunday long-run window, and optional running/marathon context. Modeled on the
-  original EisenClaw shape (`planning/eisenclaw-export/data/user-schedule-braeden.json`).
+  free-time + notes (incl. Sunday), and recurring commitments (gym, pickups, standing meetings).
+  Modeled on the original EisenClaw shape (`planning/eisenclaw-export/data/user-schedule-braeden.json`).
 - **Plan My Day preferences** (`config.planNotes`) — one bounded freeform note (≤500 chars).
 - **BabyClaw** (`config.assistant`) — tone, verbosity, and bounded custom instructions (≤500 chars).
   Same field BabyClaw's `set_assistant_preference` chat tool writes — one field, two surfaces. (The

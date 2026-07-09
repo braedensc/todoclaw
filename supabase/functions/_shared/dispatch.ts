@@ -15,7 +15,7 @@ import type { PlanResult, Rock } from './plan-prompt.ts'
 // notification_candidates() returns them. All optional — a missing/false `enabled` means never due.
 export interface NotificationPrefs {
   enabled?: boolean
-  name?: string // optional first name for the greeting ("Good morning Braeden! ☀️")
+  name?: string // optional first name for the greeting ("Good morning Alex! ☀️")
   morningHour?: number // 0–23, local; when the plan push goes out
   eveningHour?: number // 0–23, local; when the recap push goes out
   quietStartHour?: number // inclusive; suppress pushes from here…

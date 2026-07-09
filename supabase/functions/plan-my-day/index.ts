@@ -51,8 +51,9 @@ Deno.serve(async (req) => {
     // Schedule + weather are read server-side (the config is authoritative, not client-trusted).
     const { data: scheduleRow } = await client.from('user_schedule').select('config').maybeSingle()
     const config = (scheduleRow?.config ?? null) as ScheduleConfig | null
-    const location = (config?.location as string) ?? 'Atlanta'
-    const weather = await getWeather(client, location)
+    // No location set → skip the weather line entirely (don't default to any city's weather).
+    const location = typeof config?.location === 'string' ? config.location.trim() : ''
+    const weather = location ? await getWeather(client, location) : null
 
     const a = anthropic()
     const msg = await a.messages.create({

@@ -84,8 +84,9 @@ export async function runPlanForUser(
 
     const config = (schedRes.data?.config ?? null) as ScheduleConfig | null
     const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
-    const location = (config?.location as string) ?? 'Atlanta'
-    const weather = await getWeather(client, location)
+    // No location set → skip the weather line entirely (don't default to any city's weather).
+    const location = typeof config?.location === 'string' ? config.location.trim() : ''
+    const weather = location ? await getWeather(client, location) : null
 
     const req = buildPlanRequest(tasksRes.data ?? [], habitsRes.data ?? [], doneMap, timeZone, now)
 
