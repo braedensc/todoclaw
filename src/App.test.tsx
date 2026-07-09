@@ -43,7 +43,14 @@ vi.mock('./features/schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({
     data: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, config: {} },
   }),
-  useSaveScheduleConfig: () => ({ mutate: vi.fn(), isPending: false }),
+  // Exposes BOTH call shapes: Settings saves via mutate; the setup guide's one-click
+  // notifications enabler (use-enable-notifications) awaits mutateAsync.
+  useSaveScheduleConfig: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+  }),
 }))
 // The inbox bell/badge + deep-link seed effect read messages (useQuery/useMutation). Stub them so
 // the shell renders without a QueryClientProvider / network.

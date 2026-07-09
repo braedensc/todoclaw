@@ -87,7 +87,15 @@ export function ChatConversation({
 
       {pending && (
         <div className="border-t border-border bg-card px-4 py-3">
-          <p className="text-sm text-ink">{pending.summary}?</p>
+          {/* Same voice as the Task Manager widget's waiting strip — one consistent "he's stopped,
+              it's your move" signal wherever the conversation surfaces. */}
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">
+            <span aria-hidden className="mr-1">
+              🐾
+            </span>
+            BabyClaw is waiting on your reply
+          </p>
+          <p className="mt-1 text-sm text-ink">{pending.summary}?</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"

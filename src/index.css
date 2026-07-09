@@ -211,6 +211,33 @@ input[type='range'] {
   }
 }
 
+/* BabyClaw "waiting on your reply" frame (TaskInputWidget) — while a question or confirmation is
+   stopped on the user, the whole Task Manager widget shifts to the attention terracotta and
+   breathes so the state is unmissable. Class-based so reduced motion can hold a static ring. */
+.babyclaw-waiting-frame {
+  border-color: rgba(194, 105, 63, 0.55);
+  animation: babyclaw-waiting-pulse 2.4s ease-in-out infinite;
+}
+@keyframes babyclaw-waiting-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(194, 105, 63, 0.14),
+      0 2px 10px -4px rgba(194, 105, 63, 0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(194, 105, 63, 0.22),
+      0 4px 16px -4px rgba(194, 105, 63, 0.4);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .babyclaw-waiting-frame {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(194, 105, 63, 0.2);
+  }
+}
+
 /* Bottom sheet (src/components/BottomSheet.tsx) — a modal sheet that slides up from the bottom edge
    over a fading scrim, the mobile surface for the Move-to-quadrant / Add / task-detail flows.
    Class-based (like the thinking affordance) so reduced-motion can neutralize both the slide and
