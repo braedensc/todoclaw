@@ -12,7 +12,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 // Domains of user data a capability can mutate. The chat's live-refresh maps each to a TanStack
 // Query key (see src/features/ai/use-ai-chat.ts) so the grid / list / habits / Done UI updates
 // the instant a tool runs.
-export type MutationDomain = 'tasks' | 'habits' | 'daily_state' | 'history'
+export type MutationDomain = 'tasks' | 'habits' | 'daily_state' | 'history' | 'reminders'
 
 // Services a capability MAY need but that live OUTSIDE the transport-agnostic layer (they pull in
 // the owner's Anthropic key, guardrails, etc.). Injected via context so the registry itself
