@@ -94,3 +94,16 @@ export function formatDateTime(iso: string): string {
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   return `${day} at ${time}`
 }
+
+/**
+ * Localized display of a wall-clock due time — 'HH:MM' (time input) or the Postgres `time` wire
+ * format 'HH:MM:SS' — as e.g. "3:00 PM". Pure clock formatting, deliberately NO timezone math:
+ * the stored value already IS the user's wall clock (ADR 2026-07-08-due-dates-wall-clock).
+ * Returns '' for an unparseable input.
+ */
+export function formatDueTime(hms: string): string {
+  const m = /^(\d{2}):(\d{2})/.exec(hms)
+  if (!m) return ''
+  const local = new Date(2000, 0, 1, Number(m[1]), Number(m[2]))
+  return local.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}

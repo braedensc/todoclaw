@@ -40,11 +40,17 @@ export function MobileAddSheet({
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Manual add → placed task. Collision-resolve the quadrant center against existing placed
-  // tasks; a Repeats choice ships as a fresh recurring schedule on the same insert.
-  const handleAdd = (text: string, dest: QuadrantKey, recurring: Recurring | null) => {
+  // tasks; Repeats and Due (date + optional time) ship on the same insert.
+  const handleAdd = (
+    text: string,
+    dest: QuadrantKey,
+    recurring: Recurring | null,
+    due: string | null,
+    dueTime: string | null,
+  ) => {
     const placed = (tasks ?? []).filter((t) => !t.staged)
     const { x, y } = placeInQuadrant(dest, placed)
-    addTask.mutate({ text, x, y, staged: false, recurring })
+    addTask.mutate({ text, x, y, staged: false, recurring, due, due_time: dueTime })
     onAdded?.(dest)
     onClose()
   }

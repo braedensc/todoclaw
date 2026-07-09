@@ -12,6 +12,14 @@ vi.mock('../tasks/use-tasks', () => ({
   useAddTask: () => ({ mutate: addMutate }),
 }))
 
+// AddTaskForm renders DueTimezoneHint (useUserSchedule → useQuery). Mock it with the HOST's own
+// zone so the hint is deterministically absent on any machine (its behavior has its own tests).
+vi.mock('../schedule/use-user-schedule', () => ({
+  useUserSchedule: () => ({
+    data: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, config: {} },
+  }),
+}))
+
 function renderSheet(over: Partial<Parameters<typeof MobileAddSheet>[0]> = {}) {
   const onClose = vi.fn()
   render(<MobileAddSheet open defaultQuadrant={null} onClose={onClose} {...over} />)

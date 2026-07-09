@@ -293,10 +293,36 @@ describe('GridView on-card ⋯ menu (due + recurring)', () => {
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-08-01' } })
 
-    expect(updateMutate).toHaveBeenCalledWith({ id: 'm', patch: { due: '2026-08-01' } })
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'm',
+      patch: { due: '2026-08-01', due_time: null },
+    })
     // Parity: no patch may carry x/y (that would move a manually-placed card).
     const patches = updateMutate.mock.calls.map((c) => (c[0] as { patch: object }).patch)
     expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
+  })
+
+  it('due time: disabled until a date exists, writes both columns, cleared with the date', () => {
+    tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false })]
+    const noDate = render(<GridHarness />)
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    expect(screen.getByLabelText('Due time')).toBeDisabled()
+    noDate.unmount()
+
+    tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false, due: '2026-08-01' })]
+    render(<GridHarness />)
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    const timeInput = screen.getByLabelText('Due time')
+    expect(timeInput).toBeEnabled()
+    fireEvent.change(timeInput, { target: { value: '15:00' } })
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'm',
+      patch: { due: '2026-08-01', due_time: '15:00' },
+    })
+
+    // Clearing the date clears the time with it (the DB CHECK forbids a dangling time).
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } })
+    expect(updateMutate).toHaveBeenCalledWith({ id: 'm', patch: { due: null, due_time: null } })
   })
 
   it('setting recurring from the menu writes a fresh recurring object', () => {

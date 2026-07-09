@@ -2,9 +2,10 @@ import { useState } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RecurringSection } from '../recurring/RecurringSection'
+import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
 
 // The expanded detail panel of a list row: urgency/importance sliders (each paired with a
-// number input), a due-date picker, a live quadrant badge, and the recurring section
+// number input), a due date + time picker, a live quadrant badge, and the recurring section
 // (set / edit / remove a repeat schedule — src/features/recurring/RecurringSection.tsx).
 //
 // Slider/number semantics (parity spec "Expanded row"): the controls drive LOCAL state so
@@ -20,8 +21,10 @@ interface ExpandedRowProps {
   task: Task
   /** Commit resolved x/y (collision-resolved by the parent) — fired on pointer-up / blur. */
   onCommitCoords: (x: number, y: number) => void
-  /** Commit a due date (ISO 'YYYY-MM-DD' or null) — fired on date-picker change. */
-  onCommitDue: (due: string | null) => void
+  /** Commit due date + time ('YYYY-MM-DD' / 'HH:MM', null to clear) — fired on picker change.
+   *  Always writes both columns: clearing the date clears the time with it (a time without a
+   *  date is rejected by the DB CHECK). */
+  onCommitDue: (due: string | null, dueTime: string | null) => void
   /** Set a fresh recurring schedule of N days (writes `recurring`, lastDoneAt null, count 0). */
   onSetRecurring: (frequencyDays: number) => void
   /** Change an already-recurring task's cadence (preserves lastDoneAt + doneCount). */
@@ -55,7 +58,9 @@ export function ExpandedRow({
   const commit = () => onCommitCoords(toData(xPct), toData(yPct))
 
   // The date picker wants 'YYYY-MM-DD'; `due` may be a full ISO timestamp, so slice the date.
+  // The time picker wants 'HH:MM'; `due_time` arrives as 'HH:MM:SS' off the wire.
   const dueValue = task.due ? task.due.slice(0, 10) : ''
+  const timeValue = task.due_time ? task.due_time.slice(0, 5) : ''
 
   return (
     <div className="border-t border-border bg-panel px-4 py-3">
@@ -75,16 +80,31 @@ export function ExpandedRow({
           accent="#3d7a5f"
         />
 
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted">Due</span>
-          <input
-            type="date"
-            aria-label="Due date"
-            value={dueValue}
-            onChange={(e) => onCommitDue(e.target.value === '' ? null : e.target.value)}
-            className="rounded border border-border-strong bg-card px-2 py-1 text-sm"
-          />
-        </label>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted">Due</span>
+            <input
+              type="date"
+              aria-label="Due date"
+              value={dueValue}
+              onChange={(e) => {
+                const due = e.target.value === '' ? null : e.target.value
+                onCommitDue(due, due ? timeValue || null : null)
+              }}
+              className="rounded border border-border-strong bg-card px-2 py-1 text-sm"
+            />
+            <input
+              type="time"
+              aria-label="Due time"
+              value={timeValue}
+              disabled={!dueValue}
+              title={dueValue ? undefined : 'Set a date first'}
+              onChange={(e) => onCommitDue(dueValue, e.target.value === '' ? null : e.target.value)}
+              className="rounded border border-border-strong bg-card px-2 py-1 text-sm disabled:opacity-40"
+            />
+          </div>
+          <DueTimezoneHint />
+        </div>
 
         <span
           className="rounded px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white"
