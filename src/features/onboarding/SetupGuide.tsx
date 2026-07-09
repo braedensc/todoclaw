@@ -95,9 +95,9 @@ const APP_STEP_HINT: Record<InstallContext, string> = {
   'macos-safari':
     'Two quick steps: add Todoclaw to your Dock, then turn notifications on inside it. The guide shows exactly what to click.',
   chromium:
-    'Give Todoclaw its own window and dock icon, then turn on your morning plan, evening recap, and task reminders.',
+    'Give Todoclaw its own window and dock icon, then turn on the daily loop: your plan every morning, BabyClaw’s evening check-in, and timed-task reminders.',
   unknown:
-    'Your morning plan, evening recap, and reminders for timed tasks — sent right to this device.',
+    'Your plan every morning, BabyClaw’s evening check-in (tell him what you did — he marks it done), and timed-task reminders.',
 }
 
 export function SetupGuide({
@@ -224,7 +224,7 @@ export function SetupGuide({
         <Step index={next()} done={guide.tourDone} title="See how Todoclaw works">
           <StepHint>
             A 30-second walk through the essentials: the grid, BabyClaw (your AI helper), Plan My
-            Day, and daily habits.
+            Day and its daily check-ins, and habits.
           </StepHint>
           <StepButton onClick={onStartTour}>Take the tour</StepButton>
         </Step>
@@ -234,7 +234,7 @@ export function SetupGuide({
             <>
               <StepHint>
                 {install.done
-                  ? 'You’re in the app ✓ — one last thing: your morning plan, evening recap, and reminders when a timed task comes due.'
+                  ? 'You’re in the app ✓ — last thing: your plan arrives every morning by itself, and each evening BabyClaw checks in (reply with what you did — he marks it done).'
                   : APP_STEP_HINT.unknown}
               </StepHint>
               <StepButton onClick={() => void notif.enable()} disabled={notif.busy}>

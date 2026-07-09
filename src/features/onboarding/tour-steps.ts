@@ -5,7 +5,7 @@ import type { TourStep } from './FeatureTour'
 // words (a first-run non-technical user), each step teaches ONE idea, and the app's core model —
 // tasks on an urgent × important map — leads.
 
-/** Desktop home shell: grid → Task Manager → Plan My Day → habits → Done → Settings. */
+/** Desktop home shell: grid → Task Manager → Plan My Day → the daily loop (inbox) → habits → Done → Settings. */
 export const DESKTOP_TOUR: TourStep[] = [
   {
     target: 'grid',
@@ -31,6 +31,14 @@ export const DESKTOP_TOUR: TourStep[] = [
       'Plan My Day turns your tasks, habits, and schedule into a realistic plan for today — it ' +
       'even weighs how long each task takes, so your day never gets overstuffed. Add a task or ' +
       'two first, then try it.',
+  },
+  {
+    target: 'inbox',
+    title: 'Your day comes to you',
+    body:
+      'With notifications on, every morning your day’s plan arrives by itself — on your device ' +
+      'and here in the inbox. Every evening BabyClaw checks in: reply with what you finished ' +
+      'and he marks it all complete for you.',
   },
   {
     target: 'habits',
@@ -81,11 +89,11 @@ export const MOBILE_TOUR: TourStep[] = [
   },
   {
     target: 'plan',
-    title: 'One tap plans your day',
+    title: 'Your day, planned for you',
     body:
-      'Plan My Day turns your tasks, habits, and schedule into a realistic plan for today — it ' +
-      'even weighs how long each task takes, so your day never gets overstuffed. Add a task or ' +
-      'two first, then try it.',
+      'Plan My Day turns your tasks, habits, and schedule into a realistic plan that fits your ' +
+      'day. With notifications on it arrives every morning by itself — and each evening ' +
+      'BabyClaw checks in: tell him what you finished and he ticks it all off for you.',
   },
   {
     target: 'nav-more',

@@ -7,17 +7,21 @@ export function NotificationBell({
   onClick,
   className = 'relative hover:text-ink',
   compact = false,
+  tour,
 }: {
   onClick: () => void
   className?: string
   /** Icon + badge only (no "Inbox" label) — for the tight mobile top bar. */
   compact?: boolean
+  /** FeatureTour anchor name (`data-tour`) — the "your day comes to you" step points here. */
+  tour?: string
 }) {
   const unread = useUnreadCount()
   return (
     <button
       type="button"
       onClick={onClick}
+      data-tour={tour}
       aria-label={unread > 0 ? `Inbox, ${unread} unread` : 'Inbox'}
       title="Your daily plan & recap messages"
       className={className}
