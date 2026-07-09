@@ -1,7 +1,8 @@
 // Visual urgency: the "warmth = the data" layer on task cards. Originally ported verbatim from
 // EisenClaw (planning/EISENCLAW-LOGIC-TO-PORT.md §4/§5); the glow ladder was then DELIBERATELY
-// amplified (~2× ring alpha/spread) and extended with time-of-day tiers in the 2026-07-08
-// due-times workshop — "much more obvious" was the explicit ask, so this is a considered
+// amplified and extended with time-of-day tiers in the 2026-07-08 due-times workshop, then pushed
+// HARDER on 2026-07-09 (thicker/more-opaque rings that out-weight a card's own border, brighter
+// halos) because "much more obvious / much stronger" was the standing, explicit ask — a considered
 // departure from strict visual parity, not drift. The exact thresholds and color math live in
 // ONE tested place; cards, cluster bubbles, list rows, and the grid legend only consume the
 // result.
@@ -75,46 +76,50 @@ export interface GlowStyle {
 const REST = '0 2px 7px rgba(0,0,0,.08)'
 
 /**
- * Box-shadow "glow" by tier (2026-07-08 workshop ladder — ~2× the original EisenClaw alpha and
- * spread, one new rung):
+ * Box-shadow "glow" by tier. The 2026-07-08 workshop's ~2× ladder still read too faint next to a
+ * card's own 1px border, so it was pushed HARDER on 2026-07-09 ("much stronger" was the explicit
+ * ask): thicker, more opaque rings that clearly out-weight the border, plus a bigger, brighter
+ * halo. The tier-to-tier gradient is preserved so nearer-due still reads louder.
  *
- * | tier          | effect                                        |
- * |---------------|-----------------------------------------------|
- * | `overdue`     | 2.5px ring + 24px glow + **pulse** + warm tint |
- * | `final-hours` | today's ring + **soft pulse**                 |
- * | `today`       | 2px terracotta ring + 18px glow               |
- * | `closing-in`  | 2px gold ring + 14px glow                     |
- * | `this-week`   | 1.5px olive ring + 11px glow                  |
- * | `radar`       | faint 7px olive haze                          |
- * | `none`        | none (`null`)                                 |
+ * | tier          | effect                                              |
+ * |---------------|-----------------------------------------------------|
+ * | `overdue`     | 4px solid ring + 32px glow + **pulse** + warm tint  |
+ * | `final-hours` | today's ring + **soft pulse**                       |
+ * | `today`       | 3px terracotta ring + 26px glow                     |
+ * | `closing-in`  | 3px gold ring + 22px glow                           |
+ * | `this-week`   | 2.5px olive ring + 18px glow                        |
+ * | `radar`       | faint 1.5px olive ring + 14px haze                  |
+ * | `none`        | none (`null`)                                       |
  */
 export function urgencyGlowStyle(tier: UrgencyTier): GlowStyle | null {
   switch (tier) {
     case 'overdue':
       return {
-        boxShadow: `${REST}, 0 0 0 2.5px rgba(194,105,63,0.90), 0 0 24px 9px rgba(194,105,63,0.42)`,
+        boxShadow: `${REST}, 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)`,
         animation: 'urgency-pulse 2s ease-in-out infinite',
         background: '#fff8f3',
       }
     case 'final-hours':
       return {
-        boxShadow: `${REST}, 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)`,
+        boxShadow: `${REST}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
         animation: 'urgency-pulse-soft 3s ease-in-out infinite',
       }
     case 'today':
       return {
-        boxShadow: `${REST}, 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)`,
+        boxShadow: `${REST}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
       }
     case 'closing-in':
       return {
-        boxShadow: `${REST}, 0 0 0 2px rgba(184,134,42,0.62), 0 0 14px 5px rgba(184,134,42,0.26)`,
+        boxShadow: `${REST}, 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)`,
       }
     case 'this-week':
       return {
-        boxShadow: `${REST}, 0 0 0 1.5px rgba(138,120,40,0.42), 0 0 11px 3px rgba(138,120,40,0.16)`,
+        boxShadow: `${REST}, 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)`,
       }
     case 'radar':
-      return { boxShadow: `${REST}, 0 0 7px 2px rgba(138,120,40,0.14)` }
+      return {
+        boxShadow: `${REST}, 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)`,
+      }
     case 'none':
       return null
   }

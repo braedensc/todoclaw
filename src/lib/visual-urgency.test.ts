@@ -51,7 +51,7 @@ describe('urgencyGlowStyle', () => {
   it('overdue: strongest ring + pulse + warm card tint', () => {
     expect(urgencyGlowStyle('overdue')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2.5px rgba(194,105,63,0.90), 0 0 24px 9px rgba(194,105,63,0.42)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)',
       animation: 'urgency-pulse 2s ease-in-out infinite',
       background: '#fff8f3',
     })
@@ -60,7 +60,7 @@ describe('urgencyGlowStyle', () => {
   it('final-hours: today ring + the soft pulse (no tint)', () => {
     expect(urgencyGlowStyle('final-hours')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)',
       animation: 'urgency-pulse-soft 3s ease-in-out infinite',
     })
   })
@@ -68,18 +68,19 @@ describe('urgencyGlowStyle', () => {
   it('today / closing-in / this-week / radar: static rings, no pulse', () => {
     expect(urgencyGlowStyle('today')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(194,105,63,0.72), 0 0 18px 6px rgba(194,105,63,0.32)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)',
     })
     expect(urgencyGlowStyle('closing-in')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2px rgba(184,134,42,0.62), 0 0 14px 5px rgba(184,134,42,0.26)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)',
     })
     expect(urgencyGlowStyle('this-week')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(138,120,40,0.42), 0 0 11px 3px rgba(138,120,40,0.16)',
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)',
     })
     expect(urgencyGlowStyle('radar')).toEqual({
-      boxShadow: '0 2px 7px rgba(0,0,0,.08), 0 0 7px 2px rgba(138,120,40,0.14)',
+      boxShadow:
+        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)',
     })
   })
 })
