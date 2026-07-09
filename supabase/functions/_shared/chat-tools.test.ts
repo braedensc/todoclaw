@@ -11,9 +11,17 @@ import {
   type ToolContext,
 } from './chat-tools.ts'
 
-Deno.test('complete_task, delete_task, delete_habit are the destructive tools', () => {
-  assertEquals([...DESTRUCTIVE].sort(), ['complete_task', 'delete_habit', 'delete_task'])
-})
+Deno.test(
+  'complete_task, delete_task, delete_habit, delete_completion are the destructive tools',
+  () => {
+    assertEquals([...DESTRUCTIVE].sort(), [
+      'complete_task',
+      'delete_completion',
+      'delete_habit',
+      'delete_task',
+    ])
+  },
+)
 
 Deno.test('all destructive tools are real, advertised tools', () => {
   const names = new Set(TOOL_DEFS.map((t) => t.name))
@@ -36,6 +44,11 @@ Deno.test('confirmation summary prefers the label, falls back to the id (tasks +
   assertEquals(
     destructiveSummary('delete_habit', { habit_id: 'h1' }, 'Meditate'),
     'Delete the habit "Meditate"',
+  )
+  // delete_completion has no task/habit label to resolve — a plain, id-free line.
+  assertEquals(
+    destructiveSummary('delete_completion', { completion_id: 'h9' }),
+    'Remove a completion from your Done log',
   )
 })
 

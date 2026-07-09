@@ -281,3 +281,58 @@ Deno.test('make_recurring starts a fresh cycle for a non-recurring task', async 
   assertEquals(rec.lastDoneAt, null)
   assertEquals(rec.doneCount, 0)
 })
+
+// ---- search_history id exposure + delete_completion ------------------------------------------
+Deno.test(
+  'search_history exposes each entry id (for delete_completion), hidden from the user',
+  async () => {
+    const { ctx } = makeCtx({
+      history: [{ id: 'h-1', text: 'Dentist', completed_at: '2026-07-01T15:00:00Z' }],
+    })
+    const res = await executeTool('search_history', {}, ctx)
+    assert(!res.is_error)
+    assertEquals(res.display, null) // ids never reach the user
+    const rows = JSON.parse(res.content) as Row[]
+    assertEquals(rows[0].id, 'h-1')
+  },
+)
+
+// A one-shot history fake: from('history').delete().eq().select().maybeSingle() resolves to `row`.
+function makeHistoryCtx(row: { text: string } | null): ToolContext {
+  const client = {
+    from() {
+      // deno-lint-ignore no-explicit-any
+      const b: any = {
+        delete: () => b,
+        eq: () => b,
+        select: () => b,
+        maybeSingle: () => Promise.resolve({ data: row, error: null }),
+      }
+      return b
+    },
+  } as unknown as ToolContext['client']
+  return { client, timeZone: 'America/New_York', now: new Date('2026-07-04T15:00:00Z') }
+}
+
+Deno.test(
+  'delete_completion removes a Done-log entry by id and is a history mutation',
+  async () => {
+    const res = await executeTool(
+      'delete_completion',
+      { completion_id: TASK_ID },
+      makeHistoryCtx({ text: 'Dentist' }),
+    )
+    assert(!res.is_error)
+    assertEquals(res.mutated, ['history'])
+    assert(String(res.content).includes('Dentist'))
+  },
+)
+
+Deno.test('delete_completion reports not-found when no entry matches the id', async () => {
+  const res = await executeTool(
+    'delete_completion',
+    { completion_id: TASK_ID },
+    makeHistoryCtx(null),
+  )
+  assert(res.is_error)
+})

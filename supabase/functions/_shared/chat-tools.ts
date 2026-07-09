@@ -91,5 +91,6 @@ export function destructiveSummary(name: string, input: unknown, label?: string)
   if (name === 'complete_task') return `Mark ${label ? `"${label}"` : `task ${id}`} done for today`
   if (name === 'delete_task') return `Move ${label ? `"${label}"` : `task ${id}`} to the trash`
   if (name === 'delete_habit') return `Delete the habit ${label ? `"${label}"` : id}`
+  if (name === 'delete_completion') return 'Remove a completion from your Done log'
   return `Run ${name}`
 }

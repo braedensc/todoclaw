@@ -93,6 +93,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
   const expected = [
     'list_tasks',
     'search_history',
+    'delete_completion',
     'create_task',
     'edit_task_text',
     'move_task',
@@ -123,10 +124,18 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
   assert(!names.has('set_bucket'))
 })
 
-Deno.test('exactly complete_task, delete_task, delete_habit are destructive', () => {
-  assertEquals([...DESTRUCTIVE].sort(), ['complete_task', 'delete_habit', 'delete_task'])
-  for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
-})
+Deno.test(
+  'exactly complete_task, delete_task, delete_habit, delete_completion are destructive',
+  () => {
+    assertEquals([...DESTRUCTIVE].sort(), [
+      'complete_task',
+      'delete_completion',
+      'delete_habit',
+      'delete_task',
+    ])
+    for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
+  },
+)
 
 Deno.test('every capability derives a valid object JSON schema (no leaked $schema)', () => {
   for (const t of TOOL_DEFS) {

@@ -100,7 +100,7 @@ export const taskCapabilities: Capability[] = [
       const limit = Math.min(i.limit ?? 20, 50)
       let q = ctx.client
         .from('history')
-        .select('text, completed_at')
+        .select('id, text, completed_at')
         .order('completed_at', { ascending: false })
         .limit(limit)
       const term = i.query?.trim()
@@ -111,7 +111,10 @@ export const taskCapabilities: Capability[] = [
       }
       const { data, error } = await q
       if (error) return systemErr(error.message)
+      // `id` is included so delete_completion can target a specific entry; it stays model-only
+      // (display: null), never shown to the user, like every other id BabyClaw handles.
       const rows = (data ?? []).map((r) => ({
+        id: r.id as string,
         text: r.text as string,
         completedAt: r.completed_at as string,
         when: fmtInstant(r.completed_at as string, ctx.timeZone),
@@ -119,6 +122,29 @@ export const taskCapabilities: Capability[] = [
       // Read-only lookup: JSON to the model, hidden from the user (display: null) — the answer comes
       // back in BabyClaw's own words, not a row dump.
       return ok(JSON.stringify(rows), undefined, null)
+    },
+  }),
+
+  defineCapability({
+    name: 'delete_completion',
+    description:
+      'Permanently remove ONE entry from the Done log (the same as the × on a Done-tab row). Look up the entry id with search_history first. This only deletes the completion RECORD — it does not affect the live task. Destructive — the user is asked to confirm before it runs.',
+    destructive: true,
+    schema: z
+      .object({ completion_id: uuid.describe('The Done-log entry id (UUID) from search_history.') })
+      .strict(),
+    async execute(ctx, i) {
+      // Owner-scoped DELETE (history_delete_own policy); .select() confirms a row actually matched so
+      // a stale/hallucinated id becomes a clear not-found instead of a silent no-op.
+      const { data, error } = await ctx.client
+        .from('history')
+        .delete()
+        .eq('id', i.completion_id)
+        .select('text')
+        .maybeSingle()
+      if (error) return systemErr(error.message)
+      if (!data) return err("I couldn't find that entry in your Done log.")
+      return ok(`Removed "${data.text}" from your Done log.`, ['history'])
     },
   }),
 
