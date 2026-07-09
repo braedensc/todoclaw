@@ -165,15 +165,16 @@ describe('App shell', () => {
     }
   })
 
-  it('on desktop, #/done keeps the full-page presentation (no dialog, home swapped out)', () => {
+  it('on desktop, #/done renders home UNDER a centered Done popup (an overlay, not a page swap)', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     window.location.hash = '#/done'
     try {
       render(<App />)
+      // Home stays mounted behind the popup: the Grid/List work area is still present…
+      expect(screen.getByRole('button', { name: 'Grid' })).toBeInTheDocument()
+      // …with the Done popup (a modal dialog named "Done") over it.
+      expect(screen.getByRole('dialog', { name: 'Done' })).toBeInTheDocument()
       expect(screen.getByRole('region', { name: 'Done' })).toBeInTheDocument()
-      expect(screen.queryByRole('dialog', { name: 'Done' })).not.toBeInTheDocument()
-      // The page swap: home's work area is gone.
-      expect(screen.queryByRole('button', { name: 'Grid' })).not.toBeInTheDocument()
     } finally {
       window.location.hash = ''
     }
