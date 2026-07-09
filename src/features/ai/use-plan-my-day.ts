@@ -4,7 +4,7 @@ import { daysUntil } from '../../lib/scoring'
 import { recurringStatus } from '../../lib/recurring'
 import { localDateInTZ } from '../../lib/dates'
 import type { DailyStateMaps } from '../daily-state/use-daily-state'
-import type { Task } from '../../types/task'
+import type { Task, TaskSize } from '../../types/task'
 import type { Habit } from '../../types/habit'
 
 // The structured plan the plan-my-day Edge Function returns (mirrors EMIT_PLAN_TOOL there).
@@ -23,6 +23,7 @@ export interface PlanRequest {
     due: string | null
     dueInDays: number | null
     dueTime: string | null
+    size: TaskSize | null // coarse effort (S/M/L/XL), or null to let the planner infer it
   }[]
   recurringDue: { text: string; status: string }[]
   habits: string[]
@@ -48,6 +49,7 @@ export function buildPlanRequest(
       due: t.due,
       dueInDays: daysUntil(t.due, { timeZone, now }),
       dueTime: t.due_time,
+      size: t.size ?? null,
     }))
 
   const recurringDue: { text: string; status: string }[] = []

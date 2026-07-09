@@ -67,6 +67,9 @@ export interface DispatchInputs {
     y: number | null
     due: string | null
     due_time: string | null
+    // Coarse effort (S/M/L/XL) or null — provided by dispatch_inputs_for_user so the proactive
+    // morning plan honors the same size guardrail as interactive Plan My Day.
+    size: string | null
     staged: boolean
     recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
   }[]

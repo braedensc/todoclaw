@@ -4,9 +4,16 @@
 // Faithful to src/features/ai/use-plan-my-day.ts buildPlanRequest + src/lib recurringStatus/daysUntil.
 
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
-import type { PlanRequest } from './plan-prompt.ts'
+import { SIZE_VALUES, type PlanRequest } from './plan-prompt.ts'
 
 const MS_PER_DAY = 86_400_000
+
+// The tasks row comes back untyped (a bare text `size`); narrow it to the S/M/L/XL enum the plan
+// request expects. The DB CHECK guarantees the value, but TS only sees `string | null`, so guard.
+const SIZE_SET = new Set<string>(SIZE_VALUES)
+function toPlanSize(v: string | null | undefined): (typeof SIZE_VALUES)[number] | null {
+  return v && SIZE_SET.has(v) ? (v as (typeof SIZE_VALUES)[number]) : null
+}
 
 interface TaskRow {
   id: string
@@ -15,6 +22,9 @@ interface TaskRow {
   y: number | null
   due: string | null
   due_time: string | null
+  // Optional: run-plan.ts selects it, and the dispatch RPC provides it, but keeping it optional lets
+  // an old-shaped source (deploy skew) still satisfy the type — toPlanSize maps a missing value to null.
+  size?: string | null
   staged: boolean
   recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
 }
@@ -57,6 +67,7 @@ export function buildPlanRequest(
       due: t.due,
       dueInDays: daysUntilInTZ(t.due, timeZone, now),
       dueTime: t.due_time,
+      size: toPlanSize(t.size),
     }))
 
   const recurringDue: { text: string; status: string }[] = []
