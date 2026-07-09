@@ -37,6 +37,17 @@ Deno.test('urgency (x) by days-until-due — every bucket boundary', () => {
   assertEquals(x(120), 0.18) // beyond 3 months → still low urgency
 })
 
+Deno.test(
+  'a bare YYYY-MM-DD due (the tasks.due DATE wire format) is a floating calendar date',
+  () => {
+    // Regression (#178, server side): parsed as a UTC instant, '2026-06-25' would read as the
+    // 24th in New York — "today" — and place at 0.9 instead of 0.84.
+    assertEquals(placeByDue('2026-06-25', TZ, NOW).x, 0.84) // tomorrow
+    assertEquals(placeByDue('2026-06-24', TZ, NOW).x, 0.9) // today
+    assertEquals(placeByDue('2026-07-01', TZ, NOW).x, 0.7) // 7 days out
+  },
+)
+
 Deno.test('word → coordinate mappings', () => {
   assertEquals(urgencyToX('high'), 0.84)
   assertEquals(urgencyToX('medium'), 0.55)

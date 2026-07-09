@@ -13,14 +13,18 @@ export type Recurring = z.infer<typeof RecurringSchema>
 
 // One source of truth: the Zod schema validates rows at the Supabase boundary and
 // its inferred type IS the app's Task type. Mirrors supabase/migrations/*_create_tasks.sql.
-// timestamptz / jsonb come back over the wire as strings / parsed JSON.
+// date / time / timestamptz / jsonb come back over the wire as strings / parsed JSON.
 export const TaskSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   text: z.string(),
   x: z.number().nullable(),
   y: z.number().nullable(),
+  // Wall-clock due, in the user's timezone (ADR 2026-07-08-due-dates-wall-clock): `due` is a
+  // floating 'YYYY-MM-DD' calendar date; `due_time` an optional 'HH:MM:SS' time-of-day, only
+  // meaningful with `due` set. Neither is an instant — project via dueInstant() at the edges.
   due: z.string().nullable(),
+  due_time: z.string().nullable(),
   staged: z.boolean(),
   // Only the 'oneoff' bucket exists (planning/EISENCLAW-LOGIC-TO-PORT.md, Discrepancy #8).
   // Nullable because Stage 1 rows were inserted without a bucket (the column has no default

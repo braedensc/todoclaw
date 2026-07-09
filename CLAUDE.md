@@ -182,6 +182,7 @@ At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw S
 
 - **Grid coords:** `x` = urgency (0–1 left→right), `y` = importance (0–1 bottom→top — y is inverted from screen coords). Split at 0.5 for quadrants.
 - **Priority score:** `x×0.45 + y×0.55 + (daysUntil(due) ≤ 2 ? 0.18 : 0)` — importance weighted above urgency.
+- **Due dates are wall-clock, never instants** (ADR 2026-07-08-due-dates-wall-clock): `tasks.due` is a floating `date` ('YYYY-MM-DD', the day the user picked) and `tasks.due_time` an optional local `time`, both interpreted in `user_schedule.timezone` (same authority as the daily reset). Project to a real instant ONLY via `dueInstant()` in `src/lib/dates.ts` (countdowns, reminder fire times); day-diff via `daysUntil` (client) / `daysUntilInTZ` (edge functions) — never `new Date('YYYY-MM-DD')`, which lands on the previous local day west of UTC.
 - **Clustering:** seed-based, non-transitive. `CX=0.09, CY=0.07` overlap thresholds. A "bridge" card move cannot cascade-regroup distant clusters.
 - **Collision resolution:** spiral outward from target, step `0.016`, clamp to `[0.04, 0.96]`. Only called on list-view slider commit — NOT on grid drag (overlap→cluster handles it there).
 - **Daily reset:** computed against the user's stored timezone, not server UTC. The `user_schedule.timezone` column (hoisted out of `config` jsonb — see ADR-0007) is authoritative; `daily_state` is one row per `(user_id, local-date)`, so the reset is non-destructive (today = today's row).

@@ -6,8 +6,10 @@ const TASKS_KEY = ['tasks'] as const
 
 // Fields a client may patch via useUpdateTask. id/user_id/created_at are never client-set;
 // deletes go through useSoftDeleteTask. This covers every later-feature write: grid x/y,
-// text, due date, staged, recurring.
-type TaskPatch = Partial<Pick<Task, 'text' | 'x' | 'y' | 'due' | 'staged' | 'recurring'>>
+// text, due date + time, staged, recurring.
+type TaskPatch = Partial<
+  Pick<Task, 'text' | 'x' | 'y' | 'due' | 'due_time' | 'staged' | 'recurring'>
+>
 
 // Fetch the signed-in user's LIVE tasks. RLS restricts rows to user_id = auth.uid();
 // we additionally filter out soft-deleted rows (deleted_at is not null).
@@ -35,6 +37,7 @@ export type NewTask =
   | {
       text: string
       due?: string | null
+      due_time?: string | null
       recurring?: Recurring | null
       x?: number
       y?: number
@@ -54,17 +57,34 @@ export function useAddTask() {
       const parsed: {
         text: string
         due?: string | null
+        due_time?: string | null
         recurring?: Recurring | null
         x?: number
         y?: number
         staged?: boolean
       } = typeof input === 'string' ? { text: input } : input
-      const { text, due = null, recurring = null, x = 0.5, y = 0.5, staged } = parsed
+      const {
+        text,
+        due = null,
+        due_time = null,
+        recurring = null,
+        x = 0.5,
+        y = 0.5,
+        staged,
+      } = parsed
       const { error } = await supabase
         .from('tasks')
         // `staged` is omitted unless provided, so it keeps its DB default (true) for the widget's
         // staged-then-place flow; create-into-quadrant sends staged:false for a placed task.
-        .insert({ text, x, y, due, recurring, ...(staged === undefined ? {} : { staged }) })
+        .insert({
+          text,
+          x,
+          y,
+          due,
+          due_time,
+          recurring,
+          ...(staged === undefined ? {} : { staged }),
+        })
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),

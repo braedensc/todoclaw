@@ -3,7 +3,7 @@
 // runs the plan without a client round-trip, so the same selection + date math is ported here.
 // Faithful to src/features/ai/use-plan-my-day.ts buildPlanRequest + src/lib recurringStatus/daysUntil.
 
-import { dayNameInTZ, localDateInTZ } from './dates.ts'
+import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
 import type { PlanRequest } from './plan-prompt.ts'
 
 const MS_PER_DAY = 86_400_000
@@ -20,15 +20,6 @@ interface TaskRow {
 interface HabitRow {
   text: string
   active: boolean
-}
-
-// Whole-number calendar-day difference between `due` and now, both collapsed to a date in the
-// user's timezone (DST-safe, time-of-day independent). Mirrors src/lib/scoring.ts daysUntil.
-function daysUntil(due: string | null, timeZone: string, now: Date): number | null {
-  if (!due) return null
-  const dueDay = Date.parse(`${localDateInTZ(timeZone, new Date(due))}T00:00:00Z`) / MS_PER_DAY
-  const nowDay = Date.parse(`${localDateInTZ(timeZone, now)}T00:00:00Z`) / MS_PER_DAY
-  return Math.round(dueDay - nowDay)
 }
 
 // Recurring status, reduced to what the plan request needs (label + whether it's due-ish). Mirrors
@@ -63,7 +54,7 @@ export function buildPlanRequest(
       importance: Math.round((t.y ?? 0.5) * 100),
       urgency: Math.round((t.x ?? 0.5) * 100),
       due: t.due,
-      dueInDays: daysUntil(t.due, timeZone, now),
+      dueInDays: daysUntilInTZ(t.due, timeZone, now),
     }))
 
   const recurringDue: { text: string; status: string }[] = []
