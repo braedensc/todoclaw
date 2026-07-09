@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
@@ -13,9 +14,7 @@ import {
 } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
-import { RecurringSection } from '../recurring/RecurringSection'
-import { DueTimezoneHint } from '../schedule/DueTimezoneHint'
-import { ReminderPicker } from '../reminders/ReminderPicker'
+import { SchedulePanel } from '../schedule/SchedulePanel'
 import { BUCKET_DOT, CARD_WIDTH, RECURRING_BADGE_MIN_DONE } from './grid-constants'
 
 export interface GridCardProps {
@@ -23,6 +22,8 @@ export interface GridCardProps {
   /** Screen-space coordinates 0..1 (already y-inverted by the caller). */
   screenX: number
   screenY: number
+  /** IANA timezone — anchors the ⋯ menu's SchedulePanel calendar ("today" = the user's day). */
+  timeZone: string
   /**
    * Whole calendar days until this task's due date (from `daysUntil`, timezone-aware), or null
    * when it has no due date. Drives the urgency glow + the due badge. Computed by the caller so
@@ -85,9 +86,10 @@ const stopDrag = (e: PointerEvent) => e.stopPropagation()
  * Interactions: double-click the text to rename inline. A persistent bottom action bar (always
  * visible, no hover-reveal, on desktop AND mobile) carries the controls: an OUTLINED green "Done"
  * pill on the left (border + green text + ✓, deliberately not filled so it reads as "mark done",
- * not "already done") plus small ⋯ menu / × delete icons on the right. The ⋯ menu is a small
- * popover with the due-date picker + the recurring controls (RecurringSection) — setting a due
- * date writes `due` only and never moves the card. The whole card is the drag handle; every
+ * not "already done") plus small ⋯ menu / × delete icons on the right. The ⋯ menu is the shared
+ * SchedulePanel (two-week calendar + time chips + remind + repeats — the one schedule editor) —
+ * setting a due date writes `due` only and never moves the card. The whole card is the drag
+ * handle; every
  * control stopPropagation so clicking it never starts a drag (and double-click, being motionless,
  * can't be confused with one either). Done marks a normal task complete for today (it leaves the
  * grid) or resets a recurring task's cycle.
@@ -96,6 +98,7 @@ export function GridCard({
   task,
   screenX,
   screenY,
+  timeZone,
   daysUntilDue,
   minutesUntilDue,
   dragging,
@@ -115,15 +118,19 @@ export function GridCard({
   const [draft, setDraft] = useState(task.text)
   const [menuOpen, setMenuOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  // Wraps the ⋯ trigger AND its popover, so a pointer-down on the trigger counts as "inside"
-  // (its own onClick handles the toggle) while a click anywhere else closes the menu.
+  // The ⋯ trigger wrapper (inside the card) and the PORTALED schedule popover. The popover left
+  // the card's subtree when the SchedulePanel outgrew the old 220px in-canvas menu (a ~460px
+  // panel clips against the grid's overflow-hidden — the exact lesson ClusterPopup learned,
+  // item 16), so click-outside now checks both.
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuPanelRef = useRef<HTMLDivElement>(null)
+  const menuRefs = useMemo(() => [menuRef, menuPanelRef], [])
 
   useEffect(() => {
     if (editing) inputRef.current?.select()
   }, [editing])
 
-  useClickOutside(menuRef, () => setMenuOpen(false), menuOpen)
+  useClickOutside(menuRefs, () => setMenuOpen(false), menuOpen)
 
   // x/y are guaranteed non-null by the caller's filter, but be defensive for the type.
   const rc = recurringStatus(task.recurring)
@@ -188,7 +195,8 @@ export function GridCard({
         }
       : {}),
     ...(stale ? { filter: stale.filter, opacity: stale.opacity } : {}),
-    // Lift the card above its neighbors while its ⋯ menu is open so the popover isn't occluded.
+    // Lift the card above its neighbors while its ⋯ menu is open — the menu itself is portaled
+    // (never occluded), so this is just a "this card is active" focus cue.
     ...(menuOpen ? { zIndex: 40 } : {}),
     // Dragging treatment overrides glow/staleness opacity+shadow so the card under the pointer
     // always stays clearly visible, and lifts it above every other card while it moves.
@@ -207,21 +215,65 @@ export function GridCard({
     setEditing(true)
   }
 
-  // The ⋯ menu flips ABOVE the action row for cards low on the screen (and anchors to the right
-  // edge for cards on the right half) so it stays on-canvas near the edges — mirrors ClusterPopup's
-  // flip precedent, adapted to a menu anchored on the card's bottom-right rather than a centered
-  // bubble.
-  const menuStyle: CSSProperties = {
-    zIndex: 50,
-    width: 220,
-    ...(screenY > 0.5 ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
-    ...(screenX > 0.5 ? { right: 0 } : { left: 0 }),
+  // The schedule menu is PORTALED to <body> and positioned from the ⋯ wrapper's live rect —
+  // prefer below, flip above when there's more room, clamp on-screen, scroll internally when
+  // cramped (ClusterPopup's exact playbook). 306px fits the SchedulePanel's 7-column calendar
+  // (the old 220px in-card popover clipped its own date input — workshop finding #1).
+  const MENU_W = 306
+  const MENU_MAX_H = 480
+  const MENU_GAP = 6
+  const MENU_MARGIN = 8
+  const [menuPos, setMenuPos] = useState<{
+    left: number
+    top?: number
+    bottom?: number
+    maxHeight: number
+  } | null>(null)
+
+  const positionMenu = useCallback(() => {
+    const anchor = menuRef.current
+    if (!anchor) return
+    const rect = anchor.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    // Right-align the panel to the ⋯ cluster, then keep the whole width on-screen.
+    const left = Math.max(MENU_MARGIN, Math.min(rect.right - MENU_W, vw - MENU_W - MENU_MARGIN))
+    const spaceBelow = vh - rect.bottom - MENU_GAP - MENU_MARGIN
+    const spaceAbove = rect.top - MENU_GAP - MENU_MARGIN
+    const flipAbove = spaceBelow < Math.min(MENU_MAX_H, spaceAbove) && spaceAbove > spaceBelow
+    if (flipAbove) {
+      setMenuPos({
+        left,
+        bottom: vh - rect.top + MENU_GAP,
+        maxHeight: Math.max(0, Math.min(MENU_MAX_H, spaceAbove)),
+      })
+    } else {
+      setMenuPos({
+        left,
+        top: rect.bottom + MENU_GAP,
+        maxHeight: Math.max(0, Math.min(MENU_MAX_H, spaceBelow)),
+      })
+    }
+  }, [])
+
+  // Opening measures the trigger rect IN THE HANDLER (never a bare setState-in-effect), so the
+  // panel mounts already positioned — no flash, no stale spot on reopen.
+  const toggleMenu = () => {
+    if (!menuOpen) positionMenu()
+    setMenuOpen((o) => !o)
   }
 
-  // The date picker wants 'YYYY-MM-DD'; `due` may be a full ISO timestamp, so slice the date.
-  // The time picker wants 'HH:MM'; `due_time` arrives as 'HH:MM:SS' off the wire.
-  const dueValue = task.due ? task.due.slice(0, 10) : ''
-  const timeValue = task.due_time ? task.due_time.slice(0, 5) : ''
+  // While open, re-anchor on anything that moves the card: window scroll (capture — the
+  // fullscreen grid overlay scrolls its own box) and resize.
+  useEffect(() => {
+    if (!menuOpen) return
+    window.addEventListener('scroll', positionMenu, true)
+    window.addEventListener('resize', positionMenu)
+    return () => {
+      window.removeEventListener('scroll', positionMenu, true)
+      window.removeEventListener('resize', positionMenu)
+    }
+  }, [menuOpen, positionMenu])
 
   return (
     <div
@@ -340,73 +392,56 @@ export function GridCard({
         <CardActionBar
           recurring={task.recurring != null}
           onDone={onDone}
-          onMenu={() => setMenuOpen((o) => !o)}
+          onMenu={toggleMenu}
           onDelete={onDelete}
           menuLabel="Due date and recurring"
           menuTitle="Due date & recurring"
           menuOpen={menuOpen}
           menuRef={menuRef}
           menuContent={
-            menuOpen && (
+            menuOpen &&
+            createPortal(
               <div
+                ref={menuPanelRef}
                 role="menu"
                 aria-label="Due date and recurring"
-                className="absolute rounded-lg border border-border-strong bg-panel p-2.5 text-ink shadow-[0_8px_28px_rgba(0,0,0,.18)]"
-                style={menuStyle}
-                // Clicks inside the menu must not start a card drag or bubble to the grid.
+                // Fixed + portaled so the ~460px panel can never be clipped by the grid canvas.
+                // z-90 sits above the fullscreen grid overlay (z-50) and below the confirm dialog
+                // (z-100), matching ClusterPopup. Hidden until the first measure lands.
+                className="fixed overflow-y-auto rounded-lg border border-border-strong bg-panel p-3 text-ink shadow-[0_8px_28px_rgba(0,0,0,.18)]"
+                style={{
+                  zIndex: 90,
+                  width: MENU_W,
+                  left: menuPos?.left ?? MENU_MARGIN,
+                  ...(menuPos?.bottom != null
+                    ? { bottom: menuPos.bottom }
+                    : { top: menuPos?.top ?? MENU_MARGIN }),
+                  maxHeight: menuPos?.maxHeight ?? MENU_MAX_H,
+                  visibility: menuPos ? 'visible' : 'hidden',
+                }}
+                // React events bubble through portals BY REACT TREE — without these stops a click
+                // inside the panel would reach the card root and start a reposition drag.
                 onPointerDown={stopDrag}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted">Due</span>
-                    <input
-                      type="date"
-                      aria-label="Due date"
-                      value={dueValue}
-                      onChange={(e) => {
-                        const due = e.target.value === '' ? null : e.target.value
-                        onSetDue(due, due ? timeValue || null : null)
-                      }}
-                      className="min-w-0 flex-1 rounded border border-border-strong bg-card px-2 py-1 text-xs"
-                    />
-                    <input
-                      type="time"
-                      aria-label="Due time"
-                      value={timeValue}
-                      disabled={!dueValue}
-                      title={dueValue ? undefined : 'Set a date first'}
-                      onChange={(e) =>
-                        onSetDue(dueValue, e.target.value === '' ? null : e.target.value)
-                      }
-                      className="rounded border border-border-strong bg-card px-2 py-1 text-xs disabled:opacity-40"
-                    />
-                  </div>
-                  <DueTimezoneHint />
-                </div>
-
-                {/* Reminder — only once the task has a due time to anchor to, and never for a
-                    recurring task (the sweep doesn't fire reminders for repeats). */}
-                {dueValue && timeValue && !task.recurring && (
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-light">
-                      Remind me
-                    </span>
-                    <ReminderPicker
-                      value={reminderOffset}
-                      onChange={onSetReminder}
-                      idPrefix="grid"
-                    />
-                  </div>
-                )}
-
-                <RecurringSection
-                  task={task}
+                {/* The ONE schedule editor (workshop direction B) — calendar + time chips +
+                    remind + repeats, shared with the list/add surfaces so they can't drift. */}
+                <SchedulePanel
+                  taskText={task.text}
+                  due={task.due}
+                  dueTime={task.due_time}
+                  recurring={task.recurring}
+                  timeZone={timeZone}
+                  onSetDue={onSetDue}
                   onSetRecurring={onSetRecurring}
                   onSetFrequency={onSetFrequency}
                   onRemoveRecurring={onRemoveRecurring}
+                  reminderOffset={reminderOffset}
+                  onSetReminder={onSetReminder}
+                  idPrefix="grid"
                 />
-              </div>
+              </div>,
+              document.body,
             )
           }
         />

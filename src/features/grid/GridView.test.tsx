@@ -301,22 +301,25 @@ describe('GridView card action bar', () => {
   })
 })
 
-describe('GridView on-card ⋯ menu (due + recurring)', () => {
-  it('opens the menu with the due picker + recurring controls', () => {
+describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
+  it('opens the menu with the schedule panel: calendar, time chips, repeats', () => {
     tasksFixture = [makeTask({ id: 'm', staged: false })]
     render(<GridHarness />)
     // Closed by default.
-    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('schedule-calendar')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
-    expect(screen.getByLabelText('Due date')).toBeInTheDocument()
-    expect(screen.getByText('↻ Recurring')).toBeInTheDocument()
+    expect(screen.getByText('When should this come back to you?')).toBeInTheDocument()
+    expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Repeats' })).toBeInTheDocument()
   })
 
   it('setting a due date writes `due` ONLY — it never repositions the card', () => {
     tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false })]
     render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    // Date-agnostic path: the “More dates…” escape hatch reveals the native input.
+    fireEvent.click(screen.getByRole('button', { name: '📅 More dates…' }))
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-08-01' } })
 
     expect(updateMutate).toHaveBeenCalledWith({
@@ -328,35 +331,34 @@ describe('GridView on-card ⋯ menu (due + recurring)', () => {
     expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
   })
 
-  it('due time: disabled until a date exists, writes both columns, cleared with the date', () => {
+  it('time presets: disabled until a date exists, write both columns; No date clears both', () => {
     tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false })]
     const noDate = render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
-    expect(screen.getByLabelText('Due time')).toBeDisabled()
+    expect(screen.getByRole('button', { name: '6 PM' })).toBeDisabled()
     noDate.unmount()
 
     tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false, due: '2026-08-01' })]
     render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
-    const timeInput = screen.getByLabelText('Due time')
-    expect(timeInput).toBeEnabled()
-    fireEvent.change(timeInput, { target: { value: '15:00' } })
+    const evening = screen.getByRole('button', { name: '6 PM' })
+    expect(evening).toBeEnabled()
+    fireEvent.click(evening)
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'm',
-      patch: { due: '2026-08-01', due_time: '15:00' },
+      patch: { due: '2026-08-01', due_time: '18:00' },
     })
 
     // Clearing the date clears the time with it (the DB CHECK forbids a dangling time).
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'No date' }))
     expect(updateMutate).toHaveBeenCalledWith({ id: 'm', patch: { due: null, due_time: null } })
   })
 
-  it('setting recurring from the menu writes a fresh recurring object', () => {
+  it('the Weekly repeat preset writes a fresh recurring object', () => {
     tasksFixture = [makeTask({ id: 'm', staged: false })]
     render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
-    fireEvent.change(screen.getByLabelText('Days between repeats'), { target: { value: '7' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Set' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
 
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'm',

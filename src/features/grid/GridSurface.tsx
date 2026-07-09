@@ -143,6 +143,7 @@ export function GridSurface({
         task={task}
         screenX={p.x}
         screenY={1 - p.y}
+        timeZone={timeZone}
         daysUntilDue={daysUntil(task.due, { timeZone })}
         minutesUntilDue={minutesUntilDueTime(task.due, task.due_time, timeZone, now)}
         dragging={draggingId === task.id}
