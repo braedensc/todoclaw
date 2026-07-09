@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import type { Task } from '../../types/task'
@@ -7,6 +7,9 @@ import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
 import { dueChipStyle, urgencyGlowStyle, urgencyIcon, urgencyTier } from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
+import { useAnchoredMenu } from '../../hooks/use-anchored-menu'
+import { useClickOutside } from '../../hooks/use-click-outside'
+import { SchedulePanel } from '../schedule/SchedulePanel'
 import { BUCKET_DOT } from '../grid/grid-constants'
 import { CLUSTER_POPUP_MAX_HEIGHT, CLUSTER_POPUP_WIDTH } from './cluster-constants'
 
@@ -34,10 +37,9 @@ export interface ClusterPopupProps {
   reflowKey: number
   /** IANA timezone — feeds the due-date badge (matches the grid's `daysUntil`). */
   timeZone: string
-  /** Id of the row currently in inline-edit mode (a plain tap opens editing), or null. */
+  /** Id of the row currently in inline-edit mode, or null. Entering edit happens UPSTREAM (a
+   *  plain row tap, via useGrid.startPopupRowDrag's onTap) — the popup only reads the state. */
   editingId: string | null
-  /** Enter inline-edit mode for a row (the ✎ button; a plain row tap does this in the parent). */
-  onStartEdit: (task: Task) => void
   /** Leave inline-edit mode (Escape / commit). */
   onStopEdit: () => void
   /** Commit a renamed row. */
@@ -48,6 +50,19 @@ export interface ClusterPopupProps {
   onDelete: (task: Task) => void
   /** Pointer-down handler from `useGrid.startPopupRowDrag` — a real drag pulls the row to the grid. */
   onRowPointerDown: (task: Task) => (event: PointerEvent) => void
+  // --- Schedule (the row ⋯ opens the shared SchedulePanel, same as a grid card's ⋯) ---------
+  /** Commit a row's due date + time — always both columns (clearing the date clears the time). */
+  onSetDue: (task: Task, due: string | null, dueTime: string | null) => void
+  /** Set a fresh recurring schedule of N days on a row. */
+  onSetRecurring: (task: Task, frequencyDays: number) => void
+  /** Change an already-recurring row's cadence (preserves lastDoneAt + doneCount). */
+  onSetFrequency: (task: Task, frequencyDays: number) => void
+  /** Drop a row's recurring schedule. */
+  onRemoveRecurring: (task: Task) => void
+  /** A row's reminder offset (minutes before due), or null — from the grid's shared query. */
+  reminderOffsetFor: (task: Task) => number | null
+  /** Set/clear a row's reminder (minutes-before, null = off). */
+  onSetReminder: (task: Task, minutes: number | null) => void
 }
 
 interface PopupPos {
@@ -73,12 +88,17 @@ export function ClusterPopup({
   reflowKey,
   timeZone,
   editingId,
-  onStartEdit,
   onStopEdit,
   onRename,
   onDone,
   onDelete,
   onRowPointerDown,
+  onSetDue,
+  onSetRecurring,
+  onSetFrequency,
+  onRemoveRecurring,
+  reminderOffsetFor,
+  onSetReminder,
 }: ClusterPopupProps) {
   const [pos, setPos] = useState<PopupPos | null>(null)
 
@@ -174,12 +194,17 @@ export function ClusterPopup({
           task={task}
           timeZone={timeZone}
           editing={editingId === task.id}
-          onStartEdit={() => onStartEdit(task)}
           onStopEdit={onStopEdit}
           onRename={(text) => onRename(task, text)}
           onDone={() => onDone(task)}
           onDelete={() => onDelete(task)}
           onPointerDown={onRowPointerDown(task)}
+          onSetDue={(due, dueTime) => onSetDue(task, due, dueTime)}
+          onSetRecurring={(n) => onSetRecurring(task, n)}
+          onSetFrequency={(n) => onSetFrequency(task, n)}
+          onRemoveRecurring={() => onRemoveRecurring(task)}
+          reminderOffset={reminderOffsetFor(task)}
+          onSetReminder={(m) => onSetReminder(task, m)}
         />
       ))}
     </div>,
@@ -191,32 +216,47 @@ interface ClusterPopupRowProps {
   task: Task
   timeZone: string
   editing: boolean
-  onStartEdit: () => void
   onStopEdit: () => void
   onRename: (text: string) => void
   onDone: () => void
   onDelete: () => void
   onPointerDown: (event: PointerEvent) => void
+  onSetDue: (due: string | null, dueTime: string | null) => void
+  onSetRecurring: (frequencyDays: number) => void
+  onSetFrequency: (frequencyDays: number) => void
+  onRemoveRecurring: () => void
+  reminderOffset: number | null
+  onSetReminder: (minutes: number | null) => void
 }
+
+/** The row ⋯ schedule menu's portal dimensions — same panel, same numbers as the grid card's. */
+const ROW_MENU_W = 306
+const ROW_MENU_MAX_H = 480
 
 // One card-style task row, dressed as its grid-card TWIN: the same border scheme (solid
 // status-colored top border, terracotta bucket sides — dashed when recurring), the same urgency
 // glow ring + pulse + warm tint + 🔥 corner flag, the task text (with its status chip) on top, then
 // the SHARED <CardActionBar> (outlined Done pill + ⋯/×) at the bottom — so a folded task reads
-// identically to its card on the map. A plain tap on the row opens inline editing (handled upstream
-// via the drag's onTap); a press-drag pulls the task out of the cluster; every bar control stops
-// propagation so a click on it is never read as a drag. Here ⋯ is the edit trigger (the popup has
-// no on-row due/recurring menu — tapping the row edits it).
+// identically to its card on the map. And BEHAVES identically: the ⋯ opens the same portaled
+// SchedulePanel a grid card's ⋯ does (folded tasks used to have NO schedule path — you had to
+// drag them out first). A plain tap on the row still opens inline renaming (handled upstream via
+// the drag's onTap); a press-drag pulls the task out of the cluster; every bar control stops
+// propagation so a click on it is never read as a drag.
 function ClusterPopupRow({
   task,
   timeZone,
   editing,
-  onStartEdit,
   onStopEdit,
   onRename,
   onDone,
   onDelete,
   onPointerDown,
+  onSetDue,
+  onSetRecurring,
+  onSetFrequency,
+  onRemoveRecurring,
+  reminderOffset,
+  onSetReminder,
 }: ClusterPopupRowProps) {
   const rc = recurringStatus(task.recurring)
   // The grid card's border scheme, mirrored exactly (see GridCard): a solid status-colored TOP
@@ -258,6 +298,24 @@ function ClusterPopupRow({
     const trimmed = (inputRef.current?.value ?? '').trim()
     if (trimmed && trimmed !== task.text) onRename(trimmed)
     onStopEdit()
+  }
+
+  // The ⋯ schedule menu — GridCard's exact pattern: PORTALED to <body> (this popup is itself a
+  // fixed, height-capped scroller — an in-flow panel would clip), positioned via useAnchoredMenu
+  // from the ⋯ wrapper's rect, measured in the open HANDLER, dismissed by a pointer-down outside
+  // both the trigger wrapper and the portaled panel.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuPanelRef = useRef<HTMLDivElement>(null)
+  const menuRefs = useMemo(() => [menuRef, menuPanelRef], [])
+  useClickOutside(menuRefs, () => setMenuOpen(false), menuOpen)
+  const { pos: menuPos, position: positionMenu } = useAnchoredMenu(menuRef, menuOpen, {
+    width: ROW_MENU_W,
+    maxHeight: ROW_MENU_MAX_H,
+  })
+  const toggleMenu = () => {
+    if (!menuOpen) positionMenu()
+    setMenuOpen((o) => !o)
   }
 
   return (
@@ -347,16 +405,61 @@ function ClusterPopupRow({
         </div>
       )}
 
-      {/* The same action bar the grid card carries. ⋯ is the edit trigger here (redundant with
-          tapping the row, but an explicit affordance); delete is confirm-gated upstream. Hidden
-          while renaming inline so it doesn't crowd the input. */}
+      {/* The same action bar the grid card carries — and now the same ⋯ MEANING: it opens the
+          shared SchedulePanel (renaming stays on a plain row tap). Delete is confirm-gated
+          upstream. Hidden while renaming inline so it doesn't crowd the input. */}
       {!editing && (
         <CardActionBar
           recurring={task.recurring != null}
           onDone={onDone}
-          onMenu={onStartEdit}
+          onMenu={toggleMenu}
           onDelete={onDelete}
-          menuLabel="Edit task"
+          menuLabel="Due date and recurring"
+          menuTitle="Due date & recurring"
+          menuOpen={menuOpen}
+          menuRef={menuRef}
+          menuContent={
+            menuOpen &&
+            createPortal(
+              <div
+                ref={menuPanelRef}
+                role="menu"
+                aria-label="Due date and recurring"
+                // z-95: above this popup's own z-90 portal, still below the confirm dialog (z-100).
+                className="fixed overflow-y-auto rounded-lg border border-border-strong bg-panel p-3 text-ink shadow-[0_8px_28px_rgba(0,0,0,.18)]"
+                style={{
+                  zIndex: 95,
+                  width: ROW_MENU_W,
+                  left: menuPos?.left ?? 8,
+                  ...(menuPos?.bottom != null
+                    ? { bottom: menuPos.bottom }
+                    : { top: menuPos?.top ?? 8 }),
+                  maxHeight: menuPos?.maxHeight ?? ROW_MENU_MAX_H,
+                  visibility: menuPos ? 'visible' : 'hidden',
+                }}
+                // React events bubble through portals BY REACT TREE — without these stops a
+                // pointer-down inside the panel would reach the row and start a tear-out drag.
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <SchedulePanel
+                  taskText={task.text}
+                  due={task.due}
+                  dueTime={task.due_time}
+                  recurring={task.recurring}
+                  timeZone={timeZone}
+                  onSetDue={onSetDue}
+                  onSetRecurring={onSetRecurring}
+                  onSetFrequency={onSetFrequency}
+                  onRemoveRecurring={onRemoveRecurring}
+                  reminderOffset={reminderOffset}
+                  onSetReminder={onSetReminder}
+                  idPrefix="cluster"
+                />
+              </div>,
+              document.body,
+            )
+          }
         />
       )}
     </div>

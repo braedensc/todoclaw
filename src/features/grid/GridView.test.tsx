@@ -585,15 +585,27 @@ describe('GridView cluster popup rework', () => {
     expect(done.className).toContain('text-primary')
     expect(done.className).not.toMatch(/(^|\s)bg-primary(\s|$)/)
 
-    // Plus the same quiet ⋯ (menu/edit) + × (delete) pair on the right.
-    expect(within(rowA).getByRole('button', { name: 'Edit task' })).toHaveTextContent('⋯')
+    // Plus the same quiet ⋯ (schedule menu) + × (delete) pair on the right.
+    expect(within(rowA).getByRole('button', { name: 'Due date and recurring' })).toHaveTextContent(
+      '⋯',
+    )
     expect(within(rowA).getByRole('button', { name: 'Delete task' })).toHaveTextContent('×')
   })
 
-  it('the ⋯ button also opens inline editing', () => {
-    const { popup, rowA } = openPopup()
-    fireEvent.click(within(rowA).getByLabelText('Edit task'))
-    expect(within(popup).getByLabelText('Edit task name')).toBeInstanceOf(HTMLInputElement)
+  it('the ⋯ opens the schedule panel and its writes route to the folded task', () => {
+    const { rowA } = openPopup()
+    fireEvent.click(within(rowA).getByLabelText('Due date and recurring'))
+    expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
+
+    // Weekly on the folded task writes a fresh recurring object for THAT task — no drag-out
+    // needed to schedule a clustered task, and no patch may carry x/y.
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'a',
+      patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } },
+    })
+    const patches = updateMutate.mock.calls.map((c) => (c[0] as { patch: object }).patch)
+    expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
   })
 
   it('dragging a row past the threshold tears the task out onto the grid and closes the popup', () => {

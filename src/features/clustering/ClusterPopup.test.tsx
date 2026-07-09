@@ -1,9 +1,15 @@
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ClusterPopup } from './ClusterPopup'
 import type { Task } from '../../types/task'
 import type { Recurring } from '../../types/task'
+
+// The row ⋯ mounts the SchedulePanel, whose DueTimezoneHint reads the user_schedule query —
+// stub it out (the popup's own logic never touches it).
+vi.mock('../schedule/use-user-schedule', () => ({
+  useUserSchedule: () => ({ data: undefined }),
+}))
 
 // A folded task inside an open cluster popup is dressed as its grid-card TWIN: an overdue/near-due
 // one-off carries the SAME glow ring + pulse + warm tint as the card on the map, while a task with
@@ -31,28 +37,41 @@ function task(id: string, over: Partial<Task> = {}): Task {
 
 const recurring: Recurring = { frequencyDays: 7, lastDoneAt: null, doneCount: 0 }
 
-function renderPopup(group: Task[]) {
-  const anchorRef = createRef<HTMLElement>()
+function renderPopup(group: Task[], onRowPointerDown: () => () => void = () => vi.fn()) {
+  // A real, MOUNTED anchor: the popup positions from its rect in an effect and stays
+  // `visibility: hidden` (excluded from the a11y tree) until that first measure lands.
+  const anchorRef = createRef<HTMLDivElement>()
+  const schedule = {
+    onSetDue: vi.fn(),
+    onSetRecurring: vi.fn(),
+    onSetFrequency: vi.fn(),
+    onRemoveRecurring: vi.fn(),
+    onSetReminder: vi.fn(),
+  }
   render(
-    <ClusterPopup
-      group={group}
-      accentColor="#bf5e2a"
-      anchorRef={anchorRef}
-      reflowKey={0}
-      timeZone="UTC"
-      editingId={null}
-      onStartEdit={vi.fn()}
-      onStopEdit={vi.fn()}
-      onRename={vi.fn()}
-      onDone={vi.fn()}
-      onDelete={vi.fn()}
-      onRowPointerDown={() => vi.fn()}
-    />,
+    <>
+      <div ref={anchorRef} />
+      <ClusterPopup
+        group={group}
+        accentColor="#bf5e2a"
+        anchorRef={anchorRef}
+        reflowKey={0}
+        timeZone="UTC"
+        editingId={null}
+        onStopEdit={vi.fn()}
+        onRename={vi.fn()}
+        onDone={vi.fn()}
+        onDelete={vi.fn()}
+        onRowPointerDown={onRowPointerDown}
+        reminderOffsetFor={() => null}
+        {...schedule}
+      />
+    </>,
   )
   // Portaled to <body>, so query the document rather than the render container.
   const row = (id: string) =>
     document.querySelector<HTMLElement>(`[data-testid="cluster-popup-row"][data-task-id="${id}"]`)
-  return { row }
+  return { row, ...schedule }
 }
 
 describe('ClusterPopup row card-twin styling', () => {
@@ -93,5 +112,35 @@ describe('ClusterPopup row card-twin styling', () => {
     renderPopup([task('a')])
     const panel = document.querySelector('[data-testid="cluster-popup"]')
     expect(panel?.className).toContain('bg-white')
+  })
+})
+
+describe('ClusterPopup row ⋯ schedule menu', () => {
+  it('the row ⋯ opens the shared SchedulePanel (a folded task is schedulable in place)', () => {
+    renderPopup([task('a')])
+    expect(screen.queryByTestId('schedule-calendar')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Due date and recurring' }))
+    expect(screen.getByText('Set a due date')).toBeInTheDocument()
+    expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
+  })
+
+  it('panel writes route to the row task: Weekly starts a fresh schedule, No date clears due', () => {
+    const p = renderPopup([task('a', { due: '2026-07-01' })])
+    fireEvent.click(screen.getByRole('button', { name: 'Due date and recurring' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+    expect(p.onSetRecurring).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), 7)
+
+    fireEvent.click(screen.getByRole('button', { name: 'No date' }))
+    expect(p.onSetDue).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), null, null)
+  })
+
+  it('a pointer-down inside the panel never reaches the row (no accidental tear-out drag)', () => {
+    const rowPointerDown = vi.fn()
+    renderPopup([task('a')], () => rowPointerDown)
+    fireEvent.click(screen.getByRole('button', { name: 'Due date and recurring' }))
+    fireEvent.pointerDown(screen.getByTestId('schedule-calendar'))
+    expect(rowPointerDown).not.toHaveBeenCalled()
   })
 })
