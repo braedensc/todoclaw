@@ -40,7 +40,7 @@ third party). Families are declared as Tailwind tokens.
 | `border-strong` | `#ddd4c0` | Stronger borders (grid, inputs) |
 | `primary` | `#5b8a72` | Green — Add / Set primary buttons |
 | `accent` | `#c2693f` | Terracotta — one-time bucket dot, urgency badge |
-| `puppy` | `#5f8aa3` | Soft slate-blue from BabyClaw's real-life namesake's eyes — BabyClaw-mode accents only (active tab ring, input focus), never functional/urgency colors |
+| `puppy` | `#5f8aa3` | Soft slate-blue from BabyClaw's real-life namesake's eyes — BabyClaw-mode accents (active tab ring, input focus) **and the habits surface** (paw checks, bone marks, habit cards — habits are BabyClaw's daily routine). Never functional/urgency colors |
 | `quadrant-do-now` | `#bf5e2a` | "Do Now" quadrant (urgent + important) |
 | `quadrant-schedule` | `#3d7a5f` | "Schedule" quadrant (important, not urgent) |
 | `quadrant-errands` | `#7d6b1e` | "Errands" quadrant (urgent, not important) |

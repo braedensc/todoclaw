@@ -139,6 +139,68 @@ describe('HabitsView', () => {
     })
   })
 
+  it('checking a habit AUTO-checks every step too (master switch)', () => {
+    setHabits([
+      habit({
+        subtasks: [
+          { id: 's1', text: 'Rice bucket — 3 sets each direction' },
+          { id: 's2', text: 'Finger extensions' },
+        ],
+      }),
+    ])
+    renderView()
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
+    )
+    expect(toggleMutate).toHaveBeenCalledTimes(3)
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'habit_done',
+      key: 'h1',
+      value: true,
+      timeZone: 'America/New_York',
+    })
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'subtask_done',
+      key: 'h1:s1',
+      value: true,
+      timeZone: 'America/New_York',
+    })
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'subtask_done',
+      key: 'h1:s2',
+      value: true,
+      timeZone: 'America/New_York',
+    })
+  })
+
+  it('unchecking a habit clears its steps too (symmetric master switch)', () => {
+    setHabits([habit()])
+    dailyMock.mockReturnValue({
+      data: {
+        done: {},
+        done_at: {},
+        habit_done: { h1: true },
+        subtask_done: { 'h1:s1': true },
+      },
+    })
+    renderView()
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: /Mark "Wrist strengthening routine" done today/i }),
+    )
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'habit_done',
+      key: 'h1',
+      value: false,
+      timeZone: 'America/New_York',
+    })
+    expect(toggleMutate).toHaveBeenCalledWith({
+      map: 'subtask_done',
+      key: 'h1:s1',
+      value: false,
+      timeZone: 'America/New_York',
+    })
+  })
+
   it('toggles a subtask with map=subtask_done and the COMPOSITE "habitId:subtaskId" key', () => {
     setHabits([habit()])
     renderView()

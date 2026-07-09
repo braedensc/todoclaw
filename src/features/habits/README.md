@@ -22,9 +22,16 @@ Which habits/steps are checked **today** lives in `daily_state`, NOT on the habi
 
 That split is what makes the reset non-destructive: `useDailyState(tz)` keys its query by the
 user's **local** calendar day, so crossing local midnight just reads a different (empty) row —
-the habit rows are untouched. Toggles go through the atomic merge RPC `set_daily_flag`
+the habit rows are untouched. The day flip is LIVE (`useLocalToday`): an app left open overnight
+re-keys on its own at midnight / on foreground, so habits visibly reset each morning without
+waiting for a tap. Toggles go through the atomic merge RPC `set_daily_flag`
 (`useToggleDailyFlag`), never a client read-modify-write, so concurrent toggles can't clobber
 each other's jsonb edits.
+
+**Habit check = master switch:** checking a habit also checks every step, and unchecking clears
+them (symmetric — an accidental check fully undoes itself). `habitDayWrites` (subtasks.ts) builds
+the write list; callers fan it out through the same per-key atomic RPC. Steps stay independently
+toggleable for partial progress.
 
 ## Files
 
@@ -35,3 +42,6 @@ each other's jsonb edits.
 - `HabitsView.tsx` — the tab: reads `useHabits` + `useDailyState(tz)` + `useUserSchedule`, splits
   active/queued, renders the add-a-habit input.
 - `HabitRow.tsx` — one active habit: daily checkbox, expandable steps panel, add/remove a step.
+- `HabitCheck.tsx` — the paw-print check (PawMark visual + HabitCheckbox, a real input wearing
+  the skin). One look across the inline home list, the detail card, and steps — always `puppy`
+  palette (with `BoneIcon` marks), so no surface swaps color when you tap into a habit.

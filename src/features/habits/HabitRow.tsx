@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { Habit } from '../../types/habit'
+import { HabitCheckbox } from './HabitCheck'
 import { appendSubtask, removeSubtask, subtaskKey } from './subtasks'
 
 // One ACTIVE habit row: a daily checkbox (habit_done[id]), a steps toggle, and — when
@@ -52,19 +53,24 @@ export function HabitRow({
   const stepCount = habit.subtasks.length
 
   return (
-    <li className="rounded-lg border border-border bg-card">
+    // Habit surfaces wear the puppy palette on warm paper (not the stark white/green defaults) —
+    // the same look as the inline home list, so opening a habit never shifts palette.
+    <li className="rounded-lg border border-puppy/30 bg-gradient-to-br from-puppy/[0.07] to-card">
       <div className="flex items-center gap-2 px-3 py-2 wide:gap-2.5">
         {/* Checkbox + name share one <label>: on a phone the whole text line toggles the day's
             check, not just the small box (mobile audit §2.2). The input keeps its aria-label. */}
         <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 py-1.5 wide:py-0">
-          <input
-            type="checkbox"
+          <HabitCheckbox
             checked={habitChecked}
             onChange={(e) => onToggleHabit(e.target.checked)}
-            aria-label={`Mark "${habit.text}" done today`}
-            className="h-5 w-5 shrink-0 accent-primary wide:h-4 wide:w-4"
+            ariaLabel={`Mark "${habit.text}" done today`}
+            className="h-6 w-6 wide:h-5 wide:w-5"
           />
-          <span className="min-w-0 flex-1 truncate text-base font-semibold text-ink">
+          <span
+            className={`min-w-0 flex-1 truncate text-base font-semibold ${
+              habitChecked ? 'text-muted line-through decoration-muted/50' : 'text-ink'
+            }`}
+          >
             {habit.text}
           </span>
         </label>
@@ -78,7 +84,7 @@ export function HabitRow({
           }
           className={`shrink-0 rounded border px-2.5 py-2 text-xs wide:px-2 wide:py-0.5 ${
             expanded
-              ? 'border-primary bg-primary/10 text-primary'
+              ? 'border-puppy bg-puppy/10 text-puppy'
               : 'border-border-strong text-muted hover:text-ink'
           }`}
         >
@@ -99,7 +105,7 @@ export function HabitRow({
       </div>
 
       {expanded && (
-        <div className="border-t border-border px-3 py-2">
+        <div className="border-t border-puppy/20 px-3 py-2">
           {stepCount === 0 ? (
             <p className="mb-2 text-sm text-muted">No steps yet — add one below.</p>
           ) : (
@@ -110,14 +116,17 @@ export function HabitRow({
                   <li key={subtask.id} className="flex items-center gap-2.5 py-0.5">
                     {/* Same label-wrap as the habit line: tap the step text to check it off. */}
                     <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 py-1 wide:py-0">
-                      <input
-                        type="checkbox"
+                      <HabitCheckbox
                         checked={checked}
                         onChange={(e) => onToggleSubtask(subtask.id, e.target.checked)}
-                        aria-label={`Mark step "${subtask.text}" done today`}
-                        className="h-5 w-5 shrink-0 accent-primary wide:h-4 wide:w-4"
+                        ariaLabel={`Mark step "${subtask.text}" done today`}
+                        className="h-5 w-5 wide:h-[18px] wide:w-[18px]"
                       />
-                      <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                      <span
+                        className={`min-w-0 flex-1 truncate text-sm ${
+                          checked ? 'text-muted line-through decoration-muted/50' : 'text-ink'
+                        }`}
+                      >
                         {subtask.text}
                       </span>
                     </label>
@@ -149,7 +158,7 @@ export function HabitRow({
             <button
               type="submit"
               disabled={busy}
-              className="rounded bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded bg-puppy px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
             >
               Add
             </button>

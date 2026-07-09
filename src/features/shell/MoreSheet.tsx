@@ -1,4 +1,6 @@
+import type { ReactNode } from 'react'
 import { BottomSheet } from '../../components/BottomSheet'
+import { BoneIcon } from '../../components/BoneIcon'
 
 // MoreSheet — the overflow for the mobile bottom nav (Concept D). Holds the low-frequency /
 // harder-to-reach utility actions pushed out of the tall header: Inbox (moved off the top bar so
@@ -14,7 +16,8 @@ function MoreItem({
   danger = false,
   badge = 0,
 }: {
-  glyph: string
+  /** Leading mark — a text glyph, or a small inline icon node (the Daily habits bone). */
+  glyph: ReactNode
   label: string
   onClick: () => void
   danger?: boolean
@@ -81,7 +84,11 @@ export function MoreSheet({
       <div className="flex flex-col gap-0.5">
         <MoreItem glyph="✉" label="Inbox" onClick={run(onInbox)} badge={unread} />
         {onAdmin && <MoreItem glyph="❖" label="Admin" onClick={run(onAdmin)} />}
-        <MoreItem glyph="⚐" label="Daily habits" onClick={run(onReminders)} />
+        <MoreItem
+          glyph={<BoneIcon className="inline h-3 w-auto align-middle text-puppy/80" />}
+          label="Daily habits"
+          onClick={run(onReminders)}
+        />
         <MoreItem glyph="⚙" label="Settings" onClick={run(onSettings)} />
         <MoreItem glyph="↻" label="Backups" onClick={run(onBackups)} />
         <MoreItem glyph="⏻" label="Sign out" onClick={run(onSignOut)} danger />

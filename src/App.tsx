@@ -14,6 +14,7 @@ import { useIsMobile } from './hooks/use-is-mobile'
 import { Snackbar } from './components/Snackbar'
 import { quadrantMeta, type QuadrantKey } from './lib/quadrants'
 import { QUADRANT_CENTER } from './lib/quadrant-summary'
+import { BoneIcon } from './components/BoneIcon'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { TodoClawPeek } from './components/TodoClawPeek'
 import { ConfirmProvider, useConfirm } from './components/use-confirm'
@@ -409,7 +410,7 @@ function AppShell() {
                         title="Daily habits"
                         className="hover:text-ink"
                       >
-                        <span aria-hidden>⚐</span> Daily habits
+                        <BoneIcon className="inline h-2.5 w-auto align-[-1px]" /> Daily habits
                       </button>
                       {isOwner && (
                         <button

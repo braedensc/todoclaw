@@ -40,6 +40,15 @@ test('add a reminder, check it and a step for today; checks survive a reload', a
   await stepCheck.click()
   await expect(stepCheck).toBeChecked()
 
+  // Master switch: the habit checkbox cascades to its steps in BOTH directions — unchecking the
+  // habit clears the step, re-checking checks it again (each write is its own set_daily_flag).
+  await habitCheck.click()
+  await expect(habitCheck).not.toBeChecked()
+  await expect(stepCheck).not.toBeChecked()
+  await habitCheck.click()
+  await expect(habitCheck).toBeChecked()
+  await expect(stepCheck).toBeChecked()
+
   // Reload: the session persists (storageState) and today's daily_state row still holds both
   // checks — this proves the writes landed server-side, not just in component state.
   // (Locators are lazy queries, so the pre-reload `row`/`habitCheck` re-resolve fine here.)

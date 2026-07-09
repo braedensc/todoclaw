@@ -1,4 +1,5 @@
 import { HabitsView } from './HabitsView'
+import { BoneIcon } from '../../components/BoneIcon'
 import { goBack } from '../../lib/route'
 
 // "Daily reminders" as a full page (ADR-0027) — replaces the old RemindersModal overlay. Same body
@@ -11,7 +12,10 @@ export function RemindersPage() {
     <div className="mx-auto max-w-lg">
       <section className="rounded-xl border border-border-strong bg-panel p-6 shadow-sm">
         <header className="mb-3 flex items-center justify-between">
-          <h2 className="font-serif text-lg font-semibold text-ink">Daily habits</h2>
+          <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
+            <BoneIcon className="h-3 w-auto text-puppy/70" />
+            Daily habits
+          </h2>
           <button
             type="button"
             onClick={goBack}
