@@ -55,11 +55,17 @@ function recurringStatusPhrase(rec: Recurring | null, now: Date): string | null 
   return `due again in ${daysLeft}d`
 }
 
-function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {
-  const raw = (config?.assistant ?? {}) as Record<string, unknown>
+export function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {
+  // The Settings UI (settings-form.ts) and set_assistant_preference both write config.babyclaw; fall
+  // back to the legacy config.assistant key so a preference saved before the two surfaces were
+  // unified still applies until it is re-saved. Vocab mirrors BABYCLAW_TONES / BABYCLAW_VERBOSITY.
+  const raw = (config?.babyclaw ?? config?.assistant ?? {}) as Record<string, unknown>
   const tone =
-    raw.tone === 'playful' || raw.tone === 'neutral' ? raw.tone : DEFAULT_ASSISTANT_CONFIG.tone
-  const verbosity = raw.verbosity === 'normal' ? 'normal' : DEFAULT_ASSISTANT_CONFIG.verbosity
+    raw.tone === 'neutral' || raw.tone === 'direct' ? raw.tone : DEFAULT_ASSISTANT_CONFIG.tone
+  const verbosity =
+    raw.verbosity === 'balanced' || raw.verbosity === 'detailed'
+      ? raw.verbosity
+      : DEFAULT_ASSISTANT_CONFIG.verbosity
   let customInstructions: string | null = null
   if (typeof raw.customInstructions === 'string' && raw.customInstructions.trim()) {
     customInstructions = raw.customInstructions.slice(0, MAX_CUSTOM_INSTRUCTIONS)

@@ -33,15 +33,17 @@ Functions (`supabase/functions/`).
   security rules + the threat model live server-side. See ADR-0017 + `supabase/functions/README.md`
   + `capabilities/README.md`.
 
-  BabyClaw reads a small per-user config (`user_schedule.config.assistant`: `tone`, `verbosity`,
+  BabyClaw reads a small per-user config (`user_schedule.config.babyclaw`: `tone`, `verbosity`,
   optional `customInstructions`) folded into its prompt with safe defaults, and can now **write it**
-  too: `set_assistant_preference` persists a preference the user states in chat ("keep it playful",
+  too: `set_assistant_preference` persists a preference the user states in chat ("be more direct",
   "stop suggesting morning tasks") so it survives across sessions — it re-reads on the next turn, so
-  the change lands on BabyClaw's next reply. This composes with the pending B11 Settings editor:
-  same `config.assistant` field, two surfaces (chat + Settings), just as a task is editable from both
-  chat and the grid. Custom instructions are always treated as **preferences** and can never widen
-  scope; the write is deliberately **bounded** (one scoped, 500-char, preferences-only field) — that
-  boundedness is the safety property. See `capabilities/README.md` (`set_assistant_preference`).
+  the change lands on BabyClaw's next reply. It shares **one field** with the Settings editor
+  (`config.babyclaw`, same `tone`/`verbosity` vocab as `BABYCLAW_TONES`/`BABYCLAW_VERBOSITY`), two
+  surfaces (chat + Settings), just as a task is editable from both chat and the grid; a legacy
+  `config.assistant` value is still read as a fallback. Custom instructions are always treated as
+  **preferences** and can never widen scope; the write is deliberately **bounded** (one scoped,
+  500-char, preferences-only field) — that boundedness is the safety property. See
+  `capabilities/README.md` (`set_assistant_preference`).
 
 - **`AiPrivacyNote.tsx`** — a short, honest disclosure kept in **Settings → "AI & privacy"**: AI
   runs on the owner's Anthropic key, your task/message text is sent to Anthropic, and chat isn't

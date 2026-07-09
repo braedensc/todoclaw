@@ -2,7 +2,9 @@
 // (validate → run). A tiny fake user_schedule client seeds the current config on select and
 // captures the config written on update, so we prove: the validation gate (enum reject), the
 // server-side 500-char cap + trim, the no-op rejection, that OTHER config keys survive the merge,
-// and partial updates (tone-only / note-only / clear).
+// partial updates (tone-only / note-only / clear), that it reads/writes config.babyclaw (the SAME
+// field the Settings UI edits) with a legacy config.assistant fallback, and — via parseAssistant —
+// that the read side agrees on the key and vocabulary.
 //
 // NOTE: the load-bearing guard — "never persist a preference derived from stored task/habit/step
 // text" — is a PROMPT-level instruction (chat-prompt.ts SYSTEM_PREFIX) and thus model behavior, not
@@ -13,6 +15,7 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1'
 import { executeTool } from '../chat-tools.ts'
 import type { ToolContext } from '../chat-tools.ts'
+import { parseAssistant } from '../chat-context.ts'
 
 interface Result {
   data?: unknown
@@ -68,8 +71,30 @@ function makeCtx(seedConfig: Record<string, unknown> | null, hasRow = true) {
   return { ctx, getWritten: () => written }
 }
 
-const assistantOf = (config: Record<string, unknown> | undefined) =>
-  (config?.assistant ?? {}) as Record<string, unknown>
+// The assistant tuning is stored under config.babyclaw (the Settings UI's key).
+const babyOf = (config: Record<string, unknown> | undefined) =>
+  (config?.babyclaw ?? {}) as Record<string, unknown>
+
+// ---- read side (parseAssistant): key + vocabulary --------------------------------------------
+Deno.test('parseAssistant reads config.babyclaw — the same field Settings writes', () => {
+  const a = parseAssistant({
+    babyclaw: { tone: 'direct', verbosity: 'detailed', customInstructions: 'be terse' },
+  })
+  assertEquals(a.tone, 'direct')
+  assertEquals(a.verbosity, 'detailed')
+  assertEquals(a.customInstructions, 'be terse')
+})
+
+Deno.test('parseAssistant falls back to legacy config.assistant when babyclaw is absent', () => {
+  const a = parseAssistant({ assistant: { tone: 'neutral' } })
+  assertEquals(a.tone, 'neutral')
+})
+
+Deno.test('parseAssistant drops an out-of-vocab tone/verbosity to the default', () => {
+  const a = parseAssistant({ babyclaw: { tone: 'playful', verbosity: 'normal' } }) // legacy vocab
+  assertEquals(a.tone, 'warm')
+  assertEquals(a.verbosity, 'brief')
+})
 
 // ---- validation gate -------------------------------------------------------------------------
 Deno.test('rejects an invalid tone at the validation gate (before any DB call)', async () => {
@@ -81,7 +106,7 @@ Deno.test('rejects an invalid tone at the validation gate (before any DB call)',
 
 Deno.test('rejects an invalid verbosity at the validation gate', async () => {
   const { ctx } = makeCtx({})
-  const res = await executeTool('set_assistant_preference', { verbosity: 'chatty' }, ctx)
+  const res = await executeTool('set_assistant_preference', { verbosity: 'normal' }, ctx) // old vocab
   assert(res.is_error)
 })
 
@@ -93,7 +118,7 @@ Deno.test('rejects an unknown field (schema is .strict())', async () => {
 
 // ---- no-op rejection -------------------------------------------------------------------------
 Deno.test('rejects a no-op call (nothing provided)', async () => {
-  const { ctx, getWritten } = makeCtx({ assistant: { tone: 'warm' } })
+  const { ctx, getWritten } = makeCtx({ babyclaw: { tone: 'warm' } })
   const res = await executeTool('set_assistant_preference', {}, ctx)
   assert(res.is_error)
   assertEquals(getWritten(), undefined) // nothing written for a no-op
@@ -105,7 +130,7 @@ Deno.test('hard-caps a long note at 500 chars and trims surrounding whitespace',
   const long = '  ' + 'a'.repeat(600) + '  '
   const res = await executeTool('set_assistant_preference', { note: long }, ctx)
   assert(!res.is_error)
-  const note = assistantOf(getWritten()).customInstructions as string
+  const note = babyOf(getWritten()).customInstructions as string
   assertEquals(note.length, 500)
   assertEquals(note, 'a'.repeat(500))
 })
@@ -119,10 +144,10 @@ Deno.test('preserves all other config keys when saving a preference', async () =
     weekend: { saturday: { freeTimeEstimateHours: 5 } },
     planNotes: 'no meetings before 10',
     notifications: { enabled: true },
-    assistant: { tone: 'warm', verbosity: 'brief' },
+    babyclaw: { tone: 'warm', verbosity: 'brief' },
   }
   const { ctx, getWritten } = makeCtx(seed)
-  const res = await executeTool('set_assistant_preference', { tone: 'playful' }, ctx)
+  const res = await executeTool('set_assistant_preference', { tone: 'direct' }, ctx)
   assert(!res.is_error)
   const w = getWritten()!
   // Untouched siblings survive verbatim...
@@ -132,58 +157,68 @@ Deno.test('preserves all other config keys when saving a preference', async () =
   assertEquals(w.weekend, seed.weekend)
   assertEquals(w.planNotes, seed.planNotes)
   assertEquals(w.notifications, seed.notifications)
-  // ...and only the requested assistant sub-field changed.
-  const a = assistantOf(w)
-  assertEquals(a.tone, 'playful')
+  // ...and only the requested babyclaw sub-field changed.
+  const a = babyOf(w)
+  assertEquals(a.tone, 'direct')
   assertEquals(a.verbosity, 'brief')
+})
+
+// ---- legacy fallback on write: a pre-unification note is carried into config.babyclaw ---------
+Deno.test('carries a legacy config.assistant note forward into config.babyclaw', async () => {
+  const { ctx, getWritten } = makeCtx({ assistant: { customInstructions: 'legacy note' } })
+  const res = await executeTool('set_assistant_preference', { tone: 'direct' }, ctx)
+  assert(!res.is_error)
+  const a = babyOf(getWritten())
+  assertEquals(a.tone, 'direct')
+  assertEquals(a.customInstructions, 'legacy note') // not lost on the first re-save
 })
 
 // ---- partial updates -------------------------------------------------------------------------
 Deno.test('partial update: {tone} changes only tone', async () => {
   const { ctx, getWritten } = makeCtx({
-    assistant: { tone: 'warm', verbosity: 'normal', customInstructions: 'keep it snappy' },
+    babyclaw: { tone: 'warm', verbosity: 'balanced', customInstructions: 'keep it snappy' },
   })
   const res = await executeTool('set_assistant_preference', { tone: 'neutral' }, ctx)
   assert(!res.is_error)
-  const a = assistantOf(getWritten())
+  const a = babyOf(getWritten())
   assertEquals(a.tone, 'neutral')
-  assertEquals(a.verbosity, 'normal')
+  assertEquals(a.verbosity, 'balanced')
   assertEquals(a.customInstructions, 'keep it snappy')
 })
 
 Deno.test('partial update: {note} changes only customInstructions', async () => {
-  const { ctx, getWritten } = makeCtx({ assistant: { tone: 'playful', verbosity: 'brief' } })
+  const { ctx, getWritten } = makeCtx({ babyclaw: { tone: 'direct', verbosity: 'brief' } })
   const res = await executeTool('set_assistant_preference', { note: 'call me Cap' }, ctx)
   assert(!res.is_error)
-  const a = assistantOf(getWritten())
+  const a = babyOf(getWritten())
   assertEquals(a.customInstructions, 'call me Cap')
-  assertEquals(a.tone, 'playful')
+  assertEquals(a.tone, 'direct')
   assertEquals(a.verbosity, 'brief')
 })
 
 Deno.test('empty note clears customInstructions but leaves tone/verbosity', async () => {
   const { ctx, getWritten } = makeCtx({
-    assistant: { tone: 'warm', verbosity: 'brief', customInstructions: 'old note' },
+    babyclaw: { tone: 'warm', verbosity: 'brief', customInstructions: 'old note' },
   })
   const res = await executeTool('set_assistant_preference', { note: '' }, ctx)
   assert(!res.is_error)
-  const a = assistantOf(getWritten())
+  const a = babyOf(getWritten())
   assert(!('customInstructions' in a)) // cleared, not stored as ''
   assertEquals(a.tone, 'warm')
   assertEquals(a.verbosity, 'brief')
 })
 
 Deno.test('null note also clears customInstructions', async () => {
-  const { ctx, getWritten } = makeCtx({ assistant: { customInstructions: 'old note' } })
+  const { ctx, getWritten } = makeCtx({ babyclaw: { customInstructions: 'old note' } })
   const res = await executeTool('set_assistant_preference', { note: null }, ctx)
   assert(!res.is_error)
-  assert(!('customInstructions' in assistantOf(getWritten())))
+  assert(!('customInstructions' in babyOf(getWritten())))
 })
 
 // ---- user-facing display vs model-facing content ---------------------------------------------
 Deno.test('shows the user a transparent, id-free saved line (not the model content)', async () => {
   const { ctx } = makeCtx({})
-  const res = await executeTool('set_assistant_preference', { tone: 'playful' }, ctx)
+  const res = await executeTool('set_assistant_preference', { tone: 'direct' }, ctx)
   assert(!res.is_error)
   assert(typeof res.display === 'string' && res.display.length > 0)
   assert(res.display!.includes('remember'))
@@ -194,7 +229,7 @@ Deno.test('shows the user a transparent, id-free saved line (not the model conte
 // ---- graceful degradation --------------------------------------------------------------------
 Deno.test('degrades gracefully when the user has no schedule row yet', async () => {
   const { ctx, getWritten } = makeCtx(null, /* hasRow */ false)
-  const res = await executeTool('set_assistant_preference', { tone: 'playful' }, ctx)
+  const res = await executeTool('set_assistant_preference', { tone: 'direct' }, ctx)
   assert(res.is_error)
   assertEquals(getWritten(), undefined)
 })

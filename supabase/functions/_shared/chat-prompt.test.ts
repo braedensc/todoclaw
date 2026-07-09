@@ -178,18 +178,19 @@ Deno.test(
 )
 
 Deno.test(
-  'config folding: defaults add no preferences block; playful + custom instructions do',
+  'config folding: defaults add no preferences block; direct + detailed + custom instructions do',
   () => {
     const plain = buildSystem(baseContext())
     assert(!plain.includes('USER PREFERENCES'))
 
     const custom = buildSystem(
       baseContext({
-        assistant: { tone: 'playful', verbosity: 'normal', customInstructions: 'call me Cap' },
+        assistant: { tone: 'direct', verbosity: 'detailed', customInstructions: 'call me Cap' },
       }),
     )
     assertStringIncludes(custom, 'USER PREFERENCES')
-    assertStringIncludes(custom, 'playful')
+    assertStringIncludes(custom, 'direct') // the folded tone line
+    assertStringIncludes(custom, 'Fuller explanations') // the folded verbosity line
     // Custom instructions are framed as PREFERENCES that cannot widen scope.
     assertStringIncludes(custom, 'call me Cap')
     assertStringIncludes(custom, 'PREFERENCES only')

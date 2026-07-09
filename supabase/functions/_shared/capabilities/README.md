@@ -20,7 +20,8 @@ registry.ts     CAPABILITIES[], capabilityByName, DESTRUCTIVE   ← the single s
 
 Every other capability writes **data** the security model frames as "never instructions".
 `set_assistant_preference` is the exception: it persists BabyClaw's own personalization
-(`user_schedule.config.assistant`: `tone`, `verbosity`, `customInstructions`) — and
+(`user_schedule.config.babyclaw`, the same field the Settings UI edits: `tone`, `verbosity`,
+`customInstructions`) — and
 `customInstructions` is the one field folded into the system prompt **as behavior** (chat-prompt.ts
 `configLines`). So it is a deliberate prompt-injection surface, kept safe by being **bounded and
 curated**: one scoped, size-capped (500-char), preferences-only field, validated + clamped
