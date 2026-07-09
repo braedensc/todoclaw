@@ -7,7 +7,7 @@ import { z } from 'npm:zod@4.4.3'
 import { localDateInTZ } from '../dates.ts'
 import { placeByDue, urgencyToX, importanceToY } from '../placement.ts'
 import { defineCapability, type Capability } from './types.ts'
-import { ok, err, updateTaskRow } from './helpers.ts'
+import { ok, err, systemErr, updateTaskRow } from './helpers.ts'
 
 const uuid = z.string().uuid()
 
@@ -23,8 +23,10 @@ export const taskCapabilities: Capability[] = [
         .select('id, text, x, y, due, staged, recurring')
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
-      if (error) return err(error.message)
-      return ok(JSON.stringify(data ?? []))
+      if (error) return systemErr(error.message)
+      // The JSON goes to the model so it can reference ids; hide it from the user (display: null) —
+      // a raw row dump isn't an "action that occurred", it's the model refreshing its view.
+      return ok(JSON.stringify(data ?? []), undefined, null)
     },
   }),
 
@@ -65,10 +67,13 @@ export const taskCapabilities: Capability[] = [
         }
       }
       const { data, error } = await ctx.client.from('tasks').insert(row).select('id').single()
-      if (error) return err(error.message)
+      if (error) return systemErr(error.message)
+      const where = place.staged ? ' in the staging tray' : ' on the grid'
+      // The model keeps the id (to chain an edit/move next); the user just sees the plain result.
       return ok(
-        `Created "${i.text}"${place.staged ? ' in the staging tray' : ' on the grid'} (id ${data.id}).`,
+        `Created "${i.text}"${where} (id ${data.id}).`,
         ['tasks'],
+        `Created "${i.text}"${where}.`,
       )
     },
   }),
@@ -175,13 +180,13 @@ export const taskCapabilities: Capability[] = [
         .eq('id', i.task_id)
         .is('deleted_at', null)
         .maybeSingle()
-      if (selErr) return err(selErr.message)
+      if (selErr) return systemErr(selErr.message)
       if (!task) return err('That task no longer exists.')
       const { error } = await ctx.client.rpc('set_task_undone', {
         p_date: localDateInTZ(ctx.timeZone, now),
         p_task_id: i.task_id,
       })
-      if (error) return err(error.message)
+      if (error) return systemErr(error.message)
       return ok(`Restored "${task.text}" to your active tasks.`, ['daily_state'])
     },
   }),
@@ -200,7 +205,7 @@ export const taskCapabilities: Capability[] = [
         .eq('id', i.task_id)
         .is('deleted_at', null)
         .maybeSingle()
-      if (selErr) return err(selErr.message)
+      if (selErr) return systemErr(selErr.message)
       if (!task) return err('That task no longer exists.')
       const { error } = await ctx.client.rpc('set_task_done', {
         p_date: localDateInTZ(ctx.timeZone, now),
@@ -208,7 +213,7 @@ export const taskCapabilities: Capability[] = [
         p_text: task.text,
         p_bucket: task.bucket ?? null,
       })
-      if (error) return err(error.message)
+      if (error) return systemErr(error.message)
       return ok(`Marked "${task.text}" done for today.`, ['daily_state', 'history'])
     },
   }),

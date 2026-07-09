@@ -160,6 +160,68 @@ Deno.test('create_habit inserts and reports the habits domain mutated', async ()
   assertEquals(res.mutated, ['habits'])
 })
 
+// ---- user-facing display vs model-facing content ---------------------------------------------
+Deno.test('create_task keeps the id for the model but not for the user', async () => {
+  const res = await executeTool(
+    'create_task',
+    { text: 'SCP', due: '2026-07-08' },
+    ctx({ onInsert: () => ({ data: { id: UUID }, error: null }) }),
+  )
+  assert(!res.is_error)
+  // The model needs the id (to chain a follow-up edit/move); the user must never see it.
+  assert(res.content.includes(UUID))
+  assert(typeof res.display === 'string' && !res.display!.includes(UUID))
+  assert(res.display!.includes('SCP'))
+})
+
+Deno.test(
+  'read-only list tools stream JSON to the model but are hidden from the user',
+  async () => {
+    for (const name of ['list_tasks', 'list_habits']) {
+      const res = await executeTool(
+        name,
+        {},
+        ctx({ onSelect: () => ({ data: [{ id: UUID, text: 'x' }], error: null }) }),
+      )
+      assert(!res.is_error)
+      assert(res.content.includes(UUID)) // model sees the rows
+      assertEquals(res.display, null) // user sees nothing (no bubble)
+    }
+  },
+)
+
+Deno.test('a validation failure shows the user a generic line, not the zod dump', async () => {
+  const res = await executeTool('create_task', { text: '' }, ctx())
+  assert(res.is_error)
+  assert(typeof res.display === 'string' && !res.display!.includes('ZodError'))
+})
+
+Deno.test('a DB error keeps the raw message for the model but hides it from the user', async () => {
+  // A Postgres-style error must never reach the user — the model sees it (to self-correct), the
+  // user sees a generic line.
+  const raw = 'insert or update on table "tasks" violates foreign key constraint "tasks_user_fk"'
+  const res = await executeTool(
+    'create_task',
+    { text: 'x', due: null },
+    ctx({ onInsert: () => ({ data: null, error: { message: raw } }) }),
+  )
+  assert(res.is_error)
+  assert(res.content.includes('foreign key')) // model still gets the detail
+  assert(typeof res.display === 'string' && !res.display!.includes('foreign key'))
+})
+
+Deno.test('a friendly not-found error is shown verbatim (no generic override)', async () => {
+  // Hand-written user-safe messages stay as-is — only raw system text is sanitized.
+  const res = await executeTool(
+    'edit_task_text',
+    { task_id: UUID, text: 'new' },
+    ctx({ onUpdate: () => ({ data: null, error: null }) }), // zero rows matched → not found
+  )
+  assert(res.is_error)
+  assertEquals(res.display, undefined) // reuse content
+  assert(res.content.includes("couldn't find"))
+})
+
 Deno.test('add_habit_step read-modify-writes the subtasks array', async () => {
   let written: { id: string; text: string }[] | undefined
   const res = await executeTool(

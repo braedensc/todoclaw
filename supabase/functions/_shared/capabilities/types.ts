@@ -34,9 +34,15 @@ export interface CapabilityContext {
 }
 
 export interface CapabilityResult {
-  content: string // narratable text fed back to the model as the tool_result
+  content: string // narratable text fed back to the MODEL as the tool_result (may carry ids / JSON)
   isError: boolean
   mutated?: MutationDomain[] // which data domains changed → drives the UI live-refresh
+  // What the USER sees in the chat activity line — kept free of ids, raw JSON and DB error text.
+  // Omit to reuse `content` (fine for tools whose content is already a plain sentence); set to
+  // null to hide the tool from the user entirely (internal read-only lookups the model runs to
+  // refresh its view before acting). The two audiences differ: the model needs the id to chain a
+  // follow-up edit; the user just wants "Created X on the grid."
+  display?: string | null
 }
 
 // One capability. `schema` (zod) is the ONE source of truth: it validates input at execution AND

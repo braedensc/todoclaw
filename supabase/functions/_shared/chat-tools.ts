@@ -18,9 +18,12 @@ export type ToolContext = CapabilityContext
 export { DESTRUCTIVE }
 
 export interface ToolResult {
-  content: string // narratable text fed back to the model as the tool_result
+  content: string // narratable text fed back to the model as the tool_result (may carry ids / JSON)
   is_error: boolean
   mutated?: MutationDomain[] // domains changed → drives the client's live-refresh
+  // User-facing chat line: undefined → reuse `content`, null → hide the tool from the user. Keeps
+  // ids / raw JSON / zod-validation dumps out of the chat panel. See CapabilityResult.display.
+  display?: string | null
 }
 
 // Derive an Anthropic input_schema from a capability's zod schema. z.toJSONSchema emits a
@@ -44,19 +47,36 @@ export async function executeTool(
   rawInput: unknown,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  // Adapter-level failures below keep a detailed `content` for the model to self-correct, but show
+  // the user a generic `display` — a zod dump or a raw exception message is debug text, not chat.
   const cap = capabilityByName.get(name)
-  if (!cap) return { content: `Unknown tool: ${name}`, is_error: true }
+  if (!cap) {
+    return { content: `Unknown tool: ${name}`, is_error: true, display: 'Something went wrong.' }
+  }
 
   const parsed = cap.schema.safeParse(rawInput ?? {})
   if (!parsed.success) {
-    return { content: `Invalid arguments for ${name}: ${parsed.error.message}`, is_error: true }
+    return {
+      content: `Invalid arguments for ${name}: ${parsed.error.message}`,
+      is_error: true,
+      display: "Sorry — I couldn't do that.",
+    }
   }
 
   try {
     const res = await cap.execute(ctx, parsed.data)
-    return { content: res.content, is_error: res.isError, mutated: res.mutated }
+    return {
+      content: res.content,
+      is_error: res.isError,
+      mutated: res.mutated,
+      display: res.display,
+    }
   } catch (e) {
-    return { content: e instanceof Error ? e.message : 'tool failed', is_error: true }
+    return {
+      content: e instanceof Error ? e.message : 'tool failed',
+      is_error: true,
+      display: 'Something went wrong.',
+    }
   }
 }
 

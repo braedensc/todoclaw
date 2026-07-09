@@ -166,17 +166,25 @@ export function useAiChat() {
         }
         break
       }
-      case 'tool-result':
+      case 'tool-result': {
+        // `summary` is the MODEL-facing content (may carry ids / JSON) — pair it back into the held
+        // history so a destructive resume keeps the tool_use/tool_result paired.
         history.current = withToolResult(
           history.current,
           ev.tool_use_id as string,
           ev.summary as string,
           ev.ok === false,
         )
-        setItems((xs) => [
-          ...xs,
-          { id: nextId(), role: 'tool', text: ev.summary as string, ok: ev.ok as boolean },
-        ])
+        // What the USER sees is `display`: undefined → reuse the summary (already a plain sentence);
+        // null → an internal lookup we don't surface (no bubble). Never render raw ids / JSON.
+        const display =
+          ev.display === undefined ? (ev.summary as string) : (ev.display as string | null)
+        if (display !== null) {
+          setItems((xs) => [
+            ...xs,
+            { id: nextId(), role: 'tool', text: display, ok: ev.ok as boolean },
+          ])
+        }
         // Live-refresh: a successful mutating tool tells us which data domains changed — invalidate
         // the matching queries so the grid/list/habits/Done update the instant the tool runs.
         if (ev.ok !== false && Array.isArray(ev.mutated)) {
@@ -186,6 +194,7 @@ export function useAiChat() {
           }
         }
         break
+      }
       case 'tool-pending-confirmation':
         history.current = ev.messages as AnyMsg[] // includes the halting assistant turn
         setPending({ toolUseId: ev.tool_use_id as string, summary: ev.summary as string })

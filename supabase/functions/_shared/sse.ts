@@ -10,7 +10,13 @@ export type SseEvent =
       tool_use_id: string
       name: string
       ok: boolean
+      // Model-facing tool_result content (may carry ids / JSON). The client pairs THIS back into
+      // its held history on a destructive resume — never render it to the user directly.
       summary: string
+      // What the USER sees in the chat activity line, kept free of ids / raw JSON. Omitted →
+      // reuse `summary` (fine when it's already a plain sentence); null → an internal lookup we
+      // don't surface at all (no bubble).
+      display?: string | null
       // Data domains this tool changed ('tasks' | 'habits' | 'daily_state' | 'history'); the
       // client invalidates the matching TanStack Query keys so the UI live-refreshes.
       mutated?: string[]

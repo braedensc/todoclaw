@@ -456,4 +456,61 @@ describe('useAiChat', () => {
     await waitFor(() => expect(result.current.busy).toBe(false))
     expect(invalidateSpy).not.toHaveBeenCalled()
   })
+
+  it('shows the user-facing display, never the model-facing summary (no ids leak)', async () => {
+    // create_task sends the id-bearing text as `summary` (the model needs it to chain a follow-up)
+    // and a clean sentence as `display` — only the latter should reach the chat panel.
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        {
+          type: 'tool-result',
+          tool_use_id: 't1',
+          name: 'create_task',
+          ok: true,
+          summary: 'Created "SCP" on the grid (id 07bc0a9b-ced6-4608-99e7-3a930ba9abf1).',
+          display: 'Created "SCP" on the grid.',
+          mutated: ['tasks'],
+        },
+        { type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Done.' }] },
+        { type: 'done', stop_reason: 'end_turn' },
+      ]),
+    )
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('add SCP'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+
+    const tool = result.current.items.find((i) => i.role === 'tool')
+    expect(tool?.text).toBe('Created "SCP" on the grid.')
+    expect(result.current.items.some((i) => i.text.includes('07bc0a9b'))).toBe(false)
+  })
+
+  it('hides internal read-only lookups (display: null) from the chat', async () => {
+    // list_tasks streams the raw row JSON as `summary` for the model but display: null — the user
+    // should see no bubble for it, only the assistant's plain reply.
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        {
+          type: 'tool-result',
+          tool_use_id: 't1',
+          name: 'list_tasks',
+          ok: true,
+          summary: '[{"id":"07bc0a9b","text":"SCP","x":0.9,"y":0.75}]',
+          display: null,
+        },
+        { type: 'text-delta', text: 'You have 1 task.' },
+        {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'You have 1 task.' }],
+        },
+        { type: 'done', stop_reason: 'end_turn' },
+      ]),
+    )
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('what do I have?'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+
+    expect(result.current.items.some((i) => i.role === 'tool')).toBe(false)
+    expect(result.current.items.some((i) => i.text.includes('07bc0a9b'))).toBe(false)
+  })
 })
