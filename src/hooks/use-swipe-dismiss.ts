@@ -18,22 +18,29 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 //     intent never engages — content scrolling up stays native. Mouse drags on the body are
 //     deliberately NOT captured (desktop text selection would break); the handle covers mouse.
 //
-// Release semantics (both paths): past ~⅓ of the sheet height or 120px — whichever is smaller —
-// OR a fast downward flick dismisses; otherwise the panel springs back to 0 (the CSS transition
-// on `.bottom-sheet-panel`, disabled while `data-dragging` so tracking is 1:1).
+// Release semantics (both paths): a DELIBERATE pull dismisses — past ~⅓ of the sheet height or
+// 140px (whichever is smaller), OR a fast downward flick that ALSO covers at least 56px. A quick
+// tiny nudge — the reflex you make scrolling to re-read a message — is NOT a dismiss (speed alone
+// used to close it, which felt hair-trigger). Otherwise the panel springs back to 0 (the CSS
+// transition on `.bottom-sheet-panel`, disabled while `data-dragging` so tracking is 1:1).
 //
 // prefers-reduced-motion: the follow animation is skipped (the panel never translates with the
 // finger) but the dismiss itself still works — matching how the sheet keyframes are neutralized
 // in index.css.
 
 /** Absolute distance (px) a downward drag must travel to dismiss (upper bound; see below). */
-const DISMISS_DISTANCE_PX = 120
+const DISMISS_DISTANCE_PX = 140
 /** …or this fraction of the sheet's own height, whichever is smaller (tall sheets dismiss sooner). */
 const DISMISS_HEIGHT_FRACTION = 1 / 3
-/** A downward flick faster than this (px/ms) dismisses regardless of distance travelled. */
+/** A downward flick faster than this (px/ms) can dismiss — but only paired with FLICK_MIN_DISTANCE_PX
+ *  below. Speed alone used to dismiss at ANY distance, which fired on a quick scroll-to-read nudge. */
 const FLICK_VELOCITY_PX_PER_MS = 0.5
-/** Downward travel (px) before a body-touch commits to dragging the sheet (vs. a tap / scroll). */
-const SLOP_PX = 8
+/** …and a flick must ALSO travel at least this far to count. A fast-but-tiny motion is a scroll, not
+ *  a close — this is the main knob that makes the gesture "only trigger when you mean it". */
+const FLICK_MIN_DISTANCE_PX = 56
+/** Downward travel (px) before a body-touch commits to dragging the sheet (vs. a tap / scroll).
+ *  Raised 8 → 14 so a small finger movement stays a scroll/tap and never nudges the sheet open. */
+const SLOP_PX = 14
 
 function prefersReducedMotion(): boolean {
   return (
@@ -128,7 +135,7 @@ export function useSwipeDismiss(
           height > 0
             ? Math.min(DISMISS_DISTANCE_PX, height * DISMISS_HEIGHT_FRACTION)
             : DISMISS_DISTANCE_PX
-        const flicked = velocity >= FLICK_VELOCITY_PX_PER_MS
+        const flicked = velocity >= FLICK_VELOCITY_PX_PER_MS && dy >= FLICK_MIN_DISTANCE_PX
         cleanup()
         if (dy >= distanceThreshold || flicked) dismissRef.current()
       }
@@ -243,7 +250,8 @@ export function useSwipeDismiss(
           ? Math.min(DISMISS_DISTANCE_PX, height * DISMISS_HEIGHT_FRACTION)
           : DISMISS_DISTANCE_PX
       settle()
-      if (dy >= distanceThreshold || velocity >= FLICK_VELOCITY_PX_PER_MS) dismissRef.current()
+      const flicked = velocity >= FLICK_VELOCITY_PX_PER_MS && dy >= FLICK_MIN_DISTANCE_PX
+      if (dy >= distanceThreshold || flicked) dismissRef.current()
     }
 
     const onTouchCancel = (): void => {

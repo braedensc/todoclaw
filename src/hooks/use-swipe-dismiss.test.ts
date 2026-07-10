@@ -8,16 +8,17 @@ import { useSwipeDismiss } from './use-swipe-dismiss'
 // constructor, so plain Events get `touches`/`changedTouches` defined on them; geometry
 // (scrollHeight etc.) is stubbed via defineProperty.
 
-// Events carry explicit, well-spaced timestamps: jsdom dispatches micro-seconds apart, which the
-// flick-velocity math would read as a violent downward flick (20px / 0.05ms ≫ threshold) and
-// dismiss drags this suite needs to stay sub-threshold.
+// Events carry explicit timestamps: jsdom dispatches micro-seconds apart, which the flick-velocity
+// math would read as a violent downward flick (20px / 0.05ms ≫ threshold). `dt` defaults to 100ms
+// (well-spaced → slow, sub-flick) so plain drags stay deliberate; the flick tests pass a small dt
+// to simulate a fast gesture and assert the distance gate that now guards it.
 let clock = 0
-function touchEvent(type: string, clientY: number): Event {
+function touchEvent(type: string, clientY: number, dt = 100): Event {
   const e = new Event(type, { bubbles: true, cancelable: true })
   const touch = { identifier: 1, clientX: 100, clientY }
   Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [touch] })
   Object.defineProperty(e, 'changedTouches', { value: [touch] })
-  Object.defineProperty(e, 'timeStamp', { value: (clock += 100) })
+  Object.defineProperty(e, 'timeStamp', { value: (clock += dt) })
   return e
 }
 
@@ -84,6 +85,30 @@ describe('useSwipeDismiss — whole-panel touch path', () => {
     drag(panel, 520, 560, 2) // 40px < 100, at 0.1–0.2 px/ms (100ms event spacing) — no flick
     expect(onDismiss).not.toHaveBeenCalled()
     expect(result.current.offset).toBe(0)
+  })
+
+  it('a FAST but short flick does not dismiss — speed alone is not intent ("barely swiped")', () => {
+    // The reported bug: a quick little downward nudge (scrolling to re-read a message) closed the
+    // sheet. 45px of travel at ~1.25px/ms is well over the velocity bar but under FLICK_MIN_DISTANCE.
+    mount()
+    act(() => {
+      panel.dispatchEvent(touchEvent('touchstart', 520, 0))
+      panel.dispatchEvent(touchEvent('touchmove', 540, 10)) // engage (20px > slop), fast
+      panel.dispatchEvent(touchEvent('touchmove', 560, 10))
+      panel.dispatchEvent(touchEvent('touchend', 565, 10)) // dy 45 < 56 → not a dismiss
+    })
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('a fast flick that also clears the min distance dismisses', () => {
+    mount()
+    act(() => {
+      panel.dispatchEvent(touchEvent('touchstart', 520, 0))
+      panel.dispatchEvent(touchEvent('touchmove', 550, 10))
+      panel.dispatchEvent(touchEvent('touchmove', 580, 10))
+      panel.dispatchEvent(touchEvent('touchend', 585, 10)) // dy 65 ≥ 56 and fast → dismiss
+    })
+    expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 
   it('an upward drag never engages (content scrolls instead)', () => {
