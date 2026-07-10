@@ -1,37 +1,23 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-// SafariTroubleshooting reaches src/lib/supabase through NotificationSettings' module graph — it
-// THROWS at import without env vars (CI runs with none). Stub the client module.
+// InstallPanels are pure SVG and the wizard no longer pulls in the notifications enabler, but keep
+// the client stub as a cheap guard in case a transitive import ever reaches it (it throws without
+// env vars, which CI has none of).
 vi.mock('../../lib/supabase', () => ({ supabase: {} }))
-
-const mockEnable = vi.fn<() => Promise<boolean>>()
-const mockNotif = vi.fn(() => ({
-  enable: mockEnable,
-  busy: false,
-  error: null as string | null,
-  setupFailed: false,
-  supported: true,
-}))
-vi.mock('../notifications/use-enable-notifications', () => ({
-  useEnableNotifications: () => mockNotif(),
-}))
 
 import { AppSetupWizard } from './AppSetupWizard'
 
+// The wizard is INSTALL-only now (turning notifications on is its own checklist step). So it never
+// shows a notifications button; on Apple it adds a "switch into the app" page.
 const baseProps = {
-  installed: false,
   canPrompt: false,
   onInstallNow: vi.fn(),
   onClose: vi.fn(),
 }
 
-beforeEach(() => {
-  mockEnable.mockReset()
-})
-
 describe('AppSetupWizard', () => {
-  it('iOS: install page → switch page, and NO notifications button in the tab (it cannot work there)', () => {
+  it('iOS: install page → switch page → done, with no notifications button anywhere', () => {
     const onClose = vi.fn()
     render(<AppSetupWizard {...baseProps} context="ios" onClose={onClose} />)
 
@@ -44,42 +30,41 @@ describe('AppSetupWizard', () => {
     expect(screen.getByText(/sign in once more/)).toBeInTheDocument()
     expect(screen.getByText(/BabyClaw/)).toBeInTheDocument()
     expect(screen.getByText(/inside the app/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Turn on notifications/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Done — I’ll finish in the app/ }))
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('macOS Safari: switch page keeps a quiet stay-in-browser escape hatch', () => {
-    mockEnable.mockResolvedValue(true)
+  it('macOS Safari: install (Add to Dock) → switch, no stay-in-browser notifications hatch', () => {
     render(<AppSetupWizard {...baseProps} context="macos-safari" />)
     expect(screen.getByText(/“Add to Dock…”/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    fireEvent.click(screen.getByRole('button', { name: /Turn notifications on here instead/ }))
-    expect(mockEnable).toHaveBeenCalledOnce()
+    expect(screen.getByText(/sign in once more/)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Turn notifications on here instead/ }),
+    ).not.toBeInTheDocument()
   })
 
-  it('Chromium: install page (with the native prompt when offered) → notifications page', async () => {
-    mockEnable.mockResolvedValue(true)
+  it('Chromium: install-only page (with the native prompt when offered) → Done', () => {
     const onInstallNow = vi.fn()
+    const onClose = vi.fn()
     render(
-      <AppSetupWizard {...baseProps} context="chromium" canPrompt onInstallNow={onInstallNow} />,
+      <AppSetupWizard
+        {...baseProps}
+        context="chromium"
+        canPrompt
+        onInstallNow={onInstallNow}
+        onClose={onClose}
+      />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Install now' }))
     expect(onInstallNow).toHaveBeenCalledOnce()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    fireEvent.click(screen.getByRole('button', { name: /Turn on notifications/ }))
-    expect(mockEnable).toHaveBeenCalledOnce()
-    // Success is confirmed in place.
-    expect(await screen.findByText(/Notifications are on for this device/)).toBeInTheDocument()
-  })
-
-  it('already installed: goes straight to the notifications page', () => {
-    render(<AppSetupWizard {...baseProps} context="ios" installed />)
-    expect(screen.getByRole('button', { name: /Turn on notifications/ })).toBeInTheDocument()
+    // A single page — the primary button is Done, not Next (no notifications page to advance to).
     expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onClose).toHaveBeenCalledOnce()
   })
 
   it('Escape closes the desktop dialog', () => {

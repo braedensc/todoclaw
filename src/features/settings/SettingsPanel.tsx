@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { resetSetupGuide } from '../onboarding/setup-guide-store'
+import { useMarkTourSeen } from '../onboarding/use-mark-tour-seen'
 import { useUserSchedule, useSaveScheduleConfig } from '../schedule/use-user-schedule'
 import {
   ASSISTANT_TONES,
@@ -262,6 +263,7 @@ export function SettingsPanel({
 }) {
   const scheduleQuery = useUserSchedule()
   const save = useSaveScheduleConfig()
+  const { clearSeen: clearTourSeen } = useMarkTourSeen()
 
   // Three tabs (2026-07-09): Plan My Day / Notifications / AI. The setup guide's "turn on
   // notifications" deep-link (initialSection) picks the starting tab; Save persists the whole
@@ -542,7 +544,10 @@ export function SettingsPanel({
             <button
               type="button"
               onClick={() => {
+                // Clear BOTH halves of the tour checkmark (localStorage + account mirror) so the
+                // guide fully resets and the tour can be re-taken (#3).
                 resetSetupGuide()
+                clearTourSeen()
                 onClose()
               }}
               className="text-xs text-muted underline hover:text-ink"

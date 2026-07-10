@@ -2,8 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
-import { useEnableNotifications } from '../notifications/use-enable-notifications'
-import { SafariTroubleshooting } from '../notifications/NotificationSettings'
 import type { InstallContext } from './use-setup-guide'
 import {
   ChromeInstallBar,
@@ -13,28 +11,25 @@ import {
   SafariFileMenu,
 } from './InstallPanels'
 
-// AppSetupWizard — the setup guide's "Set it up" walkthrough for ONE combined job: get Todoclaw
-// installed AND its daily notifications on, in the order that actually works. On Apple platforms
-// the installed app is effectively a SEPARATE app — its own sign-in (isolated storage, hence the
-// re-login) and its own notification permission — so enabling in the browser tab first is a trap
-// (on iPhone the tab can't enable at all; on macOS Safari the permission wouldn't follow to the
-// Dock app). The wizard therefore sends Apple users into the installed app to finish — and the
-// checklist auto-reappears there (fresh storage) with install already checked, handing them the
-// notifications button at the right moment. Chromium shares the profile between tab and app, so
-// it gets install (recommended) then notifications right here; 'unknown' (no install gesture)
-// goes straight to notifications.
+// AppSetupWizard — the install step's "Show me how" walkthrough: drawn, tap-by-tap instructions for
+// getting Todoclaw installed. Turning notifications ON is its OWN checklist step now (2026-07-09
+// split-steps pass), handled inline there — this wizard is purely about the install gesture. On
+// Apple the installed app is effectively a SEPARATE app (its own sign-in, its own notification
+// permission), so a second "switch INTO the app" page hands the user off: reopen from the Home
+// Screen / Dock, sign in once, and finish the remaining steps (notifications) there. Chromium shares
+// the profile between tab and app, so it's install-only. ('unknown' has no install gesture, so the
+// install step — and therefore this wizard — never appears for it.)
 //
 // Each page pairs its instruction rows with a drawn "screenshot" of the real browser UI
 // (InstallPanels) so a non-technical user can find the button by shape, not by name.
 // Presentation follows ConfirmDialog's split: a bottom sheet on phones, a centered card on desktop.
 
-type WizardPage = 'install' | 'switch' | 'notifications'
+type WizardPage = 'install' | 'switch'
 
-function pagesFor(context: InstallContext, installed: boolean): WizardPage[] {
-  if (installed || context === 'unknown') return ['notifications']
-  if (context === 'chromium') return ['install', 'notifications']
-  // ios + macos-safari: install, then switch INTO the app — notifications happen there.
-  return ['install', 'switch']
+function pagesFor(context: InstallContext): WizardPage[] {
+  // ios + macos-safari: install, then switch INTO the app to finish. Everyone else: install only.
+  if (context === 'ios' || context === 'macos-safari') return ['install', 'switch']
+  return ['install']
 }
 
 const PAGE_TITLE: Record<WizardPage, Record<InstallContext, string>> = {
@@ -49,12 +44,6 @@ const PAGE_TITLE: Record<WizardPage, Record<InstallContext, string>> = {
     'macos-safari': 'Open it from your Dock',
     chromium: 'Use the app from now on',
     unknown: 'Use the app from now on',
-  },
-  notifications: {
-    ios: 'Turn on daily notifications',
-    'macos-safari': 'Turn on daily notifications',
-    chromium: 'Turn on daily notifications',
-    unknown: 'Turn on daily notifications',
   },
 }
 
@@ -165,17 +154,7 @@ function InstallPage({
   )
 }
 
-function SwitchPage({
-  context,
-  notif,
-  enabled,
-  onEnabled,
-}: {
-  context: InstallContext
-  notif: ReturnType<typeof useEnableNotifications>
-  enabled: boolean
-  onEnabled: () => void
-}) {
+function SwitchPage({ context }: { context: InstallContext }) {
   const place = context === 'ios' ? 'Home Screen' : 'Dock'
   return (
     <div className="flex flex-col gap-3">
@@ -188,91 +167,28 @@ function SwitchPage({
         and <span className="font-medium">BabyClaw</span> ready to chat.
       </p>
       <p className="text-sm leading-snug text-muted">
-        This checklist follows you too — finish turning on notifications{' '}
-        <span className="font-medium text-ink">inside the app</span> (it will offer you the button).
+        This checklist follows you too — finish the remaining steps (like turning on notifications){' '}
+        <span className="font-medium text-ink">inside the app</span>.
       </p>
-      {/* macOS Safari can technically push from a tab; offer the stay-in-browser escape hatch
-          quietly. iOS cannot — no hatch there. */}
-      {context === 'macos-safari' &&
-        (enabled ? (
-          <p className="text-sm text-primary">Notifications are on for this browser ✓</p>
-        ) : (
-          <p className="text-[12px] text-muted-light">
-            Prefer to stay in this Safari tab?{' '}
-            <button
-              type="button"
-              onClick={() => void notif.enable().then((ok) => ok && onEnabled())}
-              disabled={notif.busy}
-              className="underline hover:text-ink disabled:opacity-50"
-            >
-              {notif.busy ? 'Turning on…' : 'Turn notifications on here instead'}
-            </button>
-          </p>
-        ))}
-      {context === 'macos-safari' && notif.error && (
-        <p className="text-[13px] text-danger">{notif.error}</p>
-      )}
-      {context === 'macos-safari' && notif.setupFailed && <SafariTroubleshooting />}
-    </div>
-  )
-}
-
-function NotificationsPage({
-  notif,
-  enabled,
-  onEnabled,
-}: {
-  notif: ReturnType<typeof useEnableNotifications>
-  enabled: boolean
-  onEnabled: () => void
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm leading-snug text-ink">
-        Every morning (8 AM) your day’s plan arrives on its own. Every evening (9 PM) BabyClaw
-        checks in — reply with what you got done and he marks it complete for you. Plus a heads-up
-        when a timed task comes due. Change any of it in Settings.
-      </p>
-      {enabled ? (
-        <p className="text-sm font-medium text-primary">Notifications are on for this device ✓</p>
-      ) : (
-        <button
-          type="button"
-          onClick={() => void notif.enable().then((ok) => ok && onEnabled())}
-          disabled={notif.busy}
-          className="self-start rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          <span aria-hidden>🔔</span> {notif.busy ? 'Turning on…' : 'Turn on notifications'}
-        </button>
-      )}
-      {notif.error && <p className="text-[13px] text-danger">{notif.error}</p>}
-      {notif.setupFailed && <SafariTroubleshooting />}
     </div>
   )
 }
 
 export function AppSetupWizard({
   context,
-  installed,
   canPrompt,
   onInstallNow,
   onClose,
 }: {
   context: InstallContext
-  /** Already running as the installed app — skip straight to notifications. */
-  installed: boolean
   /** Chromium handed us the deferred install prompt — offer the real one-click install. */
   canPrompt: boolean
   onInstallNow: () => void
   onClose: () => void
 }) {
   const isMobile = useIsMobile()
-  const notif = useEnableNotifications()
   const [page, setPage] = useState(0)
-  // Flipped after a successful enable() in THIS wizard session — the checklist's auto-detect
-  // re-renders behind us, but the open wizard shows its own immediate confirmation.
-  const [enabled, setEnabled] = useState(false)
-  const pages = pagesFor(context, installed)
+  const pages = pagesFor(context)
   const id = pages[Math.min(page, pages.length - 1)]!
   const last = page >= pages.length - 1
   const title = PAGE_TITLE[id][context]
@@ -291,17 +207,7 @@ export function AppSetupWizard({
       {id === 'install' && (
         <InstallPage context={context} canPrompt={canPrompt} onInstallNow={onInstallNow} />
       )}
-      {id === 'switch' && (
-        <SwitchPage
-          context={context}
-          notif={notif}
-          enabled={enabled}
-          onEnabled={() => setEnabled(true)}
-        />
-      )}
-      {id === 'notifications' && (
-        <NotificationsPage notif={notif} enabled={enabled} onEnabled={() => setEnabled(true)} />
-      )}
+      {id === 'switch' && <SwitchPage context={context} />}
 
       <div className="mt-1 flex items-center gap-2">
         {pages.length > 1 && (

@@ -27,15 +27,20 @@
 }
 
 /* iOS standalone / mobile viewport (fix/standalone-viewport). Below the 720px breakpoint the
-   PAGE never scrolls: html/body are locked to the dynamic viewport height and #root becomes the
-   app's single scroll container — so when a screen's content fits, nothing is scrollable and the
-   iOS rubber-band "wiggle" is gone, while long screens (focus list, Done) still scroll inside
-   #root. body (which never scrolls) carries the safe-area top padding: with viewport-fit=cover
-   the layout spans the whole screen, so this keeps content clear of the camera island while the
-   body's atmosphere background — propagated to the canvas — still paints the strip above it.
-   The overscroll-behavior rule is global (all widths): page-level scroll chaining / pull-to-
-   refresh style gestures are never wanted. Fixed overlays (bottom nav, sheets, panels) position
-   against the viewport and manage their own safe-area insets. */
+   PAGE never scrolls: html/body are locked to the viewport height and the app becomes a flex
+   column inside #root — a scrollable content region (App.tsx) plus the bottom nav pinned in
+   NORMAL FLOW as the column's last child. So the nav always sits flush to the column's bottom
+   edge on every device; the earlier `position: fixed; bottom: 0` bar could float a hair above the
+   true screen bottom on smaller iPhones (the layout-viewport bottom didn't line up), leaving an
+   unstyled gap — an in-flow flex child can't. Height is 100svh (the SMALL / always-visible
+   viewport), not 100dvh: on a locked, non-scrolling page the browser chrome never retracts, so the
+   stable small height is exactly the visible area and the column bottom lands where the user can
+   see it (in a standalone PWA svh == dvh == the full screen, so nothing changes there). body (which
+   never scrolls) carries the safe-area TOP padding: with viewport-fit=cover the layout spans the
+   whole screen, so this keeps content clear of the camera island while the body's atmosphere
+   background — propagated to the canvas — still paints the strip above it. The nav manages its own
+   safe-area BOTTOM inset. overscroll-behavior is global (all widths): page-level scroll chaining /
+   pull-to-refresh gestures are never wanted. */
 html,
 body {
   overscroll-behavior: none;
@@ -43,7 +48,7 @@ body {
 @media (max-width: 719px) {
   html,
   body {
-    height: 100dvh;
+    height: 100svh;
     overflow: hidden;
   }
   body {
@@ -51,8 +56,7 @@ body {
   }
   #root {
     height: 100%;
-    overflow-y: auto;
-    overscroll-behavior: none;
+    overflow: hidden;
   }
 }
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 // The wizard + SafariTroubleshooting reach src/lib/supabase through their module graphs — and
@@ -9,7 +9,7 @@ vi.mock('../../lib/supabase', () => ({ supabase: {} }))
 // Mock the state hook wholesale — the component test only cares about rendering each state; the
 // detection/persistence logic has its own suite (use-setup-guide.test.tsx). Same for the
 // one-click notifications enabler (its own suite: use-enable-notifications.test.tsx).
-import type { SetupGuideState } from './use-setup-guide'
+import type { InstallContext, SetupGuideState, SetupStepKey } from './use-setup-guide'
 const mockGuide = vi.fn<() => SetupGuideState>()
 vi.mock('./use-setup-guide', () => ({
   useSetupGuide: () => mockGuide(),
@@ -27,26 +27,59 @@ vi.mock('../notifications/use-enable-notifications', () => ({
   useEnableNotifications: () => mockNotif(),
 }))
 
+// The dismiss ✕ gates through useConfirm() now — mock it to a spy we can inspect + resolve.
+const mockConfirm = vi.fn<(o: unknown) => Promise<boolean>>()
+vi.mock('../../components/use-confirm', () => ({
+  useConfirm: () => mockConfirm,
+}))
+
 import { SetupGuide } from './SetupGuide'
 
-const baseState = (over: Partial<SetupGuideState> = {}): SetupGuideState => ({
-  visible: true,
-  tourDone: false,
-  install: {
+// Mirror the hook's platform-adaptive ordering so the mocked state stays self-consistent.
+function stepOrderFor(context: InstallContext): SetupStepKey[] {
+  if (context === 'unknown') return ['tour', 'notifications', 'plan']
+  if (context === 'ios' || context === 'macos-safari')
+    return ['tour', 'install', 'notifications', 'plan']
+  return ['tour', 'notifications', 'install', 'plan']
+}
+
+const baseState = (over: Partial<SetupGuideState> = {}): SetupGuideState => {
+  const install = {
     done: false,
-    context: 'ios',
+    context: 'ios' as InstallContext,
     canPrompt: false,
     promptInstall: vi.fn(),
-  },
-  notificationsDone: false,
-  taskAdded: false,
-  planDone: false,
-  doneCount: 0,
-  stepCount: 3,
-  allDone: false,
-  dismiss: vi.fn(),
-  ...over,
-})
+    ...over.install,
+  }
+  const tourDone = over.tourDone ?? false
+  const notificationsDone = over.notificationsDone ?? false
+  const planDone = over.planDone ?? false
+  const order = stepOrderFor(install.context)
+  const done: Record<SetupStepKey, boolean> = {
+    tour: tourDone,
+    install: install.done,
+    notifications: notificationsDone,
+    plan: planDone,
+  }
+  const activeDone = order.map((k) => done[k])
+  const isApple = install.context === 'ios' || install.context === 'macos-safari'
+  return {
+    visible: true,
+    order,
+    done,
+    tourDone,
+    install,
+    notificationsDone,
+    canEnableNotificationsHere: !isApple || install.done,
+    taskAdded: false,
+    planDone,
+    doneCount: activeDone.filter(Boolean).length,
+    stepCount: order.length,
+    allDone: activeDone.every(Boolean),
+    dismiss: vi.fn(),
+    ...over,
+  }
+}
 
 const noopProps = {
   planReady: false,
@@ -61,6 +94,8 @@ const noopProps = {
 beforeEach(() => {
   mockEnable.mockReset()
   mockNotif.mockClear()
+  mockConfirm.mockReset()
+  mockConfirm.mockResolvedValue(true)
 })
 
 describe('SetupGuide', () => {
@@ -70,17 +105,17 @@ describe('SetupGuide', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('renders the three step titles, the pitch line, and the progress count', () => {
+  it('renders the four step titles (iOS), the pitch line, and the progress count', () => {
     mockGuide.mockReturnValue(baseState())
     render(<SetupGuide {...noopProps} />)
     expect(screen.getByRole('region', { name: 'Setup guide' })).toBeInTheDocument()
     expect(screen.getByText('See how Todoclaw works')).toBeInTheDocument()
-    expect(
-      screen.getByText('Put Todoclaw on your Home Screen & turn on notifications'),
-    ).toBeInTheDocument()
+    // Install + notifications are now SEPARATE, separately-titled steps.
+    expect(screen.getByText('Add Todoclaw to your Home Screen')).toBeInTheDocument()
+    expect(screen.getByText('Turn on daily notifications')).toBeInTheDocument()
     expect(screen.getByText('Add a task, then let Todoclaw plan your day')).toBeInTheDocument()
     expect(screen.getByText(/to-do list on a map/)).toBeInTheDocument()
-    expect(screen.getByText('0/3')).toBeInTheDocument()
+    expect(screen.getByText('0/4')).toBeInTheDocument()
   })
 
   it('launches the tour from step 1', () => {
@@ -91,32 +126,36 @@ describe('SetupGuide', () => {
     expect(onStartTour).toHaveBeenCalledOnce()
   })
 
-  it('in a browser tab, step 2 offers the wizard — not a bare notifications button', () => {
+  it('iOS browser tab: the install step opens the walkthrough; notifications wait for the app', () => {
     mockGuide.mockReturnValue(baseState())
     render(<SetupGuide {...noopProps} />)
+    // Notifications can't be enabled from an iOS tab — no button, it points at the install step.
     expect(screen.queryByRole('button', { name: /Turn on notifications/ })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Set it up' }))
-    // The iOS walkthrough names the real buttons to tap.
+    expect(screen.getByText(/Add Todoclaw to your Home Screen first/)).toBeInTheDocument()
+    // The install step's own button opens the drawn walkthrough.
+    fireEvent.click(screen.getByRole('button', { name: 'Show me how' }))
     expect(screen.getByText(/“Add to Home Screen”/)).toBeInTheDocument()
   })
 
-  it('inside the installed app, step 2 turns notifications on right on the card', () => {
+  it('inside the installed app, the notifications step turns them on right on the card', () => {
     mockEnable.mockResolvedValue(true)
     mockGuide.mockReturnValue(baseState({ install: { ...baseState().install, done: true } }))
     render(<SetupGuide {...noopProps} />)
-    expect(screen.getByText(/You’re in the app ✓/)).toBeInTheDocument()
+    // Install step is done → collapsed (no "Show me how"); notifications now enable in place.
+    expect(screen.queryByRole('button', { name: 'Show me how' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Turn on notifications/ }))
     expect(mockEnable).toHaveBeenCalledOnce()
   })
 
-  it('with no install gesture (unknown context), step 2 is just the notifications button', () => {
+  it('with no install gesture (unknown context), there is no install step — just notifications', () => {
     mockEnable.mockResolvedValue(true)
     mockGuide.mockReturnValue(
       baseState({ install: { ...baseState().install, context: 'unknown' } }),
     )
     render(<SetupGuide {...noopProps} />)
     expect(screen.getByText('Turn on daily notifications')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Set it up' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show me how' })).not.toBeInTheDocument()
+    expect(screen.getByText('0/3')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Turn on notifications/ }))
     expect(mockEnable).toHaveBeenCalledOnce()
   })
@@ -134,7 +173,7 @@ describe('SetupGuide', () => {
     expect(screen.getByText(/blocked in your browser/)).toBeInTheDocument()
   })
 
-  it('step 3 evolves: Show me where → Plan my day once a task exists', () => {
+  it('plan step evolves: Show me where → Plan my day once a task exists', () => {
     const onShowAddTask = vi.fn()
     const onPlan = vi.fn()
     mockGuide.mockReturnValue(baseState())
@@ -161,11 +200,10 @@ describe('SetupGuide', () => {
     mockGuide.mockReturnValue(
       baseState({
         tourDone: true,
+        install: { done: true, context: 'ios', canPrompt: false, promptInstall: vi.fn() },
         notificationsDone: true,
         taskAdded: true,
         planDone: true,
-        doneCount: 3,
-        allDone: true,
         dismiss,
       }),
     )
@@ -173,16 +211,32 @@ describe('SetupGuide', () => {
     expect(screen.getByText('You’re all set!')).toBeInTheDocument()
     // Finished steps drop their hints/actions.
     expect(screen.queryByRole('button', { name: 'Take the tour' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Set it up' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show me how' })).not.toBeInTheDocument()
+    // The finished card closes straight away — no confirm gate.
     fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }))
     expect(dismiss).toHaveBeenCalledOnce()
+    expect(mockConfirm).not.toHaveBeenCalled()
   })
 
-  it('the ✕ dismisses', () => {
+  it('the ✕ confirms before removing an unfinished guide', async () => {
     const dismiss = vi.fn()
     mockGuide.mockReturnValue(baseState({ dismiss }))
     render(<SetupGuide {...noopProps} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss setup guide' }))
-    expect(dismiss).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove setup guide' }))
+    expect(mockConfirm).toHaveBeenCalledOnce()
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Remove the setup guide?' }),
+    )
+    await waitFor(() => expect(dismiss).toHaveBeenCalledOnce())
+  })
+
+  it('the ✕ leaves the guide alone when the confirm is declined', async () => {
+    const dismiss = vi.fn()
+    mockConfirm.mockResolvedValue(false)
+    mockGuide.mockReturnValue(baseState({ dismiss }))
+    render(<SetupGuide {...noopProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove setup guide' }))
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledOnce())
+    expect(dismiss).not.toHaveBeenCalled()
   })
 })

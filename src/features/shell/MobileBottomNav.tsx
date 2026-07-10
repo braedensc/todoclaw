@@ -7,9 +7,11 @@ import type { AppRoute } from '../../lib/route'
 // primary "Add" action (a subtle accent ring on just its ✚ glyph, not a full tint, so it reads as
 // a normal tab until selected — which it never is, being an action not a route), BabyClaw's Chat,
 // and the "More" overflow (which now holds Daily reminders alongside Settings/Backups). Rendered
-// only on mobile (App gates on useIsMobile), fixed to the bottom edge, lifted clear of the iPhone
-// home indicator by a safe-area inset plus a little breathing room (needs viewport-fit=cover in
-// index.html or the inset resolves to 0).
+// only on mobile (App gates on useIsMobile) as the LAST in-flow child of the shell's flex column
+// (App.tsx + index.css) — so it always hugs the true bottom edge on every device, rather than
+// floating via `position: fixed` (which could sit a hair above the screen bottom on smaller
+// iPhones). Lifted clear of the iPhone home indicator by a safe-area inset plus a little breathing
+// room (needs viewport-fit=cover in index.html or the inset resolves to 0).
 //
 // Labelled <nav aria-label="Account"> with a real "Done" button so the golden `openDone` helper —
 // getByRole('navigation', {name:'Account'}).getByRole('button', {name:'Done'}) — keeps working; on
@@ -98,10 +100,10 @@ export function MobileBottomNav({
   return (
     <nav
       aria-label="Account"
-      // px-3 keeps the outer tabs off the screen's rounded corners; divide-x draws a hairline
-      // between tabs; the bottom padding stacks a little breathing room on top of the
-      // home-indicator inset (which is 0 on non-notch devices).
-      className="fixed inset-x-0 bottom-0 z-40 flex items-stretch divide-x divide-border border-t border-border bg-panel/95 px-3 backdrop-blur"
+      // In normal flow (flex child), full-width, never shrinking. px-3 keeps the outer tabs off the
+      // screen's rounded corners; divide-x draws a hairline between tabs; the bottom padding stacks
+      // a little breathing room on top of the home-indicator inset (which is 0 on non-notch devices).
+      className="z-40 flex shrink-0 items-stretch divide-x divide-border border-t border-border bg-panel/95 px-3 backdrop-blur"
       style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5px)' }}
     >
       <NavItem glyph="⌂" label="Home" onClick={onHome} active={route === 'home'} />
