@@ -104,8 +104,19 @@ const notificationsSchema = z.object({
   reminderDefaultMinutes: z.number().int().min(0).max(40320).nullable().optional(),
 })
 
+// ---- Onboarding (first-run setup guide) ------------------------------------------------------
+// Account-level so a device-INDEPENDENT fact — "I've seen the tour" — survives the localStorage
+// partition split between a browser tab and the installed PWA (display-mode: standalone gets its
+// own storage). The rest of the setup-guide state stays per-device localStorage (install +
+// notifications ARE per-device), but the tour checkmark shouldn't reset just because the app was
+// opened from the Home Screen instead of Safari. See setup-guide-store.ts.
+const onboardingSchema = z.object({
+  tourSeen: z.boolean().optional(),
+})
+
 export const ScheduleConfigSchema = z.object({
   location: shortText.optional(),
+  onboarding: onboardingSchema.optional(),
   weekday: weekdaySchema.optional(),
   weekend: z
     .object({

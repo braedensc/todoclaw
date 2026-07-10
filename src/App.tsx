@@ -34,6 +34,7 @@ import { SetupGuide } from './features/onboarding/SetupGuide'
 import { FeatureTour } from './features/onboarding/FeatureTour'
 import { ADD_TASK_SPOTLIGHT, DESKTOP_TOUR, MOBILE_TOUR } from './features/onboarding/tour-steps'
 import { markTourDone } from './features/onboarding/setup-guide-store'
+import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
 import { useRoute, navigate, navigateToChat, chatMessageId } from './lib/route'
@@ -99,6 +100,7 @@ function AppShell() {
   // ADR-0026). JS-gated (not just CSS) so exactly one Account nav renders per environment — keeping
   // the golden `openDone` selector unambiguous and desktop untouched.
   const isMobile = useIsMobile()
+  const { markSeen: markTourSeen } = useMarkTourSeen()
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
@@ -197,10 +199,21 @@ function AppShell() {
     // min-h-screen is desktop-only: on mobile the page is locked to the viewport and #root is the
     // scroll container (src/index.css), so a 100vh min-height here would force ~a safe-area's
     // worth of permanent overflow — i.e. the standalone-PWA scroll wiggle this replaces.
-    <div className="relative min-h-full w-full wide:min-h-screen">
+    <div
+      className={
+        isMobile
+          ? // Mobile: a fixed-height flex COLUMN so the bottom nav (its last in-flow child) always
+            // hugs the true bottom edge — see index.css. Content scrolls in the flex-1 region below.
+            'relative flex h-full w-full flex-col'
+          : 'relative min-h-full w-full wide:min-h-screen'
+      }
+    >
       <div
         className={
-          'min-h-full wide:min-h-screen transition-[padding] duration-300 ease-out ' +
+          (isMobile
+            ? 'min-h-0 flex-1 overflow-y-auto overscroll-none '
+            : 'min-h-full wide:min-h-screen ') +
+          'transition-[padding] duration-300 ease-out ' +
           (chatOpen ? 'wide:pr-[360px]' : '')
         }
       >
@@ -208,12 +221,9 @@ function AppShell() {
             1046/640 so clustering feel matches — #75), centered, with the header/plan/input above
             it. Raised from 1120 → 1280 to grow the grid into the space the removed habits strip
             freed (B2). */}
-        <div
-          className={
-            // pb-28 clears the taller fixed bottom nav (64px tabs + safe-area + breathing room).
-            'mx-auto max-w-3xl p-6 wide:max-w-[1280px] ' + (isMobile && !gridOnly ? 'pb-28' : '')
-          }
-        >
+        {/* The bottom nav is now an in-flow flex child (below), not a fixed overlay, so the content
+            column no longer needs a pb-28 spacer to clear it. */}
+        <div className="mx-auto max-w-3xl p-6 wide:max-w-[1280px]">
           {/* Home vs. an overlay. 'home' renders the header, plan, inline reminders, and work area.
               The 'chat' route is home + the chat overlay — a notification tap must land on the main
               screen with the drawer open, not a blank shell. 'reminders' (Daily habits) AND 'done'
@@ -525,7 +535,12 @@ function AppShell() {
                       tour === 'full' ? (isMobile ? MOBILE_TOUR : DESKTOP_TOUR) : ADD_TASK_SPOTLIGHT
                     }
                     onClose={() => {
-                      if (tour === 'full') markTourDone()
+                      // Latch locally (instant, this context) AND mirror to the account so the
+                      // checkmark survives a browser↔installed-app storage-partition switch (#3).
+                      if (tour === 'full') {
+                        markTourDone()
+                        markTourSeen()
+                      }
                       setTour(null)
                     }}
                   />
@@ -669,29 +684,12 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
-          {/* Mobile chrome (Concept D): the thumb-zone bottom nav + its "More" overflow sheet.
-              Hidden in grid-only mode (the fullscreen grid owns the screen). */}
+          {/* Mobile chrome (Concept D): the ➕ add sheet, the "More" overflow sheet, and the toast.
+              The thumb-zone bottom nav itself lives OUTSIDE this scroll region — it's an in-flow
+              child of the flex column (below) so it always hugs the screen bottom. Hidden in
+              grid-only mode (the fullscreen grid owns the screen). */}
           {isMobile && !gridOnly && (
             <>
-              <MobileBottomNav
-                route={route}
-                unread={unread}
-                onHome={() => {
-                  // "Home" from inside a focus list means the top level — the overview. On the
-                  // home route the focus entry is consumed cleanly (exit → history.back); from
-                  // another route we just drop the focus and navigate.
-                  if (route === 'home' && quadrantFocus.focus) {
-                    quadrantFocus.exit()
-                  } else {
-                    quadrantFocus.clear()
-                    navigate('home')
-                  }
-                }}
-                onAdd={() => setShowAdd(true)}
-                onChat={() => setShowChat(true)}
-                onDone={() => navigate('done')}
-                onMore={() => setShowMore(true)}
-              />
               <MobileAddSheet
                 open={showAdd}
                 defaultQuadrant={quadrantFocus.focus}
@@ -718,6 +716,30 @@ function AppShell() {
           )}
         </div>
       </div>
+
+      {/* The thumb-zone bottom nav — the flex column's last in-flow child (mobile only), so it
+          always sits flush to the bottom of the screen. Hidden in grid-only mode. */}
+      {isMobile && !gridOnly && (
+        <MobileBottomNav
+          route={route}
+          unread={unread}
+          onHome={() => {
+            // "Home" from inside a focus list means the top level — the overview. On the home
+            // route the focus entry is consumed cleanly (exit → history.back); from another route
+            // we just drop the focus and navigate.
+            if (route === 'home' && quadrantFocus.focus) {
+              quadrantFocus.exit()
+            } else {
+              quadrantFocus.clear()
+              navigate('home')
+            }
+          }}
+          onAdd={() => setShowAdd(true)}
+          onChat={() => setShowChat(true)}
+          onDone={() => navigate('done')}
+          onMore={() => setShowMore(true)}
+        />
+      )}
 
       {/* Chat — desktop push-drawer (shrinks the grid) + mobile covering bottom-sheet. Both are
           driven by the same `showChat` flag; only one is visible per breakpoint. */}
