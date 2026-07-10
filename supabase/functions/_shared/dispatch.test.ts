@@ -70,9 +70,10 @@ Deno.test('dueKind: a dropped tick is recovered within the catch-up window (the 
   assertEquals(dueKind(p, 11), 'plan') // 3h late — still inside the 4h window
   assertEquals(dueKind(p, 12), null) // past the window: a plan this late is noise
   assertEquals(dueKind(p, 7), null) // before the hour: not yet due
-  // Evening recovers the same way, wrapping past midnight ([21, 1)).
+  // Evening recovers the same way but stays inside the local day ([21, 24)) — never past midnight, or
+  // the recap would read the next (empty) day's plan and claim its slot.
   assertEquals(dueKind(p, 23), 'recap')
-  assertEquals(dueKind(p, 0), 'recap')
+  assertEquals(dueKind(p, 0), null) // rolled into the next day → recap is skipped, not misfired
   assertEquals(dueKind(p, 1), null)
 })
 
