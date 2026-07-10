@@ -113,11 +113,16 @@ export function isQuietHour(prefs: NotificationPrefs, hour: number): boolean {
 // already covers a fully missed day.
 const CATCHUP_HOURS = 4
 
-// Hours from `configuredHour` forward to `localHour`, wrapping past midnight (0 when equal, 23 one
-// hour before). Membership test for the [configuredHour, configuredHour + CATCHUP_HOURS) window.
+// Membership test for the [configuredHour, configuredHour + CATCHUP_HOURS) window, bounded to the
+// LOCAL DAY — it does NOT wrap past midnight. This matters only for a late evening hour (the default
+// recap is 21:00, window [21, 24)): a recap must never deliver at 00:xx, because by then the local
+// date has rolled over, so `dispatch_inputs_for_user` would read the NEW (empty) day's plan AND
+// `claim_message` would burn the new day's recap slot — a post-midnight "recap" is both wrong-day and
+// self-perpetuating. Skipping a fully-missed digest beats sending a corrupt one. Morning hours are
+// small, never approached midnight, and are unaffected.
 function inCatchupWindow(configuredHour: number | undefined, localHour: number): boolean {
   if (configuredHour == null) return false
-  return (localHour - configuredHour + 24) % 24 < CATCHUP_HOURS
+  return localHour >= configuredHour && localHour - configuredHour < CATCHUP_HOURS
 }
 
 // What (if anything) is this user due for at `localHour`? Disabled or quiet → nothing. Otherwise the
