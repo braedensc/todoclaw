@@ -10,6 +10,26 @@ A recurring task is a regular task with a `recurring` jsonb field
 normal task except: it surfaces on the grid only when due/soon/overdue, and marking it done
 **resets its clock** instead of archiving it (handled in `src/features/list/`, not here).
 
+## Ongoing projects (same engine, project framing)
+
+A month-long effort worked on continuously (e.g. "redesign the site") is an **ongoing project** —
+the same `recurring` jsonb with two extra keys, `ongoing: true` and an optional `targetEnd`
+(`'YYYY-MM-DD'`). It reuses the whole engine: `frequencyDays` becomes the **check-in cadence** (how
+often it resurfaces), `lastDoneAt`/`doneCount` become the last work session / **session count**, and
+`recurringStatus` still drives the hide-when-`ok` + color. The differences from a chore:
+
+- The ✓ **logs a work session** (advances the cycle), same code path as a recurring done.
+- It has a terminal **Finish** (in the expanded row's schedule editor) that archives it to the Done
+  log via the shared `set_task_done` RPC — the finish line a plain repeat never reaches.
+- It reads as a project: `▶` glyph, a session tally, and a target-end countdown from
+  `ongoingLabel` (`src/lib/recurring.ts`) instead of a `↻` cadence.
+
+No migration is needed (the keys live in the jsonb); a row without `ongoing` is byte-for-byte the
+old chore behavior. Config lives in the shared `SchedulePanel` (list expanded row) as a "Make it an
+ongoing project" toggle → the check-in stepper, target-end, and Finish. BabyClaw can also set it
+(`make_ongoing` / `finish_ongoing`, and `create_task`'s ongoing fields) — see
+`supabase/functions/_shared/capabilities/tasks.ts`.
+
 ## Components
 
 - **`RecurringSection.tsx`** — the `↻ Recurring` row at the bottom of `ExpandedRow`. Owns no

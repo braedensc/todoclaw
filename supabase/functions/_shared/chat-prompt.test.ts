@@ -85,6 +85,48 @@ Deno.test('persona teaches the grid priority model and transparency/ask-when-uns
 })
 
 Deno.test(
+  'persona knows about ongoing projects and gates the suggestion to real multi-week efforts',
+  () => {
+    // The capability is advertised…
+    assertStringIncludes(SYSTEM_PREFIX, 'ongoing project')
+    // …and the smart-suggestion heuristic: offer it for a multi-week effort, but ASK, and NEVER for
+    // one-offs/quick chores (so BabyClaw doesn't slap "ongoing" on "buy milk").
+    assertStringIncludes(SYSTEM_PREFIX, 'MULTI-WEEK effort')
+    assertStringIncludes(SYSTEM_PREFIX, 'NEVER do this for one-off')
+  },
+)
+
+Deno.test('buildSystem renders an ongoing project as a continuous effort, not a chore', () => {
+  const sys = buildSystem(
+    baseContext({
+      tasks: [
+        {
+          id: 'p1',
+          text: 'Redesign the site',
+          x: 0.4,
+          y: 0.9,
+          due: null,
+          dueInDays: null,
+          dueTime: null,
+          staged: false,
+          recurringLabel: 'every 2d',
+          recurringStatus: 'due today',
+          ongoing: true,
+          ongoingSessions: 7,
+          ongoingTargetInDays: 12,
+          reminderOffset: null,
+          doneToday: false,
+          completedAt: null,
+        },
+      ],
+    }),
+  )
+  // Reads as a project: sessions + target countdown, NOT "recurring every 2d".
+  assertStringIncludes(sys, 'ongoing project (7 sessions, target in 12d')
+  assert(!sys.includes('recurring every 2d'))
+})
+
+Deno.test(
   'buildSystem renders active tasks with grid position + quadrant, done, and habits',
   () => {
     const sys = buildSystem(

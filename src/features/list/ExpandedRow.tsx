@@ -36,6 +36,10 @@ interface ExpandedRowProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: () => void
+  /** Make / adjust this task as an ongoing project (check-in cadence + optional target-end). */
+  onSetOngoing: (checkInDays: number, targetEnd: string | null) => void
+  /** Finish the ongoing project — archive it to the Done log. */
+  onFinishOngoing: () => void
   /** Enter the row's inline text edit — the mobile-visible Rename chip (audit §4.1): the row's
    *  other edit gestures are double-click (mouse) and F2 (keyboard), neither reachable by touch. */
   onRename: () => void
@@ -56,6 +60,8 @@ export function ExpandedRow({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  onSetOngoing,
+  onFinishOngoing,
   onRename,
   reminderOffsets,
   onToggleReminder,
@@ -126,6 +132,8 @@ export function ExpandedRow({
           onSetRecurring={onSetRecurring}
           onSetFrequency={onSetFrequency}
           onRemoveRecurring={onRemoveRecurring}
+          onSetOngoing={onSetOngoing}
+          onFinishOngoing={onFinishOngoing}
           reminderOffsets={reminderOffsets}
           onToggleReminder={onToggleReminder}
           onClearReminders={onClearReminders}

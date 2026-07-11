@@ -21,6 +21,8 @@ interface Recurring {
   frequencyDays: number
   lastDoneAt: string | null
   doneCount: number
+  ongoing?: boolean
+  targetEnd?: string | null
 }
 
 export interface LoadedChatContext {
@@ -190,6 +192,7 @@ export async function loadChatContext(
   const tasks: PromptTask[] = (tasksRes.data ?? []).map((t) => {
     const rec = t.recurring as Recurring | null
     labelById.set(t.id as string, t.text as string)
+    const isOngoing = !!rec?.ongoing
     return {
       id: t.id as string,
       text: t.text as string,
@@ -201,6 +204,10 @@ export async function loadChatContext(
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       recurringStatus: recurringStatusPhrase(rec, now),
+      ongoing: isOngoing,
+      ongoingSessions: isOngoing ? (rec?.doneCount ?? 0) : null,
+      ongoingTargetInDays:
+        isOngoing && rec?.targetEnd ? daysUntilInTZ(rec.targetEnd, timeZone, now) : null,
       reminderOffsets: reminderByTask.get(t.id as string) ?? [],
       doneToday: doneMap[t.id as string] === true,
       completedAt: (t.completed_at as string | null) ?? null,

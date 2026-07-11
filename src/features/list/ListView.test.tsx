@@ -377,6 +377,135 @@ describe('ListView', () => {
       expect(screen.queryByLabelText(/Completed/)).not.toBeInTheDocument()
     })
   })
+
+  describe('ongoing projects (expanded row — SchedulePanel)', () => {
+    it('“Make it an ongoing project” writes an ongoing recurring with the default check-in', () => {
+      tasksData = [makeTask({ id: 'o1', text: 'redesign the site', recurring: null })]
+      renderList()
+
+      fireEvent.click(screen.getByText('redesign the site'))
+      fireEvent.click(screen.getByRole('button', { name: /Make it an ongoing project/ }))
+
+      expect(updateMutate).toHaveBeenCalledWith({
+        id: 'o1',
+        patch: {
+          recurring: {
+            frequencyDays: 2,
+            lastDoneAt: null,
+            doneCount: 0,
+            ongoing: true,
+            targetEnd: null,
+          },
+        },
+      })
+    })
+
+    it('promoting an existing recurring task to ongoing preserves its session tally', () => {
+      tasksData = [
+        makeTask({
+          id: 'o2',
+          text: 'ship the redesign',
+          recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 4 },
+        }),
+      ]
+      renderList()
+
+      fireEvent.click(screen.getByText('ship the redesign'))
+      fireEvent.click(screen.getByRole('button', { name: /Make it an ongoing project/ }))
+
+      expect(updateMutate).toHaveBeenCalledWith({
+        id: 'o2',
+        patch: {
+          recurring: {
+            frequencyDays: 2,
+            lastDoneAt: RECENT,
+            doneCount: 4,
+            ongoing: true,
+            targetEnd: null,
+          },
+        },
+      })
+    })
+
+    it('setting a target-end keeps the cadence and session tally', () => {
+      tasksData = [
+        makeTask({
+          id: 'o3',
+          text: 'thesis',
+          recurring: { frequencyDays: 3, lastDoneAt: RECENT, doneCount: 6, ongoing: true },
+        }),
+      ]
+      renderList()
+
+      fireEvent.click(screen.getByText('thesis'))
+      fireEvent.change(screen.getByLabelText('Target end date'), {
+        target: { value: '2026-09-01' },
+      })
+
+      expect(updateMutate).toHaveBeenCalledWith({
+        id: 'o3',
+        patch: {
+          recurring: {
+            frequencyDays: 3,
+            lastDoneAt: RECENT,
+            doneCount: 6,
+            ongoing: true,
+            targetEnd: '2026-09-01',
+          },
+        },
+      })
+    })
+
+    it('the ✓ on an ongoing task LOGS A SESSION (cycle bump), never archives', () => {
+      tasksData = [
+        makeTask({
+          id: 'o4',
+          text: 'learn spanish',
+          recurring: {
+            frequencyDays: 2,
+            lastDoneAt: RECENT,
+            doneCount: 3,
+            ongoing: true,
+            targetEnd: '2026-08-01',
+          },
+        }),
+      ]
+      renderList()
+
+      fireEvent.click(screen.getByLabelText('Log a work session'))
+
+      expect(markDoneMutate).not.toHaveBeenCalled()
+      const arg = updateMutate.mock.calls[0]![0] as {
+        patch: { recurring: { doneCount: number; ongoing: boolean; targetEnd: string } }
+      }
+      // A session bump preserves the ongoing flag + target-end and increments the tally.
+      expect(arg.patch.recurring.doneCount).toBe(4)
+      expect(arg.patch.recurring.ongoing).toBe(true)
+      expect(arg.patch.recurring.targetEnd).toBe('2026-08-01')
+    })
+
+    it('Finish archives the project via useMarkTaskDone (the finish line a chore lacks)', () => {
+      tasksData = [
+        makeTask({
+          id: 'o5',
+          text: 'move house',
+          bucket: 'oneoff',
+          recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 8, ongoing: true },
+        }),
+      ]
+      renderList()
+
+      fireEvent.click(screen.getByText('move house'))
+      fireEvent.click(screen.getByRole('button', { name: /Finish project/ }))
+
+      expect(markDoneMutate).toHaveBeenCalledWith({
+        taskId: 'o5',
+        text: 'move house',
+        bucket: 'oneoff',
+        timeZone: 'UTC',
+      })
+    })
+  })
 })
 
 // The per-quadrant focus scope behind the mobile overview→focus flow. One placed task per

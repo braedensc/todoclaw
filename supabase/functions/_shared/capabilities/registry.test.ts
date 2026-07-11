@@ -102,9 +102,11 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'clear_reminder',
     'remove_reminder',
     'make_recurring',
+    'make_ongoing',
     'clear_recurring',
     'restore_task',
     'complete_task',
+    'finish_ongoing',
     'delete_task',
     'list_habits',
     'create_habit',
@@ -126,13 +128,14 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
 })
 
 Deno.test(
-  'exactly complete_task, delete_task, delete_habit, delete_completion are destructive',
+  'exactly complete_task, delete_task, delete_habit, delete_completion, finish_ongoing are destructive',
   () => {
     assertEquals([...DESTRUCTIVE].sort(), [
       'complete_task',
       'delete_completion',
       'delete_habit',
       'delete_task',
+      'finish_ongoing',
     ])
     for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
   },
@@ -184,6 +187,51 @@ Deno.test('create_task keeps the id for the model but not for the user', async (
   assert(res.content.includes(UUID))
   assert(typeof res.display === 'string' && !res.display!.includes(UUID))
   assert(res.display!.includes('SCP'))
+})
+
+Deno.test('create_task can create an ongoing project in one shot', async () => {
+  let inserted: Record<string, unknown> | undefined
+  const res = await executeTool(
+    'create_task',
+    { text: 'Renovate the kitchen', ongoing_check_in_days: 3, target_end: '2026-09-01' },
+    ctx({
+      onInsert: (_t, row) => {
+        inserted = row as Record<string, unknown>
+        return { data: { id: UUID }, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  const rec = inserted?.recurring as {
+    frequencyDays: number
+    doneCount: number
+    ongoing: boolean
+    targetEnd: string
+  }
+  assertEquals(rec.frequencyDays, 3)
+  assertEquals(rec.doneCount, 0)
+  assertEquals(rec.ongoing, true)
+  assertEquals(rec.targetEnd, '2026-09-01')
+})
+
+Deno.test('make_ongoing and finish_ongoing round-trip through the adapter', async () => {
+  const made = await executeTool(
+    'make_ongoing',
+    { task_id: UUID, check_in_days: 2 },
+    ctx({ onSelect: () => ({ data: { recurring: null }, error: null }) }),
+  )
+  assert(!made.is_error)
+  assertEquals(made.mutated, ['tasks'])
+
+  rpcCalls.length = 0
+  const finished = await executeTool(
+    'finish_ongoing',
+    { task_id: UUID },
+    ctx({ onSelect: () => ({ data: { text: 'Big project', bucket: 'oneoff' }, error: null }) }),
+  )
+  assert(!finished.is_error)
+  assertEquals(finished.mutated, ['daily_state', 'history'])
+  assert(rpcCalls.some((c) => c.name === 'set_task_done'))
 })
 
 Deno.test(
