@@ -59,10 +59,12 @@ export interface ClusterPopupProps {
   onSetFrequency: (task: Task, frequencyDays: number) => void
   /** Drop a row's recurring schedule. */
   onRemoveRecurring: (task: Task) => void
-  /** A row's reminder offset (minutes before due), or null — from the grid's shared query. */
-  reminderOffsetFor: (task: Task) => number | null
-  /** Set/clear a row's reminder (minutes-before, null = off). */
-  onSetReminder: (task: Task, minutes: number | null) => void
+  /** A row's selected reminder offsets (minutes before due) — from the grid's shared query. */
+  reminderOffsetsFor: (task: Task) => readonly number[]
+  /** Toggle one of a row's reminder lead times on/off. */
+  onToggleReminder: (task: Task, minutes: number) => void
+  /** Clear every reminder on a row (the Off chip). */
+  onClearReminders: (task: Task) => void
 }
 
 interface PopupPos {
@@ -97,8 +99,9 @@ export function ClusterPopup({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
-  reminderOffsetFor,
-  onSetReminder,
+  reminderOffsetsFor,
+  onToggleReminder,
+  onClearReminders,
 }: ClusterPopupProps) {
   const [pos, setPos] = useState<PopupPos | null>(null)
 
@@ -203,8 +206,9 @@ export function ClusterPopup({
           onSetRecurring={(n) => onSetRecurring(task, n)}
           onSetFrequency={(n) => onSetFrequency(task, n)}
           onRemoveRecurring={() => onRemoveRecurring(task)}
-          reminderOffset={reminderOffsetFor(task)}
-          onSetReminder={(m) => onSetReminder(task, m)}
+          reminderOffsets={reminderOffsetsFor(task)}
+          onToggleReminder={(m) => onToggleReminder(task, m)}
+          onClearReminders={() => onClearReminders(task)}
         />
       ))}
     </div>,
@@ -225,8 +229,9 @@ interface ClusterPopupRowProps {
   onSetRecurring: (frequencyDays: number) => void
   onSetFrequency: (frequencyDays: number) => void
   onRemoveRecurring: () => void
-  reminderOffset: number | null
-  onSetReminder: (minutes: number | null) => void
+  reminderOffsets: readonly number[]
+  onToggleReminder: (minutes: number) => void
+  onClearReminders: () => void
 }
 
 /** The row ⋯ schedule menu's portal dimensions — same panel, same numbers as the grid card's. */
@@ -255,8 +260,9 @@ function ClusterPopupRow({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
-  reminderOffset,
-  onSetReminder,
+  reminderOffsets,
+  onToggleReminder,
+  onClearReminders,
 }: ClusterPopupRowProps) {
   const rc = recurringStatus(task.recurring)
   // The grid card's border scheme, mirrored exactly (see GridCard): a solid status-colored TOP
@@ -452,8 +458,9 @@ function ClusterPopupRow({
                   onSetRecurring={onSetRecurring}
                   onSetFrequency={onSetFrequency}
                   onRemoveRecurring={onRemoveRecurring}
-                  reminderOffset={reminderOffset}
-                  onSetReminder={onSetReminder}
+                  reminderOffsets={reminderOffsets}
+                  onToggleReminder={onToggleReminder}
+                  onClearReminders={onClearReminders}
                   idPrefix="cluster"
                 />
               </div>,

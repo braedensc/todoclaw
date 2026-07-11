@@ -269,10 +269,11 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'set_reminder',
     description:
-      'Set a push reminder for a task a given number of minutes before it is due. The task must ' +
-      'already have a due date AND a due time (use set_due_date first if not). Replaces any ' +
-      'existing reminder on that task. Reminders arrive on devices where the user has ' +
-      'notifications turned on.',
+      'Add a push reminder for a task a given number of minutes before it is due. The task must ' +
+      'already have a due date AND a due time (use set_due_date first if not). A task can have ' +
+      'several reminders at different lead times (e.g. 1 day AND 1 hour before), each firing on ' +
+      'its own; call this once per lead time. Setting the same lead time again just re-arms it. ' +
+      'Reminders arrive on devices where the user has notifications turned on.',
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -330,7 +331,8 @@ export const taskCapabilities: Capability[] = [
 
   defineCapability({
     name: 'clear_reminder',
-    description: 'Remove the push reminder from a task (leaves the due date and time as they are).',
+    description:
+      'Remove ALL push reminders from a task (leaves the due date and time as they are).',
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
       const { data: task, error: selErr } = await ctx.client
@@ -341,18 +343,19 @@ export const taskCapabilities: Capability[] = [
         .maybeSingle()
       if (selErr) return systemErr(selErr.message)
       if (!task) return err("I couldn't find that task.")
-      // Was there a reminder to remove? (RLS-scoped) — so the confirmation doesn't claim a
-      // removal that never happened.
+      // Were there any reminders to remove? (RLS-scoped) — so the confirmation doesn't claim a
+      // removal that never happened. A task can have several rows, so read the set (no maybeSingle,
+      // which would throw on more than one) and check it's non-empty.
       const { data: existing, error: exErr } = await ctx.client
         .from('task_reminders')
         .select('task_id')
         .eq('task_id', i.task_id)
-        .maybeSingle()
       if (exErr) return systemErr(exErr.message)
-      if (!existing) return ok(`"${task.text}" didn't have a reminder set.`, ['reminders'])
+      const hadReminder = Array.isArray(existing) ? existing.length > 0 : existing != null
+      if (!hadReminder) return ok(`"${task.text}" didn't have a reminder set.`, ['reminders'])
       const { error } = await ctx.client.rpc('clear_task_reminder', { p_task_id: i.task_id })
       if (error) return systemErr(error.message)
-      return ok(`Removed the reminder from "${task.text}".`, ['reminders'])
+      return ok(`Removed the reminders from "${task.text}".`, ['reminders'])
     },
   }),
 

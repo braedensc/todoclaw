@@ -5,7 +5,7 @@ import { useDailyState } from '../daily-state/use-daily-state'
 import { useConfirm } from '../../components/use-confirm'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useNow } from '../../hooks/use-now'
-import { useTaskReminders, useUpsertTaskReminder } from '../reminders/use-task-reminders'
+import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import type { Task } from '../../types/task'
@@ -53,7 +53,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const markDone = useMarkTaskDone()
   // Reminders for every row in one query; the expanded row reads/writes its task's via these.
   const { data: reminders } = useTaskReminders()
-  const upsertReminder = useUpsertTaskReminder()
+  const reminderWrites = useTaskReminderWrites()
   const confirm = useConfirm()
   // Only for the empty-state copy: the add affordance is the header widget on desktop but the
   // bottom-nav ➕ on a phone — pointing a phone user at a header that isn't there is a dead end.
@@ -183,10 +183,11 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
             onRemoveRecurring={handleRemoveRecurring}
             onDelete={handleDelete}
             onMove={onMoveToQuadrant}
-            reminderOffset={reminders?.get(task.id)?.offset_minutes ?? null}
-            onSetReminder={(minutes) =>
-              upsertReminder.mutate({ taskId: task.id, offsetMinutes: minutes })
+            reminderOffsets={reminders?.get(task.id) ?? []}
+            onToggleReminder={(minutes) =>
+              reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
             }
+            onClearReminders={() => reminderWrites.clear(task.id)}
           />
         ))}
       </ul>
