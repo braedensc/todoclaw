@@ -33,3 +33,10 @@ than the hourly GitHub-Actions cron and a *schedule* to sweep.
 - **v1 bounds:** one reminder per task (`unique(task_id)` — editors upsert + re-arm; dropping
   the constraint later admits several), no reminders on recurring tasks or date-only tasks
   (no instant to anchor), no snooze actions.
+  - **Update 2026-07-11 — multi-reminder:** the one-per-task bound is lifted (the "later" above).
+    A task may now hold several reminders at distinct lead times (e.g. 1 day AND 1 hour before):
+    `unique(task_id)` → `unique(task_id, offset_minutes)`; `set_task_reminder` upserts a single
+    offset and `remove_task_reminder(task_id, offset)` deletes one (`clear_task_reminder` still
+    drops them all). The sweep/claim/trigger/dispatch pipeline was already per-row, so each
+    reminder simply fires on its own — no other changes. See migration
+    `20260711000000_multi_task_reminders.sql`. The recurring/date-only/no-snooze bounds still hold.

@@ -5,7 +5,7 @@ import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
 import { urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
-import { useTaskReminders, useUpsertTaskReminder } from '../reminders/use-task-reminders'
+import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -84,7 +84,7 @@ export function GridSurface({
 
   // Reminders for the whole grid in one query; each card's ⋯ menu reads/writes its own via these.
   const { data: reminders } = useTaskReminders()
-  const upsertReminder = useUpsertTaskReminder()
+  const reminderWrites = useTaskReminderWrites()
 
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
@@ -152,10 +152,11 @@ export function GridSurface({
         onDelete={() => handleDelete(task)}
         onDone={() => doneWithStamp(task)}
         onSetDue={(due, due_time) => updateMutate({ id: task.id, patch: { due, due_time } })}
-        reminderOffset={reminders?.get(task.id)?.offset_minutes ?? null}
-        onSetReminder={(minutes) =>
-          upsertReminder.mutate({ taskId: task.id, offsetMinutes: minutes })
+        reminderOffsets={reminders?.get(task.id) ?? []}
+        onToggleReminder={(minutes) =>
+          reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
         }
+        onClearReminders={() => reminderWrites.clear(task.id)}
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,
@@ -321,10 +322,11 @@ export function GridSurface({
                     onRemoveRecurring={(task) =>
                       updateMutate({ id: task.id, patch: { recurring: null } })
                     }
-                    reminderOffsetFor={(task) => reminders?.get(task.id)?.offset_minutes ?? null}
-                    onSetReminder={(task, minutes) =>
-                      upsertReminder.mutate({ taskId: task.id, offsetMinutes: minutes })
+                    reminderOffsetsFor={(task) => reminders?.get(task.id) ?? []}
+                    onToggleReminder={(task, minutes) =>
+                      reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
                     }
+                    onClearReminders={(task) => reminderWrites.clear(task.id)}
                   />
                 )}
               </ClusterBubble>

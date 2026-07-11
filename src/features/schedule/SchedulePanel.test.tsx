@@ -35,8 +35,9 @@ function renderPanel(over: Partial<Parameters<typeof SchedulePanel>[0]> = {}) {
     onSetRecurring: vi.fn(),
     onSetFrequency: vi.fn(),
     onRemoveRecurring: vi.fn(),
-    reminderOffset: null as number | null,
-    onSetReminder: vi.fn(),
+    reminderOffsets: [] as number[],
+    onToggleReminder: vi.fn(),
+    onClearReminders: vi.fn(),
     now: NOW,
     ...over,
   }
@@ -127,7 +128,7 @@ describe('SchedulePanel time + remind', () => {
     expect(screen.getByTestId('reminder-picker-grid')).toBeInTheDocument()
   })
 
-  it('recurring hides the remind section even with a due time', () => {
+  it('recurring hides the remind picker (shows a note instead) even with a due time', () => {
     renderPanel({
       due: '2026-07-10',
       dueTime: '15:00:00',
@@ -135,6 +136,24 @@ describe('SchedulePanel time + remind', () => {
       idPrefix: 'grid',
     })
     expect(screen.queryByTestId('reminder-picker-grid')).not.toBeInTheDocument()
+    // The chips don't just vanish silently — a note explains why (2026-07-11 feedback).
+    expect(screen.getByText(/don’t apply to a repeating task/)).toBeInTheDocument()
+  })
+
+  it('reminder chips are multi-select: a chip toggles one offset, Off clears them all', () => {
+    const p = renderPanel({
+      due: '2026-07-10',
+      dueTime: '15:00:00',
+      reminderOffsets: [60],
+      idPrefix: 'grid',
+    })
+    const picker = within(screen.getByTestId('reminder-picker-grid'))
+    expect(picker.getByRole('button', { name: '1 hour' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(picker.getByRole('button', { name: '1 day' }))
+    expect(p.onToggleReminder).toHaveBeenLastCalledWith(1440)
+    // Off lives inside the picker; the Repeats "Off" is a separate control outside it.
+    fireEvent.click(picker.getByRole('button', { name: 'Off' }))
+    expect(p.onClearReminders).toHaveBeenCalled()
   })
 })
 

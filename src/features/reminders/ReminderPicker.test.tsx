@@ -2,25 +2,36 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ReminderPicker } from './ReminderPicker'
 
-describe('ReminderPicker', () => {
-  it('marks the current offset pressed (null = Off)', () => {
-    const { rerender } = render(<ReminderPicker value={null} onChange={() => {}} />)
+describe('ReminderPicker (multi-select)', () => {
+  it('marks every selected offset pressed; Off is pressed only when nothing is selected', () => {
+    const { rerender } = render(
+      <ReminderPicker values={[]} onToggle={() => {}} onClear={() => {}} />,
+    )
     expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: '1 hour' })).toHaveAttribute('aria-pressed', 'false')
 
-    rerender(<ReminderPicker value={60} onChange={() => {}} />)
+    // Two offsets selected at once — both pressed, Off no longer pressed.
+    rerender(<ReminderPicker values={[60, 1440]} onToggle={() => {}} onClear={() => {}} />)
     expect(screen.getByRole('button', { name: '1 hour' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '1 day' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '10 min' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Off' })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('emits the chosen offset in minutes, and null for Off', () => {
-    const onChange = vi.fn()
-    render(<ReminderPicker value={60} onChange={onChange} />)
-    fireEvent.click(screen.getByRole('button', { name: 'At time' }))
-    expect(onChange).toHaveBeenLastCalledWith(0)
+  it('a preset chip toggles just its own offset; Off clears them all', () => {
+    const onToggle = vi.fn()
+    const onClear = vi.fn()
+    render(<ReminderPicker values={[60]} onToggle={onToggle} onClear={onClear} />)
+
     fireEvent.click(screen.getByRole('button', { name: '1 day' }))
-    expect(onChange).toHaveBeenLastCalledWith(1440)
+    expect(onToggle).toHaveBeenLastCalledWith(1440)
+    fireEvent.click(screen.getByRole('button', { name: '1 hour' }))
+    expect(onToggle).toHaveBeenLastCalledWith(60)
+    fireEvent.click(screen.getByRole('button', { name: 'At time' }))
+    expect(onToggle).toHaveBeenLastCalledWith(0)
+
+    expect(onClear).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Off' }))
-    expect(onChange).toHaveBeenLastCalledWith(null)
+    expect(onClear).toHaveBeenCalledTimes(1)
   })
 })

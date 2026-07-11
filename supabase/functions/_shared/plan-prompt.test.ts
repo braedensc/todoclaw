@@ -91,6 +91,20 @@ Deno.test('system prompt drops running and covers recurring commitments generica
   assert(SYSTEM_PROMPT.includes('recurring commitments'))
 })
 
+Deno.test('system prompt distinguishes a fixed appointment from a due-by deadline', () => {
+  // Rule 2: a future-dated EVENT (appointment/meeting/flight) must NOT be pulled into today the
+  // way a due-BY deliverable can be — it surfaces only on its own day, as an anchor. This is what
+  // stops "knock out that dentist appointment" for a task that is simply dated six days out.
+  assert(SYSTEM_PROMPT.includes('TELL A DEADLINE FROM AN APPOINTMENT'))
+  assert(SYSTEM_PROMPT.includes('deliverables due BY a date'))
+  assert(SYSTEM_PROMPT.includes('happens ON a fixed day'))
+  assert(SYSTEM_PROMPT.includes('future-dated event'))
+  assert(SYSTEM_PROMPT.includes('never a rock to complete'))
+  // The numbered rules stay a gapless 1..7 sequence after inserting the new rule (and no 8th).
+  for (const n of [1, 2, 3, 4, 5, 6, 7]) assert(SYSTEM_PROMPT.includes(`\n${n}. `))
+  assert(!SYSTEM_PROMPT.includes('\n8. '))
+})
+
 Deno.test('task size renders with its hour hint only when present; untagged lines omit it', () => {
   const sized: PlanRequest = {
     ...base,

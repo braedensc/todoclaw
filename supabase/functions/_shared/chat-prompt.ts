@@ -40,7 +40,7 @@ export interface PromptTask {
   ongoing: boolean // an ongoing PROJECT (recurring.ongoing) — a continuous multi-week effort, not a chore
   ongoingSessions: number | null // work sessions logged so far (recurring.doneCount) when ongoing
   ongoingTargetInDays: number | null // whole days until the project's target-end, or null
-  reminderOffset: number | null // minutes before due a push reminder fires, or null for none
+  reminderOffsets: number[] // minutes-before offsets of each push reminder (empty = none)
   doneToday: boolean
   completedAt: string | null // permanent one-off completion (tasks.completed_at); null = live
 }
@@ -222,12 +222,11 @@ function taskLine(t: PromptTask): string {
   } else if (t.recurringLabel) {
     bits.push(`recurring ${t.recurringLabel}${t.recurringStatus ? ` (${t.recurringStatus})` : ''}`)
   }
-  if (t.reminderOffset != null) {
-    bits.push(
-      t.reminderOffset === 0
-        ? 'reminder at due time'
-        : `reminder ${formatOffset(t.reminderOffset)} before`,
+  if (t.reminderOffsets.length) {
+    const phrases = t.reminderOffsets.map((o) =>
+      o === 0 ? 'at due time' : `${formatOffset(o)} before`,
     )
+    bits.push(`reminder${t.reminderOffsets.length > 1 ? 's' : ''} ${phrases.join(', ')}`)
   }
   return `- [${t.id}] "${t.text}" — ${bits.join('; ')}`
 }

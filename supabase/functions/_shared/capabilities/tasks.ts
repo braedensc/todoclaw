@@ -291,10 +291,11 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'set_reminder',
     description:
-      'Set a push reminder for a task a given number of minutes before it is due. The task must ' +
-      'already have a due date AND a due time (use set_due_date first if not). Replaces any ' +
-      'existing reminder on that task. Reminders arrive on devices where the user has ' +
-      'notifications turned on.',
+      'Add a push reminder for a task a given number of minutes before it is due. The task must ' +
+      'already have a due date AND a due time (use set_due_date first if not). A task can have ' +
+      'several reminders at different lead times (e.g. 1 day AND 1 hour before), each firing on ' +
+      'its own; call this once per lead time. Setting the same lead time again just re-arms it. ' +
+      'Reminders arrive on devices where the user has notifications turned on.',
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -352,7 +353,8 @@ export const taskCapabilities: Capability[] = [
 
   defineCapability({
     name: 'clear_reminder',
-    description: 'Remove the push reminder from a task (leaves the due date and time as they are).',
+    description:
+      'Remove ALL push reminders from a task (leaves the due date and time as they are).',
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
       const { data: task, error: selErr } = await ctx.client
@@ -363,18 +365,65 @@ export const taskCapabilities: Capability[] = [
         .maybeSingle()
       if (selErr) return systemErr(selErr.message)
       if (!task) return err("I couldn't find that task.")
-      // Was there a reminder to remove? (RLS-scoped) — so the confirmation doesn't claim a
-      // removal that never happened.
+      // Were there any reminders to remove? (RLS-scoped) — so the confirmation doesn't claim a
+      // removal that never happened. A task can have several rows, so read the set (no maybeSingle,
+      // which would throw on more than one) and check it's non-empty.
       const { data: existing, error: exErr } = await ctx.client
         .from('task_reminders')
         .select('task_id')
         .eq('task_id', i.task_id)
-        .maybeSingle()
       if (exErr) return systemErr(exErr.message)
-      if (!existing) return ok(`"${task.text}" didn't have a reminder set.`, ['reminders'])
+      const hadReminder = Array.isArray(existing) ? existing.length > 0 : existing != null
+      if (!hadReminder) return ok(`"${task.text}" didn't have a reminder set.`, ['reminders'])
       const { error } = await ctx.client.rpc('clear_task_reminder', { p_task_id: i.task_id })
       if (error) return systemErr(error.message)
-      return ok(`Removed the reminder from "${task.text}".`, ['reminders'])
+      return ok(`Removed the reminders from "${task.text}".`, ['reminders'])
+    },
+  }),
+
+  defineCapability({
+    name: 'remove_reminder',
+    description:
+      'Remove ONE push reminder from a task by its lead time (minutes before due), leaving any ' +
+      'other reminders on that task in place. Use this when a task has several reminders and the ' +
+      'user wants to drop just one; use clear_reminder to remove them all at once.',
+    schema: z
+      .object({
+        task_id: uuid.describe('The task id (UUID).'),
+        minutes_before: z
+          .number()
+          .int()
+          .min(0)
+          .max(40320)
+          .describe('The lead time to remove (0 = at the due time; max 40320 = 28 days).'),
+      })
+      .strict(),
+    async execute(ctx, i) {
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      const lead = i.minutes_before === 0 ? 'at-due-time' : formatOffset(i.minutes_before)
+      // Was that specific lead time set? (RLS-scoped) — so the confirmation is honest about
+      // whether anything was actually removed.
+      const { data: existing, error: exErr } = await ctx.client
+        .from('task_reminders')
+        .select('task_id')
+        .eq('task_id', i.task_id)
+        .eq('offset_minutes', i.minutes_before)
+      if (exErr) return systemErr(exErr.message)
+      const hadIt = Array.isArray(existing) ? existing.length > 0 : existing != null
+      if (!hadIt) return ok(`"${task.text}" didn't have a ${lead} reminder set.`, ['reminders'])
+      const { error } = await ctx.client.rpc('remove_task_reminder', {
+        p_task_id: i.task_id,
+        p_offset_minutes: i.minutes_before,
+      })
+      if (error) return systemErr(error.message)
+      return ok(`Removed the ${lead} reminder from "${task.text}".`, ['reminders'])
     },
   }),
 

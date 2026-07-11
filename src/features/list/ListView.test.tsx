@@ -47,10 +47,9 @@ vi.mock('../daily-state/use-daily-state', () => ({
     data: { done: doneToday, done_at: {}, habit_done: {}, subtask_done: {} },
   }),
 }))
-const upsertReminderMutate = vi.fn()
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useUpsertTaskReminder: () => ({ mutate: upsertReminderMutate }),
+  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
 }))
 
 // A complete Task row with sensible defaults; override per test.

@@ -32,10 +32,15 @@
    NORMAL FLOW as the column's last child. So the nav always sits flush to the column's bottom
    edge on every device; the earlier `position: fixed; bottom: 0` bar could float a hair above the
    true screen bottom on smaller iPhones (the layout-viewport bottom didn't line up), leaving an
-   unstyled gap — an in-flow flex child can't. Height is 100svh (the SMALL / always-visible
-   viewport), not 100dvh: on a locked, non-scrolling page the browser chrome never retracts, so the
-   stable small height is exactly the visible area and the column bottom lands where the user can
-   see it (in a standalone PWA svh == dvh == the full screen, so nothing changes there). body (which
+   unstyled gap — an in-flow flex child can't. Height is 100dvh (the DYNAMIC / currently-visible
+   viewport). 100svh (the SMALL viewport) was WRONG here and left a dead strip BELOW the nav on some
+   phones (the iPhone-16 bug): on a non-scrolling page mobile Safari parks its bottom URL bar in the
+   RETRACTED state, so the actually-visible viewport is the LARGE one — 100svh then sizes the column
+   shorter than what's on screen and the nav floats up above the true bottom. dvh is by definition
+   the height visible right now, so the column bottom == the screen bottom; and because the page
+   can't scroll (overflow:hidden) the bar never retracts/expands from scrolling, so dvh doesn't
+   fluctuate — it's stable AND correct. (In a standalone PWA svh == dvh == lvh == the full screen, so
+   this only differs in the browser.) body (which
    never scrolls) carries the safe-area TOP padding: with viewport-fit=cover the layout spans the
    whole screen, so this keeps content clear of the camera island while the body's atmosphere
    background — propagated to the canvas — still paints the strip above it. The nav manages its own
@@ -48,7 +53,7 @@ body {
 @media (max-width: 719px) {
   html,
   body {
-    height: 100svh;
+    height: 100dvh;
     overflow: hidden;
   }
   body {

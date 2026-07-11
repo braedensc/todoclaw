@@ -19,10 +19,9 @@ vi.mock('../schedule/use-user-schedule', () => ({
     data: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, config: {} },
   }),
 }))
-const upsertReminderMutate = vi.fn()
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useUpsertTaskReminder: () => ({ mutate: upsertReminderMutate }),
+  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
 }))
 
 function renderSheet(over: Partial<Parameters<typeof MobileAddSheet>[0]> = {}) {

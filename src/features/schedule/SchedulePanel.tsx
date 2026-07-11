@@ -104,10 +104,12 @@ export interface SchedulePanelProps {
   onSetOngoing?: (checkInDays: number, targetEnd: string | null) => void
   /** Finish an ongoing project — archive it to the Done log (list expanded row only). */
   onFinishOngoing?: () => void
-  /** This task's reminder offset (minutes before due), or null. */
-  reminderOffset: number | null
-  /** Set/clear this task's reminder (minutes-before, null = off). */
-  onSetReminder: (minutes: number | null) => void
+  /** This task's selected reminder offsets (minutes before due); empty = none. Multi-select. */
+  reminderOffsets: readonly number[]
+  /** Toggle one reminder lead time on/off. */
+  onToggleReminder: (minutes: number) => void
+  /** Clear every reminder on this task (the Off chip). */
+  onClearReminders: () => void
   /** Namespaces the ReminderPicker testid when several panels mount (grid / list / add). */
   idPrefix?: string
   /** Thumb-sized controls for touch surfaces (mobile add sheet / expanded row on a phone):
@@ -129,8 +131,9 @@ export function SchedulePanel({
   onRemoveRecurring,
   onSetOngoing,
   onFinishOngoing,
-  reminderOffset,
-  onSetReminder,
+  reminderOffsets,
+  onToggleReminder,
+  onClearReminders,
   idPrefix,
   touch = false,
   now,
@@ -377,89 +380,114 @@ export function SchedulePanel({
         )}
       </div>
 
-      {/* ---- Remind me — unchanged gating: a due time to anchor to, and never for a repeat ---- */}
-      {dueValue && timeValue && !recurring && (
+      {/* ---- Remind me — a due time to anchor to, and never for a repeat. Multi-select: pick
+              any number of lead times (e.g. 1 day AND 1 hour before). When the task IS recurring
+              we still show the section, but as a note that says why the chips are gone (the
+              vanishing-chips confusion from the 2026-07-11 feedback) rather than silently. ---- */}
+      {dueValue && timeValue && (
         <div>
           <span className={sectionLabel}>Remind me</span>
-          <div className="mt-1.5">
-            <ReminderPicker value={reminderOffset} onChange={onSetReminder} idPrefix={idPrefix} />
-          </div>
+          {recurring ? (
+            <p className="mt-1 text-[11px] leading-snug text-muted">
+              🔕 Reminders ping you before a single due time, so they don’t apply to a repeating
+              task.
+            </p>
+          ) : (
+            <div className="mt-1.5">
+              <ReminderPicker
+                values={reminderOffsets}
+                onToggle={onToggleReminder}
+                onClear={onClearReminders}
+                idPrefix={idPrefix}
+              />
+            </div>
+          )}
         </div>
       )}
 
-      {/* ---- Repeats (chore) OR Ongoing project — one slot, since both live in `recurring` ---- */}
-      <div>
-        <span className={sectionLabel}>{isOngoing ? 'Ongoing project' : 'Repeats'}</span>
-
+      {/* ---- Repeat this task (chore) OR Ongoing project — one slot, both live in `recurring`.
+              #227 set the chore case off with a divider + "Repeat this task" header/help; the
+              ongoing case swaps in the project editor instead. ---- */}
+      <div className="border-t border-border pt-3">
         {isOngoing ? (
-          <div className="mt-1.5 flex flex-col gap-2">
-            {/* Readback: sessions logged + optional target countdown + the check-in status. */}
-            <p className="text-[11px]" style={{ color: statusColor }}>
-              ▶ ongoing · {ongoing?.sessions ?? 0}{' '}
-              {ongoing?.sessions === 1 ? 'session' : 'sessions'}
-              {ongoing?.target ? ` · ${ongoing.target}` : ''}
-              {status ? ` · ${status.label}` : ''}
-            </p>
+          <>
+            <span className={sectionLabel}>Ongoing project</span>
+            <div className="mt-1.5 flex flex-col gap-2">
+              {/* Readback: sessions logged + optional target countdown + the check-in status. */}
+              <p className="text-[11px]" style={{ color: statusColor }}>
+                ▶ ongoing · {ongoing?.sessions ?? 0}{' '}
+                {ongoing?.sessions === 1 ? 'session' : 'sessions'}
+                {ongoing?.target ? ` · ${ongoing.target}` : ''}
+                {status ? ` · ${status.label}` : ''}
+              </p>
 
-            {onSetOngoing && (
-              <>
-                {/* Check-in cadence: how often the project resurfaces (reuses frequencyDays). */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted">check in every</span>
-                  <button
-                    type="button"
-                    aria-label="Check in less often"
-                    onClick={() =>
-                      onSetOngoing(Math.max(1, ongoingFreq - 1), recurring?.targetEnd ?? null)
-                    }
-                    className={stepBtn}
-                  >
-                    −
-                  </button>
-                  <b className="min-w-[64px] text-center text-xs">{ongoingFreq} days</b>
-                  <button
-                    type="button"
-                    aria-label="Check in more often"
-                    onClick={() =>
-                      onSetOngoing(Math.min(365, ongoingFreq + 1), recurring?.targetEnd ?? null)
-                    }
-                    className={stepBtn}
-                  >
-                    +
-                  </button>
-                </div>
-
-                {/* Optional target-end date — a soft finish line, not a hard due date. */}
-                <label className="flex items-center gap-2 text-[11px] text-muted">
-                  target end
-                  <input
-                    type="date"
-                    aria-label="Target end date"
-                    value={ongoingTargetValue}
-                    onChange={(e) =>
-                      onSetOngoing(ongoingFreq, e.target.value === '' ? null : e.target.value)
-                    }
-                    className="rounded border border-border-strong bg-card px-2 py-1 text-xs"
-                  />
-                </label>
-
-                {/* Terminal actions: Finish archives to Done (a plain chore has no finish line);
-                    End reverts to a normal one-time task. */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {onFinishOngoing && (
-                    <button type="button" onClick={onFinishOngoing} className={chipOn}>
-                      ✓ Finish project
+              {onSetOngoing && (
+                <>
+                  {/* Check-in cadence: how often the project resurfaces (reuses frequencyDays). */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted">check in every</span>
+                    <button
+                      type="button"
+                      aria-label="Check in less often"
+                      onClick={() =>
+                        onSetOngoing(Math.max(1, ongoingFreq - 1), recurring?.targetEnd ?? null)
+                      }
+                      className={stepBtn}
+                    >
+                      −
                     </button>
-                  )}
-                  <button type="button" onClick={onRemoveRecurring} className={chipOff}>
-                    End ongoing
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+                    <b className="min-w-[64px] text-center text-xs">{ongoingFreq} days</b>
+                    <button
+                      type="button"
+                      aria-label="Check in more often"
+                      onClick={() =>
+                        onSetOngoing(Math.min(365, ongoingFreq + 1), recurring?.targetEnd ?? null)
+                      }
+                      className={stepBtn}
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  {/* Optional target-end date — a soft finish line, not a hard due date. */}
+                  <label className="flex items-center gap-2 text-[11px] text-muted">
+                    target end
+                    <input
+                      type="date"
+                      aria-label="Target end date"
+                      value={ongoingTargetValue}
+                      onChange={(e) =>
+                        onSetOngoing(ongoingFreq, e.target.value === '' ? null : e.target.value)
+                      }
+                      className="rounded border border-border-strong bg-card px-2 py-1 text-xs"
+                    />
+                  </label>
+
+                  {/* Terminal actions: Finish archives to Done (a plain chore has no finish line);
+                    End reverts to a normal one-time task. */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {onFinishOngoing && (
+                      <button type="button" onClick={onFinishOngoing} className={chipOn}>
+                        ✓ Finish project
+                      </button>
+                    )}
+                    <button type="button" onClick={onRemoveRecurring} className={chipOff}>
+                      End ongoing
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
         ) : (
           <>
+            <span className={sectionLabel}>
+              <span aria-hidden>↻ </span>Repeat this task
+            </span>
+            <p className="mt-0.5 text-[11px] leading-snug text-muted">
+              The task itself comes back on a schedule — marking it done just resets its timer
+              instead of sending it to Done. This is about the task, not a reminder.
+            </p>
             <div
               role="group"
               aria-label="Repeats"

@@ -122,17 +122,19 @@ function AppShell() {
   const unread = useUnreadCount()
   const markRead = useMarkMessageRead()
   const confirm = useConfirm()
-  // The masthead plan pill flips to "Re-plan" once a plan is on screen (same sleek pill, one word).
-  // Re-planning discards the current plan, so a soft confirm guards an accidental regenerate; the
-  // first plan of the day has nothing to lose and generates straight away.
+  // The plan pill persists once a plan is on screen, flipping its label to "Re-plan my day" (same
+  // sleek pill). Re-planning DISCARDS the current plan, so a confirmation popup warns before an
+  // accidental regenerate; the first plan of the day has nothing to lose and generates straight
+  // away. Shared by the desktop header pill and the mobile top pill (both call handlePlanClick).
   const hasPlan = Boolean(planner.displayPlan)
   const handlePlanClick = async () => {
     if (
       hasPlan &&
       !(await confirm({
-        title: 'Replace the current plan?',
-        message: 'This generates a new plan and replaces the one on screen.',
-        confirmLabel: 'Re-plan',
+        title: 'Replace your current plan?',
+        message:
+          "Your current plan will be lost. Re-planning builds a new one from today's tasks, habits, and schedule.",
+        confirmLabel: 'Re-plan my day',
         tone: 'default',
       }))
     )
@@ -240,9 +242,9 @@ function AppShell() {
                 // Mobile masthead: mirrors the desktop paper look now that the top bar is freed up.
                 // A small-caps dateline, the wordmark grown around a bigger peeking pup with the
                 // terracotta claw-swipe + tagline beneath, and a decorative paw trail filling the
-                // hard-to-reach top-right corner. The bell moved into the More sheet and Plan My Day
-                // moved under the grid (both were awkward up here), so the top is now purely
-                // orienting + decorative — nothing you must reach for lives at the top of the screen.
+                // hard-to-reach top-right corner. The bell moved into the More sheet; the Plan My Day
+                // pill sits just below this masthead (near the logo) so it — and its "Re-plan my day"
+                // state — stay reachable at the top of the screen.
                 !gridOnly && (
                   <header className="mb-4 mt-1">
                     <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
@@ -377,7 +379,7 @@ function AppShell() {
                               <span aria-hidden className="text-[#e8c47a]">
                                 ✦
                               </span>{' '}
-                              {hasPlan ? 'Re-plan' : 'Plan My Day'}
+                              {hasPlan ? 'Re-plan my day' : 'Plan My Day'}
                             </>
                           )}
                         </button>
@@ -547,27 +549,62 @@ function AppShell() {
                 </ErrorBoundary>
               )}
 
-              {/* Plan My Day (DESKTOP) — a persistent inline card (not a modal), top-center under the
-          header, triggered by the header pill. It hydrates from today's daily_state.plan, survives
-          reloads, and auto-clears at local midnight. Only renders once there's a plan, a generation
-          in flight, or an error/paused notice. On MOBILE the card + trigger live UNDER the grid
-          instead (below WorkArea) — see the mobile plan block further down. */}
-              {!gridOnly &&
-                !isMobile &&
-                (planner.displayPlan || planner.isPending || planner.isError || planner.paused) && (
-                  <div className="mb-3">
-                    <ErrorBoundary>
-                      <PlanBox
-                        plan={planner.displayPlan}
-                        paused={planner.paused}
-                        isPending={planner.isPending}
-                        isError={planner.isError}
-                        onRetry={planner.generate}
-                        onDismiss={planner.clear}
-                      />
-                    </ErrorBoundary>
-                  </div>
-                )}
+              {/* Plan My Day — a persistent inline card (not a modal) at the top, under the
+          header/masthead. It hydrates from today's daily_state.plan, survives reloads, and
+          auto-clears at local midnight. The card only renders once there's a plan, a generation in
+          flight, or an error/paused notice. DESKTOP triggers from the header pill; MOBILE gets its
+          own persistent pill here (its top bar is decorative) — the pill stays put and flips to
+          "Re-plan my day" while a plan is on screen, rather than being hidden behind the card. */}
+              {!gridOnly && (
+                <>
+                  {isMobile && (
+                    <div className="mb-3 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => void handlePlanClick()}
+                        disabled={!planner.canGenerate}
+                        title={
+                          hasPlan
+                            ? 'Replace the current plan with a freshly generated one'
+                            : 'Generate a schedule-aware daily plan from your grid, recurring chores, and habits'
+                        }
+                        data-tour="plan"
+                        className="whitespace-nowrap rounded-full bg-ink px-6 py-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                        style={planPillStyle}
+                      >
+                        {planner.isPending ? (
+                          <Thinking label="Thinking" />
+                        ) : (
+                          <>
+                            <span aria-hidden className="text-[#e8c47a]">
+                              ✦
+                            </span>{' '}
+                            {hasPlan ? 'Re-plan my day' : 'Plan My Day'}
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {(planner.displayPlan ||
+                    planner.isPending ||
+                    planner.isError ||
+                    planner.paused) && (
+                    <div className="mb-3">
+                      <ErrorBoundary>
+                        <PlanBox
+                          mobile={isMobile}
+                          plan={planner.displayPlan}
+                          paused={planner.paused}
+                          isPending={planner.isPending}
+                          isError={planner.isError}
+                          onRetry={planner.generate}
+                          onDismiss={planner.clear}
+                        />
+                      </ErrorBoundary>
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* Daily reminders — the minified inline form: a compact row of active reminder names near
           the top of the work area. Each name opens that reminder's detail card; the full popup is
@@ -588,43 +625,6 @@ function AppShell() {
                   quadrantFocus={quadrantFocus}
                 />
               </ErrorBoundary>
-
-              {/* Plan My Day (MOBILE) — under the grid, centered. A single tap-friendly pill triggers
-                  it; the moment a plan exists (or is generating / errored / paused) the card takes
-                  the pill's place, so the button disappears while a plan is on screen. */}
-              {!gridOnly && isMobile && (
-                <div className="mt-5" data-tour="plan">
-                  {planner.displayPlan || planner.isPending || planner.isError || planner.paused ? (
-                    <ErrorBoundary>
-                      <PlanBox
-                        mobile
-                        plan={planner.displayPlan}
-                        paused={planner.paused}
-                        isPending={planner.isPending}
-                        isError={planner.isError}
-                        onRetry={planner.generate}
-                        onDismiss={planner.clear}
-                      />
-                    </ErrorBoundary>
-                  ) : (
-                    <div className="flex justify-center">
-                      <button
-                        type="button"
-                        onClick={planner.generate}
-                        disabled={!planner.canGenerate}
-                        title="Generate a schedule-aware daily plan from your grid, recurring chores, and habits"
-                        className="whitespace-nowrap rounded-full bg-ink px-6 py-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-                        style={planPillStyle}
-                      >
-                        <span aria-hidden className="text-[#e8c47a]">
-                          ✦
-                        </span>{' '}
-                        Plan My Day
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
             </>
           )}
 
