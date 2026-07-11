@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from './App'
 
 // Shell smoke test. We mock every module that would import the real Supabase client
@@ -70,18 +70,24 @@ vi.mock('./features/reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
   useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
 }))
-// The header "Plan My Day" button + inline PlanBox are driven by usePlanController, which reads
-// the AI status / plan mutation (useQuery/useMutation). Stub it so the shell renders without a
-// QueryClientProvider; PlanBox itself is pure and renders its empty state from displayPlan=null.
-vi.mock('./features/ai/use-plan-controller', () => ({
-  usePlanController: () => ({
-    displayPlan: null,
+// The plan pill (header on desktop / top pill on mobile) + inline PlanBox are driven by
+// usePlanController, which reads the AI status / plan mutation (useQuery/useMutation). Stub it so
+// the shell renders without a QueryClientProvider; PlanBox itself is pure. A hoisted mutable object
+// keeps the empty-state default every other test relies on, while the re-plan tests below flip in a
+// plan (and reset it in a finally) to exercise the persistent "Re-plan my day" pill + confirm gate.
+const planCtl = vi.hoisted(() => ({
+  value: {
+    displayPlan: null as unknown,
     paused: false,
     isPending: false,
     isError: false,
     canGenerate: true,
     generate: vi.fn(),
-  }),
+    clear: vi.fn(),
+  },
+}))
+vi.mock('./features/ai/use-plan-controller', () => ({
+  usePlanController: () => planCtl.value,
 }))
 // The shell instantiates one shared chat controller (useChatController = useAiChat + useAiStatus)
 // for the inline BabyClaw reply + the chat popup. useAiStatus uses useQuery, so stub both to keep
@@ -140,6 +146,54 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Grid-only view' })).toBeInTheDocument()
     // Not entered yet — the overlay's Exit control is absent until the pill is clicked.
     expect(screen.queryByRole('button', { name: 'Exit grid-only view' })).not.toBeInTheDocument()
+  })
+
+  // A plan on screen: the pill persists and flips to "Re-plan my day", and re-planning is gated by
+  // a confirmation popup that warns the current plan will be lost — on both breakpoints.
+  const somePlan = {
+    headline: 'Ship the plan pill',
+    availableTime: '',
+    bigRock: null,
+    smallRocks: [],
+    habitNote: '',
+  }
+
+  it('desktop: header pill reads "Re-plan my day" with a plan, and confirms before regenerating', async () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    planCtl.value.displayPlan = somePlan
+    planCtl.value.generate.mockClear()
+    try {
+      render(<App />)
+      const pill = screen.getByRole('button', { name: /Re-plan my day/ })
+      expect(pill).toBeInTheDocument()
+      // Clicking a re-plan does NOT regenerate straight away — it opens a confirm popup first.
+      fireEvent.click(pill)
+      const dialog = await screen.findByRole('dialog', { name: 'Replace your current plan?' })
+      expect(dialog).toHaveTextContent(/current plan will be lost/i)
+      expect(planCtl.value.generate).not.toHaveBeenCalled()
+      // Confirming regenerates; cancelling would not. Scope to the dialog — the header pill shares
+      // the "Re-plan my day" label with the confirm button.
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Re-plan my day' }))
+      await waitFor(() => expect(planCtl.value.generate).toHaveBeenCalledOnce())
+    } finally {
+      planCtl.value.displayPlan = null
+    }
+  })
+
+  it('mobile: the plan pill stays visible (as "Re-plan my day") above the plan card, not hidden by it', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    mockIsMobile.mockReturnValue(true)
+    planCtl.value.displayPlan = somePlan
+    try {
+      render(<App />)
+      // The trigger persists on mobile now (it used to vanish behind the card)…
+      expect(screen.getByRole('button', { name: /Re-plan my day/ })).toBeInTheDocument()
+      // …while the plan card is shown alongside it.
+      expect(screen.getByRole('region', { name: 'Plan My Day' })).toBeInTheDocument()
+    } finally {
+      mockIsMobile.mockReturnValue(false)
+      planCtl.value.displayPlan = null
+    }
   })
 
   it('on mobile, #/reminders renders home UNDER the reminders sheet (not a page swap) and locks body scroll', () => {
