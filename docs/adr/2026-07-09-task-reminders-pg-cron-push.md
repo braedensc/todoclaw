@@ -40,3 +40,28 @@ than the hourly GitHub-Actions cron and a *schedule* to sweep.
     drops them all). The sweep/claim/trigger/dispatch pipeline was already per-row, so each
     reminder simply fires on its own — no other changes. See migration
     `20260711000000_multi_task_reminders.sql`. The recurring/date-only/no-snooze bounds still hold.
+  - **Update 2026-07-11 — recurring reminders (fixed-cadence alarm):** the "no reminders on
+    recurring tasks" bound is lifted. A recurring task (chore or ongoing project) can carry ONE
+    reminder anchored to a **time of day** — "take pill every day at noon" — that fires at that
+    time on the task's cadence **regardless of completion** (a fixed alarm, not tied to
+    `lastDoneAt`; product decision, owner-approved). A recurring task has no fixed due instant, so
+    the model diverges from the offset-before-due reminder:
+    - **Schema:** a nullable `time_of_day` column; `offset_minutes` becomes nullable; a CHECK forces
+      exactly one of the two (one-off XOR recurring); a partial `unique(task_id) where time_of_day
+      is not null` caps it at one recurring reminder per task (several-a-day is a follow-up).
+    - **`next_recurring_fire_at()`** is the sole writer of a recurring `fire_at`: the next wall-clock
+      occurrence on the cadence grid, advancing the DATE and re-projecting through `AT TIME ZONE`
+      (DST-correct), skipping a whole backlog so a cron outage fires ONCE.
+    - **Re-arm is folded into the claim:** for a recurring row `claim_task_reminder` ADVANCES
+      `fire_at` to the next occurrence instead of setting `sent_at` — and the advance-out-of-range
+      IS the exactly-once lock (an overlapping run re-reads the future `fire_at` and skips).
+      `expire_stale_reminders` likewise advances recurring rows (retiring them would kill the
+      series). The sweep admits recurring rows and, for them, bypasses the done-today filter.
+    - **Triggers:** the due/due_time recompute is scoped to one-off rows; the timezone recompute
+      handles both kinds; a new recurring-change trigger deletes the reminder when recurring is
+      cleared and recomputes on a cadence change, but is a NO-OP on a plain completion (this is what
+      keeps a fixed alarm from re-arming when you mark the chore done early).
+    - **Write path:** `set_recurring_reminder(task_id, time_of_day)` / `remove_recurring_reminder`
+      (INVOKER, RLS), the `set_recurring_reminder` chat capability, and a "Remind me at" time-of-day
+      control on the recurring editors. See migration `20260711010000_recurring_reminders.sql`. The
+      date-only and no-snooze bounds still hold.

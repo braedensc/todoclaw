@@ -68,6 +68,10 @@ export interface GridCardProps {
   onToggleReminder: (minutes: number) => void
   /** Clear every reminder on this task (the Off chip). */
   onClearReminders: () => void
+  /** For a recurring task: its fixed-cadence reminder time ('HH:MM[:SS]'), or null = none. */
+  recurringReminderTime?: string | null
+  /** Set ('HH:MM') or clear (null) the recurring task's reminder time. */
+  onSetRecurringReminderTime?: (hhmm: string | null) => void
 }
 
 // Stops a pointer-down from bubbling to the card root (which would start a reposition drag).
@@ -117,6 +121,8 @@ export function GridCard({
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
+  recurringReminderTime,
+  onSetRecurringReminderTime,
 }: GridCardProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.text)
@@ -410,6 +416,8 @@ export function GridCard({
                   reminderOffsets={reminderOffsets}
                   onToggleReminder={onToggleReminder}
                   onClearReminders={onClearReminders}
+                  recurringReminderTime={recurringReminderTime}
+                  onSetRecurringReminderTime={onSetRecurringReminderTime}
                   idPrefix="grid"
                 />
               </div>,

@@ -50,6 +50,8 @@ vi.mock('../daily-state/use-daily-state', () => ({
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
   useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
+  useRecurringReminder: () => ({ data: new Map() }),
+  useRecurringReminderWrites: () => ({ set: vi.fn(), remove: vi.fn() }),
 }))
 
 // A complete Task row with sensible defaults; override per test.
@@ -327,7 +329,9 @@ describe('ListView', () => {
       renderList()
 
       fireEvent.click(screen.getByText('stop repeating'))
-      fireEvent.click(screen.getByRole('button', { name: 'Off' }))
+      // A recurring task now also has a "Remind me at" Off chip, so scope to the Repeats group.
+      const repeats = within(screen.getByRole('group', { name: 'Repeats' }))
+      fireEvent.click(repeats.getByRole('button', { name: 'Off' }))
 
       expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
     })

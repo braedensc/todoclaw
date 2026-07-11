@@ -78,6 +78,10 @@ interface ListRowProps {
   onToggleReminder: (minutes: number) => void
   /** Clear every reminder on this task (the Off chip). */
   onClearReminders: () => void
+  /** For a recurring task: its fixed-cadence reminder time ('HH:MM[:SS]'), or null = none. */
+  recurringReminderTime?: string | null
+  /** Set ('HH:MM') or clear (null) the recurring task's reminder time. */
+  onSetRecurringReminderTime?: (hhmm: string | null) => void
 }
 
 export function ListRow({
@@ -101,6 +105,8 @@ export function ListRow({
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
+  recurringReminderTime,
+  onSetRecurringReminderTime,
 }: ListRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -370,6 +376,8 @@ export function ListRow({
           reminderOffsets={reminderOffsets}
           onToggleReminder={onToggleReminder}
           onClearReminders={onClearReminders}
+          recurringReminderTime={recurringReminderTime}
+          onSetRecurringReminderTime={onSetRecurringReminderTime}
         />
       )}
     </li>

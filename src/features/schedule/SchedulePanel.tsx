@@ -3,6 +3,7 @@ import type { Recurring } from '../../types/task'
 import { localDateInTZ } from '../../lib/dates'
 import { recurringStatus, RC_COLOR, fmtFrequency, ongoingLabel } from '../../lib/recurring'
 import { ReminderPicker } from '../reminders/ReminderPicker'
+import { RecurringReminderPicker } from '../reminders/RecurringReminderPicker'
 import { DueTimezoneHint } from './DueTimezoneHint'
 
 // SchedulePanel — the ONE schedule editor (2026-07-09 workshop, direction B "calendar-first",
@@ -110,6 +111,15 @@ export interface SchedulePanelProps {
   onToggleReminder: (minutes: number) => void
   /** Clear every reminder on this task (the Off chip). */
   onClearReminders: () => void
+  /**
+   * For a RECURRING task: its single time-of-day reminder ('HH:MM' / 'HH:MM:SS'), or null = none.
+   * Provided only on surfaces that support recurring reminders (the grid/list/cluster editors);
+   * where `onSetRecurringReminderTime` is omitted the recurring "Remind me at" control is hidden
+   * (e.g. the add surfaces, where the task doesn't exist yet).
+   */
+  recurringReminderTime?: string | null
+  /** Set ('HH:MM') or clear (null) the recurring task's fixed-cadence reminder time. */
+  onSetRecurringReminderTime?: (hhmm: string | null) => void
   /** Namespaces the ReminderPicker testid when several panels mount (grid / list / add). */
   idPrefix?: string
   /** Thumb-sized controls for touch surfaces (mobile add sheet / expanded row on a phone):
@@ -134,6 +144,8 @@ export function SchedulePanel({
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
+  recurringReminderTime,
+  onSetRecurringReminderTime,
   idPrefix,
   touch = false,
   now,
@@ -380,19 +392,31 @@ export function SchedulePanel({
         )}
       </div>
 
-      {/* ---- Remind me — a due time to anchor to, and never for a repeat. Multi-select: pick
-              any number of lead times (e.g. 1 day AND 1 hour before). When the task IS recurring
-              we still show the section, but as a note that says why the chips are gone (the
-              vanishing-chips confusion from the 2026-07-11 feedback) rather than silently. ---- */}
-      {dueValue && timeValue && (
+      {/* ---- Remind me. TWO shapes from one slot: a RECURRING task gets a fixed-cadence alarm at a
+              time of day (fires every cycle at that time, no due date needed — the pill-at-noon
+              case); a one-off TIMED task gets lead-time chips (1 day AND 1 hour before, etc.). The
+              recurring control shows only where the surface wired onSetRecurringReminderTime (the
+              grid/list editors); the add surfaces omit it (no task id yet). ---- */}
+      {recurring && onSetRecurringReminderTime ? (
         <div>
           <span className={sectionLabel}>Remind me</span>
-          {recurring ? (
-            <p className="mt-1 text-[11px] leading-snug text-muted">
-              🔕 Reminders ping you before a single due time, so they don’t apply to a repeating
-              task.
-            </p>
-          ) : (
+          <p className="mt-0.5 text-[11px] leading-snug text-muted">
+            Ping at a set time each cycle — fires whether or not you’ve marked it done.
+          </p>
+          <div className="mt-1.5">
+            <RecurringReminderPicker
+              value={recurringReminderTime ?? null}
+              onChange={onSetRecurringReminderTime}
+              idPrefix={idPrefix}
+            />
+          </div>
+        </div>
+      ) : (
+        dueValue &&
+        timeValue &&
+        !recurring && (
+          <div>
+            <span className={sectionLabel}>Remind me</span>
             <div className="mt-1.5">
               <ReminderPicker
                 values={reminderOffsets}
@@ -401,8 +425,8 @@ export function SchedulePanel({
                 idPrefix={idPrefix}
               />
             </div>
-          )}
-        </div>
+          </div>
+        )
       )}
 
       {/* ---- Repeat this task (chore) OR Ongoing project — one slot, both live in `recurring`.
