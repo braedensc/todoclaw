@@ -39,10 +39,13 @@ interface ExpandedRowProps {
   /** Enter the row's inline text edit — the mobile-visible Rename chip (audit §4.1): the row's
    *  other edit gestures are double-click (mouse) and F2 (keyboard), neither reachable by touch. */
   onRename: () => void
-  /** This task's reminder offset (minutes before due), or null. Shown once a due time exists. */
-  reminderOffset: number | null
-  /** Set/clear this task's reminder (minutes-before, null = off). */
-  onSetReminder: (minutes: number | null) => void
+  /** This task's selected reminder offsets (minutes before due); empty = none. Shown once a due
+   *  time exists. Multi-select. */
+  reminderOffsets: readonly number[]
+  /** Toggle one reminder lead time on/off. */
+  onToggleReminder: (minutes: number) => void
+  /** Clear every reminder on this task (the Off chip). */
+  onClearReminders: () => void
 }
 
 export function ExpandedRow({
@@ -54,8 +57,9 @@ export function ExpandedRow({
   onSetFrequency,
   onRemoveRecurring,
   onRename,
-  reminderOffset,
-  onSetReminder,
+  reminderOffsets,
+  onToggleReminder,
+  onClearReminders,
 }: ExpandedRowProps) {
   // Local, live coords (percent 0–100). Null x/y default to grid center (50), matching scoring.
   // These initialize from the task once; when a committed write lands and the task coords
@@ -122,8 +126,9 @@ export function ExpandedRow({
           onSetRecurring={onSetRecurring}
           onSetFrequency={onSetFrequency}
           onRemoveRecurring={onRemoveRecurring}
-          reminderOffset={reminderOffset}
-          onSetReminder={onSetReminder}
+          reminderOffsets={reminderOffsets}
+          onToggleReminder={onToggleReminder}
+          onClearReminders={onClearReminders}
           idPrefix="list"
           touch={isMobile}
         />

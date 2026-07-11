@@ -46,7 +46,8 @@ function renderPopup(group: Task[], onRowPointerDown: () => () => void = () => v
     onSetRecurring: vi.fn(),
     onSetFrequency: vi.fn(),
     onRemoveRecurring: vi.fn(),
-    onSetReminder: vi.fn(),
+    onToggleReminder: vi.fn(),
+    onClearReminders: vi.fn(),
   }
   render(
     <>
@@ -63,7 +64,7 @@ function renderPopup(group: Task[], onRowPointerDown: () => () => void = () => v
         onDone={vi.fn()}
         onDelete={vi.fn()}
         onRowPointerDown={onRowPointerDown}
-        reminderOffsetFor={() => null}
+        reminderOffsetsFor={() => []}
         {...schedule}
       />
     </>,

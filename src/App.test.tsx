@@ -68,7 +68,7 @@ vi.mock('./features/daily-state/use-daily-state', () => ({
 // the shell renders without a QueryClientProvider / network.
 vi.mock('./features/reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useUpsertTaskReminder: () => ({ mutate: vi.fn() }),
+  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
 }))
 // The header "Plan My Day" button + inline PlanBox are driven by usePlanController, which reads
 // the AI status / plan mutation (useQuery/useMutation). Stub it so the shell renders without a

@@ -55,7 +55,7 @@ vi.mock('../schedule/use-user-schedule', () => ({
 }))
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useUpsertTaskReminder: () => ({ mutate: vi.fn() }),
+  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
 }))
 vi.mock('../daily-state/use-daily-state', () => ({
   useDailyState: () => ({

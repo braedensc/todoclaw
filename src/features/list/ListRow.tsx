@@ -67,11 +67,13 @@ interface ListRowProps {
    * ListView omits it, so the row is unchanged there.
    */
   onMove?: (task: Task) => void
-  /** This task's reminder offset (minutes before due), or null. Shown in the expanded row when
-   *  the task has a due time; from ListView's shared reminders query. */
-  reminderOffset: number | null
-  /** Set/clear this task's reminder (minutes-before, null = off). */
-  onSetReminder: (minutes: number | null) => void
+  /** This task's selected reminder offsets (minutes before due); empty = none. Shown in the
+   *  expanded row when the task has a due time; from ListView's shared reminders query. */
+  reminderOffsets: readonly number[]
+  /** Toggle one reminder lead time on/off. */
+  onToggleReminder: (minutes: number) => void
+  /** Clear every reminder on this task (the Off chip). */
+  onClearReminders: () => void
 }
 
 export function ListRow({
@@ -90,8 +92,9 @@ export function ListRow({
   onRemoveRecurring,
   onDelete,
   onMove,
-  reminderOffset,
-  onSetReminder,
+  reminderOffsets,
+  onToggleReminder,
+  onClearReminders,
 }: ListRowProps) {
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -340,8 +343,9 @@ export function ListRow({
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
           onRename={startEdit}
-          reminderOffset={reminderOffset}
-          onSetReminder={onSetReminder}
+          reminderOffsets={reminderOffsets}
+          onToggleReminder={onToggleReminder}
+          onClearReminders={onClearReminders}
         />
       )}
     </li>

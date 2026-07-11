@@ -37,7 +37,7 @@ export interface PromptTask {
   staged: boolean
   recurringLabel: string | null // e.g. "every 7d", or null
   recurringStatus: string | null // e.g. "overdue 3d" / "due today" / "due again in 4d", or null
-  reminderOffset: number | null // minutes before due a push reminder fires, or null for none
+  reminderOffsets: number[] // minutes-before offsets of each push reminder (empty = none)
   doneToday: boolean
   completedAt: string | null // permanent one-off completion (tasks.completed_at); null = live
 }
@@ -198,12 +198,11 @@ function taskLine(t: PromptTask): string {
   if (t.recurringLabel) {
     bits.push(`recurring ${t.recurringLabel}${t.recurringStatus ? ` (${t.recurringStatus})` : ''}`)
   }
-  if (t.reminderOffset != null) {
-    bits.push(
-      t.reminderOffset === 0
-        ? 'reminder at due time'
-        : `reminder ${formatOffset(t.reminderOffset)} before`,
+  if (t.reminderOffsets.length) {
+    const phrases = t.reminderOffsets.map((o) =>
+      o === 0 ? 'at due time' : `${formatOffset(o)} before`,
     )
+    bits.push(`reminder${t.reminderOffsets.length > 1 ? 's' : ''} ${phrases.join(', ')}`)
   }
   return `- [${t.id}] "${t.text}" — ${bits.join('; ')}`
 }

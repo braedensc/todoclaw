@@ -52,15 +52,15 @@ export function AddTaskForm({
   inputRef,
 }: {
   defaultQuadrant: QuadrantKey | null
-  /** Create the task: text + quadrant + optional recurring + optional due date/time + an optional
-   *  reminder offset (minutes before the due instant; null = none). */
+  /** Create the task: text + quadrant + optional recurring + optional due date/time + any number
+   *  of reminder offsets (minutes before the due instant; empty = none). */
   onAdd: (
     text: string,
     dest: QuadrantKey,
     recurring: Recurring | null,
     due: string | null,
     dueTime: string | null,
-    reminderMinutes: number | null,
+    reminderMinutes: number[],
   ) => void
   /** The add-flow reminder default (from settings) — pre-selects the picker once a time is set. */
   reminderDefault: number | null
@@ -77,7 +77,9 @@ export function AddTaskForm({
   const [due, setDue] = useState<string | null>(null)
   const [dueTime, setDueTime] = useState<string | null>(null)
   const [recurring, setRecurring] = useState<Recurring | null>(null)
-  const [reminderMinutes, setReminderMinutes] = useState<number | null>(reminderDefault)
+  const [reminderMinutes, setReminderMinutes] = useState<number[]>(
+    reminderDefault != null ? [reminderDefault] : [],
+  )
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const timeZone = useTimeZone()
 
@@ -89,7 +91,7 @@ export function AddTaskForm({
     if (!canAdd || selected == null) return
     // A time never ships without a date (DB CHECK) — the panel guarantees it, this guards it.
     const dt = due ? dueTime : null
-    onAdd(text.trim(), selected, recurring, due, dt, dt ? reminderMinutes : null)
+    onAdd(text.trim(), selected, recurring, due, dt, dt ? reminderMinutes : [])
   }
 
   return (
@@ -184,8 +186,13 @@ export function AddTaskForm({
                 )
               }
               onRemoveRecurring={() => setRecurring(null)}
-              reminderOffset={reminderMinutes}
-              onSetReminder={setReminderMinutes}
+              reminderOffsets={reminderMinutes}
+              onToggleReminder={(m) =>
+                setReminderMinutes((cur) =>
+                  cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m],
+                )
+              }
+              onClearReminders={() => setReminderMinutes([])}
               idPrefix="madd"
               touch
             />

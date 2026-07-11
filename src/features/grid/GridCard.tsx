@@ -61,11 +61,13 @@ export interface GridCardProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: () => void
-  /** This task's current reminder offset (minutes before due), or null = none. Shown in the ⋯
+  /** This task's selected reminder offsets (minutes before due); empty = none. Shown in the ⋯
    *  menu once the task has a due time; computed by the caller from the shared reminders query. */
-  reminderOffset: number | null
-  /** Set/clear this task's reminder (minutes-before, null = off). Upserts task_reminders. */
-  onSetReminder: (minutes: number | null) => void
+  reminderOffsets: readonly number[]
+  /** Toggle one reminder lead time on/off (writes task_reminders). */
+  onToggleReminder: (minutes: number) => void
+  /** Clear every reminder on this task (the Off chip). */
+  onClearReminders: () => void
 }
 
 // Stops a pointer-down from bubbling to the card root (which would start a reposition drag).
@@ -112,8 +114,9 @@ export function GridCard({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
-  reminderOffset,
-  onSetReminder,
+  reminderOffsets,
+  onToggleReminder,
+  onClearReminders,
 }: GridCardProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.text)
@@ -395,8 +398,9 @@ export function GridCard({
                   onSetRecurring={onSetRecurring}
                   onSetFrequency={onSetFrequency}
                   onRemoveRecurring={onRemoveRecurring}
-                  reminderOffset={reminderOffset}
-                  onSetReminder={onSetReminder}
+                  reminderOffsets={reminderOffsets}
+                  onToggleReminder={onToggleReminder}
+                  onClearReminders={onClearReminders}
                   idPrefix="grid"
                 />
               </div>,

@@ -92,10 +92,12 @@ export interface SchedulePanelProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule. */
   onRemoveRecurring: () => void
-  /** This task's reminder offset (minutes before due), or null. */
-  reminderOffset: number | null
-  /** Set/clear this task's reminder (minutes-before, null = off). */
-  onSetReminder: (minutes: number | null) => void
+  /** This task's selected reminder offsets (minutes before due); empty = none. Multi-select. */
+  reminderOffsets: readonly number[]
+  /** Toggle one reminder lead time on/off. */
+  onToggleReminder: (minutes: number) => void
+  /** Clear every reminder on this task (the Off chip). */
+  onClearReminders: () => void
   /** Namespaces the ReminderPicker testid when several panels mount (grid / list / add). */
   idPrefix?: string
   /** Thumb-sized controls for touch surfaces (mobile add sheet / expanded row on a phone):
@@ -115,8 +117,9 @@ export function SchedulePanel({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
-  reminderOffset,
-  onSetReminder,
+  reminderOffsets,
+  onToggleReminder,
+  onClearReminders,
   idPrefix,
   touch = false,
   now,
@@ -352,23 +355,48 @@ export function SchedulePanel({
         )}
       </div>
 
-      {/* ---- Remind me — unchanged gating: a due time to anchor to, and never for a repeat ---- */}
-      {dueValue && timeValue && !recurring && (
+      {/* ---- Remind me — a due time to anchor to, and never for a repeat. Multi-select: pick
+              any number of lead times (e.g. 1 day AND 1 hour before). When the task IS recurring
+              we still show the section, but as a note that says why the chips are gone (the
+              vanishing-chips confusion from the 2026-07-11 feedback) rather than silently. ---- */}
+      {dueValue && timeValue && (
         <div>
           <span className={sectionLabel}>Remind me</span>
-          <div className="mt-1.5">
-            <ReminderPicker value={reminderOffset} onChange={onSetReminder} idPrefix={idPrefix} />
-          </div>
+          {recurring ? (
+            <p className="mt-1 text-[11px] leading-snug text-muted">
+              🔕 Reminders ping you before a single due time, so they don’t apply to a repeating
+              task.
+            </p>
+          ) : (
+            <div className="mt-1.5">
+              <ReminderPicker
+                values={reminderOffsets}
+                onToggle={onToggleReminder}
+                onClear={onClearReminders}
+                idPrefix={idPrefix}
+              />
+            </div>
+          )}
         </div>
       )}
 
-      {/* ---- Repeats: segmented presets + the Every… stepper ---- */}
-      <div>
-        <span className={sectionLabel}>Repeats</span>
+      {/* ---- Repeat this task: segmented presets + the Every… stepper. Set off from the
+              due/time/remind block above by a divider + plain-language help, because the workshop
+              control read as "repeat the reminder" rather than "the task itself repeats"
+              (2026-07-11 feedback). The label speaks about the TASK; the help says done resets the
+              timer (not archives) and that this is separate from a reminder. ---- */}
+      <div className="border-t border-border pt-3">
+        <span className={sectionLabel}>
+          <span aria-hidden>↻ </span>Repeat this task
+        </span>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted">
+          The task itself comes back on a schedule — marking it done just resets its timer instead
+          of sending it to Done. This is about the task, not a reminder.
+        </p>
         <div
           role="group"
           aria-label="Repeats"
-          className={`mt-1.5 gap-0.5 rounded-[10px] bg-bg p-0.5 ${touch ? 'flex w-full' : 'inline-flex'}`}
+          className={`mt-2 gap-0.5 rounded-[10px] bg-bg p-0.5 ${touch ? 'flex w-full' : 'inline-flex'}`}
         >
           <button
             type="button"

@@ -6,7 +6,7 @@ import type { Recurring } from '../../types/task'
 import { SchedulePanel } from '../schedule/SchedulePanel'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useUserSchedule } from '../schedule/use-user-schedule'
-import { useUpsertTaskReminder } from '../reminders/use-task-reminders'
+import { useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { effectiveReminderDefault } from '../reminders/reminder-offsets'
 import type { GridApi } from '../grid/use-grid'
 import { NewItemStrip } from './NewItemStrip'
@@ -176,7 +176,7 @@ function ModeToggle({
 
 function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const addTask = useAddTask()
-  const upsertReminder = useUpsertTaskReminder()
+  const reminderWrites = useTaskReminderWrites()
   // The user's configured add-flow default (1 hour unless changed / off). Pre-selects the picker
   // the moment a due time is set.
   const reminderDefault = effectiveReminderDefault(
@@ -190,7 +190,9 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const [due, setDue] = useState<string | null>(null)
   const [dueTime, setDueTime] = useState<string | null>(null)
   const [recurring, setRecurring] = useState<Recurring | null>(null)
-  const [reminderMinutes, setReminderMinutes] = useState<number | null>(reminderDefault)
+  const [reminderMinutes, setReminderMinutes] = useState<number[]>(
+    reminderDefault != null ? [reminderDefault] : [],
+  )
   const [scheduleOpen, setScheduleOpen] = useState(false)
 
   // Card-in-place (B2): a just-added task surfaces as a draggable card that REPLACES the input
@@ -214,15 +216,15 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
       },
       {
         onSuccess: (created) => {
-          // A timed, non-recurring task with a chosen offset gets its reminder right after creation
-          // (the task must exist first — the reminder FKs its id; reminders don't fire for repeats).
-          if (dt && reminderMinutes !== null && !created.recurring) {
-            upsertReminder.mutate({ taskId: created.id, offsetMinutes: reminderMinutes })
+          // A timed, non-recurring task gets its chosen reminders right after creation (the task
+          // must exist first — reminders FK its id; reminders don't fire for repeats).
+          if (dt && !created.recurring) {
+            for (const m of reminderMinutes) reminderWrites.add(created.id, m)
           }
           setText('')
           setDue(null)
           setDueTime(null)
-          setReminderMinutes(reminderDefault)
+          setReminderMinutes(reminderDefault != null ? [reminderDefault] : [])
           setRecurring(null)
         },
       },
@@ -274,8 +276,13 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
                     )
                   }
                   onRemoveRecurring={() => setRecurring(null)}
-                  reminderOffset={reminderMinutes}
-                  onSetReminder={setReminderMinutes}
+                  reminderOffsets={reminderMinutes}
+                  onToggleReminder={(m) =>
+                    setReminderMinutes((cur) =>
+                      cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m],
+                    )
+                  }
+                  onClearReminders={() => setReminderMinutes([])}
                   idPrefix="add"
                 />
               </div>

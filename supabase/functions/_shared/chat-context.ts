@@ -167,8 +167,9 @@ export async function loadChatContext(
       .select('done, habit_done, subtask_done, plan')
       .eq('date', date)
       .maybeSingle(),
-    // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks already
-    // have one — otherwise it can't answer "do I have a reminder on X?" or that set_reminder replaces.
+    // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks
+    // already have one (a task may hold several) — otherwise it can't answer "do I have a reminder
+    // on X?" or reason about adding another lead time.
     client.from('task_reminders').select('task_id, offset_minutes').is('sent_at', null),
   ])
 
@@ -176,10 +177,13 @@ export async function loadChatContext(
   const habitDone = (dailyRes.data?.habit_done ?? {}) as Record<string, boolean>
   const subtaskDone = (dailyRes.data?.subtask_done ?? {}) as Record<string, boolean>
 
-  const reminderByTask = new Map<string, number>()
+  const reminderByTask = new Map<string, number[]>()
   for (const r of (remindersRes.data ?? []) as { task_id: string; offset_minutes: number }[]) {
-    reminderByTask.set(r.task_id, r.offset_minutes)
+    const list = reminderByTask.get(r.task_id)
+    if (list) list.push(r.offset_minutes)
+    else reminderByTask.set(r.task_id, [r.offset_minutes])
   }
+  for (const list of reminderByTask.values()) list.sort((a, b) => a - b)
 
   const labelById = new Map<string, string>()
 
@@ -197,7 +201,7 @@ export async function loadChatContext(
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       recurringStatus: recurringStatusPhrase(rec, now),
-      reminderOffset: reminderByTask.get(t.id as string) ?? null,
+      reminderOffsets: reminderByTask.get(t.id as string) ?? [],
       doneToday: doneMap[t.id as string] === true,
       completedAt: (t.completed_at as string | null) ?? null,
     }
