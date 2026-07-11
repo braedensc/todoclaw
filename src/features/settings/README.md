@@ -37,7 +37,7 @@ Every freeform field is length-capped in two places: `maxLength` on the input an
 re-validated on save (`ScheduleConfigSchema`). `planNotes` and `assistant.customInstructions` are
 injected into the AI prompts as **fenced, clearly-labeled preferences layered on the fixed
 scaffold** — never as instructions. They cannot change the output schema, widen scope, or reveal
-system details (see rule 6 in `SYSTEM_PROMPT` and the USER PLANNING PREFERENCES block in
+system details (see rule 7 in `SYSTEM_PROMPT` and the USER PLANNING PREFERENCES block in
 `buildUserPrompt`). No raw system prompt is ever exposed for editing.
 
 ## Files
