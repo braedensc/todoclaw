@@ -360,6 +360,52 @@ export const taskCapabilities: Capability[] = [
   }),
 
   defineCapability({
+    name: 'remove_reminder',
+    description:
+      'Remove ONE push reminder from a task by its lead time (minutes before due), leaving any ' +
+      'other reminders on that task in place. Use this when a task has several reminders and the ' +
+      'user wants to drop just one; use clear_reminder to remove them all at once.',
+    schema: z
+      .object({
+        task_id: uuid.describe('The task id (UUID).'),
+        minutes_before: z
+          .number()
+          .int()
+          .min(0)
+          .max(40320)
+          .describe('The lead time to remove (0 = at the due time; max 40320 = 28 days).'),
+      })
+      .strict(),
+    async execute(ctx, i) {
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      const lead = i.minutes_before === 0 ? 'at-due-time' : formatOffset(i.minutes_before)
+      // Was that specific lead time set? (RLS-scoped) — so the confirmation is honest about
+      // whether anything was actually removed.
+      const { data: existing, error: exErr } = await ctx.client
+        .from('task_reminders')
+        .select('task_id')
+        .eq('task_id', i.task_id)
+        .eq('offset_minutes', i.minutes_before)
+      if (exErr) return systemErr(exErr.message)
+      const hadIt = Array.isArray(existing) ? existing.length > 0 : existing != null
+      if (!hadIt) return ok(`"${task.text}" didn't have a ${lead} reminder set.`, ['reminders'])
+      const { error } = await ctx.client.rpc('remove_task_reminder', {
+        p_task_id: i.task_id,
+        p_offset_minutes: i.minutes_before,
+      })
+      if (error) return systemErr(error.message)
+      return ok(`Removed the ${lead} reminder from "${task.text}".`, ['reminders'])
+    },
+  }),
+
+  defineCapability({
     name: 'make_recurring',
     description:
       'Make a task recurring with a cadence in days. Retuning the cadence of an already-recurring task keeps its progress (last-done and count); it does not reset the clock.',

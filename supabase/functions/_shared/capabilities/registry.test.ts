@@ -100,6 +100,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'set_due_date',
     'set_reminder',
     'clear_reminder',
+    'remove_reminder',
     'make_recurring',
     'clear_recurring',
     'restore_task',
@@ -351,6 +352,41 @@ Deno.test('clear_reminder no-ops honestly when the task had no reminder', async 
   assert(!res.is_error)
   assert(res.content.includes("didn't have a reminder"))
   assertEquals(rpcCalls.filter((c) => c.name === 'clear_task_reminder').length, 0)
+})
+
+Deno.test(
+  'remove_reminder drops one lead time via remove_task_reminder and reports the reminders domain',
+  async () => {
+    rpcCalls.length = 0
+    // onSelect returns a row for BOTH the task lookup and the (task, offset) existence check.
+    const res = await executeTool(
+      'remove_reminder',
+      { task_id: UUID, minutes_before: 60 },
+      ctx({ onSelect: () => ({ data: { text: 'Dentist' }, error: null }) }),
+    )
+    assert(!res.is_error)
+    assertEquals(res.mutated, ['reminders'])
+    const call = rpcCalls.find((c) => c.name === 'remove_task_reminder')
+    assertEquals(call?.args, { p_task_id: UUID, p_offset_minutes: 60 })
+  },
+)
+
+Deno.test('remove_reminder no-ops honestly when that lead time was not set', async () => {
+  rpcCalls.length = 0
+  const res = await executeTool(
+    'remove_reminder',
+    { task_id: UUID, minutes_before: 60 },
+    // The task exists; the (task, offset) lookup finds nothing.
+    ctx({
+      onSelect: (table) =>
+        table === 'task_reminders'
+          ? { data: null, error: null }
+          : { data: { text: 'Dentist' }, error: null },
+    }),
+  )
+  assert(!res.is_error)
+  assert(res.content.includes("didn't have a 1 hour reminder"))
+  assertEquals(rpcCalls.filter((c) => c.name === 'remove_task_reminder').length, 0)
 })
 
 Deno.test(
