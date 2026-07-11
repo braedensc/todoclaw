@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Recurring } from '../types/task'
-import { RC_COLOR, fmtFrequency, isOngoing, ongoingLabel, recurringStatus } from './recurring'
+import {
+  RC_COLOR,
+  fmtFrequency,
+  isOngoing,
+  ongoingLabel,
+  recurringDoneToday,
+  recurringStatus,
+} from './recurring'
 
 // Fix "now" and align lastDoneAt to the same instant so daysSince === 0; then
 // daysLeft === frequencyDays, letting each frequency drive a specific threshold.
@@ -124,6 +131,30 @@ describe('RC_COLOR', () => {
       soon: '#8a7828',
       ok: '#5b8a72',
     })
+  })
+})
+
+describe('recurringDoneToday', () => {
+  // Eastern (UTC-4 in June): the local day boundary is 04:00Z. A completion timestamped just after
+  // that boundary is "today"; one just before it belongs to the previous local day.
+  const tz = 'America/New_York'
+  const now = new Date('2026-06-23T15:00:00Z') // 11:00 local on 2026-06-23
+
+  it('is true when lastDoneAt falls on the current local day', () => {
+    expect(recurringDoneToday(rec({ lastDoneAt: '2026-06-23T09:00:00Z' }), tz, now)).toBe(true)
+    // Earliest instant still on the local day (00:00 local = 04:00Z).
+    expect(recurringDoneToday(rec({ lastDoneAt: '2026-06-23T04:00:00Z' }), tz, now)).toBe(true)
+  })
+
+  it('is false for a completion on the previous local day (next-day case → task returns)', () => {
+    // 03:59Z is still 23:59 local on 2026-06-22 — the previous local day.
+    expect(recurringDoneToday(rec({ lastDoneAt: '2026-06-23T03:59:00Z' }), tz, now)).toBe(false)
+    expect(recurringDoneToday(rec({ lastDoneAt: '2026-06-22T18:00:00Z' }), tz, now)).toBe(false)
+  })
+
+  it('is false for a never-done or non-recurring task', () => {
+    expect(recurringDoneToday(rec({ lastDoneAt: null }), tz, now)).toBe(false)
+    expect(recurringDoneToday(null, tz, now)).toBe(false)
   })
 })
 

@@ -192,6 +192,31 @@ describe('GridView placement filter', () => {
     expect(screen.getByText('Way overdue')).toBeInTheDocument()
   })
 
+  it('hides a short-cadence recurring task the day it was marked done, shows it again after', () => {
+    // Regression: hiding recurring tasks only at status "ok" (daysLeft > 5) meant a ≤5-day chore
+    // re-read as due/soon the instant it was marked done and never left the grid — "done" looked
+    // like a no-op. A recurring task done TODAY is now hidden for the rest of the local day; a
+    // task done on a PRIOR day (the next-day case) shows again per its cadence.
+    const now = new Date().toISOString() // done today
+    const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString() // a prior local day
+    tasksFixture = [
+      makeTask({
+        id: 'just-done',
+        text: 'Water the plants',
+        recurring: { frequencyDays: 2, lastDoneAt: now, doneCount: 3 },
+      }),
+      makeTask({
+        id: 'due-again',
+        text: 'Take out trash',
+        recurring: { frequencyDays: 2, lastDoneAt: twoDaysAgo, doneCount: 1 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.queryByText('Water the plants')).not.toBeInTheDocument()
+    expect(screen.getByText('Take out trash')).toBeInTheDocument()
+  })
+
   it('renders no new-item cards when nothing is staged', () => {
     tasksFixture = [makeTask({ staged: false })]
     render(<GridHarness />)

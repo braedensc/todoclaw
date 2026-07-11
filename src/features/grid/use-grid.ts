@@ -5,7 +5,7 @@ import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
-import { recurringStatus } from '../../lib/recurring'
+import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
 import { quadrantMeta } from '../../lib/quadrants'
 import { urgencyGlowStyle } from '../../lib/visual-urgency'
 import {
@@ -28,21 +28,28 @@ import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 
 /**
  * Which tasks render on the grid: active (not soft-deleted — already excluded by useTasks),
- * non-staged, not completed, and — for recurring tasks — only when not "ok" (ok-recurring
- * tasks are hidden to keep the grid uncluttered between cycles). x/y must be non-null.
+ * non-staged, not completed, and — for recurring tasks — hidden when done today OR "ok" (both
+ * keep the grid uncluttered between cycles). x/y must be non-null.
  *
  * A one-off completion is PERMANENT via task.completed_at, so a completed task stays off the
  * grid across days. `doneToday` (today's daily_state.done map) is kept as a belt-and-suspenders
  * hide for the same-day window before the tasks query refetches with completed_at set.
+ *
+ * A RECURRING task never sets completed_at (it resets recurring.lastDoneAt instead). Hiding it
+ * only at status "ok" (daysLeft > 5) meant a short-cadence chore (≤5d) re-read as due/soon the
+ * instant it was marked done and never left the grid — "done" looked like a no-op. So we also
+ * hide it for the rest of the local day it was done (recurringDoneToday); it returns the next day.
  */
 function isPlaced(
   task: Task,
   doneToday: Record<string, boolean>,
+  timeZone: string,
 ): task is Task & { x: number; y: number } {
   if (task.staged) return false
   if (task.x == null || task.y == null) return false
   if (task.completed_at) return false
   if (doneToday[task.id]) return false
+  if (recurringDoneToday(task.recurring, timeZone)) return false
   const rc = recurringStatus(task.recurring)
   if (rc && rc.code === 'ok') return false
   return true
@@ -209,8 +216,11 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   )
 
   const placedTasks = useMemo(
-    () => tasks.filter((t): t is Task & { x: number; y: number } => isPlaced(t, doneToday ?? {})),
-    [tasks, doneToday],
+    () =>
+      tasks.filter((t): t is Task & { x: number; y: number } =>
+        isPlaced(t, doneToday ?? {}, timeZone),
+      ),
+    [tasks, doneToday, timeZone],
   )
   // Keep the per-frame drag handlers reading fresh committed positions without re-subscribing.
   // Updated in an effect (not during render) so the ref stays in step with each committed render.
@@ -234,8 +244,9 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
 
   // --- Mark done (shared by grid cards + popup rows) -------------------------------------
   // Normal task: write history + today's daily_state (it leaves the grid). Recurring task:
-  // reset the cycle (lastDoneAt=now, doneCount+1) WITHOUT touching history/daily_state — it
-  // re-evaluates to "ok" and is hidden until the next cycle. Closes any open popup.
+  // reset the cycle (lastDoneAt=now, doneCount+1) WITHOUT touching history/daily_state — it is
+  // then hidden from the board for the rest of the local day (recurringDoneToday) and returns the
+  // next day when its cadence next reads due/soon. Closes any open popup.
   const handleDone = useCallback(
     (task: Task) => {
       selectCluster(null)

@@ -7,6 +7,7 @@ import { useNow } from '../../hooks/use-now'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
 import { urgencyTier } from '../../lib/visual-urgency'
+import { recurringDoneToday } from '../../lib/recurring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
   summarizeQuadrants,
@@ -76,9 +77,14 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
   }
 
   // Completed tasks are excluded: a one-off completion is PERMANENT (task.completed_at, survives
-  // the daily reset); today's done map is a same-day belt-and-suspenders hide.
+  // the daily reset); today's done map is a same-day belt-and-suspenders hide. A recurring task
+  // marked done today is also hidden for the rest of the local day (recurringDoneToday) — it never
+  // sets completed_at, so without this a just-completed chore lingers in the quadrant preview and
+  // "done" reads as a no-op; it returns the next day. Mirrors the grid's isPlaced.
   const doneToday = daily?.done ?? {}
-  const active = tasks.filter((t) => !t.completed_at && !doneToday[t.id])
+  const active = tasks.filter(
+    (t) => !t.completed_at && !doneToday[t.id] && !recurringDoneToday(t.recurring, timeZone),
+  )
   const { buckets } = summarizeQuadrants(active, { timeZone })
 
   // Per-quadrant "on fire" counts for the overview badges: due today (incl. the final hours)
