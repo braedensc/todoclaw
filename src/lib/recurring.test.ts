@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Recurring } from '../types/task'
-import { RC_COLOR, fmtFrequency, recurringStatus } from './recurring'
+import { RC_COLOR, fmtFrequency, isOngoing, ongoingLabel, recurringStatus } from './recurring'
 
 // Fix "now" and align lastDoneAt to the same instant so daysSince === 0; then
 // daysLeft === frequencyDays, letting each frequency drive a specific threshold.
@@ -70,6 +70,49 @@ describe('recurringStatus', () => {
       daysLeft: 6,
       label: 'in 6d',
     })
+  })
+})
+
+describe('ongoing projects', () => {
+  // An ongoing task reuses the recurring engine, so recurringStatus (hide/color/resurfacing
+  // pressure) must behave EXACTLY as it does for a chore — the ongoing flag never touches it.
+  it('leaves recurringStatus unchanged for an ongoing task', () => {
+    const chore = recurringStatus(rec({ frequencyDays: 6 }), { now: NOW })
+    const ongoing = recurringStatus(rec({ frequencyDays: 6, ongoing: true }), { now: NOW })
+    expect(ongoing).toEqual(chore)
+    expect(ongoing).toMatchObject({ code: 'ok', daysLeft: 6 })
+  })
+
+  it('isOngoing distinguishes an ongoing project from a chore / non-recurring', () => {
+    expect(isOngoing(null)).toBe(false)
+    expect(isOngoing(rec())).toBe(false)
+    expect(isOngoing(rec({ ongoing: true }))).toBe(true)
+  })
+
+  it('ongoingLabel returns null for a non-ongoing task', () => {
+    expect(ongoingLabel(null)).toBeNull()
+    expect(ongoingLabel(rec())).toBeNull()
+  })
+
+  it('ongoingLabel surfaces the session count and no target when targetEnd is unset', () => {
+    expect(ongoingLabel(rec({ ongoing: true, doneCount: 4 }), { now: NOW })).toEqual({
+      sessions: 4,
+      target: null,
+    })
+  })
+
+  it('ongoingLabel renders the target-end countdown (future, today, past)', () => {
+    const opts = { now: NOW, timeZone: 'UTC' }
+    // NOW is 2026-06-23; targets 5 days out, today, and 2 days ago.
+    expect(ongoingLabel(rec({ ongoing: true, targetEnd: '2026-06-28' }), opts)?.target).toBe(
+      'target in 5d',
+    )
+    expect(ongoingLabel(rec({ ongoing: true, targetEnd: '2026-06-23' }), opts)?.target).toBe(
+      'target today',
+    )
+    expect(ongoingLabel(rec({ ongoing: true, targetEnd: '2026-06-21' }), opts)?.target).toBe(
+      'target 2d ago',
+    )
   })
 })
 

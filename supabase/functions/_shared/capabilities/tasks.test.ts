@@ -282,6 +282,106 @@ Deno.test('make_recurring starts a fresh cycle for a non-recurring task', async 
   assertEquals(rec.doneCount, 0)
 })
 
+// ---- ongoing projects -------------------------------------------------------------------------
+Deno.test(
+  'make_ongoing on a fresh task starts an ongoing project with the default check-in',
+  async () => {
+    const { ctx, getPatch } = makeMutCtx({ text: 'Redesign the site', recurring: null })
+    const res = await executeTool('make_ongoing', { task_id: TASK_ID }, ctx)
+    assert(!res.is_error)
+    const rec = getPatch()?.recurring as {
+      frequencyDays: number
+      lastDoneAt: null
+      doneCount: number
+      ongoing: boolean
+      targetEnd: string | null
+    }
+    assertEquals(rec.frequencyDays, 2) // default check-in
+    assertEquals(rec.lastDoneAt, null)
+    assertEquals(rec.doneCount, 0)
+    assertEquals(rec.ongoing, true)
+    assertEquals(rec.targetEnd, null)
+  },
+)
+
+Deno.test(
+  'make_ongoing preserves the session tally and takes a check-in + target-end',
+  async () => {
+    const { ctx, getPatch } = makeMutCtx({
+      text: 'Thesis',
+      recurring: { frequencyDays: 7, lastDoneAt: '2026-07-01T00:00:00Z', doneCount: 9 },
+    })
+    const res = await executeTool(
+      'make_ongoing',
+      { task_id: TASK_ID, check_in_days: 3, target_end: '2026-08-15' },
+      ctx,
+    )
+    assert(!res.is_error)
+    const rec = getPatch()?.recurring as {
+      frequencyDays: number
+      lastDoneAt: string
+      doneCount: number
+      ongoing: boolean
+      targetEnd: string
+    }
+    assertEquals(rec.frequencyDays, 3)
+    assertEquals(rec.lastDoneAt, '2026-07-01T00:00:00Z') // preserved
+    assertEquals(rec.doneCount, 9) // preserved
+    assertEquals(rec.ongoing, true)
+    assertEquals(rec.targetEnd, '2026-08-15')
+  },
+)
+
+Deno.test(
+  'complete_task on an ongoing project logs a session (advances cycle, never archives)',
+  async () => {
+    const { ctx, rpcCalls, getPatch } = makeMutCtx({
+      text: 'Learn Spanish',
+      bucket: 'oneoff',
+      recurring: {
+        frequencyDays: 2,
+        lastDoneAt: '2026-07-01T00:00:00Z',
+        doneCount: 4,
+        ongoing: true,
+        targetEnd: '2026-08-01',
+      },
+    })
+    const res = await executeTool('complete_task', { task_id: TASK_ID }, ctx)
+    assert(!res.is_error)
+    assertEquals(res.mutated, ['tasks'])
+    assertEquals(rpcCalls.length, 0) // never set_task_done — that would freeze the project
+    assert(res.content.includes('work session'))
+    const rec = getPatch()?.recurring as {
+      doneCount: number
+      ongoing: boolean
+      targetEnd: string
+    }
+    assertEquals(rec.doneCount, 5) // advanced
+    assertEquals(rec.ongoing, true) // ongoing flag + target survive the session bump
+    assertEquals(rec.targetEnd, '2026-08-01')
+  },
+)
+
+Deno.test('finish_ongoing archives the project via set_task_done (the finish line)', async () => {
+  const { ctx, rpcCalls, getPatch } = makeMutCtx({
+    text: 'Move house',
+    bucket: 'oneoff',
+    recurring: {
+      frequencyDays: 2,
+      lastDoneAt: '2026-07-01T00:00:00Z',
+      doneCount: 8,
+      ongoing: true,
+    },
+  })
+  const res = await executeTool('finish_ongoing', { task_id: TASK_ID }, ctx)
+  assert(!res.is_error)
+  assertEquals(res.mutated, ['daily_state', 'history'])
+  assertEquals(getPatch(), undefined) // archived, not advanced — no recurring update
+  assertEquals(rpcCalls.length, 1)
+  assertEquals(rpcCalls[0].name, 'set_task_done')
+  assertEquals(rpcCalls[0].args.p_text, 'Move house')
+})
+
 // ---- search_history id exposure + delete_completion ------------------------------------------
 Deno.test(
   'search_history exposes each entry id (for delete_completion), hidden from the user',

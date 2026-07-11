@@ -179,3 +179,68 @@ describe('SchedulePanel repeats', () => {
     expect(screen.getByText(/comes back weekly 🦴/)).toBeInTheDocument()
   })
 })
+
+describe('SchedulePanel ongoing project', () => {
+  // NOW = 2026-07-09; check-in every 2 days last worked 2026-07-07 → "due today"; 5 sessions logged;
+  // target 2026-07-31 → 22 days out.
+  const ongoingRec: Recurring = {
+    frequencyDays: 2,
+    lastDoneAt: '2026-07-07T00:00:00Z',
+    doneCount: 5,
+    ongoing: true,
+    targetEnd: '2026-07-31',
+  }
+
+  it('offers "Make it an ongoing project" only when ongoing editing is wired', () => {
+    renderPanel()
+    expect(screen.queryByRole('button', { name: /Make it an ongoing project/ })).toBeNull()
+
+    const p = renderPanel({ onSetOngoing: vi.fn() })
+    fireEvent.click(screen.getByRole('button', { name: /Make it an ongoing project/ }))
+    // Default check-in cadence, no target yet.
+    expect(p.onSetOngoing).toHaveBeenCalledWith(2, null)
+  })
+
+  it('an ongoing task replaces the Repeats control with a project readback', () => {
+    renderPanel({ recurring: ongoingRec, onSetOngoing: vi.fn() })
+    expect(screen.queryByRole('group', { name: 'Repeats' })).toBeNull()
+    // Sessions logged + target countdown read back on one line (the trailing check-in status is
+    // live-clock, so it isn't pinned here — same as the chore garnish test above).
+    expect(screen.getByText(/ongoing · 5 sessions/)).toBeInTheDocument()
+    expect(screen.getByText(/target in 22d/)).toBeInTheDocument()
+  })
+
+  it('the check-in stepper adjusts the cadence, preserving the target-end', () => {
+    const p = renderPanel({ recurring: ongoingRec, onSetOngoing: vi.fn() })
+    fireEvent.click(screen.getByRole('button', { name: 'Check in more often' }))
+    expect(p.onSetOngoing).toHaveBeenCalledWith(3, '2026-07-31')
+    fireEvent.click(screen.getByRole('button', { name: 'Check in less often' }))
+    expect(p.onSetOngoing).toHaveBeenCalledWith(1, '2026-07-31')
+  })
+
+  it('the target-end input writes it, keeping the cadence', () => {
+    const p = renderPanel({ recurring: ongoingRec, onSetOngoing: vi.fn() })
+    fireEvent.change(screen.getByLabelText('Target end date'), { target: { value: '2026-08-15' } })
+    expect(p.onSetOngoing).toHaveBeenCalledWith(2, '2026-08-15')
+  })
+
+  it('Finish archives the project; End ongoing reverts it to a plain task', () => {
+    const p = renderPanel({
+      recurring: ongoingRec,
+      onSetOngoing: vi.fn(),
+      onFinishOngoing: vi.fn(),
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Finish project/ }))
+    expect(p.onFinishOngoing).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'End ongoing' }))
+    expect(p.onRemoveRecurring).toHaveBeenCalled()
+  })
+
+  it('without ongoing editing wired (e.g. the grid card menu) it shows a read-only status only', () => {
+    renderPanel({ recurring: ongoingRec })
+    expect(screen.getByText(/ongoing · 5 sessions/)).toBeInTheDocument()
+    // No editor controls when onSetOngoing is absent.
+    expect(screen.queryByText('check in every')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Finish project/ })).toBeNull()
+  })
+})

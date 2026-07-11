@@ -32,6 +32,29 @@ describe('TaskSchema', () => {
     expect(TaskSchema.safeParse({ ...row, bucket: 'oneoff' }).success).toBe(true)
     expect(TaskSchema.safeParse({ ...row, bucket: 'weekly' }).success).toBe(false)
   })
+
+  it('parses a plain chore recurring with no ongoing keys (unchanged behavior)', () => {
+    const parsed = TaskSchema.parse({
+      ...row,
+      recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+    })
+    expect(parsed.recurring?.ongoing).toBeUndefined()
+    expect(parsed.recurring?.targetEnd).toBeUndefined()
+  })
+
+  it('parses an ongoing project (recurring with ongoing + targetEnd)', () => {
+    const parsed = TaskSchema.parse({
+      ...row,
+      recurring: {
+        frequencyDays: 2,
+        lastDoneAt: null,
+        doneCount: 3,
+        ongoing: true,
+        targetEnd: '2026-08-01',
+      },
+    })
+    expect(parsed.recurring).toMatchObject({ ongoing: true, targetEnd: '2026-08-01' })
+  })
 })
 
 describe('HabitSchema', () => {

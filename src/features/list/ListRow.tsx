@@ -59,6 +59,10 @@ interface ListRowProps {
   onSetFrequency: (id: string, frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: (id: string) => void
+  /** Make / adjust this task as an ongoing project (check-in cadence + optional target-end). */
+  onSetOngoing: (id: string, checkInDays: number, targetEnd: string | null) => void
+  /** Finish an ongoing project — archive it to the Done log. */
+  onFinishOngoing: (task: Task) => void
   /** Delete the task — the parent gates this behind a confirm before soft-deleting. */
   onDelete: (task: Task) => void
   /**
@@ -88,6 +92,8 @@ export function ListRow({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  onSetOngoing,
+  onFinishOngoing,
   onDelete,
   onMove,
   reminderOffset,
@@ -105,6 +111,10 @@ export function ListRow({
   const tier = urgencyTier(due, minutesUntil)
   const status = recurringStatus(task.recurring)
   const showCount = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
+  // An ongoing project reuses the recurring clock, so its ✓ LOGS A WORK SESSION (advances the
+  // cycle) rather than "resets the clock" — the wording tracks that. Finishing it for good is the
+  // Finish action in the expanded row's schedule editor, not this button.
+  const isOngoingTask = !!task.recurring?.ongoing
 
   function startEdit() {
     setDraft(task.text)
@@ -310,8 +320,20 @@ export function ListRow({
           <IconButton
             variant="success"
             onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
-            aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
-            title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
+            aria-label={
+              isOngoingTask
+                ? 'Log a work session'
+                : task.recurring
+                  ? 'Mark done (resets clock)'
+                  : 'Mark done'
+            }
+            title={
+              isOngoingTask
+                ? 'Log a work session'
+                : task.recurring
+                  ? 'Done (resets clock)'
+                  : 'Mark done'
+            }
           >
             ✓
           </IconButton>
@@ -339,6 +361,8 @@ export function ListRow({
           onSetRecurring={(freq) => onSetRecurring(task.id, freq)}
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
+          onSetOngoing={(checkInDays, targetEnd) => onSetOngoing(task.id, checkInDays, targetEnd)}
+          onFinishOngoing={() => onFinishOngoing(task)}
           onRename={startEdit}
           reminderOffset={reminderOffset}
           onSetReminder={onSetReminder}

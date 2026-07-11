@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
+import { RC_COLOR, recurringStatus, fmtFrequency, ongoingLabel } from '../../lib/recurring'
 import {
   dueChipStyle,
   gridChipLabel,
@@ -135,6 +135,10 @@ export function GridCard({
 
   // x/y are guaranteed non-null by the caller's filter, but be defensive for the type.
   const rc = recurringStatus(task.recurring)
+  // Ongoing project vs. repeating chore — both live in `recurring`, so the same status color/hide
+  // apply, but the badge reads as a project (▶ + target/sessions) instead of a repeat (↻ + cadence).
+  const ongoing = ongoingLabel(task.recurring, { timeZone })
+  const repeatGlyph = ongoing ? '▶' : '↻'
   // Data-space quadrant for this card's (x, y). Drives the border color (when not recurring)
   // and a `data-quadrant` hook so E2E specs can assert placement without reading pixel styles
   // (durable across Stage 5's restyle).
@@ -254,11 +258,11 @@ export function GridCard({
       {rc && (
         <span
           aria-hidden
-          title="Repeats"
+          title={ongoing ? 'Ongoing project' : 'Repeats'}
           className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full border bg-card text-[9px] font-bold leading-none shadow-sm"
           style={{ borderColor, color: borderColor }}
         >
-          ↻
+          {repeatGlyph}
         </span>
       )}
 
@@ -287,13 +291,18 @@ export function GridCard({
           className="mb-0.5 block rounded-[3px] px-1 py-px text-[8.5px] font-bold leading-tight text-white"
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
-          <span>↻ {rc.label}</span>
+          {/* Ongoing project: "▶ ongoing"/target on line 1, session ×N reuses the badge; a chore
+              keeps "↻ status" + cadence. Line 2 carries the target for a project, cadence for a
+              chore — a project's check-in cadence would read like a repeat, so it's hidden. */}
+          <span>
+            {repeatGlyph} {ongoing ? (ongoing.target ?? 'ongoing') : rc.label}
+          </span>
           {showBadge && (
             <span className="ml-[3px] text-[7.5px] font-normal opacity-75">
               {task.recurring?.doneCount}×
             </span>
           )}
-          {task.recurring && (
+          {task.recurring && !ongoing && (
             <span className="block text-[7px] font-normal tracking-[0.03em] opacity-80">
               {fmtFrequency(task.recurring.frequencyDays)}
             </span>

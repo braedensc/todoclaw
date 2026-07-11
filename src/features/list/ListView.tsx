@@ -162,6 +162,29 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleRemoveRecurring = (id: string) =>
     updateTask.mutate({ id, patch: { recurring: null } })
 
+  // Ongoing project: reuses the recurring jsonb (frequencyDays = check-in cadence) with ongoing:true
+  // + an optional targetEnd. Preserves lastDoneAt/doneCount when the task already had a cycle, so
+  // adjusting the cadence or target-end never resets the session tally (mirrors handleSetFrequency).
+  const handleSetOngoing = (id: string, checkInDays: number, targetEnd: string | null) => {
+    const prev = active.find((t) => t.id === id)?.recurring
+    updateTask.mutate({
+      id,
+      patch: {
+        recurring: {
+          frequencyDays: checkInDays,
+          lastDoneAt: prev?.lastDoneAt ?? null,
+          doneCount: prev?.doneCount ?? 0,
+          ongoing: true,
+          targetEnd,
+        },
+      },
+    })
+  }
+  // Finish an ongoing project for good — archive it exactly like a one-off (Done tab + history),
+  // unlike the ✓ which only logs a session. Reuses the shared Done RPC via useMarkTaskDone.
+  const handleFinishOngoing = (task: Task) =>
+    markDone.mutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
+
   return (
     <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
       <ul className="flex flex-col gap-2">
@@ -181,6 +204,8 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
             onSetRecurring={handleSetRecurring}
             onSetFrequency={handleSetFrequency}
             onRemoveRecurring={handleRemoveRecurring}
+            onSetOngoing={handleSetOngoing}
+            onFinishOngoing={handleFinishOngoing}
             onDelete={handleDelete}
             onMove={onMoveToQuadrant}
             reminderOffset={reminders?.get(task.id)?.offset_minutes ?? null}

@@ -2,6 +2,7 @@
 // `fmtFrequency` (planning/EISENCLAW-LOGIC-TO-PORT.md §3, html:57-69, 97-107).
 
 import type { Recurring } from '../types/task'
+import { daysUntil } from './scoring'
 
 const MS_PER_DAY = 86_400_000
 
@@ -58,6 +59,42 @@ export function recurringStatus(
     return { label: `in ${daysLeft}d`, code: 'soon', daysLeft }
   }
   return { label: `in ${daysLeft}d`, code: 'ok', daysLeft }
+}
+
+/** True when this recurring shape is an ONGOING project rather than a repeating chore. */
+export function isOngoing(recurring: Recurring | null | undefined): boolean {
+  return !!recurring?.ongoing
+}
+
+export interface OngoingStatus {
+  /** Lifetime work sessions logged (recurring.doneCount). */
+  sessions: number
+  /** Target-end countdown phrase ("target today" / "target in 5d" / "target 3d ago"), or null. */
+  target: string | null
+}
+
+/**
+ * Presentation bits for an ONGOING task's badge/readback, or `null` for a non-ongoing task.
+ *
+ * `sessions` is the lifetime work-session count; `target` renders the target-end countdown
+ * (timezone-aware via `daysUntil`) when a `targetEnd` is set. Resurfacing pressure and the status
+ * COLOR still come from `recurringStatus` (the check-in cadence) — this only supplies the
+ * project-framed labelling that replaces a chore's "due today / overdue Nd".
+ */
+export function ongoingLabel(
+  recurring: Recurring | null | undefined,
+  opts: { now?: Date; timeZone?: string } = {},
+): OngoingStatus | null {
+  if (!recurring?.ongoing) return null
+  const sessions = recurring.doneCount ?? 0
+  let target: string | null = null
+  if (recurring.targetEnd) {
+    const d = daysUntil(recurring.targetEnd, { timeZone: opts.timeZone ?? 'UTC', now: opts.now })
+    if (d != null) {
+      target = d < 0 ? `target ${Math.abs(d)}d ago` : d === 0 ? 'target today' : `target in ${d}d`
+    }
+  }
+  return { sessions, target }
 }
 
 /**
