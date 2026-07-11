@@ -119,6 +119,31 @@ describe('GridView placement filter', () => {
     expect(within(newCards[0]!).getByText('Not placed yet')).toBeInTheDocument()
   })
 
+  it('hides a completed still-staged task from the new-item strip (the ghost-item bug)', () => {
+    // Regression: a one-off task marked done while still UNPLACED keeps staged=true and gets
+    // completed_at stamped. It correctly leaves the list, but pendingTasks used to filter on
+    // `staged` ONLY — so it reappeared as a draggable "new item" card and, because staged never
+    // resets, survived the daily reset. This is the fifth render surface PR #191's completed_at
+    // hide missed. With doneToday empty (the next-day case) the completed staged task must NOT
+    // render, while a genuinely-new staged task still does.
+    tasksFixture = [
+      makeTask({
+        id: 'ghost',
+        text: 'Done but unplaced',
+        staged: true,
+        completed_at: '2026-06-23T12:00:00Z',
+      }),
+      makeTask({ id: 'fresh', text: 'Genuinely new', staged: true }),
+    ]
+    doneTodayFixture = {}
+    render(<GridHarness />)
+
+    const newCards = screen.getAllByTestId('new-item-card')
+    expect(newCards).toHaveLength(1)
+    expect(within(newCards[0]!).getByText('Genuinely new')).toBeInTheDocument()
+    expect(screen.queryByText('Done but unplaced')).not.toBeInTheDocument()
+  })
+
   it('hides tasks marked done today', () => {
     tasksFixture = [makeTask({ id: 'done-task', text: 'Already done', staged: false })]
     doneTodayFixture = { 'done-task': true }

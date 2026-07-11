@@ -218,8 +218,16 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     placedTasksRef.current = placedTasks
   })
   // Tasks not placed on the grid yet (still `staged`). They render as draggable "new item" cards
-  // in the input widget (card-in-place, B2) instead of a separate staging tray.
-  const pendingTasks = useMemo(() => tasks.filter((t) => t.staged), [tasks])
+  // in the input widget (card-in-place, B2) instead of a separate staging tray. A completed one-off
+  // task keeps staged=true (completion never clears the staged flag), so it must be excluded here
+  // the same way isPlaced excludes it on the placed grid — completed_at is the permanent across-day
+  // hide, doneToday the same-day belt-and-suspenders. Without this, a still-unplaced task marked
+  // done (e.g. from the list) leaves the list but reappears as a "new item" card AND survives the
+  // daily reset (staged never resets) — the "ghost item" bug PR #191 missed on this fifth surface.
+  const pendingTasks = useMemo(
+    () => tasks.filter((t) => t.staged && !t.completed_at && !(doneToday ?? {})[t.id]),
+    [tasks, doneToday],
+  )
 
   const softDeleteMutate = softDelete.mutate
   const markDoneMutate = markDone.mutate
