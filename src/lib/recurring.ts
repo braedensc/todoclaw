@@ -2,6 +2,7 @@
 // `fmtFrequency` (planning/EISENCLAW-LOGIC-TO-PORT.md §3, html:57-69, 97-107).
 
 import type { Recurring } from '../types/task'
+import { localDateInTZ } from './dates'
 
 const MS_PER_DAY = 86_400_000
 
@@ -58,6 +59,28 @@ export function recurringStatus(
     return { label: `in ${daysLeft}d`, code: 'soon', daysLeft }
   }
   return { label: `in ${daysLeft}d`, code: 'ok', daysLeft }
+}
+
+/**
+ * Was this recurring task last completed on the CURRENT local day (in `timeZone`)?
+ *
+ * The board surfaces (grid, mobile) use this to hide a just-completed recurring task for the rest
+ * of the local day, so marking it done gives visible feedback — otherwise a short-cadence chore
+ * (≤5d) re-reads as `due`/`soon` immediately and never leaves the board, so "done" looks like it
+ * did nothing. It reappears the next local day, when its cadence next reads as due/soon. Recurring
+ * completion writes `recurring.lastDoneAt` (recurring tasks never set `tasks.completed_at`), so
+ * that stamp is the signal. Returns false for a non-recurring or never-done task.
+ *
+ * Local-calendar-day based (not a rolling 24h) to match the rest of the app's day model — the
+ * daily reset and the one-off `daily_state.done` map are both keyed by the user-local date.
+ */
+export function recurringDoneToday(
+  recurring: Recurring | null | undefined,
+  timeZone: string,
+  now: Date = new Date(),
+): boolean {
+  if (!recurring?.lastDoneAt) return false
+  return localDateInTZ(timeZone, new Date(recurring.lastDoneAt)) === localDateInTZ(timeZone, now)
 }
 
 /**

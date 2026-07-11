@@ -134,6 +134,28 @@ describe('MobileMatrix', () => {
     expect(screen.queryByText('completed thing')).not.toBeInTheDocument()
   })
 
+  it('excludes a recurring task marked done today from the quadrant counts/preview', () => {
+    // A recurring task never sets completed_at (it resets recurring.lastDoneAt). Without a
+    // done-today hide it would linger in the quadrant preview after being marked done, so "done"
+    // reads as a no-op. Done TODAY (UTC here) → hidden; it returns the next local day.
+    tasksData = [
+      makeTask({ id: 'dn-open', text: 'ship the release', x: 0.9, y: 0.9 }),
+      makeTask({
+        id: 'dn-rec',
+        text: 'water the plants',
+        x: 0.95,
+        y: 0.95,
+        recurring: { frequencyDays: 2, lastDoneAt: new Date().toISOString(), doneCount: 3 },
+      }),
+    ]
+    doneToday = {}
+    renderMatrix()
+
+    expect(screen.getByLabelText('Do Now, 1 task')).toBeInTheDocument()
+    expect(screen.getByText('ship the release')).toBeInTheDocument()
+    expect(screen.queryByText('water the plants')).not.toBeInTheDocument()
+  })
+
   it('drills into a quadrant focus list on tap, showing only that quadrant', () => {
     tasksData = onerPerQuadrant()
     renderMatrix()
