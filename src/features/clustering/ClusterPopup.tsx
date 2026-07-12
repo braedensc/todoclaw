@@ -357,11 +357,13 @@ function ClusterPopupRow({
         borderLeftColor: sideColor,
         ...recurringBorder,
         touchAction: 'none',
-        // Composed warm-glow + cool aging-ring shadow overrides the resting `shadow-sm`; the warm
-        // tint replaces the plain paper fill — exactly the spread GridCard does.
+        // Composed warm-glow + cool aging-ring shadow overrides the resting `shadow-sm`; the tint
+        // is the warm urgency fill if any, else the cool aging fill — exactly the spread GridCard does.
         ...(boxShadow ? { boxShadow } : {}),
         ...(glow?.animation ? { animation: glow.animation } : {}),
-        ...(glow?.background ? { background: glow.background } : {}),
+        ...((glow?.background ?? aging?.background)
+          ? { background: glow?.background ?? aging?.background }
+          : {}),
       }}
     >
       {/* Hot-tier corner flag (🔥 = overdue or due-today) — the color-independent cue, same as the

@@ -173,25 +173,28 @@ describe('agingRingStyle', () => {
     expect(agingRingStyle({ created_at: agedByDays(20), staged: false }, NOW)).toBeNull()
   })
 
-  it('21–44d: thin cool-blue ring', () => {
+  it('21–44d: thin cool-blue ring + faintest cool tint', () => {
     const expected = {
       boxShadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 14px 3px rgba(50,118,205,0.3)',
+      background: '#f3f8fd',
     }
     expect(agingRingStyle({ created_at: agedByDays(21), staged: false }, NOW)).toEqual(expected)
     expect(agingRingStyle({ created_at: agedByDays(44), staged: false }, NOW)).toEqual(expected)
   })
 
-  it('45–74d: medium cool-blue ring', () => {
+  it('45–74d: medium cool-blue ring + cool tint', () => {
     const expected = {
       boxShadow: '0 0 0 2.5px rgba(50,118,205,0.78), 0 0 20px 5px rgba(50,118,205,0.42)',
+      background: '#eaf3fc',
     }
     expect(agingRingStyle({ created_at: agedByDays(45), staged: false }, NOW)).toEqual(expected)
     expect(agingRingStyle({ created_at: agedByDays(74), staged: false }, NOW)).toEqual(expected)
   })
 
-  it('>= 75d: thick cool-blue ring + brighter halo', () => {
+  it('>= 75d: thick cool-blue ring + brighter halo + iciest tint', () => {
     const expected = {
       boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
+      background: '#e0edfb',
     }
     expect(agingRingStyle({ created_at: agedByDays(75), staged: false }, NOW)).toEqual(expected)
     expect(agingRingStyle({ created_at: agedByDays(365), staged: false }, NOW)).toEqual(expected)
@@ -201,9 +204,10 @@ describe('agingRingStyle', () => {
 describe('clusterAgingRing', () => {
   const NOW = new Date('2026-07-02T12:00:00Z')
   const agedByDays = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString()
-  // The >= 75d tier — the strongest ring, expected when the oldest member is months old.
+  // The >= 75d tier — the strongest ring + iciest tint, expected when the oldest member is months old.
   const OLDEST_RING = {
     boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
+    background: '#e0edfb',
   }
 
   it('takes the ring of the OLDEST (hottest) non-recurring member in a mixed group', () => {
@@ -222,6 +226,7 @@ describe('clusterAgingRing', () => {
     ]
     expect(clusterAgingRing(group, NOW)).toEqual({
       boxShadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 14px 3px rgba(50,118,205,0.3)',
+      background: '#f3f8fd',
     })
   })
 

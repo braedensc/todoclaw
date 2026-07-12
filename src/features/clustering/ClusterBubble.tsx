@@ -87,7 +87,11 @@ export function ClusterBubble({
           .filter(Boolean)
           .join(', '),
     ...(!open && glow?.animation ? { animation: glow.animation } : {}),
-    ...(!open && glow?.background ? { background: glow.background } : {}),
+    // Closed-only card tint: the warm urgency fill if any, else the cool aging fill (its oldest
+    // member's) — the cold-side mirror of the warm tint, matching a standalone card.
+    ...(!open && (glow?.background ?? agingRing?.background)
+      ? { background: glow?.background ?? agingRing?.background }
+      : {}),
   }
 
   return (

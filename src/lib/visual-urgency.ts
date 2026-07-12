@@ -239,11 +239,15 @@ export function gridChipLabel(
 }
 
 /**
- * A cool box-shadow ring for an aging card — meant to be COMPOSED (appended) after the warm
- * urgency glow (or the base card shadow) by the caller, so a card can wear both at once.
+ * A cool aging card treatment — a box-shadow ring plus (on the older tiers) a faint cool-blue
+ * card TINT, the cold-side mirror of the warm urgency tint (`GlowStyle.background`). Both are
+ * meant to be COMPOSED by the caller: the ring appended after the warm glow's shadow, the tint
+ * applied only when the warmer urgency tint is absent (a due deadline out-shouts staleness).
  */
 export interface AgingRingStyle {
   boxShadow: string
+  /** Cool-blue paper tint replacing the plain card fill, graduating icier with age (absent < 21d). */
+  background?: string
 }
 
 /**
@@ -263,31 +267,36 @@ function daysSince(iso: string | null, now: Date): number | null {
 }
 
 /**
- * The aging ring for a given card age in whole days — the tier ladder, shared by the per-card
+ * The aging treatment for a given card age in whole days — the tier ladder, shared by the per-card
  * `agingRingStyle` and the per-cluster `clusterAgingRing`. Cool-blue ring + halo that both grow
- * with age; `null` under the 21-day floor. The tiers are pushed a touch louder than a same-rung
- * warm tier (owner ask 2026-07-12: "a little more prominent") so an old card genuinely stands out,
- * while the loudest (months) still sits just under the overdue ring.
+ * with age, plus (from the middle tier up) a faint cool-blue card TINT — the cold-side mirror of
+ * the warm urgency tint, so the coldest cards read icy the way the hottest read warm. `null` under
+ * the 21-day floor. The rings are pushed a touch louder than a same-rung warm tier (owner ask
+ * 2026-07-12) so an old card genuinely stands out, while the loudest (months) sits just under the
+ * overdue ring.
  *
- * | age      | ring + halo                              |
- * |----------|------------------------------------------|
- * | `< 21d`  | none (`null`)                            |
- * | `< 45d`  | 2px ring + 14px haze                     |
- * | `< 75d`  | 2.5px ring + 20px haze                   |
- * | `>= 75d` | 3px ring + brighter 28px haze            |
+ * | age      | ring + halo                   | tint       |
+ * |----------|-------------------------------|------------|
+ * | `< 21d`  | none (`null`)                 | —          |
+ * | `< 45d`  | 2px ring + 14px haze          | `#f3f8fd`  |
+ * | `< 75d`  | 2.5px ring + 20px haze        | `#eaf3fc`  |
+ * | `>= 75d` | 3px ring + brighter 28px haze | `#e0edfb`  |
  */
 function ringForAgeDays(days: number): AgingRingStyle | null {
   if (days < 21) return null
   if (days < 45)
     return {
       boxShadow: `0 0 0 2px rgba(${AGING_BLUE},0.6), 0 0 14px 3px rgba(${AGING_BLUE},0.3)`,
+      background: '#f3f8fd',
     }
   if (days < 75)
     return {
       boxShadow: `0 0 0 2.5px rgba(${AGING_BLUE},0.78), 0 0 20px 5px rgba(${AGING_BLUE},0.42)`,
+      background: '#eaf3fc',
     }
   return {
     boxShadow: `0 0 0 3px rgba(${AGING_BLUE},0.95), 0 0 28px 7px rgba(${AGING_BLUE},0.55)`,
+    background: '#e0edfb',
   }
 }
 

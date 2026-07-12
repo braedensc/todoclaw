@@ -24,9 +24,9 @@ renders as a normal `GridCard`; a group of >1 becomes a bubble.
   due date among the group's non-recurring tasks (`clusterNearestDue` in `src/lib/clustering.ts`) —
   applied only while **closed** as the full **ring + pulse + warm tint** a standalone card gets (an
   open bubble uses its raised popup shadow). It also takes an **`agingRing`** prop
-  (`clusterAgingRing`) — the cool-blue aging ring of the group's **most-aged** member, composed over
-  the glow (own hue lane) so an old cluster reads like its oldest folded card. See `docs/STYLE.md` →
-  _Visual urgency_.
+  (`clusterAgingRing`) — the cool-blue aging ring **+ icy card tint** of the group's **most-aged**
+  member, composed over the glow (own hue lane; the warm tint wins if the cluster is also due-soon)
+  so an old cluster reads like its oldest folded card. See `docs/STYLE.md` → _Visual urgency_.
 - **`ClusterPopup.tsx`** — the floating panel (width 220, maxHeight 320, scrollable). It
   **flips above** the bubble when the dominant's **data-y > 0.55** (`CLUSTER_POPUP_FLIP_Y`,
   matching EisenClaw `html:616-617` — data-y high ⇒ bubble near the top of the y-inverted

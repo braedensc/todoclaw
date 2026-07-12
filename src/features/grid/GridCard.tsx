@@ -213,10 +213,13 @@ export function GridCard({
     // Composed warm-glow + cool-aging-ring shadow (see `boxShadow` above); overrides the resting
     // `shadow-sm` when present. Overdue cards also pulse and get a warm tint; the final hours pulse
     // softly. Keyframes are global (src/index.css). `animation`/`background` spread only when
-    // present so a future base value on this card can't be clobbered.
+    // present so a future base value on this card can't be clobbered. The card TINT is the warm
+    // urgency tint if any, else the cool aging tint — a due deadline out-shouts staleness.
     ...(boxShadow ? { boxShadow } : {}),
     ...(glow?.animation ? { animation: glow.animation } : {}),
-    ...(glow?.background ? { background: glow.background } : {}),
+    ...((glow?.background ?? aging?.background)
+      ? { background: glow?.background ?? aging?.background }
+      : {}),
     // Lift the card above its neighbors while its ⋯ menu is open — the menu itself is portaled
     // (never occluded), so this is just a "this card is active" focus cue.
     ...(menuOpen ? { zIndex: 40 } : {}),

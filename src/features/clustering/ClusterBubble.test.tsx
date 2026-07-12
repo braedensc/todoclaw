@@ -11,9 +11,10 @@ const OVERDUE_GLOW: GlowStyle = {
   background: '#fff1e8',
 }
 
-// A stand-in cool-blue aging ring (shape matches clusterAgingRing's >= 75d tier).
+// A stand-in cool-blue aging ring + icy tint (shape matches clusterAgingRing's >= 75d tier).
 const AGING_RING: AgingRingStyle = {
   boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
+  background: '#e0edfb',
 }
 
 // The contract under test: pointer events inside the bubble must NOT reach the grid canvas.
@@ -141,11 +142,12 @@ describe('ClusterBubble', () => {
     expect(button.style.boxShadow).not.toContain('rgba(50,118,205,0.95)')
   })
 
-  // With no glow, the aging ring still composes over the bubble's resting shadow.
-  it('shows the aging ring over the resting shadow when there is no glow', () => {
+  // With no glow, the aging ring + cool tint still compose over the bubble's resting shadow.
+  it('shows the aging ring + cool tint over the resting shadow when there is no glow', () => {
     renderBubble({ open: false, agingRing: AGING_RING })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.boxShadow).toContain('rgba(50,118,205,0.95)')
     expect(button.style.boxShadow).toContain('rgba(0,0,0,.10)')
+    expect(button.style.background).toBe('rgb(224, 237, 251)') // #e0edfb
   })
 })
