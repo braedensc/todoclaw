@@ -20,12 +20,14 @@
 //     color-independent channel; null for the softer tiers.
 //   - dueChipStyle(tier) / chip label helpers: the textual half, shared by the grid card,
 //     cluster popup rows, and list rows so the surfaces never drift.
-//   - stalenessStyle(task): desaturates + fades a card that has sat untouched for weeks
-//     (unchanged EisenClaw parity).
+//   - agingRingStyle(task): a COOL box-shadow ring that INTENSIFIES with a card's age — the
+//     inverse of EisenClaw's old fade. An old, undone task should draw the eye, not recede
+//     into the background; the ring is a deliberately cool slate so it stays in its own hue
+//     lane and never competes with the warm due-date glow (the two can co-exist on one card).
 //
 // Glow/chips are applied only to non-done, non-recurring cards by the caller (a recurring task
 // carries its own RC_COLOR status badge; a done task has left the grid). `daysUntil`
-// (scoring.ts) and `minutesUntilDueTime` (dates.ts) are timezone-aware; staleness is
+// (scoring.ts) and `minutesUntilDueTime` (dates.ts) are timezone-aware; the aging ring is
 // elapsed-real-time. Priority SCORING is untouched by all of this — display only.
 
 import { formatDueTime } from './dates'
@@ -83,7 +85,10 @@ export interface GlowStyle {
   background?: string
 }
 
-const REST = '0 2px 7px rgba(0,0,0,.08)'
+/** The card's resting drop-shadow — the base depth layer that sits under every glow. Exported
+ *  so GridCard can lay the cool aging ring over this same base when a card has no warm urgency
+ *  glow (an inline box-shadow would otherwise clobber the card's resting `shadow-sm` class). */
+export const BASE_CARD_SHADOW = '0 2px 7px rgba(0,0,0,.08)'
 
 /**
  * Box-shadow "glow" by tier. The 2026-07-08 workshop's ~2× ladder still read too faint next to a
@@ -105,34 +110,34 @@ export function urgencyGlowStyle(tier: UrgencyTier): GlowStyle | null {
   switch (tier) {
     case 'overdue':
       return {
-        boxShadow: `${REST}, 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)`,
+        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)`,
         animation: 'urgency-pulse 2s ease-in-out infinite',
         background: '#fff1e8',
       }
     case 'final-hours':
       return {
-        boxShadow: `${REST}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
+        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
         animation: 'urgency-pulse-soft 3s ease-in-out infinite',
         background: '#fff4ec',
       }
     case 'today':
       return {
-        boxShadow: `${REST}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
+        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
         background: '#fff7f0',
       }
     case 'closing-in':
       return {
-        boxShadow: `${REST}, 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)`,
+        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)`,
         background: '#fdf7ec',
       }
     case 'this-week':
       return {
-        boxShadow: `${REST}, 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)`,
+        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)`,
         background: '#faf7ee',
       }
     case 'radar':
       return {
-        boxShadow: `${REST}, 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)`,
+        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)`,
       }
     case 'none':
       return null
@@ -232,11 +237,20 @@ export function gridChipLabel(
   }
 }
 
-/** Desaturation + opacity for a stale (long-untouched) card. */
-export interface StalenessStyle {
-  filter: string
-  opacity: number
+/**
+ * A cool box-shadow ring for an aging card — meant to be COMPOSED (appended) after the warm
+ * urgency glow (or the base card shadow) by the caller, so a card can wear both at once.
+ */
+export interface AgingRingStyle {
+  boxShadow: string
 }
+
+/**
+ * Slate rgb triplet for the aging ring — a deliberately COOL hue with no overlap with the warm
+ * urgency ladder (terracotta / gold / olive), so "old" and "due soon" read as two different
+ * things even on the same card. Reused across the ring + halo alphas.
+ */
+const AGING_SLATE = '88,104,128'
 
 /** Whole days elapsed since an ISO timestamp (floor), or null if absent/unparseable. */
 function daysSince(iso: string | null, now: Date): number | null {
@@ -247,26 +261,39 @@ function daysSince(iso: string | null, now: Date): number | null {
 }
 
 /**
- * Staleness "dust" by card age (`created_at` → now), verbatim from EisenClaw (html:88-95):
+ * The aging ring by card age (`created_at` → now) — the INVERSE of EisenClaw's old fade
+ * (which desaturated + dimmed old cards into the background). An old, undone task is usually
+ * one you're avoiding, so it should gain presence, not lose it: a cool slate ring that grows
+ * thicker + a warmer halo the longer the card has sat on the board.
  *
- * | age      | filter / opacity            |
- * |----------|-----------------------------|
- * | staged   | none (`null`)               |
- * | `< 21d`  | none (`null`)               |
- * | `< 45d`  | `saturate(0.8)`,  opacity 0.90 |
- * | `< 75d`  | `saturate(0.55)`, opacity 0.82 |
- * | `>= 75d` | `saturate(0.3)`,  opacity 0.72 |
+ * | age      | ring + halo                                    |
+ * |----------|------------------------------------------------|
+ * | staged   | none (`null`) — not "left on the board" yet    |
+ * | `< 21d`  | none (`null`)                                  |
+ * | `< 45d`  | 1.5px slate ring + faint 10px haze             |
+ * | `< 75d`  | 2px slate ring + 14px haze                     |
+ * | `>= 75d` | 2.5px slate ring + brighter 18px haze          |
  *
- * A staged task (still in the tray) never desaturates — it hasn't been "left" on the grid yet.
+ * The tiers mirror the urgency ladder's ring+halo shape so an aging card reads as substantial
+ * as a "due this week" one — deliberately, so months-old tasks stand out. Age breakpoints
+ * (21/45/75d) are carried over from the retired fade. A staged/undated card gets none.
  */
-export function stalenessStyle(
+export function agingRingStyle(
   task: { created_at: string | null; staged: boolean },
   now: Date = new Date(),
-): StalenessStyle | null {
+): AgingRingStyle | null {
   if (task.staged) return null
   const days = daysSince(task.created_at, now)
   if (days === null || days < 21) return null
-  if (days < 45) return { filter: 'saturate(0.8)', opacity: 0.9 }
-  if (days < 75) return { filter: 'saturate(0.55)', opacity: 0.82 }
-  return { filter: 'saturate(0.3)', opacity: 0.72 }
+  if (days < 45)
+    return {
+      boxShadow: `0 0 0 1.5px rgba(${AGING_SLATE},0.5), 0 0 10px 2px rgba(${AGING_SLATE},0.18)`,
+    }
+  if (days < 75)
+    return {
+      boxShadow: `0 0 0 2px rgba(${AGING_SLATE},0.65), 0 0 14px 3px rgba(${AGING_SLATE},0.24)`,
+    }
+  return {
+    boxShadow: `0 0 0 2.5px rgba(${AGING_SLATE},0.8), 0 0 18px 5px rgba(${AGING_SLATE},0.32)`,
+  }
 }

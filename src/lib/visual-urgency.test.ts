@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agingRingStyle,
   dueChipStyle,
   fmtCountdown,
   fmtOverdueAmount,
   gridChipLabel,
-  stalenessStyle,
   urgencyGlowStyle,
   urgencyIcon,
   urgencyTier,
@@ -14,7 +14,7 @@ import {
 // rings/halos, and the two reinforcing channels added alongside them — the graduated card tint
 // (urgencyGlowStyle.background) and the scarce hot-tier icon (urgencyIcon). If a value changes,
 // that is a visual-design decision — update the table in visual-urgency.ts AND the keyframes in
-// index.css, not just the assertion. Staleness remains EisenClaw parity.
+// index.css, not just the assertion. The aging ring (below) intensifies with card age.
 
 describe('urgencyTier', () => {
   it('null due → none; day boundaries land each tier', () => {
@@ -153,40 +153,46 @@ describe('chip label helpers', () => {
   })
 })
 
-describe('stalenessStyle', () => {
+describe('agingRingStyle', () => {
   const NOW = new Date('2026-07-02T12:00:00Z')
   // Build a created_at that is exactly `days` old relative to NOW.
   const agedByDays = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString()
 
   it('returns null for a staged card regardless of age', () => {
-    expect(stalenessStyle({ created_at: agedByDays(100), staged: true }, NOW)).toBeNull()
+    expect(agingRingStyle({ created_at: agedByDays(100), staged: true }, NOW)).toBeNull()
   })
 
   it('returns null when created_at is missing or unparseable', () => {
-    expect(stalenessStyle({ created_at: null, staged: false }, NOW)).toBeNull()
-    expect(stalenessStyle({ created_at: 'not-a-date', staged: false }, NOW)).toBeNull()
+    expect(agingRingStyle({ created_at: null, staged: false }, NOW)).toBeNull()
+    expect(agingRingStyle({ created_at: 'not-a-date', staged: false }, NOW)).toBeNull()
   })
 
-  it('fresh (< 21d): no effect, including the boundary at 20 days', () => {
-    expect(stalenessStyle({ created_at: agedByDays(0), staged: false }, NOW)).toBeNull()
-    expect(stalenessStyle({ created_at: agedByDays(20), staged: false }, NOW)).toBeNull()
+  it('fresh (< 21d): no ring, including the boundary at 20 days', () => {
+    expect(agingRingStyle({ created_at: agedByDays(0), staged: false }, NOW)).toBeNull()
+    expect(agingRingStyle({ created_at: agedByDays(20), staged: false }, NOW)).toBeNull()
   })
 
-  it('21–44d: saturate(0.8), opacity 0.90', () => {
-    const expected = { filter: 'saturate(0.8)', opacity: 0.9 }
-    expect(stalenessStyle({ created_at: agedByDays(21), staged: false }, NOW)).toEqual(expected)
-    expect(stalenessStyle({ created_at: agedByDays(44), staged: false }, NOW)).toEqual(expected)
+  it('21–44d: thin slate ring', () => {
+    const expected = {
+      boxShadow: '0 0 0 1.5px rgba(88,104,128,0.5), 0 0 10px 2px rgba(88,104,128,0.18)',
+    }
+    expect(agingRingStyle({ created_at: agedByDays(21), staged: false }, NOW)).toEqual(expected)
+    expect(agingRingStyle({ created_at: agedByDays(44), staged: false }, NOW)).toEqual(expected)
   })
 
-  it('45–74d: saturate(0.55), opacity 0.82', () => {
-    const expected = { filter: 'saturate(0.55)', opacity: 0.82 }
-    expect(stalenessStyle({ created_at: agedByDays(45), staged: false }, NOW)).toEqual(expected)
-    expect(stalenessStyle({ created_at: agedByDays(74), staged: false }, NOW)).toEqual(expected)
+  it('45–74d: medium slate ring', () => {
+    const expected = {
+      boxShadow: '0 0 0 2px rgba(88,104,128,0.65), 0 0 14px 3px rgba(88,104,128,0.24)',
+    }
+    expect(agingRingStyle({ created_at: agedByDays(45), staged: false }, NOW)).toEqual(expected)
+    expect(agingRingStyle({ created_at: agedByDays(74), staged: false }, NOW)).toEqual(expected)
   })
 
-  it('>= 75d: saturate(0.3), opacity 0.72', () => {
-    const expected = { filter: 'saturate(0.3)', opacity: 0.72 }
-    expect(stalenessStyle({ created_at: agedByDays(75), staged: false }, NOW)).toEqual(expected)
-    expect(stalenessStyle({ created_at: agedByDays(365), staged: false }, NOW)).toEqual(expected)
+  it('>= 75d: thick slate ring + brighter halo', () => {
+    const expected = {
+      boxShadow: '0 0 0 2.5px rgba(88,104,128,0.8), 0 0 18px 5px rgba(88,104,128,0.32)',
+    }
+    expect(agingRingStyle({ created_at: agedByDays(75), staged: false }, NOW)).toEqual(expected)
+    expect(agingRingStyle({ created_at: agedByDays(365), staged: false }, NOW)).toEqual(expected)
   })
 })

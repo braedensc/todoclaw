@@ -51,13 +51,13 @@ third party). Families are declared as Tailwind tokens.
 
 ---
 
-## Visual urgency (glow · pulse · staleness)
+## Visual urgency (glow · pulse · aging ring)
 
 "Position = your decision. Warmth = the data." A placed card carries two independent, purely
 visual signals layered on top of its quadrant color. Both are **non-interactive** and apply only
 to **non-recurring** cards (a recurring task shows its `RC_COLOR` status badge instead) — and never
 to a done card (it has already left the grid). The exact tiers/constants live in
-`src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `stalenessStyle`) and are pinned (authoritative) by
+`src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `agingRingStyle`) and are pinned (authoritative) by
 `src/lib/visual-urgency.test.ts`; they originated from EisenClaw (`EISENCLAW-LOGIC-TO-PORT.md` §4/§5)
 but have since been tuned on Todoclaw's own merits (e.g. the amplified glow ladder).
 
@@ -67,9 +67,13 @@ but have since been tuned on Todoclaw's own merits (e.g. the amplified glow ladd
   A **cluster bubble** glows for the nearest due date among its non-recurring members.
 - **Pulse** — overdue cards/bubbles animate the `urgency-pulse` keyframe (`src/index.css`, 2s).
   Gated behind `@media (prefers-reduced-motion: reduce)`: the static ring stays, the motion stops.
-- **Staleness dust** — a card untouched for weeks desaturates + fades by age (`created_at → now`):
-  `< 21d` none, `< 45d` `saturate(0.8)`/`0.90`, `< 75d` `saturate(0.55)`/`0.82`, `≥ 75d`
-  `saturate(0.3)`/`0.72`. Staged tray cards never desaturate. "A signal, not a judgment."
+- **Aging ring** — a card that has sat on the board for weeks gains a **cool slate `box-shadow`
+  ring** that grows by age (`created_at → now`): `< 21d` none, `< 45d` thin, `< 75d` medium, `≥ 75d`
+  thick (each with a soft slate halo). This is the deliberate **inverse** of EisenClaw's old fade
+  (which dimmed old cards away — replaced 2026-07-11): an old, undone task is usually one you're
+  avoiding, so it should draw the eye, not recede. The ring keeps its own cool hue lane so it never
+  reads as the warm urgency glow, and the two compose into one shadow when both apply. Staged tray
+  cards are exempt. "A signal, not a judgment."
 - **Due badge** — the textual half of the layer: a small pill on non-recurring cards showing
   `overdue` / `today` / `Nd`, terracotta (`DUE_BADGE_URGENT`) when due within 2 days, muted grey
   (`DUE_BADGE_MUTED`) otherwise. Those two colors live in `src/lib/visual-urgency.ts` (html:590)
