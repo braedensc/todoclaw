@@ -5,7 +5,14 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
-import { dueChipStyle, urgencyGlowStyle, urgencyIcon, urgencyTier } from '../../lib/visual-urgency'
+import {
+  agingRingStyle,
+  BASE_CARD_SHADOW,
+  dueChipStyle,
+  urgencyGlowStyle,
+  urgencyIcon,
+  urgencyTier,
+} from '../../lib/visual-urgency'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useAnchoredMenu } from '../../hooks/use-anchored-menu'
 import { useClickOutside } from '../../hooks/use-click-outside'
@@ -286,6 +293,13 @@ function ClusterPopupRow({
   // (owner feedback 2026-07-09: not just the tint).
   const glow = urgencyGlowStyle(tier)
   const hotIcon = rc ? null : urgencyIcon(tier)
+  // Cool-blue aging ring, per-row, same as the grid card — composed over the glow (or the base
+  // card shadow when there's no glow, so the row's resting depth isn't lost).
+  const aging = rc ? null : agingRingStyle(task)
+  const boxShadow =
+    glow || aging
+      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, aging?.boxShadow].filter(Boolean).join(', ')
+      : undefined
 
   // Dashed, slightly heavier accent sides for a recurring row — same treatment as GridCard.
   const recurringBorder: CSSProperties = rc
@@ -349,14 +363,12 @@ function ClusterPopupRow({
         borderLeftColor: sideColor,
         ...recurringBorder,
         touchAction: 'none',
-        // Glow overrides the resting shadow (its string carries its own layers); the warm tint
-        // replaces the plain paper fill — exactly the spread GridCard does.
-        ...(glow
-          ? {
-              boxShadow: glow.boxShadow,
-              ...(glow.animation ? { animation: glow.animation } : {}),
-              ...(glow.background ? { background: glow.background } : {}),
-            }
+        // Composed warm-glow + cool aging-ring shadow overrides the resting `shadow-sm`; the tint
+        // is the warm urgency fill if any, else the cool aging fill — exactly the spread GridCard does.
+        ...(boxShadow ? { boxShadow } : {}),
+        ...(glow?.animation ? { animation: glow.animation } : {}),
+        ...((glow?.background ?? aging?.background)
+          ? { background: glow?.background ?? aging?.background }
           : {}),
       }}
     >

@@ -282,13 +282,15 @@ describe('GridView card visuals', () => {
     expect(within(card).getByTitle('Overdue')).toHaveTextContent('🔥')
   })
 
-  it('gives an old (aging) card a cool slate ring instead of fading it', () => {
+  it('gives an old (aging) card a cool-blue ring + icy tint instead of fading it', () => {
     tasksFixture = [makeTask({ id: 'old', created_at: '2000-01-01T00:00:00.000Z', staged: false })]
     render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
-    // > 75 days old → the thickest cool aging ring threads onto the card (see agingRingStyle).
+    // > 75 days old → the thickest cool-blue aging ring threads onto the card (see agingRingStyle),
+    // plus the iciest cool tint (#e0edfb) — the cold-side mirror of the warm hot-tier tint.
     // The retired fade is gone: full opacity, no desaturating filter.
-    expect(card.style.boxShadow).toContain('rgba(88,104,128,0.8)')
+    expect(card.style.boxShadow).toContain('rgba(50,118,205,0.95)')
+    expect(card.style.background).toBe('rgb(224, 237, 251)') // #e0edfb
     expect(card.style.opacity).toBe('')
     expect(card.style.filter).toBe('')
   })

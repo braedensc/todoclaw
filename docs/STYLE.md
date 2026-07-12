@@ -67,13 +67,19 @@ but have since been tuned on Todoclaw's own merits (e.g. the amplified glow ladd
   A **cluster bubble** glows for the nearest due date among its non-recurring members.
 - **Pulse** — overdue cards/bubbles animate the `urgency-pulse` keyframe (`src/index.css`, 2s).
   Gated behind `@media (prefers-reduced-motion: reduce)`: the static ring stays, the motion stops.
-- **Aging ring** — a card that has sat on the board for weeks gains a **cool slate `box-shadow`
-  ring** that grows by age (`created_at → now`): `< 21d` none, `< 45d` thin, `< 75d` medium, `≥ 75d`
-  thick (each with a soft slate halo). This is the deliberate **inverse** of EisenClaw's old fade
-  (which dimmed old cards away — replaced 2026-07-11): an old, undone task is usually one you're
-  avoiding, so it should draw the eye, not recede. The ring keeps its own cool hue lane so it never
-  reads as the warm urgency glow, and the two compose into one shadow when both apply. Staged tray
-  cards are exempt. "A signal, not a judgment."
+- **Aging ring + cool tint** — a card that has sat on the board for weeks gains a **cool-blue
+  `box-shadow` ring** (azure `50,118,205`, distinct from the reserved `puppy` brand blue) that grows
+  by age (`created_at → now`): `< 21d` none, `< 45d` thin, `< 75d` medium, `≥ 75d` thick (each with
+  a brighter halo), **plus a faint cool-blue card tint that graduates icier with age** (`#f3f8fd` →
+  `#eaf3fc` → `#e0edfb`) — the cold-side mirror of the warm hot-tier tint, so the coldest cards read
+  icy the way the hottest read warm. This is the deliberate **inverse** of EisenClaw's old fade
+  (which dimmed old cards away — replaced 2026-07-11, recolored blue + made more prominent + tinted
+  2026-07-12): an old, undone task is usually one you're avoiding, so it should draw the eye, not
+  recede. The ring keeps its own cool hue lane so it never reads as the warm urgency glow, and the
+  two compose into one shadow when both apply; when a card is both old and due-soon the **warm tint
+  wins** (a deadline out-shouts staleness). A **cluster bubble** takes the ring + tint of its
+  most-aged folded card (mirroring how its glow takes the nearest due date); expanded popup rows each
+  show their own. Staged tray cards are exempt. "A signal, not a judgment."
 - **Due badge** — the textual half of the layer: a small pill on non-recurring cards showing
   `overdue` / `today` / `Nd`, terracotta (`DUE_BADGE_URGENT`) when due within 2 days, muted grey
   (`DUE_BADGE_MUTED`) otherwise. Those two colors live in `src/lib/visual-urgency.ts` (html:590)

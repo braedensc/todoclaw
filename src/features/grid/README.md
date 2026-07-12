@@ -74,12 +74,15 @@ ADR-0019.
   the timezone lives in one place. A **cluster bubble** glows for the nearest due date in its group.
 - **Pulse** — overdue items animate the global `urgency-pulse` keyframe (`src/index.css`), disabled
   under `prefers-reduced-motion`.
-- **Aging ring** — `agingRingStyle(task)` adds a **cool slate `box-shadow` ring** that grows
-  thicker with a card's age (`created_at → now`: none `<21d`, then thin / medium / thick at
-  21d / 45d / 75d). It's the inverse of EisenClaw's old fade — an old, untouched task should
-  gain presence, not recede — and lives in its own cool hue lane so it can co-exist with the warm
-  urgency glow. `GridCard` composes the two into one shadow. Not-yet-placed (`staged`) tasks are
-  exempt (they aren't on the grid yet).
+- **Aging ring + cool tint** — `agingRingStyle(task)` adds a **cool-blue `box-shadow` ring** that
+  grows thicker with a card's age (`created_at → now`: none `<21d`, then thin / medium / thick at
+  21d / 45d / 75d), plus a **faint cool-blue card tint** that graduates icier with age — the
+  cold-side mirror of the warm hot-tier tint. It's the inverse of EisenClaw's old fade — an old,
+  untouched task should gain presence, not recede — and lives in its own cool hue lane so it can
+  co-exist with the warm urgency glow. `GridCard` composes the two into one shadow; the warm tint
+  wins over the cool one when a card is both old and due-soon. A **cluster** takes the ring + tint
+  of its most-aged member (`clusterAgingRing`, mirroring the nearest-due glow); popup rows each get
+  their own. Not-yet-placed (`staged`) tasks are exempt (they aren't on the grid yet).
 - **Due badge** — a small `overdue`/`today`/`Nd` pill (terracotta when due `≤ 2d`, else grey;
   `DUE_BADGE_*` in `src/lib/visual-urgency.ts`, shared with the cluster popup's due chip).
 

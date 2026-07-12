@@ -20,10 +20,11 @@
 //     color-independent channel; null for the softer tiers.
 //   - dueChipStyle(tier) / chip label helpers: the textual half, shared by the grid card,
 //     cluster popup rows, and list rows so the surfaces never drift.
-//   - agingRingStyle(task): a COOL box-shadow ring that INTENSIFIES with a card's age — the
-//     inverse of EisenClaw's old fade. An old, undone task should draw the eye, not recede
-//     into the background; the ring is a deliberately cool slate so it stays in its own hue
-//     lane and never competes with the warm due-date glow (the two can co-exist on one card).
+//   - agingRingStyle(task) / clusterAgingRing(group): a COOL-BLUE box-shadow ring that
+//     INTENSIFIES with a card's age — the inverse of EisenClaw's old fade. An old, undone task
+//     should draw the eye, not recede; the ring's cool-blue hue keeps it in its own lane so it
+//     never competes with the warm due-date glow (the two co-exist on one card). A cluster
+//     bubble takes the ring of its most-aged member, mirroring how its glow takes the nearest due.
 //
 // Glow/chips are applied only to non-done, non-recurring cards by the caller (a recurring task
 // carries its own RC_COLOR status badge; a done task has left the grid). `daysUntil`
@@ -238,19 +239,24 @@ export function gridChipLabel(
 }
 
 /**
- * A cool box-shadow ring for an aging card — meant to be COMPOSED (appended) after the warm
- * urgency glow (or the base card shadow) by the caller, so a card can wear both at once.
+ * A cool aging card treatment — a box-shadow ring plus (on the older tiers) a faint cool-blue
+ * card TINT, the cold-side mirror of the warm urgency tint (`GlowStyle.background`). Both are
+ * meant to be COMPOSED by the caller: the ring appended after the warm glow's shadow, the tint
+ * applied only when the warmer urgency tint is absent (a due deadline out-shouts staleness).
  */
 export interface AgingRingStyle {
   boxShadow: string
+  /** Cool-blue paper tint replacing the plain card fill, graduating icier with age (absent < 21d). */
+  background?: string
 }
 
 /**
- * Slate rgb triplet for the aging ring — a deliberately COOL hue with no overlap with the warm
- * urgency ladder (terracotta / gold / olive), so "old" and "due soon" read as two different
- * things even on the same card. Reused across the ring + halo alphas.
+ * Cool-blue rgb triplet for the aging ring — a deliberately COOL hue with no overlap with the
+ * warm urgency ladder (terracotta / gold / olive), so "old" and "due soon" read as two different
+ * things even on the same card. A confident azure (distinct from the muted `puppy` brand blue,
+ * which is reserved for BabyClaw / habits). Reused across the ring + halo alphas.
  */
-const AGING_SLATE = '88,104,128'
+const AGING_BLUE = '50,118,205'
 
 /** Whole days elapsed since an ISO timestamp (floor), or null if absent/unparseable. */
 function daysSince(iso: string | null, now: Date): number | null {
@@ -261,22 +267,48 @@ function daysSince(iso: string | null, now: Date): number | null {
 }
 
 /**
+ * The aging treatment for a given card age in whole days — the tier ladder, shared by the per-card
+ * `agingRingStyle` and the per-cluster `clusterAgingRing`. Cool-blue ring + halo that both grow
+ * with age, plus (from the middle tier up) a faint cool-blue card TINT — the cold-side mirror of
+ * the warm urgency tint, so the coldest cards read icy the way the hottest read warm. `null` under
+ * the 21-day floor. The rings are pushed a touch louder than a same-rung warm tier (owner ask
+ * 2026-07-12) so an old card genuinely stands out, while the loudest (months) sits just under the
+ * overdue ring.
+ *
+ * | age      | ring + halo                   | tint       |
+ * |----------|-------------------------------|------------|
+ * | `< 21d`  | none (`null`)                 | —          |
+ * | `< 45d`  | 2px ring + 14px haze          | `#f3f8fd`  |
+ * | `< 75d`  | 2.5px ring + 20px haze        | `#eaf3fc`  |
+ * | `>= 75d` | 3px ring + brighter 28px haze | `#e0edfb`  |
+ */
+function ringForAgeDays(days: number): AgingRingStyle | null {
+  if (days < 21) return null
+  if (days < 45)
+    return {
+      boxShadow: `0 0 0 2px rgba(${AGING_BLUE},0.6), 0 0 14px 3px rgba(${AGING_BLUE},0.3)`,
+      background: '#f3f8fd',
+    }
+  if (days < 75)
+    return {
+      boxShadow: `0 0 0 2.5px rgba(${AGING_BLUE},0.78), 0 0 20px 5px rgba(${AGING_BLUE},0.42)`,
+      background: '#eaf3fc',
+    }
+  return {
+    boxShadow: `0 0 0 3px rgba(${AGING_BLUE},0.95), 0 0 28px 7px rgba(${AGING_BLUE},0.55)`,
+    background: '#e0edfb',
+  }
+}
+
+/**
  * The aging ring by card age (`created_at` → now) — the INVERSE of EisenClaw's old fade
  * (which desaturated + dimmed old cards into the background). An old, undone task is usually
- * one you're avoiding, so it should gain presence, not lose it: a cool slate ring that grows
- * thicker + a warmer halo the longer the card has sat on the board.
+ * one you're avoiding, so it should gain presence, not lose it: a cool-blue ring that grows
+ * thicker + a brighter halo the longer the card has sat on the board.
  *
- * | age      | ring + halo                                    |
- * |----------|------------------------------------------------|
- * | staged   | none (`null`) — not "left on the board" yet    |
- * | `< 21d`  | none (`null`)                                  |
- * | `< 45d`  | 1.5px slate ring + faint 10px haze             |
- * | `< 75d`  | 2px slate ring + 14px haze                     |
- * | `>= 75d` | 2.5px slate ring + brighter 18px haze          |
- *
- * The tiers mirror the urgency ladder's ring+halo shape so an aging card reads as substantial
- * as a "due this week" one — deliberately, so months-old tasks stand out. Age breakpoints
- * (21/45/75d) are carried over from the retired fade. A staged/undated card gets none.
+ * A staged task (still in the tray) never rings — it hasn't been "left on the board" yet. Age
+ * breakpoints (21/45/75d) are carried over from the retired fade; an undated/unparseable card
+ * gets none.
  */
 export function agingRingStyle(
   task: { created_at: string | null; staged: boolean },
@@ -284,16 +316,27 @@ export function agingRingStyle(
 ): AgingRingStyle | null {
   if (task.staged) return null
   const days = daysSince(task.created_at, now)
-  if (days === null || days < 21) return null
-  if (days < 45)
-    return {
-      boxShadow: `0 0 0 1.5px rgba(${AGING_SLATE},0.5), 0 0 10px 2px rgba(${AGING_SLATE},0.18)`,
-    }
-  if (days < 75)
-    return {
-      boxShadow: `0 0 0 2px rgba(${AGING_SLATE},0.65), 0 0 14px 3px rgba(${AGING_SLATE},0.24)`,
-    }
-  return {
-    boxShadow: `0 0 0 2.5px rgba(${AGING_SLATE},0.8), 0 0 18px 5px rgba(${AGING_SLATE},0.32)`,
+  if (days === null) return null
+  return ringForAgeDays(days)
+}
+
+/**
+ * The aging ring for a CLUSTER — the ring of its most-aged (oldest `created_at`) NON-recurring
+ * member, so a bubble adopts the "hottest" task's treatment the same way its urgency glow adopts
+ * the nearest due date (`clusterNearestDue`). Recurring members carry their own status color, not
+ * an aging ring, and are skipped; clustered cards are placed (never staged). `null` when no member
+ * is old enough (or none has a parseable `created_at`).
+ */
+export function clusterAgingRing(
+  group: ReadonlyArray<{ created_at: string | null; recurring: unknown }>,
+  now: Date = new Date(),
+): AgingRingStyle | null {
+  let oldest: number | null = null
+  for (const t of group) {
+    if (t.recurring) continue
+    const d = daysSince(t.created_at, now)
+    if (d === null) continue
+    if (oldest === null || d > oldest) oldest = d
   }
+  return oldest === null ? null : ringForAgeDays(oldest)
 }

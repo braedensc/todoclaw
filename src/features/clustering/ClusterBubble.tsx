@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { Task } from '../../types/task'
-import type { GlowStyle } from '../../lib/visual-urgency'
+import type { AgingRingStyle, GlowStyle } from '../../lib/visual-urgency'
 import { CLUSTER_BUBBLE_SIZE, CLUSTER_DEPTH_OFFSET } from './cluster-constants'
 
 export interface ClusterBubbleProps {
@@ -17,6 +17,12 @@ export interface ClusterBubbleProps {
    * card) — an open bubble drops it for its raised popup shadow.
    */
   glow?: GlowStyle | null
+  /**
+   * Cool-blue aging ring for the whole cluster, from its MOST-AGED non-recurring member
+   * (`clusterAgingRing`) — the "hottest" task's ring, mirroring how `glow` takes the nearest due.
+   * Applied only in the CLOSED state and composed over the glow/resting shadow (own hue lane).
+   */
+  agingRing?: AgingRingStyle | null
   /** True while the popup for this bubble is open (raises z-index + deepens the shadow). */
   open: boolean
   /** Open / close the popup. */
@@ -48,6 +54,7 @@ export function ClusterBubble({
   screenX,
   screenY,
   glow,
+  agingRing,
   open,
   onToggle,
   bubbleRef,
@@ -69,14 +76,22 @@ export function ClusterBubble({
     width: CLUSTER_BUBBLE_SIZE,
     height: CLUSTER_BUBBLE_SIZE,
     border: `2px solid ${accentColor}`,
-    // Open → raised popup shadow. Closed → the cluster's urgency glow if any, else the resting
-    // shadow. An overdue cluster also pulses AND takes the warm card tint (only while closed), so a
-    // cluster holding an urgent task reads with the SAME ring + pulse + tint a standalone card gets.
+    // Open → raised popup shadow. Closed → the cluster's urgency glow if any (else the resting
+    // shadow), with the cool-blue aging ring composed on top (its own hue lane) when a member is
+    // old enough. An overdue cluster also pulses AND takes the warm card tint (only while closed),
+    // so a cluster holding an urgent task reads with the SAME ring + pulse + tint a standalone card
+    // gets — and an old cluster gains the same aging ring its oldest folded card would show.
     boxShadow: open
       ? '0 6px 20px rgba(0,0,0,.18)'
-      : (glow?.boxShadow ?? '0 2px 8px rgba(0,0,0,.10)'),
+      : [glow?.boxShadow ?? '0 2px 8px rgba(0,0,0,.10)', agingRing?.boxShadow]
+          .filter(Boolean)
+          .join(', '),
     ...(!open && glow?.animation ? { animation: glow.animation } : {}),
-    ...(!open && glow?.background ? { background: glow.background } : {}),
+    // Closed-only card tint: the warm urgency fill if any, else the cool aging fill (its oldest
+    // member's) — the cold-side mirror of the warm tint, matching a standalone card.
+    ...(!open && (glow?.background ?? agingRing?.background)
+      ? { background: glow?.background ?? agingRing?.background }
+      : {}),
   }
 
   return (
