@@ -23,14 +23,18 @@ renders as a normal `GridCard`; a group of >1 becomes a bubble.
   optional **`glow`** prop (`urgencyGlowStyle` result) that `GridView` computes from the nearest
   due date among the group's non-recurring tasks (`clusterNearestDue` in `src/lib/clustering.ts`) —
   applied only while **closed** as the full **ring + pulse + warm tint** a standalone card gets (an
-  open bubble uses its raised popup shadow). See `docs/STYLE.md` → _Visual urgency_.
+  open bubble uses its raised popup shadow). It also takes an **`agingRing`** prop
+  (`clusterAgingRing`) — the cool-blue aging ring of the group's **most-aged** member, composed over
+  the glow (own hue lane) so an old cluster reads like its oldest folded card. See `docs/STYLE.md` →
+  _Visual urgency_.
 - **`ClusterPopup.tsx`** — the floating panel (width 220, maxHeight 320, scrollable). It
   **flips above** the bubble when the dominant's **data-y > 0.55** (`CLUSTER_POPUP_FLIP_Y`,
   matching EisenClaw `html:616-617` — data-y high ⇒ bubble near the top of the y-inverted
   screen), else opens below. The panel is **white** (not the cream `bg-panel`) so each row's own
   color reads as the card's, not the menu's. Each task renders as its **grid-card twin**: the same
   border scheme (status-colored top border, terracotta sides, dashed when recurring), the same
-  urgency **glow ring + pulse + warm tint + 🔥 flag** (`urgencyGlowStyle`/`urgencyIcon`), a status
+  urgency **glow ring + pulse + warm tint + 🔥 flag** (`urgencyGlowStyle`/`urgencyIcon`) plus the
+  per-row **cool-blue aging ring** (`agingRingStyle`), a status
   chip (recurring `↻` or a due-day chip), and the shared CardActionBar — whose **⋯ opens the same
   portaled SchedulePanel a grid card's ⋯ does** (`useAnchoredMenu`), so a folded task is
   schedulable in place (renaming stays on a plain row tap). The whole row is a drag handle;

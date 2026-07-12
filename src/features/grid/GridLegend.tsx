@@ -33,17 +33,17 @@ const SWATCHES: Swatch[] = [
   },
 ]
 
-// Dot-scaled echoes of the COOL agingRingStyle rings — same slate hue (88,104,128), halo scaled
-// to ~1/3 for the dot. Two rungs stand in for the three age tiers (a card older than these just
-// reads "old"). Keep in step with lib/visual-urgency.ts.
+// Dot-scaled echoes of the COOL-BLUE agingRingStyle rings — same azure hue (50,118,205), halo
+// scaled to ~1/3 for the dot. Two rungs stand in for the three age tiers (a card older than these
+// just reads "old"). Keep in step with lib/visual-urgency.ts.
 const AGING_SWATCHES: Swatch[] = [
   {
     label: 'weeks on the board',
-    shadow: '0 0 0 1.5px rgba(88,104,128,0.55), 0 0 4px 1px rgba(88,104,128,0.22)',
+    shadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 5px 2px rgba(50,118,205,0.3)',
   },
   {
     label: 'months on the board',
-    shadow: '0 0 0 2px rgba(88,104,128,0.8), 0 0 5px 2px rgba(88,104,128,0.3)',
+    shadow: '0 0 0 2.5px rgba(50,118,205,0.95), 0 0 6px 2px rgba(50,118,205,0.45)',
   },
 ]
 

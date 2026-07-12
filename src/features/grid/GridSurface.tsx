@@ -3,7 +3,7 @@ import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
-import { urgencyTier } from '../../lib/visual-urgency'
+import { clusterAgingRing, urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
 import {
   useTaskReminders,
@@ -292,6 +292,8 @@ export function GridSurface({
                 // Bubbles stay date-granular (nearest due day → tier): minute-level countdown on
                 // an aggregate bubble would imply a precision the group doesn't have.
                 glow={urgencyGlowStyle(urgencyTier(clusterMinD, null))}
+                // The cool-blue aging ring of the cluster's oldest folded card ("hottest" wins).
+                agingRing={clusterAgingRing(group)}
                 open={open}
                 onToggle={() => selectCluster(open ? null : dominant.id)}
                 // Register the bubble node under the dominant id (same key `memberToNodeKey` uses)

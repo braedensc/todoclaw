@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   agingRingStyle,
+  clusterAgingRing,
   dueChipStyle,
   fmtCountdown,
   fmtOverdueAmount,
@@ -172,27 +173,68 @@ describe('agingRingStyle', () => {
     expect(agingRingStyle({ created_at: agedByDays(20), staged: false }, NOW)).toBeNull()
   })
 
-  it('21–44d: thin slate ring', () => {
+  it('21–44d: thin cool-blue ring', () => {
     const expected = {
-      boxShadow: '0 0 0 1.5px rgba(88,104,128,0.5), 0 0 10px 2px rgba(88,104,128,0.18)',
+      boxShadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 14px 3px rgba(50,118,205,0.3)',
     }
     expect(agingRingStyle({ created_at: agedByDays(21), staged: false }, NOW)).toEqual(expected)
     expect(agingRingStyle({ created_at: agedByDays(44), staged: false }, NOW)).toEqual(expected)
   })
 
-  it('45–74d: medium slate ring', () => {
+  it('45–74d: medium cool-blue ring', () => {
     const expected = {
-      boxShadow: '0 0 0 2px rgba(88,104,128,0.65), 0 0 14px 3px rgba(88,104,128,0.24)',
+      boxShadow: '0 0 0 2.5px rgba(50,118,205,0.78), 0 0 20px 5px rgba(50,118,205,0.42)',
     }
     expect(agingRingStyle({ created_at: agedByDays(45), staged: false }, NOW)).toEqual(expected)
     expect(agingRingStyle({ created_at: agedByDays(74), staged: false }, NOW)).toEqual(expected)
   })
 
-  it('>= 75d: thick slate ring + brighter halo', () => {
+  it('>= 75d: thick cool-blue ring + brighter halo', () => {
     const expected = {
-      boxShadow: '0 0 0 2.5px rgba(88,104,128,0.8), 0 0 18px 5px rgba(88,104,128,0.32)',
+      boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
     }
     expect(agingRingStyle({ created_at: agedByDays(75), staged: false }, NOW)).toEqual(expected)
     expect(agingRingStyle({ created_at: agedByDays(365), staged: false }, NOW)).toEqual(expected)
+  })
+})
+
+describe('clusterAgingRing', () => {
+  const NOW = new Date('2026-07-02T12:00:00Z')
+  const agedByDays = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString()
+  // The >= 75d tier — the strongest ring, expected when the oldest member is months old.
+  const OLDEST_RING = {
+    boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
+  }
+
+  it('takes the ring of the OLDEST (hottest) non-recurring member in a mixed group', () => {
+    const group = [
+      { created_at: agedByDays(3), recurring: null }, // fresh
+      { created_at: agedByDays(100), recurring: null }, // months old → wins
+      { created_at: agedByDays(30), recurring: null }, // weeks
+    ]
+    expect(clusterAgingRing(group, NOW)).toEqual(OLDEST_RING)
+  })
+
+  it('ignores recurring members even if they are the oldest', () => {
+    const group = [
+      { created_at: agedByDays(300), recurring: { frequencyDays: 7 } }, // oldest but recurring → skipped
+      { created_at: agedByDays(30), recurring: null }, // weeks → the ring
+    ]
+    expect(clusterAgingRing(group, NOW)).toEqual({
+      boxShadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 14px 3px rgba(50,118,205,0.3)',
+    })
+  })
+
+  it('returns null when no non-recurring member is old enough (or none parseable)', () => {
+    expect(
+      clusterAgingRing(
+        [
+          { created_at: agedByDays(5), recurring: null },
+          { created_at: agedByDays(19), recurring: null },
+        ],
+        NOW,
+      ),
+    ).toBeNull()
+    expect(clusterAgingRing([{ created_at: null, recurring: null }], NOW)).toBeNull()
   })
 })
