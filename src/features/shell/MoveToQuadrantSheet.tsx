@@ -34,7 +34,7 @@ export function MoveToQuadrantSheet({
       onClose={onClose}
       title={task ? `Move “${task.text}”` : 'Move task'}
     >
-      <p className="mb-3 text-xs text-muted">Pick a quadrant — no dragging.</p>
+      <p className="mb-3 text-xs text-muted">Pick a quadrant to move this task to.</p>
       <div className="grid grid-cols-2 gap-2.5">
         {QUADRANT_ORDER.map((key) => {
           const m = display(key)
