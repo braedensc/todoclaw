@@ -99,6 +99,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'move_task',
     'set_due_date',
     'set_reminder',
+    'set_recurring_reminder',
     'clear_reminder',
     'remove_reminder',
     'make_recurring',
@@ -296,6 +297,54 @@ Deno.test(
     assert(res.is_error)
     assert(res.content.includes('recurring'))
     assertEquals(rpcCalls.filter((c) => c.name === 'set_task_reminder').length, 0)
+  },
+)
+
+Deno.test(
+  'set_recurring_reminder routes through set_recurring_reminder RPC and reports the reminders domain',
+  async () => {
+    rpcCalls.length = 0
+    const res = await executeTool(
+      'set_recurring_reminder',
+      { task_id: UUID, time: '12:00' },
+      ctx({
+        onSelect: () => ({
+          data: {
+            text: 'Take pill',
+            recurring: { frequencyDays: 1, lastDoneAt: null, doneCount: 0 },
+          },
+          error: null,
+        }),
+        onRpc: () => ({ data: '2026-07-04T16:00:00Z', error: null }),
+      }),
+    )
+    assert(!res.is_error)
+    assertEquals(res.mutated, ['reminders'])
+    assert(res.content.includes('Take pill'))
+    assert(res.content.includes('every day'))
+    assert(res.content.includes('12:00 PM'))
+    const call = rpcCalls.find((c) => c.name === 'set_recurring_reminder')
+    assertEquals(call?.args, { p_task_id: UUID, p_time_of_day: '12:00' })
+  },
+)
+
+Deno.test('set_recurring_reminder refuses (no RPC) a non-recurring task', async () => {
+  rpcCalls.length = 0
+  const res = await executeTool(
+    'set_recurring_reminder',
+    { task_id: UUID, time: '12:00' },
+    ctx({ onSelect: () => ({ data: { text: 'Buy milk', recurring: null }, error: null }) }),
+  )
+  assert(res.is_error)
+  assert(res.content.includes("isn't a recurring task"))
+  assertEquals(rpcCalls.filter((c) => c.name === 'set_recurring_reminder').length, 0)
+})
+
+Deno.test(
+  'set_recurring_reminder validation: a non-HH:MM time is rejected at the gate',
+  async () => {
+    const res = await executeTool('set_recurring_reminder', { task_id: UUID, time: 'noon' }, ctx())
+    assert(res.is_error)
   },
 )
 

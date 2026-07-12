@@ -1,11 +1,14 @@
-// dispatch-reminders — the per-task reminder sweep (ADR 2026-07-09). Invoked EVERY MINUTE by the
-// pg_cron job (20260709033335_task_reminders_pipeline.sql) with the shared DISPATCH_SECRET header
-// — same gate as dispatch-messages, nothing else may trigger it. It retires stale reminders,
-// reads the fresh due ones (due_task_reminders already excludes deleted / recurring / done-today
-// tasks), claims each row exactly-once (the UPDATE is the send lock — an overlapping run gets
-// null and skips), records the durable inbox row, and pushes to every subscription. Content is
-// deterministic (reminder-content.ts): zero AI tokens, no budget calls. Every reminder is wrapped
-// in try/catch so one failure never aborts the batch.
+// dispatch-reminders — the per-task reminder sweep (ADR 2026-07-09; recurring 2026-07-11). Invoked
+// EVERY MINUTE by the pg_cron job (20260709033335_task_reminders_pipeline.sql) with the shared
+// DISPATCH_SECRET header — same gate as dispatch-messages, nothing else may trigger it. It expires
+// stale reminders (one-off rows retire, recurring rows advance), reads the fresh due ones
+// (due_task_reminders excludes deleted tasks and one-off done-today tasks; recurring rows fire on a
+// fixed cadence regardless of completion), claims each row exactly-once (for a one-off the sent_at
+// UPDATE is the send lock; for a recurring row the claim ADVANCES fire_at to the next occurrence and
+// that advance IS the lock — an overlapping run re-reads the future fire_at and skips), records the
+// durable inbox row, and pushes to every subscription. Content is deterministic (reminder-content.ts):
+// zero AI tokens, no budget calls. Every reminder is wrapped in try/catch so one failure never
+// aborts the batch.
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { adminClient } from '../_shared/admin.ts'
@@ -28,10 +31,12 @@ interface DueReminder {
   user_id: string
   task_id: string
   task_text: string
-  due: string
-  due_time: string
+  due: string | null
+  due_time: string | null
+  time_of_day: string | null
   timezone: string
-  offset_minutes: number
+  offset_minutes: number | null
+  frequency_days: number | null
 }
 
 Deno.serve(async (req) => {

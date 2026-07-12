@@ -50,6 +50,10 @@ interface ExpandedRowProps {
   onToggleReminder: (minutes: number) => void
   /** Clear every reminder on this task (the Off chip). */
   onClearReminders: () => void
+  /** For a recurring task: its fixed-cadence reminder time ('HH:MM[:SS]'), or null = none. */
+  recurringReminderTime?: string | null
+  /** Set ('HH:MM') or clear (null) the recurring task's reminder time. */
+  onSetRecurringReminderTime?: (hhmm: string | null) => void
 }
 
 export function ExpandedRow({
@@ -66,6 +70,8 @@ export function ExpandedRow({
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
+  recurringReminderTime,
+  onSetRecurringReminderTime,
 }: ExpandedRowProps) {
   // Local, live coords (percent 0–100). Null x/y default to grid center (50), matching scoring.
   // These initialize from the task once; when a committed write lands and the task coords
@@ -137,6 +143,8 @@ export function ExpandedRow({
           reminderOffsets={reminderOffsets}
           onToggleReminder={onToggleReminder}
           onClearReminders={onClearReminders}
+          recurringReminderTime={recurringReminderTime}
+          onSetRecurringReminderTime={onSetRecurringReminderTime}
           idPrefix="list"
           touch={isMobile}
         />

@@ -30,6 +30,21 @@ ongoing project" toggle → the check-in stepper, target-end, and Finish. BabyCl
 (`make_ongoing` / `finish_ongoing`, and `create_task`'s ongoing fields) — see
 `supabase/functions/_shared/capabilities/tasks.ts`.
 
+## Reminders (fixed-cadence alarm)
+
+A recurring task (chore or ongoing project) can carry ONE **time-of-day reminder** — "remind me to
+take my pill every day at noon". Unlike a one-off reminder (which fires a lead time before a due
+instant), a recurring reminder is a **fixed alarm**: it fires at the chosen wall-clock time on the
+task's cadence, **every cycle, regardless of completion**. It needs no due date — it anchors to a
+time of day, not a due instant. The "Remind me at" time-of-day control (`RecurringReminderPicker`)
+lives in the shared `SchedulePanel` on the recurring editors (grid card ⋯ menu, list expanded row);
+writes go through `useRecurringReminder` / `useRecurringReminderWrites`
+(`src/features/reminders/use-task-reminders.ts`) → the `set_recurring_reminder` /
+`remove_recurring_reminder` RPCs. BabyClaw can set it too (`set_recurring_reminder` capability). The
+fire-time math is `next_recurring_fire_at` (SQL) / `nextRecurringFireAt`
+(`src/lib/recurring-reminders.ts`, unit-tested). Full design: ADR
+`docs/adr/2026-07-09-task-reminders-pg-cron-push.md` (2026-07-11 update).
+
 ## Components
 
 - **`RecurringSection.tsx`** — the `↻ Recurring` row at the bottom of `ExpandedRow`. Owns no

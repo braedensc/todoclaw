@@ -22,6 +22,8 @@ vi.mock('../schedule/use-user-schedule', () => ({
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
   useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
+  useRecurringReminder: () => ({ data: new Map() }),
+  useRecurringReminderWrites: () => ({ set: vi.fn(), remove: vi.fn() }),
 }))
 
 function renderSheet(over: Partial<Parameters<typeof MobileAddSheet>[0]> = {}) {

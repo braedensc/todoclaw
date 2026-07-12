@@ -4,9 +4,14 @@
 
 export interface ReminderRow {
   task_text: string
-  /** Postgres `time` wire format 'HH:MM:SS' — the user's wall-clock due time. */
-  due_time: string
-  offset_minutes: number
+  /** Postgres `time` wire format 'HH:MM:SS' — the user's wall-clock due time. Null for recurring. */
+  due_time: string | null
+  /** Minutes before the due instant. Null ⇒ this is a RECURRING (time-of-day) reminder. */
+  offset_minutes: number | null
+  /** Postgres `time` 'HH:MM:SS' — the recurring alarm's wall-clock time. Set only for recurring. */
+  time_of_day?: string | null
+  /** The recurring task's cadence in days (drives the copy). Set only for recurring. */
+  frequency_days?: number | null
 }
 
 export interface ReminderContent {
@@ -42,12 +47,29 @@ export function formatOffset(minutes: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
+/** A recurring cadence phrase for the alarm copy: 1 → 'Every day', 7 → 'Every week', N → 'Every N days'. */
+export function formatCadence(days: number | null | undefined): string {
+  if (days === 1) return 'Every day'
+  if (days === 7) return 'Every week'
+  if (typeof days === 'number' && days > 1) return `Every ${days} days`
+  return 'Recurring'
+}
+
 /**
- * The notification: "⏰ Dentist appointment" / "Due in 1 hour — 10:30 AM" (offset 0 → "Due
- * now — 10:30 AM"). The title carries the task so the OS banner reads at a glance.
+ * The notification. ONE-OFF: "⏰ Dentist appointment" / "Due in 1 hour — 10:30 AM" (offset 0 →
+ * "Due now — 10:30 AM"). RECURRING (offset_minutes null): a fixed-cadence alarm anchored to a
+ * time-of-day, so "⏰ Take pill" / "Every day — 12:00 PM". The title carries the task so the OS
+ * banner reads at a glance.
  */
 export function buildReminderContent(row: ReminderRow): ReminderContent {
-  const clock = formatClockTime(row.due_time)
+  if (row.offset_minutes === null || row.offset_minutes === undefined) {
+    const clock = formatClockTime(row.time_of_day ?? '')
+    return {
+      title: `⏰ ${row.task_text}`,
+      body: `${formatCadence(row.frequency_days)} — ${clock}`,
+    }
+  }
+  const clock = formatClockTime(row.due_time ?? '')
   const when = row.offset_minutes === 0 ? 'Due now' : `Due in ${formatOffset(row.offset_minutes)}`
   return {
     title: `⏰ ${row.task_text}`,

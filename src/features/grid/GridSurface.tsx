@@ -5,7 +5,12 @@ import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
 import { urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
-import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
+import {
+  useTaskReminders,
+  useTaskReminderWrites,
+  useRecurringReminder,
+  useRecurringReminderWrites,
+} from '../reminders/use-task-reminders'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -85,6 +90,9 @@ export function GridSurface({
   // Reminders for the whole grid in one query; each card's ⋯ menu reads/writes its own via these.
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
+  // Recurring (time-of-day) reminders — the fixed-cadence alarm a recurring card's ⋯ menu sets.
+  const { data: recurringReminders } = useRecurringReminder()
+  const recurringReminderWrites = useRecurringReminderWrites()
 
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
@@ -157,6 +165,12 @@ export function GridSurface({
           reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
         }
         onClearReminders={() => reminderWrites.clear(task.id)}
+        recurringReminderTime={recurringReminders?.get(task.id) ?? null}
+        onSetRecurringReminderTime={(hhmm) =>
+          hhmm
+            ? recurringReminderWrites.set(task.id, hhmm)
+            : recurringReminderWrites.remove(task.id)
+        }
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,

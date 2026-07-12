@@ -128,7 +128,7 @@ describe('SchedulePanel time + remind', () => {
     expect(screen.getByTestId('reminder-picker-grid')).toBeInTheDocument()
   })
 
-  it('recurring hides the remind picker (shows a note instead) even with a due time', () => {
+  it('a recurring task hides the one-off offset picker (even with a due time)', () => {
     renderPanel({
       due: '2026-07-10',
       dueTime: '15:00:00',
@@ -136,8 +136,34 @@ describe('SchedulePanel time + remind', () => {
       idPrefix: 'grid',
     })
     expect(screen.queryByTestId('reminder-picker-grid')).not.toBeInTheDocument()
-    // The chips don't just vanish silently — a note explains why (2026-07-11 feedback).
-    expect(screen.getByText(/don’t apply to a repeating task/)).toBeInTheDocument()
+  })
+
+  it('a recurring task shows the fixed-cadence time-of-day alarm when the handler is wired', () => {
+    // No due date needed — a recurring reminder anchors to a time of day, not a due instant.
+    renderPanel({
+      recurring: recurringWeekly,
+      onSetRecurringReminderTime: vi.fn(),
+      idPrefix: 'grid',
+    })
+    expect(screen.queryByTestId('reminder-picker-grid')).not.toBeInTheDocument()
+    expect(screen.getByTestId('recurring-reminder-grid')).toBeInTheDocument()
+    expect(screen.getByText(/fires whether or not/)).toBeInTheDocument()
+  })
+
+  it('the recurring reminder picker reads back its time and writes preset/Off', () => {
+    const onSet = vi.fn()
+    renderPanel({
+      recurring: recurringWeekly,
+      recurringReminderTime: '12:00:00',
+      onSetRecurringReminderTime: onSet,
+      idPrefix: 'grid',
+    })
+    const picker = within(screen.getByTestId('recurring-reminder-grid'))
+    expect(picker.getByRole('button', { name: 'Noon' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(picker.getByRole('button', { name: '9 AM' }))
+    expect(onSet).toHaveBeenLastCalledWith('09:00')
+    fireEvent.click(picker.getByRole('button', { name: 'Off' }))
+    expect(onSet).toHaveBeenLastCalledWith(null)
   })
 
   it('reminder chips are multi-select: a chip toggles one offset, Off clears them all', () => {
