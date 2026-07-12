@@ -48,7 +48,8 @@ export function MobileAddSheet({
 
   // Manual add → placed task. Collision-resolve the quadrant center against existing placed
   // tasks; Repeats and Due (date + optional time) ship on the same insert; a timed task with a
-  // chosen reminder offset gets its reminder once the row exists (it FKs the task id).
+  // chosen reminder offset gets its reminder once the row exists (it FKs the task id) — recurring
+  // tasks included (the reminder now leads each occurrence).
   const handleAdd = (
     text: string,
     dest: QuadrantKey,
@@ -63,7 +64,7 @@ export function MobileAddSheet({
       { text, x, y, staged: false, recurring, due, due_time: dueTime },
       {
         onSuccess: (created) => {
-          if (dueTime && !created.recurring) {
+          if (dueTime) {
             for (const m of reminderMinutes) reminderWrites.add(created.id, m)
           }
         },

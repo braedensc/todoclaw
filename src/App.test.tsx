@@ -69,8 +69,6 @@ vi.mock('./features/daily-state/use-daily-state', () => ({
 vi.mock('./features/reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
   useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
-  useRecurringReminder: () => ({ data: new Map() }),
-  useRecurringReminderWrites: () => ({ set: vi.fn(), remove: vi.fn() }),
 }))
 // The plan pill (header on desktop / top pill on mobile) + inline PlanBox are driven by
 // usePlanController, which reads the AI status / plan mutation (useQuery/useMutation). Stub it so

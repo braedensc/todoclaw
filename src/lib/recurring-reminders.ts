@@ -1,14 +1,18 @@
-// Recurring-reminder fire-time math. A recurring reminder is a FIXED-CADENCE ALARM: it fires at a
-// wall-clock time of day on the task's cadence, every cycle, regardless of completion (the
-// pill-at-noon case). This is the TS mirror of the SQL next_recurring_fire_at() helper
-// (supabase/migrations/*_recurring_reminders.sql). The SQL remains the SOLE production writer of
-// task_reminders.fire_at — the same split as dueInstant() (client display) vs reminder_fire_at()
-// (SQL) — so this exists for client reasoning/tests, not to compute the stored instant.
+// Recurring-reminder fire-time math. A recurring reminder is now the SAME offset model as a one-off
+// reminder — a chosen lead time before the task's next occurrence — only the occurrence repeats on
+// the task's cadence (unify 2026-07-12). The occurrence grid is phased off the task's DUE date at
+// its DUE time (the anchor); a reminder fires `offsetMinutes` before the next occurrence that is
+// still in the future, and re-arms to the following one each cycle (fixed cadence, independent of
+// completion — the pill-before-noon case). This is the TS mirror of the SQL next_recurring_fire_at()
+// helper (supabase/migrations/*_recurring_reminders_unify.sql). The SQL remains the SOLE production
+// writer of task_reminders.fire_at — the same split as dueInstant() (client display) vs
+// reminder_fire_at() (SQL) — so this exists for client reasoning/tests, not to compute the stored
+// instant.
 
-import { dueInstant, localDateInTZ } from './dates'
+import { dueInstant } from './dates'
 
-// A generous backstop against a pathological seed (never reached for realistic cadences/outages:
-// a daily reminder seeded ~270 years ago would still converge inside this).
+// A generous backstop against a pathological anchor (never reached for realistic cadences/outages:
+// a daily reminder anchored ~270 years ago would still converge inside this).
 const MAX_ITER = 100_000
 
 /** ISO 'YYYY-MM-DD' + integer days, done in UTC-noon so it is pure calendar math (no tz/DST drift —
@@ -20,32 +24,35 @@ function addDaysISO(iso: string, days: number): string {
 }
 
 /**
- * The next instant a recurring fixed-cadence reminder fires: the least occurrence of wall-clock
- * `timeOfDay` on the cadence grid — every `freqDays`, phased off the seed's local date in
- * `timeZone` — that is strictly after `now`.
+ * The next instant a recurring reminder fires: `offsetMinutes` before the least occurrence of the
+ * task on its cadence grid — every `freqDays`, phased off the anchor `due` date at wall-clock
+ * `dueTime` in `timeZone` — whose lead time is still strictly after `now`.
  *
- * - Initial arm: pass a seed of "today at the time" (its local date phases the grid); k=0 succeeds
- *   when today's slot is still ahead, else it rolls to the next cadence day.
- * - Advance on fire: pass the just-fired `fire_at` (which is ≤ now); the loop returns the next slot.
+ * - Initial arm: k=0 is the anchor occurrence (`due` itself); the loop rolls forward until an
+ *   occurrence's `(occurrence − offset)` lands after `now`, so a lead time that has already elapsed
+ *   arms the NEXT occurrence instead of firing late.
+ * - Advance on fire: called again after a fire (fire ≤ now); it returns the following slot.
  *
  * DST-correct: it advances the wall-clock DATE (calendar-safe integer-day math) and re-projects
- * each candidate through `dueInstant` (AT TIME ZONE), so the fire holds the same LOCAL time across a
- * DST change (the instant shifts by the offset delta, the clock reading does not). And it jumps
- * straight past a whole backlog, so a cron outage spanning several cycles yields the single next
- * future slot — the reminder fires ONCE, not once per missed cycle.
+ * each candidate occurrence through `dueInstant` (AT TIME ZONE), so the occurrence holds the same
+ * LOCAL time across a DST change (the instant shifts by the offset delta, the clock reading does
+ * not). And it jumps straight past a whole backlog, so a cron outage spanning several cycles yields
+ * the single next future slot — the reminder fires ONCE, not once per missed cycle.
  */
 export function nextRecurringFireAt(
-  seed: Date,
-  timeOfDay: string,
+  due: string,
+  dueTime: string,
   freqDays: number,
+  offsetMinutes: number,
   timeZone: string,
   now: Date,
 ): Date {
   const freq = Math.max(Math.trunc(freqDays) || 1, 1)
-  const baseDate = localDateInTZ(timeZone, seed)
-  let fire = dueInstant(baseDate, timeOfDay, timeZone)
+  const offsetMs = Math.max(Math.trunc(offsetMinutes) || 0, 0) * 60_000
+  let fire = new Date(0)
   for (let k = 0; k < MAX_ITER; k++) {
-    fire = dueInstant(addDaysISO(baseDate, k * freq), timeOfDay, timeZone)
+    const occurrence = dueInstant(addDaysISO(due, k * freq), dueTime, timeZone)
+    fire = new Date(occurrence.getTime() - offsetMs)
     if (fire.getTime() > now.getTime()) return fire
   }
   return fire

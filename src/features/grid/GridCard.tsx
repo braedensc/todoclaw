@@ -62,6 +62,9 @@ export interface GridCardProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: () => void
+  /** Make / adjust this task as an ongoing project (check-in cadence + optional target-end).
+   *  Reuses the recurring jsonb; the panel's "Ongoing project" entry writes through it. */
+  onSetOngoing: (checkInDays: number, targetEnd: string | null) => void
   /** This task's selected reminder offsets (minutes before due); empty = none. Shown in the ⋯
    *  menu once the task has a due time; computed by the caller from the shared reminders query. */
   reminderOffsets: readonly number[]
@@ -69,10 +72,6 @@ export interface GridCardProps {
   onToggleReminder: (minutes: number) => void
   /** Clear every reminder on this task (the Off chip). */
   onClearReminders: () => void
-  /** For a recurring task: its fixed-cadence reminder time ('HH:MM[:SS]'), or null = none. */
-  recurringReminderTime?: string | null
-  /** Set ('HH:MM') or clear (null) the recurring task's reminder time. */
-  onSetRecurringReminderTime?: (hhmm: string | null) => void
 }
 
 // Stops a pointer-down from bubbling to the card root (which would start a reposition drag).
@@ -119,11 +118,10 @@ export function GridCard({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  onSetOngoing,
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
-  recurringReminderTime,
-  onSetRecurringReminderTime,
 }: GridCardProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(task.text)
@@ -421,11 +419,10 @@ export function GridCard({
                   onSetRecurring={onSetRecurring}
                   onSetFrequency={onSetFrequency}
                   onRemoveRecurring={onRemoveRecurring}
+                  onSetOngoing={onSetOngoing}
                   reminderOffsets={reminderOffsets}
                   onToggleReminder={onToggleReminder}
                   onClearReminders={onClearReminders}
-                  recurringReminderTime={recurringReminderTime}
-                  onSetRecurringReminderTime={onSetRecurringReminderTime}
                   idPrefix="grid"
                 />
               </div>,

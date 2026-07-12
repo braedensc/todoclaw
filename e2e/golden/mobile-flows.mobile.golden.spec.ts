@@ -124,6 +124,30 @@ test('a Daily repeat from the add sheet creates a live recurring task', async ({
   await expect(row.getByLabel(/^Recurring,/)).toBeVisible()
 })
 
+test('an Ongoing project from the add sheet: the explicit mode opens its editor and creates the task', async ({
+  page,
+}) => {
+  await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
+  const sheet = page.getByRole('dialog', { name: 'Add a task' })
+  await settleSheet(page, sheet)
+
+  await sheet.getByLabel('Task text').fill('Redesign the site')
+  await sheet.getByRole('button', { name: 'Do Now' }).tap()
+  await sheet.getByRole('button', { name: /Add schedule/ }).tap()
+
+  // The explicit, touch-sized "Ongoing project" entry swaps in the project editor + help text.
+  await sheet.getByRole('button', { name: /Ongoing project/ }).tap()
+  await expect(sheet.getByText(/ongoing · 0 sessions/i)).toBeVisible()
+  await expect(sheet.getByRole('button', { name: /End ongoing/ })).toBeVisible()
+
+  await sheet.getByRole('button', { name: 'Add task' }).tap()
+  await expect(sheet).toBeHidden()
+
+  // It lands as a live task in the quadrant (an ongoing project is recurring under the hood).
+  await page.getByRole('button', { name: /Do Now, \d+ task/ }).tap()
+  await expect(page.getByRole('listitem').filter({ hasText: 'Redesign the site' })).toBeVisible()
+})
+
 test('add via the bottom-nav "+" (manual → quadrant) and the task lands in that quadrant', async ({
   page,
 }) => {

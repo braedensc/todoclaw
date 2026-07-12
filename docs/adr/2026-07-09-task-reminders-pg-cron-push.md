@@ -40,7 +40,10 @@ than the hourly GitHub-Actions cron and a *schedule* to sweep.
     drops them all). The sweep/claim/trigger/dispatch pipeline was already per-row, so each
     reminder simply fires on its own — no other changes. See migration
     `20260711000000_multi_task_reminders.sql`. The recurring/date-only/no-snooze bounds still hold.
-  - **Update 2026-07-11 — recurring reminders (fixed-cadence alarm):** the "no reminders on
+  - **Update 2026-07-11 — recurring reminders (fixed-cadence alarm):** _[SUPERSEDED 2026-07-12 —
+    see the next entry. The `time_of_day` column, its XOR CHECK, the partial unique index, and
+    `set/remove_recurring_reminder` described here were all retired by
+    `20260712000000_recurring_reminders_unify.sql`. Kept for provenance.]_ the "no reminders on
     recurring tasks" bound is lifted. A recurring task (chore or ongoing project) can carry ONE
     reminder anchored to a **time of day** — "take pill every day at noon" — that fires at that
     time on the task's cadence **regardless of completion** (a fixed alarm, not tied to
@@ -65,3 +68,20 @@ than the hourly GitHub-Actions cron and a *schedule* to sweep.
       (INVOKER, RLS), the `set_recurring_reminder` chat capability, and a "Remind me at" time-of-day
       control on the recurring editors. See migration `20260711010000_recurring_reminders.sql`. The
       date-only and no-snooze bounds still hold.
+  - **Update 2026-07-12 — recurring reminders unified onto the offset model:** the separate
+    time-of-day alarm above is retired; a recurring task's reminders are now the SAME `offset_minutes`
+    lead times as a one-off, anchored to the task's `due` date + `due_time` (the due date = the
+    first/anchor occurrence). A reminder fires the chosen offset before the **next occurrence** on
+    the cadence and re-arms each cycle (still fixed-cadence — the occurrence grid is anchored to
+    `due`, never to `lastDoneAt`, so completion never moves it). This kills the second time
+    vocabulary and makes the calendar the `SchedulePanel` already showed on a recurring task mean
+    something (owner-approved, option A). Changes: the `time_of_day` column / XOR CHECK / partial
+    unique index and `set/remove_recurring_reminder` are dropped; `next_recurring_fire_at(due, time,
+    freq, offset, tz)` returns `occurrence − offset` (keeps the DST-safe, backlog-skipping math and
+    the advance-on-claim re-arm); `set_task_reminder` now accepts a recurring task (kind is the
+    task's `recurring`, no longer stored on the row) and `unique(task_id, offset_minutes)` lets a
+    recurring task hold several offsets; the pipeline (sweep/claim/expire/triggers) branches on
+    `tasks.recurring`; the UI shows the one `ReminderPicker` on both kinds and the `set_reminder`
+    chat capability handles recurring. `RecurringReminderPicker` is deleted. The ~1-day-old
+    `time_of_day` rows are cleared by the migration. See
+    `20260712000000_recurring_reminders_unify.sql`. Date-only and no-snooze bounds still hold.

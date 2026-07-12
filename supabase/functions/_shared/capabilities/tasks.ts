@@ -5,7 +5,7 @@
 
 import { z } from 'npm:zod@4.4.3'
 import { localDateInTZ } from '../dates.ts'
-import { formatCadence, formatClockTime, formatOffset } from '../reminder-content.ts'
+import { formatOffset } from '../reminder-content.ts'
 import { placeByDue, urgencyToX, importanceToY } from '../placement.ts'
 import { defineCapability, type Capability } from './types.ts'
 import { ok, err, systemErr, updateTaskRow } from './helpers.ts'
@@ -292,10 +292,12 @@ export const taskCapabilities: Capability[] = [
     name: 'set_reminder',
     description:
       'Add a push reminder for a task a given number of minutes before it is due. The task must ' +
-      'already have a due date AND a due time (use set_due_date first if not). A task can have ' +
-      'several reminders at different lead times (e.g. 1 day AND 1 hour before), each firing on ' +
-      'its own; call this once per lead time. Setting the same lead time again just re-arms it. ' +
-      'Reminders arrive on devices where the user has notifications turned on.',
+      'already have a due date AND a due time (use set_due_date first if not). Works for RECURRING ' +
+      "tasks too: the reminder leads each occurrence — it fires that far before the task's due time " +
+      'on its cadence, then re-arms for the next cycle. A task can have several reminders at ' +
+      'different lead times (e.g. 1 day AND 1 hour before), each firing on its own; call this once ' +
+      'per lead time. Setting the same lead time again just re-arms it. Reminders arrive on devices ' +
+      'where the user has notifications turned on.',
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -325,11 +327,8 @@ export const taskCapabilities: Capability[] = [
           `"${task.text}" needs a due date and time before I can set a reminder — set those first, then ask again.`,
         )
       }
-      if (task.recurring) {
-        return err(
-          `"${task.text}" is a recurring task — use set_recurring_reminder to ping at a set time each cycle (e.g. every day at noon). set_reminder is only for one-off due times.`,
-        )
-      }
+      // Recurring is allowed now: set_task_reminder anchors the reminder to each occurrence and
+      // returns the next FUTURE fire (so the stale check below never trips for a recurring task).
       // set_task_reminder returns the materialized fire_at so we can flag an already-past lead time.
       const { data: fireAt, error } = await ctx.client.rpc('set_task_reminder', {
         p_task_id: i.task_id,
@@ -348,52 +347,6 @@ export const taskCapabilities: Capability[] = [
           : base,
         ['reminders'],
       )
-    },
-  }),
-
-  defineCapability({
-    name: 'set_recurring_reminder',
-    description:
-      'Set a push reminder on a RECURRING task (a repeating chore or an ongoing project) at a fixed ' +
-      'time of day — e.g. "remind me to take my pill every day at noon". It fires at that time on ' +
-      "the task's cadence, every cycle, whether or not the task was marked done (a fixed alarm, not " +
-      'tied to completion). The task must already be recurring (use make_recurring first if it is ' +
-      'not). One recurring reminder per task; calling again replaces the time. Reminders arrive on ' +
-      'devices where the user has notifications turned on.',
-    schema: z
-      .object({
-        task_id: uuid.describe('The task id (UUID).'),
-        time: z
-          .string()
-          .regex(/^\d{2}:\d{2}$/)
-          .describe('Wall-clock time of day to fire, 24-hour "HH:MM" (e.g. "12:00" for noon).'),
-      })
-      .strict(),
-    async execute(ctx, i) {
-      // Pre-check for a friendly message (the RPC re-validates as a backstop). RLS scopes the select.
-      const { data: task, error: selErr } = await ctx.client
-        .from('tasks')
-        .select('text, recurring')
-        .eq('id', i.task_id)
-        .is('deleted_at', null)
-        .maybeSingle()
-      if (selErr) return systemErr(selErr.message)
-      if (!task) return err("I couldn't find that task.")
-      const recurring = task.recurring as { frequencyDays?: number } | null
-      if (!recurring) {
-        return err(
-          `"${task.text}" isn't a recurring task yet — make it recurring first, then set a recurring reminder.`,
-        )
-      }
-      const { error } = await ctx.client.rpc('set_recurring_reminder', {
-        p_task_id: i.task_id,
-        p_time_of_day: i.time,
-      })
-      if (error) return systemErr(error.message)
-      const cadence = formatCadence(recurring.frequencyDays ?? null).toLowerCase()
-      return ok(`Set a reminder for "${task.text}" ${cadence} at ${formatClockTime(i.time)}.`, [
-        'reminders',
-      ])
     },
   }),
 

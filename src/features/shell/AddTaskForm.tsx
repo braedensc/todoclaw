@@ -40,7 +40,7 @@ export function scheduleSummary(
 ): string | null {
   const parts: string[] = []
   if (due) parts.push(due.slice(5) + (dueTime ? ` · ${formatDueTime(dueTime)}` : ''))
-  if (recurring) parts.push(fmtFrequency(recurring.frequencyDays))
+  if (recurring) parts.push(recurring.ongoing ? 'ongoing' : fmtFrequency(recurring.frequencyDays))
   return parts.length ? parts.join(' · ') : null
 }
 
@@ -186,6 +186,15 @@ export function AddTaskForm({
                 )
               }
               onRemoveRecurring={() => setRecurring(null)}
+              onSetOngoing={(checkInDays, targetEnd) =>
+                setRecurring({
+                  frequencyDays: checkInDays,
+                  lastDoneAt: null,
+                  doneCount: 0,
+                  ongoing: true,
+                  targetEnd,
+                })
+              }
               reminderOffsets={reminderMinutes}
               onToggleReminder={(m) =>
                 setReminderMinutes((cur) =>

@@ -216,9 +216,9 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
       },
       {
         onSuccess: (created) => {
-          // A timed, non-recurring task gets its chosen reminders right after creation (the task
-          // must exist first — reminders FK its id; reminders don't fire for repeats).
-          if (dt && !created.recurring) {
+          // A timed task gets its chosen reminders right after creation (the task must exist first —
+          // reminders FK its id). Recurring included: the reminder now leads each occurrence.
+          if (dt) {
             for (const m of reminderMinutes) reminderWrites.add(created.id, m)
           }
           setText('')
@@ -276,6 +276,15 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
                     )
                   }
                   onRemoveRecurring={() => setRecurring(null)}
+                  onSetOngoing={(checkInDays, targetEnd) =>
+                    setRecurring({
+                      frequencyDays: checkInDays,
+                      lastDoneAt: null,
+                      doneCount: 0,
+                      ongoing: true,
+                      targetEnd,
+                    })
+                  }
                   reminderOffsets={reminderMinutes}
                   onToggleReminder={(m) =>
                     setReminderMinutes((cur) =>

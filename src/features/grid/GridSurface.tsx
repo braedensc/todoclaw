@@ -5,12 +5,7 @@ import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
 import { urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
-import {
-  useTaskReminders,
-  useTaskReminderWrites,
-  useRecurringReminder,
-  useRecurringReminderWrites,
-} from '../reminders/use-task-reminders'
+import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -88,11 +83,25 @@ export function GridSurface({
   const now = useNow()
 
   // Reminders for the whole grid in one query; each card's ⋯ menu reads/writes its own via these.
+  // A recurring card's reminders lead each occurrence — same offset picker as a one-off.
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
-  // Recurring (time-of-day) reminders — the fixed-cadence alarm a recurring card's ⋯ menu sets.
-  const { data: recurringReminders } = useRecurringReminder()
-  const recurringReminderWrites = useRecurringReminderWrites()
+
+  // Make / adjust a task as an ongoing project (shared by a card's ⋯ menu and a cluster row).
+  // Reuses the recurring jsonb; preserves lastDoneAt/doneCount so promoting a chore keeps history.
+  const setOngoing = (task: Task, checkInDays: number, targetEnd: string | null) =>
+    updateMutate({
+      id: task.id,
+      patch: {
+        recurring: {
+          frequencyDays: checkInDays,
+          lastDoneAt: task.recurring?.lastDoneAt ?? null,
+          doneCount: task.recurring?.doneCount ?? 0,
+          ongoing: true,
+          targetEnd,
+        },
+      },
+    })
 
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
@@ -165,12 +174,7 @@ export function GridSurface({
           reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
         }
         onClearReminders={() => reminderWrites.clear(task.id)}
-        recurringReminderTime={recurringReminders?.get(task.id) ?? null}
-        onSetRecurringReminderTime={(hhmm) =>
-          hhmm
-            ? recurringReminderWrites.set(task.id, hhmm)
-            : recurringReminderWrites.remove(task.id)
-        }
+        onSetOngoing={(checkInDays, targetEnd) => setOngoing(task, checkInDays, targetEnd)}
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,
@@ -336,6 +340,7 @@ export function GridSurface({
                     onRemoveRecurring={(task) =>
                       updateMutate({ id: task.id, patch: { recurring: null } })
                     }
+                    onSetOngoing={setOngoing}
                     reminderOffsetsFor={(task) => reminders?.get(task.id) ?? []}
                     onToggleReminder={(task, minutes) =>
                       reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])

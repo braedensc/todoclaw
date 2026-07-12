@@ -5,12 +5,7 @@ import { useDailyState } from '../daily-state/use-daily-state'
 import { useConfirm } from '../../components/use-confirm'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useNow } from '../../hooks/use-now'
-import {
-  useTaskReminders,
-  useTaskReminderWrites,
-  useRecurringReminder,
-  useRecurringReminderWrites,
-} from '../reminders/use-task-reminders'
+import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import type { Task } from '../../types/task'
@@ -56,12 +51,10 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const updateTask = useUpdateTask()
   const softDelete = useSoftDeleteTask()
   const markDone = useMarkTaskDone()
-  // Reminders for every row in one query; the expanded row reads/writes its task's via these.
+  // Reminders for every row in one query; the expanded row reads/writes its task's via these. A
+  // recurring row's reminders lead each occurrence — same offsets, same picker as a one-off.
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
-  // Recurring (time-of-day) reminders — the fixed-cadence alarm the expanded row sets on a repeat.
-  const { data: recurringReminders } = useRecurringReminder()
-  const recurringReminderWrites = useRecurringReminderWrites()
   const confirm = useConfirm()
   // Only for the empty-state copy: the add affordance is the header widget on desktop but the
   // bottom-nav ➕ on a phone — pointing a phone user at a header that isn't there is a dead end.
@@ -221,12 +214,6 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
               reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
             }
             onClearReminders={() => reminderWrites.clear(task.id)}
-            recurringReminderTime={recurringReminders?.get(task.id) ?? null}
-            onSetRecurringReminderTime={(hhmm) =>
-              hhmm
-                ? recurringReminderWrites.set(task.id, hhmm)
-                : recurringReminderWrites.remove(task.id)
-            }
           />
         ))}
       </ul>

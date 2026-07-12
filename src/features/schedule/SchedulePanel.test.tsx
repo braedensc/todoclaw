@@ -120,7 +120,7 @@ describe('SchedulePanel time + remind', () => {
     expect(p.onSetDue).toHaveBeenCalledWith('2026-07-10', '07:45')
   })
 
-  it('remind chips appear only with a due time, and never for a recurring task', () => {
+  it('remind chips appear only with a due time', () => {
     renderPanel({ due: '2026-07-10' })
     expect(screen.queryByTestId('reminder-picker-grid')).not.toBeInTheDocument()
 
@@ -128,42 +128,23 @@ describe('SchedulePanel time + remind', () => {
     expect(screen.getByTestId('reminder-picker-grid')).toBeInTheDocument()
   })
 
-  it('a recurring task hides the one-off offset picker (even with a due time)', () => {
+  it('a recurring task shows the SAME offset picker (unified 2026-07-12), with a per-cycle note', () => {
+    // A recurring reminder is now the offset model too — it leads each occurrence, anchored to the
+    // task's due date+time. So the recurring panel shows the same ReminderPicker as a one-off,
+    // gated on the due time, plus a one-line note that it fires before each recurrence.
     renderPanel({
       due: '2026-07-10',
       dueTime: '15:00:00',
       recurring: recurringWeekly,
       idPrefix: 'grid',
     })
-    expect(screen.queryByTestId('reminder-picker-grid')).not.toBeInTheDocument()
+    expect(screen.getByTestId('reminder-picker-grid')).toBeInTheDocument()
+    expect(screen.getByText(/before each time it comes back/i)).toBeInTheDocument()
   })
 
-  it('a recurring task shows the fixed-cadence time-of-day alarm when the handler is wired', () => {
-    // No due date needed — a recurring reminder anchors to a time of day, not a due instant.
-    renderPanel({
-      recurring: recurringWeekly,
-      onSetRecurringReminderTime: vi.fn(),
-      idPrefix: 'grid',
-    })
+  it('a recurring task without a due time still gates the offset picker off', () => {
+    renderPanel({ recurring: recurringWeekly, idPrefix: 'grid' })
     expect(screen.queryByTestId('reminder-picker-grid')).not.toBeInTheDocument()
-    expect(screen.getByTestId('recurring-reminder-grid')).toBeInTheDocument()
-    expect(screen.getByText(/fires whether or not/)).toBeInTheDocument()
-  })
-
-  it('the recurring reminder picker reads back its time and writes preset/Off', () => {
-    const onSet = vi.fn()
-    renderPanel({
-      recurring: recurringWeekly,
-      recurringReminderTime: '12:00:00',
-      onSetRecurringReminderTime: onSet,
-      idPrefix: 'grid',
-    })
-    const picker = within(screen.getByTestId('recurring-reminder-grid'))
-    expect(picker.getByRole('button', { name: 'Noon' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(picker.getByRole('button', { name: '9 AM' }))
-    expect(onSet).toHaveBeenLastCalledWith('09:00')
-    fireEvent.click(picker.getByRole('button', { name: 'Off' }))
-    expect(onSet).toHaveBeenLastCalledWith(null)
   })
 
   it('reminder chips are multi-select: a chip toggles one offset, Off clears them all', () => {
@@ -236,12 +217,14 @@ describe('SchedulePanel ongoing project', () => {
     targetEnd: '2026-07-31',
   }
 
-  it('offers "Make it an ongoing project" only when ongoing editing is wired', () => {
+  it('offers an explicit "Ongoing project" mode + help only when ongoing editing is wired', () => {
     renderPanel()
-    expect(screen.queryByRole('button', { name: /Make it an ongoing project/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Ongoing project/ })).toBeNull()
 
     const p = renderPanel({ onSetOngoing: vi.fn() })
-    fireEvent.click(screen.getByRole('button', { name: /Make it an ongoing project/ }))
+    // The explainer of what "ongoing" means is shown alongside the entry.
+    expect(screen.getByText(/continuous effort you check in on/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Ongoing project/ }))
     // Default check-in cadence, no target yet.
     expect(p.onSetOngoing).toHaveBeenCalledWith(2, null)
   })

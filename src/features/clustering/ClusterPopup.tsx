@@ -59,6 +59,8 @@ export interface ClusterPopupProps {
   onSetFrequency: (task: Task, frequencyDays: number) => void
   /** Drop a row's recurring schedule. */
   onRemoveRecurring: (task: Task) => void
+  /** Make / adjust a row as an ongoing project (check-in cadence + optional target-end). */
+  onSetOngoing: (task: Task, checkInDays: number, targetEnd: string | null) => void
   /** A row's selected reminder offsets (minutes before due) — from the grid's shared query. */
   reminderOffsetsFor: (task: Task) => readonly number[]
   /** Toggle one of a row's reminder lead times on/off. */
@@ -99,6 +101,7 @@ export function ClusterPopup({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  onSetOngoing,
   reminderOffsetsFor,
   onToggleReminder,
   onClearReminders,
@@ -206,6 +209,7 @@ export function ClusterPopup({
           onSetRecurring={(n) => onSetRecurring(task, n)}
           onSetFrequency={(n) => onSetFrequency(task, n)}
           onRemoveRecurring={() => onRemoveRecurring(task)}
+          onSetOngoing={(checkInDays, targetEnd) => onSetOngoing(task, checkInDays, targetEnd)}
           reminderOffsets={reminderOffsetsFor(task)}
           onToggleReminder={(m) => onToggleReminder(task, m)}
           onClearReminders={() => onClearReminders(task)}
@@ -229,6 +233,7 @@ interface ClusterPopupRowProps {
   onSetRecurring: (frequencyDays: number) => void
   onSetFrequency: (frequencyDays: number) => void
   onRemoveRecurring: () => void
+  onSetOngoing: (checkInDays: number, targetEnd: string | null) => void
   reminderOffsets: readonly number[]
   onToggleReminder: (minutes: number) => void
   onClearReminders: () => void
@@ -260,6 +265,7 @@ function ClusterPopupRow({
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
+  onSetOngoing,
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
@@ -458,6 +464,7 @@ function ClusterPopupRow({
                   onSetRecurring={onSetRecurring}
                   onSetFrequency={onSetFrequency}
                   onRemoveRecurring={onRemoveRecurring}
+                  onSetOngoing={onSetOngoing}
                   reminderOffsets={reminderOffsets}
                   onToggleReminder={onToggleReminder}
                   onClearReminders={onClearReminders}
