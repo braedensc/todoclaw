@@ -30,20 +30,22 @@ ongoing project" toggle → the check-in stepper, target-end, and Finish. BabyCl
 (`make_ongoing` / `finish_ongoing`, and `create_task`'s ongoing fields) — see
 `supabase/functions/_shared/capabilities/tasks.ts`.
 
-## Reminders (fixed-cadence alarm)
+## Reminders (offset before each occurrence)
 
-A recurring task (chore or ongoing project) can carry ONE **time-of-day reminder** — "remind me to
-take my pill every day at noon". Unlike a one-off reminder (which fires a lead time before a due
-instant), a recurring reminder is a **fixed alarm**: it fires at the chosen wall-clock time on the
-task's cadence, **every cycle, regardless of completion**. It needs no due date — it anchors to a
-time of day, not a due instant. The "Remind me at" time-of-day control (`RecurringReminderPicker`)
-lives in the shared `SchedulePanel` on the recurring editors (grid card ⋯ menu, list expanded row);
-writes go through `useRecurringReminder` / `useRecurringReminderWrites`
-(`src/features/reminders/use-task-reminders.ts`) → the `set_recurring_reminder` /
-`remove_recurring_reminder` RPCs. BabyClaw can set it too (`set_recurring_reminder` capability). The
-fire-time math is `next_recurring_fire_at` (SQL) / `nextRecurringFireAt`
-(`src/lib/recurring-reminders.ts`, unit-tested). Full design: ADR
-`docs/adr/2026-07-09-task-reminders-pg-cron-push.md` (2026-07-11 update).
+A recurring task (chore or ongoing project) carries reminders the **same way a one-off does** —
+lead-time **offsets** (unified 2026-07-12): "remind me 1 hour before". The difference is only where
+the offset anchors: a one-off leads its single due instant, a recurring task leads **each
+occurrence** on its cadence (anchored to the task's `due` date + `due_time`), re-arming every cycle
+**regardless of completion**. So the recurring editors show the SAME `ReminderPicker` (offset chips),
+gated on a due time, with a one-line "before each time it comes back" note. A recurring task must
+therefore have a due date + time to carry a reminder (the due date = the first/anchor occurrence).
+Writes go through `useTaskReminders` / `useTaskReminderWrites`
+(`src/features/reminders/use-task-reminders.ts`) → the `set_task_reminder` / `remove_task_reminder`
+/ `clear_task_reminder` RPCs. BabyClaw sets them via the `set_reminder` capability (recurring tasks
+now accepted). The fire-time math is `next_recurring_fire_at` (SQL, the sole production writer) /
+`nextRecurringFireAt` (`src/lib/recurring-reminders.ts`, unit-tested): the next occurrence − offset,
+DST-safe and backlog-skipping. Full design: ADR
+`docs/adr/2026-07-09-task-reminders-pg-cron-push.md` (recurring unified 2026-07-12).
 
 ## Components
 

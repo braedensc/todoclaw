@@ -50,8 +50,6 @@ vi.mock('../daily-state/use-daily-state', () => ({
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
   useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
-  useRecurringReminder: () => ({ data: new Map() }),
-  useRecurringReminderWrites: () => ({ set: vi.fn(), remove: vi.fn() }),
 }))
 
 // A complete Task row with sensible defaults; override per test.
@@ -388,7 +386,7 @@ describe('ListView', () => {
       renderList()
 
       fireEvent.click(screen.getByText('redesign the site'))
-      fireEvent.click(screen.getByRole('button', { name: /Make it an ongoing project/ }))
+      fireEvent.click(screen.getByRole('button', { name: /Ongoing project/ }))
 
       expect(updateMutate).toHaveBeenCalledWith({
         id: 'o1',
@@ -415,7 +413,7 @@ describe('ListView', () => {
       renderList()
 
       fireEvent.click(screen.getByText('ship the redesign'))
-      fireEvent.click(screen.getByRole('button', { name: /Make it an ongoing project/ }))
+      fireEvent.click(screen.getByRole('button', { name: /Ongoing project/ }))
 
       expect(updateMutate).toHaveBeenCalledWith({
         id: 'o2',

@@ -171,12 +171,9 @@ export async function loadChatContext(
       .maybeSingle(),
     // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks
     // already have one — otherwise it can't answer "do I have a reminder on X?" or reason about
-    // adding another. One-off rows carry offset_minutes (a task may hold several); a recurring row
-    // carries time_of_day (one per task, a fixed-cadence alarm).
-    client
-      .from('task_reminders')
-      .select('task_id, offset_minutes, time_of_day')
-      .is('sent_at', null),
+    // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's
+    // reminders lead each occurrence, a one-off's lead the single due instant (same rows either way).
+    client.from('task_reminders').select('task_id, offset_minutes').is('sent_at', null),
   ])
 
   const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
@@ -184,15 +181,11 @@ export async function loadChatContext(
   const subtaskDone = (dailyRes.data?.subtask_done ?? {}) as Record<string, boolean>
 
   const reminderByTask = new Map<string, number[]>()
-  const recurringReminderByTask = new Map<string, string>()
   for (const r of (remindersRes.data ?? []) as {
     task_id: string
     offset_minutes: number | null
-    time_of_day: string | null
   }[]) {
-    if (r.time_of_day != null) {
-      recurringReminderByTask.set(r.task_id, r.time_of_day)
-    } else if (r.offset_minutes != null) {
+    if (r.offset_minutes != null) {
       const list = reminderByTask.get(r.task_id)
       if (list) list.push(r.offset_minutes)
       else reminderByTask.set(r.task_id, [r.offset_minutes])
@@ -222,7 +215,6 @@ export async function loadChatContext(
       ongoingTargetInDays:
         isOngoing && rec?.targetEnd ? daysUntilInTZ(rec.targetEnd, timeZone, now) : null,
       reminderOffsets: reminderByTask.get(t.id as string) ?? [],
-      recurringReminderTime: recurringReminderByTask.get(t.id as string) ?? null,
       doneToday: doneMap[t.id as string] === true,
       completedAt: (t.completed_at as string | null) ?? null,
     }

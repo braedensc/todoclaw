@@ -33,10 +33,8 @@ interface DueReminder {
   task_text: string
   due: string | null
   due_time: string | null
-  time_of_day: string | null
   timezone: string
-  offset_minutes: number | null
-  frequency_days: number | null
+  offset_minutes: number
 }
 
 Deno.serve(async (req) => {

@@ -3,7 +3,6 @@ import type { Recurring } from '../../types/task'
 import { localDateInTZ } from '../../lib/dates'
 import { recurringStatus, RC_COLOR, fmtFrequency, ongoingLabel } from '../../lib/recurring'
 import { ReminderPicker } from '../reminders/ReminderPicker'
-import { RecurringReminderPicker } from '../reminders/RecurringReminderPicker'
 import { DueTimezoneHint } from './DueTimezoneHint'
 
 // SchedulePanel — the ONE schedule editor (2026-07-09 workshop, direction B "calendar-first",
@@ -12,9 +11,12 @@ import { DueTimezoneHint } from './DueTimezoneHint'
 //   · a two-week paper calendar (today outlined, Monday-start, timezone-aware via localDateInTZ),
 //     with "More dates…" revealing the native date input as the far-future escape hatch
 //   · time preset chips (None / 9 AM / Noon / 6 PM / Custom… → native time input)
-//   · the existing Remind-me chips (ReminderPicker), gated on a due time + not recurring
-//   · a Repeats segmented control (Off / Daily / Weekly / Every… → a ±N-days stepper) replacing
-//     the old bare "days between repeats [Set]" stepper
+//   · the Remind-me chips (ReminderPicker), gated on a due time — for a ONE-OFF task the offsets
+//     lead the single due instant; for a RECURRING task the SAME offsets lead each occurrence
+//     (unify 2026-07-12: a recurring reminder is now the same offset model, anchored to the task's
+//     due date+time, not a separate time-of-day alarm)
+//   · a Repeats segmented control (Off / Daily / Weekly / Every… → a ±N-days stepper) plus an
+//     explicit "Ongoing" project entry, replacing the old bare "days between repeats [Set]" stepper
 //
 // Commit semantics are unchanged from the inputs it replaces: every tap writes immediately via
 // the SAME callback contracts the old controls used (onSetDue always writes both columns — the
@@ -111,15 +113,6 @@ export interface SchedulePanelProps {
   onToggleReminder: (minutes: number) => void
   /** Clear every reminder on this task (the Off chip). */
   onClearReminders: () => void
-  /**
-   * For a RECURRING task: its single time-of-day reminder ('HH:MM' / 'HH:MM:SS'), or null = none.
-   * Provided only on surfaces that support recurring reminders (the grid/list/cluster editors);
-   * where `onSetRecurringReminderTime` is omitted the recurring "Remind me at" control is hidden
-   * (e.g. the add surfaces, where the task doesn't exist yet).
-   */
-  recurringReminderTime?: string | null
-  /** Set ('HH:MM') or clear (null) the recurring task's fixed-cadence reminder time. */
-  onSetRecurringReminderTime?: (hhmm: string | null) => void
   /** Namespaces the ReminderPicker testid when several panels mount (grid / list / add). */
   idPrefix?: string
   /** Thumb-sized controls for touch surfaces (mobile add sheet / expanded row on a phone):
@@ -144,8 +137,6 @@ export function SchedulePanel({
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
-  recurringReminderTime,
-  onSetRecurringReminderTime,
   idPrefix,
   touch = false,
   now,
@@ -392,41 +383,27 @@ export function SchedulePanel({
         )}
       </div>
 
-      {/* ---- Remind me. TWO shapes from one slot: a RECURRING task gets a fixed-cadence alarm at a
-              time of day (fires every cycle at that time, no due date needed — the pill-at-noon
-              case); a one-off TIMED task gets lead-time chips (1 day AND 1 hour before, etc.). The
-              recurring control shows only where the surface wired onSetRecurringReminderTime (the
-              grid/list editors); the add surfaces omit it (no task id yet). ---- */}
-      {recurring && onSetRecurringReminderTime ? (
+      {/* ---- Remind me. Lead-time chips before the due instant, gated on a due time (a reminder has
+              no instant to anchor without one). ONE model for both kinds: a one-off task leads its
+              single due instant; a RECURRING task leads each occurrence on its cadence (anchored to
+              the same due date+time). The recurring reminder re-arms every cycle server-side. ---- */}
+      {dueValue && timeValue && (
         <div>
           <span className={sectionLabel}>Remind me</span>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted">
-            Ping at a set time each cycle — fires whether or not you’ve marked it done.
-          </p>
+          {recurring && (
+            <p className="mt-0.5 text-[11px] leading-snug text-muted">
+              Fires this far before each time it comes back.
+            </p>
+          )}
           <div className="mt-1.5">
-            <RecurringReminderPicker
-              value={recurringReminderTime ?? null}
-              onChange={onSetRecurringReminderTime}
+            <ReminderPicker
+              values={reminderOffsets}
+              onToggle={onToggleReminder}
+              onClear={onClearReminders}
               idPrefix={idPrefix}
             />
           </div>
         </div>
-      ) : (
-        dueValue &&
-        timeValue &&
-        !recurring && (
-          <div>
-            <span className={sectionLabel}>Remind me</span>
-            <div className="mt-1.5">
-              <ReminderPicker
-                values={reminderOffsets}
-                onToggle={onToggleReminder}
-                onClear={onClearReminders}
-                idPrefix={idPrefix}
-              />
-            </div>
-          </div>
-        )
       )}
 
       {/* ---- Repeat this task (chore) OR Ongoing project — one slot, both live in `recurring`.
@@ -580,15 +557,26 @@ export function SchedulePanel({
                 comes back {fmtFrequency(recurring.frequencyDays)} 🦴 · {status.label}
               </p>
             )}
-            {/* Promote a big multi-week effort to an ongoing project (list expanded row only). */}
+            {/* Explicit "Ongoing" mode — a first-class alternative to a repeating chore, not a
+                hidden link. A full-width, thumb-sized entry (robust in narrow popovers and the
+                mobile sheet) that switches this task into the ongoing-project editor above, plus a
+                one-line explainer of what "ongoing" means here. Wired on every surface now. */}
             {onSetOngoing && (
-              <button
-                type="button"
-                onClick={() => onSetOngoing(ONGOING_DEFAULT_CHECK_IN, null)}
-                className="mt-2 block text-[11px] font-medium text-muted underline decoration-dotted underline-offset-2 hover:text-ink"
-              >
-                ▶ Make it an ongoing project
-              </button>
+              <div className="mt-2.5">
+                <button
+                  type="button"
+                  onClick={() => onSetOngoing(ONGOING_DEFAULT_CHECK_IN, null)}
+                  className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border-strong bg-card font-semibold text-muted transition-colors hover:border-primary hover:text-ink ${
+                    touch ? 'min-h-[40px] px-3 text-[13px]' : 'px-3 py-1.5 text-xs'
+                  }`}
+                >
+                  <span aria-hidden>▶</span> Ongoing project
+                </button>
+                <p className="mt-1 text-[11px] leading-snug text-muted">
+                  A continuous effort you check in on and eventually <b>Finish</b> — not a chore
+                  that repeats forever.
+                </p>
+              </div>
             )}
           </>
         )}
