@@ -78,11 +78,11 @@ function makeTask(over: Partial<Task>): Task {
     staged: false,
     bucket: 'oneoff',
     recurring: null,
-    // Fresh by construction: derived from the SAME real clock GridCard's stalenessStyle reads (it
-    // injects no `now`), so a default card stays well under the 21-day staleness floor and never
+    // Fresh by construction: derived from the SAME real clock GridCard's agingRingStyle reads (it
+    // injects no `now`), so a default card stays well under the 21-day aging floor and never
     // silently crosses a tier as real time passes. A fixed date here would rot — e.g. a
-    // '2026-06-23' default turns stale on 2026-07-14. Staleness-specific tests override created_at
-    // with a fixed far-past date (e.g. '2000-01-01') to assert the faded style deterministically.
+    // '2026-06-23' default turns aged on 2026-07-14. Aging-specific tests override created_at
+    // with a fixed far-past date (e.g. '2000-01-01') to assert the ring deterministically.
     created_at: new Date(Date.now() - 86_400_000).toISOString(), // ~1 day ago
     deleted_at: null,
     completed_at: null,
@@ -284,11 +284,15 @@ describe('GridView card visuals', () => {
     expect(within(card).getByTitle('Overdue')).toHaveTextContent('🔥')
   })
 
-  it('desaturates + fades a long-untouched (stale) card', () => {
+  it('gives an old (aging) card a cool slate ring instead of fading it', () => {
     tasksFixture = [makeTask({ id: 'old', created_at: '2000-01-01T00:00:00.000Z', staged: false })]
     render(<GridHarness />)
-    // > 75 days old → opacity 0.72 (see stalenessStyle).
-    expect(screen.getByTestId('grid-card').style.opacity).toBe('0.72')
+    const card = screen.getByTestId('grid-card')
+    // > 75 days old → the thickest cool aging ring threads onto the card (see agingRingStyle).
+    // The retired fade is gone: full opacity, no desaturating filter.
+    expect(card.style.boxShadow).toContain('rgba(88,104,128,0.8)')
+    expect(card.style.opacity).toBe('')
+    expect(card.style.filter).toBe('')
   })
 
   it('suppresses the urgency glow + due badge on a recurring card (it has its own status)', () => {

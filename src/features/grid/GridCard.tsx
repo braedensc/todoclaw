@@ -5,9 +5,10 @@ import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus, fmtFrequency, ongoingLabel } from '../../lib/recurring'
 import {
+  agingRingStyle,
+  BASE_CARD_SHADOW,
   dueChipStyle,
   gridChipLabel,
-  stalenessStyle,
   urgencyGlowStyle,
   urgencyIcon,
   urgencyTier,
@@ -164,7 +165,19 @@ export function GridCard({
   const tier = rc ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const glow = urgencyGlowStyle(tier)
   const hotIcon = urgencyIcon(tier)
-  const stale = rc ? null : stalenessStyle(task)
+  // Cool "aging ring" — the inverse of the retired fade: an old card gains a slate ring so it
+  // draws the eye instead of receding. Its own hue lane, so it can co-exist with the warm glow.
+  const aging = rc ? null : agingRingStyle(task)
+
+  // Compose the card's box-shadow from up to two independent channels: the warm urgency ring
+  // (due-date driven) and the cool aging ring (age driven). The aging ring is appended so it
+  // reads as an outer cool band; when there's no warm glow it rides on the shared base depth so
+  // the resting shadow isn't lost. Omitted entirely (undefined) when neither applies, letting the
+  // card fall back to its `shadow-sm` class.
+  const boxShadow =
+    glow || aging
+      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, aging?.boxShadow].filter(Boolean).join(', ')
+      : undefined
 
   // Recurring cards get DASHED, slightly heavier accent side/bottom borders — a distinct "this
   // repeats" outline that leaves the solid status-colored top border alone. Typed as CSSProperties
@@ -197,22 +210,17 @@ export function GridCard({
     ...recurringBorder,
     touchAction: 'none',
     transition: dragging ? 'none' : 'box-shadow 120ms ease, transform 120ms ease',
-    // Glow overrides the resting shadow (its string carries its own drop-shadow layer). Overdue
-    // cards also pulse and get a warm tint; the final hours pulse softly. Keyframes are global
-    // (src/index.css). `animation`/`background` spread only when present so a future base value
-    // on this card can't be clobbered.
-    ...(glow
-      ? {
-          boxShadow: glow.boxShadow,
-          ...(glow.animation ? { animation: glow.animation } : {}),
-          ...(glow.background ? { background: glow.background } : {}),
-        }
-      : {}),
-    ...(stale ? { filter: stale.filter, opacity: stale.opacity } : {}),
+    // Composed warm-glow + cool-aging-ring shadow (see `boxShadow` above); overrides the resting
+    // `shadow-sm` when present. Overdue cards also pulse and get a warm tint; the final hours pulse
+    // softly. Keyframes are global (src/index.css). `animation`/`background` spread only when
+    // present so a future base value on this card can't be clobbered.
+    ...(boxShadow ? { boxShadow } : {}),
+    ...(glow?.animation ? { animation: glow.animation } : {}),
+    ...(glow?.background ? { background: glow.background } : {}),
     // Lift the card above its neighbors while its ⋯ menu is open — the menu itself is portaled
     // (never occluded), so this is just a "this card is active" focus cue.
     ...(menuOpen ? { zIndex: 40 } : {}),
-    // Dragging treatment overrides glow/staleness opacity+shadow so the card under the pointer
+    // Dragging treatment overrides the glow/aging shadow so the card under the pointer
     // always stays clearly visible, and lifts it above every other card while it moves.
     ...(dragging ? { opacity: 0.85, boxShadow: '0 10px 24px rgba(0,0,0,0.28)', zIndex: 30 } : {}),
   }

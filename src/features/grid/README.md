@@ -24,7 +24,7 @@ draggable **new-item cards** there (card-in-place, B2 — there is no staging tr
 - **`GridCard.tsx`** — one placed card (112px). The 3px top border encodes status: recurring
   → `RC_COLOR[recurringStatus().code]`, otherwise the quadrant color for its `(x, y)`. Renders
   the recurring status badge + `×N` badge (`doneCount ≥ 3`), the **visual-urgency layer** (glow /
-  staleness / due badge — see below), the **recurring indicator** (a ↻ corner chip + dashed accent
+  aging ring / due badge — see below), the **recurring indicator** (a ↻ corner chip + dashed accent
   side borders — see below), and the hover action row (done / ⋯ menu / delete).
 - **`use-grid.ts` / `GridSurface.tsx`** — the drag/placement orchestration (shared state) and the
   canvas render. `useGrid` also exposes `pendingTasks` (still-`staged` tasks) + `startNewCardDrag`
@@ -60,7 +60,7 @@ expandable `ClusterPopup`. Clicking the grid background closes any open popup; d
 row out drops it at a fresh `{ x, y }` (separating it from the cluster). See
 `src/features/clustering/README.md` for the bubble/popup details.
 
-## Visual urgency (glow · pulse · staleness · due badge)
+## Visual urgency (glow · pulse · aging ring · due badge)
 
 Layered on top of the quadrant border, **for non-recurring cards only** (a recurring task shows its
 `RC_COLOR` status badge instead; done cards have left the grid). The tiers/constants are ported
@@ -74,8 +74,12 @@ ADR-0019.
   the timezone lives in one place. A **cluster bubble** glows for the nearest due date in its group.
 - **Pulse** — overdue items animate the global `urgency-pulse` keyframe (`src/index.css`), disabled
   under `prefers-reduced-motion`.
-- **Staleness** — `stalenessStyle(task)` desaturates + fades a card by age (`created_at → now`);
-  not-yet-placed (`staged`) tasks are exempt (they aren't on the grid yet).
+- **Aging ring** — `agingRingStyle(task)` adds a **cool slate `box-shadow` ring** that grows
+  thicker with a card's age (`created_at → now`: none `<21d`, then thin / medium / thick at
+  21d / 45d / 75d). It's the inverse of EisenClaw's old fade — an old, untouched task should
+  gain presence, not recede — and lives in its own cool hue lane so it can co-exist with the warm
+  urgency glow. `GridCard` composes the two into one shadow. Not-yet-placed (`staged`) tasks are
+  exempt (they aren't on the grid yet).
 - **Due badge** — a small `overdue`/`today`/`Nd` pill (terracotta when due `≤ 2d`, else grey;
   `DUE_BADGE_*` in `src/lib/visual-urgency.ts`, shared with the cluster popup's due chip).
 
