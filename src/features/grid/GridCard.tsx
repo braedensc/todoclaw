@@ -6,12 +6,13 @@ import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
 import { ONGOING_GLYPH } from '../../lib/task-type'
 import {
-  agingBadge,
-  agingChipStyle,
-  agingRingStyle,
   BASE_CARD_SHADOW,
   dueChipStyle,
   gridChipLabel,
+  staleBadge,
+  staleChipStyle,
+  staleness,
+  staleRingStyle,
   urgencyGlowStyle,
   urgencyIcon,
   urgencyTier,
@@ -156,27 +157,27 @@ export function GridCard({
 
   const showBadge = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
-  // Urgency tier → glow + chip, applied only to non-recurring cards (a recurring task carries
-  // its own RC_COLOR status; done tasks never reach the grid). See lib/visual-urgency.
-  const tier = rc ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
+  // Staleness first — a card >= 3 weeks past due (or an undated card months old) has clearly
+  // been ignored and FLIPS lanes: gating the tier to 'none' swaps the entire hot dress (pulse,
+  // tint, 🔥, terracotta chip) for the cool one below. Same recurring gate as the warm lane.
+  const stale = rc ? null : staleness(task, daysUntilDue)
+  // Urgency tier → glow + chip, applied only to non-recurring, non-stale cards (a recurring task
+  // carries its own RC_COLOR status; done tasks never reach the grid). See lib/visual-urgency.
+  const tier = rc || stale ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const glow = urgencyGlowStyle(tier)
   const hotIcon = urgencyIcon(tier)
-  // Cool "aging ring" — the inverse of the retired fade: an old card gains a slate ring so it
-  // draws the eye instead of receding. Its own hue lane, so it can co-exist with the warm glow.
-  const aging = rc ? null : agingRingStyle(task)
-  // The ❄️ aging chip — the textual "how old" half of that same cool lane (the cold-side mirror of
-  // the terracotta "Overdue · Nd" chip), so an old card doesn't just glow cool but SAYS how long
-  // it's sat. Same recurring gate as the ring (a chore carries its own status, not an age).
-  const iceBadge = rc ? null : agingBadge(task)
+  // The cool stale dress: azure ring + icy tint, plus the ❄️ badge — the corner flag that
+  // replaces the 🔥 and the azure "Stale · Nd" chip that replaces the terracotta overdue chip.
+  const staleRing = staleRingStyle(stale)
+  const iceBadge = staleBadge(stale)
 
-  // Compose the card's box-shadow from up to two independent channels: the warm urgency ring
-  // (due-date driven) and the cool aging ring (age driven). The aging ring is appended so it
-  // reads as an outer cool band; when there's no warm glow it rides on the shared base depth so
-  // the resting shadow isn't lost. Omitted entirely (undefined) when neither applies, letting the
+  // Compose the card's box-shadow: the warm urgency ring (due-date driven) or the cool stale
+  // ring (never both — staleness gates the tier). Either rides on the shared base depth so the
+  // resting shadow isn't lost. Omitted entirely (undefined) when neither applies, letting the
   // card fall back to its `shadow-sm` class.
   const boxShadow =
-    glow || aging
-      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, aging?.boxShadow].filter(Boolean).join(', ')
+    glow || staleRing
+      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, staleRing?.boxShadow].filter(Boolean).join(', ')
       : undefined
 
   // Recurring cards get DASHED, slightly heavier accent side/bottom borders — a distinct "this
@@ -210,15 +211,15 @@ export function GridCard({
     ...recurringBorder,
     touchAction: 'none',
     transition: dragging ? 'none' : 'box-shadow 120ms ease, transform 120ms ease',
-    // Composed warm-glow + cool-aging-ring shadow (see `boxShadow` above); overrides the resting
+    // Composed warm-glow OR cool-stale-ring shadow (see `boxShadow` above); overrides the resting
     // `shadow-sm` when present. Overdue cards also pulse and get a warm tint; the final hours pulse
     // softly. Keyframes are global (src/index.css). `animation`/`background` spread only when
-    // present so a future base value on this card can't be clobbered. The card TINT is the warm
-    // urgency tint if any, else the cool aging tint — a due deadline out-shouts staleness.
+    // present so a future base value on this card can't be clobbered. The card TINT follows the
+    // same lane flip: the warm urgency tint while hot, the icy stale tint once ignored.
     ...(boxShadow ? { boxShadow } : {}),
     ...(glow?.animation ? { animation: glow.animation } : {}),
-    ...((glow?.background ?? aging?.background)
-      ? { background: glow?.background ?? aging?.background }
+    ...((glow?.background ?? staleRing?.background)
+      ? { background: glow?.background ?? staleRing?.background }
       : {}),
     // Lift the card above its neighbors while its ⋯ menu is open — the menu itself is portaled
     // (never occluded), so this is just a "this card is active" focus cue.
@@ -286,20 +287,25 @@ export function GridCard({
         </span>
       )}
 
-      {/* Hot-tier corner flag (🔥 = overdue or due-today) — the color-independent half of the
-          urgency ladder, so a hot card reads apart from the gold/olive tiers even where the
-          hue-based glow/chip can't (colorblindness, glare). Paper disc + tier-colored border keeps
-          it legible on the warm tint. Decorative: the due chip below carries the same meaning as
-          text for screen readers. Only non-recurring cards reach a hot tier, so it never collides
-          with the ↻. */}
-      {!rc && hotIcon && (
+      {/* Corner flag — the color-independent cue in whichever lane the card is in: 🔥 while hot
+          (overdue or due-today), ❄️ once STALE (the fire has stopped working — 3+ weeks past due,
+          or an undated card months old — so the flame literally cools into ice). Paper disc +
+          lane-colored border keeps it legible on the card tint. Decorative: the chip below carries
+          the same meaning as text for screen readers. Only non-recurring cards reach either lane,
+          so it never collides with the ↻. Mutually exclusive by construction (stale gates the
+          tier to 'none'). */}
+      {!rc && (hotIcon || iceBadge) && (
         <span
           aria-hidden
-          title={hotIcon.label}
+          title={hotIcon ? hotIcon.label : iceBadge?.title}
           className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border bg-card text-[10px] leading-none shadow-sm"
-          style={{ borderColor: dueChipStyle(tier).backgroundColor }}
+          style={{
+            borderColor: hotIcon
+              ? dueChipStyle(tier).backgroundColor
+              : staleChipStyle().backgroundColor,
+          }}
         >
-          {hotIcon.glyph}
+          {hotIcon ? hotIcon.glyph : iceBadge?.glyph}
         </span>
       )}
 
@@ -365,8 +371,9 @@ export function GridCard({
 
       {/* Non-recurring due chip — the textual half of the urgency ladder: tier-colored, says
           WHEN ("⏰ 3:00 PM", "in 45m", "Overdue · 2h") not just how many days. Recurring cards
-          show their status badge above instead, so this is suppressed when `rc` is set. */}
-      {!editing && !rc && daysUntilDue !== null && (
+          show their status badge above instead; a STALE card shows the ❄️ chip below instead
+          (the "Overdue · Nd" count has stopped meaning anything by then). */}
+      {!editing && !rc && !stale && daysUntilDue !== null && (
         <span
           className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
           style={dueChipStyle(tier)}
@@ -375,17 +382,16 @@ export function GridCard({
         </span>
       )}
 
-      {/* ❄️ aging chip — the cool-lane counterpart to the terracotta overdue chip above: a stale
-          card says HOW long it's sat ("❄️ 3w"). Rendered independently of the due chip (a stale
-          task usually has no due date at all), so an old-AND-dued card shows both — a warm "how
-          soon" badge and a cool "how old" badge side by side, never confused for one another. */}
+      {/* ❄️ stale chip — what the due chip COOLS INTO once the task is clearly being ignored:
+          "❄️ Stale · 21d" (time past due, or time on the board for an undated card). Azure, so
+          it can never be mistaken for the warm "how soon" chip it replaced. */}
       {!editing && iceBadge && (
         <span
-          className="ml-1 mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
-          style={agingChipStyle()}
-          aria-label={iceBadge.label}
+          className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
+          style={staleChipStyle()}
+          title={iceBadge.title}
         >
-          {iceBadge.glyph} {iceBadge.age}
+          {iceBadge.glyph} {iceBadge.chip}
         </span>
       )}
 

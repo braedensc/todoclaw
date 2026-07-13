@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ClusterBubble } from './ClusterBubble'
-import type { AgingRingStyle, GlowStyle } from '../../lib/visual-urgency'
+import type { GlowStyle, StaleRingStyle } from '../../lib/visual-urgency'
 import type { Task } from '../../types/task'
 
 // A stand-in overdue glow (shape matches urgencyGlowStyle('overdue')): ring + pulse + warm tint.
@@ -11,8 +11,8 @@ const OVERDUE_GLOW: GlowStyle = {
   background: '#fff1e8',
 }
 
-// A stand-in cool-blue aging ring + icy tint (shape matches clusterAgingRing's >= 75d tier).
-const AGING_RING: AgingRingStyle = {
+// A stand-in cool-blue stale ring + icy tint (shape matches staleRingStyle's deepest rung).
+const STALE_RING: StaleRingStyle = {
   boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
   background: '#e0edfb',
 }
@@ -45,7 +45,7 @@ function renderBubble({
   open = false,
   onToggle = vi.fn(),
   glow = null as GlowStyle | null,
-  agingRing = null as AgingRingStyle | null,
+  staleRing = null as StaleRingStyle | null,
 } = {}) {
   const onSurfacePointerDown = vi.fn()
   const onSurfaceClick = vi.fn()
@@ -60,7 +60,7 @@ function renderBubble({
         open={open}
         onToggle={onToggle}
         glow={glow}
-        agingRing={agingRing}
+        staleRing={staleRing}
       />
     </div>,
   )
@@ -107,9 +107,9 @@ describe('ClusterBubble', () => {
     expect(button.style.background).toBe('')
   })
 
-  // An OLD cluster gains the same cool-blue aging ring its oldest folded card would show —
+  // A STALE cluster gains the same cool-blue ring its coldest folded card would show —
   // composed on top of the urgency glow (own hue lane), only while closed.
-  it('composes the aging ring over the glow while closed, and drops it when open', () => {
+  it('composes the stale ring over the glow while closed, and drops it when open', () => {
     const { rerender } = render(
       <ClusterBubble
         group={[task('a'), task('b')]}
@@ -119,11 +119,11 @@ describe('ClusterBubble', () => {
         open={false}
         onToggle={vi.fn()}
         glow={OVERDUE_GLOW}
-        agingRing={AGING_RING}
+        staleRing={STALE_RING}
       />,
     )
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
-    // Closed: both the warm glow ring and the cool-blue aging ring are present.
+    // Closed: both the warm glow ring and the cool-blue stale ring are present.
     expect(button.style.boxShadow).toContain('rgba(194,105,63,1)')
     expect(button.style.boxShadow).toContain('rgba(50,118,205,0.95)')
 
@@ -136,16 +136,16 @@ describe('ClusterBubble', () => {
         open
         onToggle={vi.fn()}
         glow={OVERDUE_GLOW}
-        agingRing={AGING_RING}
+        staleRing={STALE_RING}
       />,
     )
-    // Open: raised popup shadow only — no aging ring.
+    // Open: raised popup shadow only — no stale ring.
     expect(button.style.boxShadow).not.toContain('rgba(50,118,205,0.95)')
   })
 
-  // With no glow, the aging ring + cool tint still compose over the bubble's resting shadow.
-  it('shows the aging ring + cool tint over the resting shadow when there is no glow', () => {
-    renderBubble({ open: false, agingRing: AGING_RING })
+  // With no glow, the stale ring + icy tint still compose over the bubble's resting shadow.
+  it('shows the stale ring + icy tint over the resting shadow when there is no glow', () => {
+    renderBubble({ open: false, staleRing: STALE_RING })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.boxShadow).toContain('rgba(50,118,205,0.95)')
     expect(button.style.boxShadow).toContain('rgba(0,0,0,.10)')

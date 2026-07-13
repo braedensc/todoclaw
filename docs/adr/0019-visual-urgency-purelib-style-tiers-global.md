@@ -8,6 +8,11 @@
 > slate `box-shadow` ring that _grows_ with age, so old cards gain presence instead of losing it.
 > The pure-lib / pinned-tiers / scope-guard decisions in this ADR still hold; only the visual
 > treatment (and the function name) changed. See `docs/STYLE.md` → _Visual urgency_.
+>
+> **Update 2026-07-13 — the aging ring became the STALE lane.** The cool treatment now keys off
+> being *ignored*, not age: a dated task cools 21 days past due (the 🔥 corner flag flips to ❄️ and
+> the due chip becomes an azure "Stale · Nd"), an undated one only after 90 days on the board.
+> `agingRingStyle` is now `staleness` → `staleRingStyle`/`staleBadge`. Same pure-lib shape.
 
 Stage 5's first polish PR ports EisenClaw's "warmth = the data" layer (glow, pulse, staleness) onto
 placed cards + cluster bubbles. Decisions:

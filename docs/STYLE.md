@@ -51,13 +51,13 @@ third party). Families are declared as Tailwind tokens.
 
 ---
 
-## Visual urgency (glow · pulse · aging ring)
+## Visual urgency (glow · pulse · stale ring)
 
 "Position = your decision. Warmth = the data." A placed card carries two independent, purely
 visual signals layered on top of its quadrant color. Both are **non-interactive** and apply only
 to **non-recurring** cards (a recurring task shows its `RC_COLOR` status badge instead) — and never
 to a done card (it has already left the grid). The exact tiers/constants live in
-`src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `agingRingStyle`) and are pinned (authoritative) by
+`src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `staleness`/`staleRingStyle`) and are pinned (authoritative) by
 `src/lib/visual-urgency.test.ts`; they originated from EisenClaw (`EISENCLAW-LOGIC-TO-PORT.md` §4/§5)
 but have since been tuned on Todoclaw's own merits (e.g. the amplified glow ladder).
 
@@ -67,19 +67,20 @@ but have since been tuned on Todoclaw's own merits (e.g. the amplified glow ladd
   A **cluster bubble** glows for the nearest due date among its non-recurring members.
 - **Pulse** — overdue cards/bubbles animate the `urgency-pulse` keyframe (`src/index.css`, 2s).
   Gated behind `@media (prefers-reduced-motion: reduce)`: the static ring stays, the motion stops.
-- **Aging ring + cool tint** — a card that has sat on the board for weeks gains a **cool-blue
-  `box-shadow` ring** (azure `50,118,205`, distinct from the reserved `puppy` brand blue) that grows
-  by age (`created_at → now`): `< 21d` none, `< 45d` thin, `< 75d` medium, `≥ 75d` thick (each with
-  a brighter halo), **plus a faint cool-blue card tint that graduates icier with age** (`#f3f8fd` →
-  `#eaf3fc` → `#e0edfb`) — the cold-side mirror of the warm hot-tier tint, so the coldest cards read
-  icy the way the hottest read warm. This is the deliberate **inverse** of EisenClaw's old fade
-  (which dimmed old cards away — replaced 2026-07-11, recolored blue + made more prominent + tinted
-  2026-07-12): an old, undone task is usually one you're avoiding, so it should draw the eye, not
-  recede. The ring keeps its own cool hue lane so it never reads as the warm urgency glow, and the
-  two compose into one shadow when both apply; when a card is both old and due-soon the **warm tint
-  wins** (a deadline out-shouts staleness). A **cluster bubble** takes the ring + tint of its
-  most-aged folded card (mirroring how its glow takes the nearest due date); expanded popup rows each
-  show their own. Staged tray cards are exempt. "A signal, not a judgment."
+- **Stale ring + icy tint** — a task that is clearly being **ignored** cools off (`staleness`,
+  2026-07-13; it replaced the created-age "aging" treatment): a dated task goes stale **21 days
+  past due** — the point where the 🔥 has stopped working — and an undated one only after **90
+  days on the board** (it may be a long-term idea, not an ignored commitment). A stale card FLIPS
+  lanes: the whole hot dress (pulse, warm tint, 🔥, terracotta chip) is replaced by a **cool-blue
+  `box-shadow` ring** (azure `50,118,205`, distinct from the reserved `puppy` brand blue) that
+  deepens at 1×/2×/3× the floor (3/6/9 weeks past due, or 3/6/9 months undated), **an icy card
+  tint that graduates with depth** (`#f3f8fd` → `#eaf3fc` → `#e0edfb`), a **❄️ corner flag**
+  replacing the 🔥, and an azure **"Stale · Nd" chip** replacing the due chip — the hot and cool
+  dresses never co-exist on one card. This keeps the deliberate **inverse** of EisenClaw's old
+  fade: an ignored task should draw the eye, not recede. A **cluster bubble** takes the ring +
+  tint of its deepest-stale folded card (`clusterStaleness`), and stale members stop feeding the
+  bubble's warm glow (`clusterNearestDue` skips them); expanded popup rows each show their own.
+  Staged tray cards are exempt. "A signal, not a judgment."
 - **Due badge** — the textual half of the layer: a small pill on non-recurring cards showing
   `overdue` / `today` / `Nd`, terracotta (`DUE_BADGE_URGENT`) when due within 2 days, muted grey
   (`DUE_BADGE_MUTED`) otherwise. Those two colors live in `src/lib/visual-urgency.ts` (html:590)

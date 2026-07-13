@@ -20,18 +20,23 @@
 //     color-independent channel; null for the softer tiers.
 //   - dueChipStyle(tier) / chip label helpers: the textual half, shared by the grid card,
 //     cluster popup rows, and list rows so the surfaces never drift.
-//   - agingRingStyle(task) / clusterAgingRing(group): a COOL-BLUE box-shadow ring that
-//     INTENSIFIES with a card's age — the inverse of EisenClaw's old fade. An old, undone task
-//     should draw the eye, not recede; the ring's cool-blue hue keeps it in its own lane so it
-//     never competes with the warm due-date glow (the two co-exist on one card). A cluster
-//     bubble takes the ring of its most-aged member, mirroring how its glow takes the nearest due.
+//   - staleness(task, d) + staleRingStyle / staleBadge / clusterStaleness: the COOL-BLUE
+//     "stale" lane — a task that is clearly being IGNORED cools off. A dated task goes stale
+//     once it's sat 3+ weeks past due (the 🔥 has stopped working); an undated task only after
+//     months on the board (it may be a long-term idea). When stale, the card FLIPS lanes: the
+//     hot dress (pulse, tint, 🔥, terracotta chip) is replaced wholesale by the cool one
+//     (azure ring + icy tint + ❄️ + "Stale · Nd" chip) — the two never co-exist on one card.
+//     A cluster bubble takes the ring of its most-stale member, mirroring how its glow takes
+//     the nearest due.
 //
 // Glow/chips are applied only to non-done, non-recurring cards by the caller (a recurring task
 // carries its own RC_COLOR status badge; a done task has left the grid). `daysUntil`
-// (scoring.ts) and `minutesUntilDueTime` (dates.ts) are timezone-aware; the aging ring is
-// elapsed-real-time. Priority SCORING is untouched by all of this — display only.
+// (scoring.ts) and `minutesUntilDueTime` (dates.ts) are timezone-aware; the undated stale clock
+// is elapsed-real-time from `created_at`. Priority SCORING is untouched by all of this — display
+// only.
 
 import { formatDueTime } from './dates'
+import { daysUntil, type ScoringOpts } from './scoring'
 
 const MS_PER_DAY = 86_400_000
 
@@ -239,31 +244,38 @@ export function gridChipLabel(
 }
 
 /**
- * A cool aging card treatment — a box-shadow ring plus (on the older tiers) a faint cool-blue
- * card TINT, the cold-side mirror of the warm urgency tint (`GlowStyle.background`). Both are
- * meant to be COMPOSED by the caller: the ring appended after the warm glow's shadow, the tint
- * applied only when the warmer urgency tint is absent (a due deadline out-shouts staleness).
+ * The cool stale card treatment — a box-shadow ring plus a faint cool-blue card TINT, the
+ * cold-side mirror of the warm urgency tint (`GlowStyle.background`). Composed by the caller
+ * exactly like a glow: ring appended after the base shadow, tint replacing the paper fill. A
+ * stale card never wears the warm dress at the same time (staleness gates the tier to 'none').
  */
-export interface AgingRingStyle {
+export interface StaleRingStyle {
   boxShadow: string
-  /** Cool-blue paper tint replacing the plain card fill, graduating icier with age (absent < 21d). */
+  /** Cool-blue paper tint replacing the plain card fill, graduating icier with staleness depth. */
   background?: string
 }
 
 /**
- * Cool-blue rgb triplet for the aging ring — a deliberately COOL hue with no overlap with the
- * warm urgency ladder (terracotta / gold / olive), so "old" and "due soon" read as two different
- * things even on the same card. A confident azure (distinct from the muted `puppy` brand blue,
- * which is reserved for BabyClaw / habits). Reused across the ring + halo alphas.
+ * Cool-blue rgb triplet for the stale lane — a deliberately COOL hue with no overlap with the
+ * warm urgency ladder (terracotta / gold / olive), so "gone cold" and "due soon" read as two
+ * different things across the board. A confident azure (distinct from the muted `puppy` brand
+ * blue, which is reserved for BabyClaw / habits). Reused across the ring + halo alphas.
  */
-const AGING_BLUE = '50,118,205'
+const STALE_BLUE = '50,118,205'
 
 /**
- * The age (whole days on the board) at/above which a card is "old enough" to wear the cool aging
- * treatment. The ring, the tint, AND the ❄️ badge all key off this ONE floor, so a card shows the
- * whole cool lane together or not at all. Same 21-day floor the retired EisenClaw fade used.
+ * A DATED task goes stale this many days PAST DUE — the point where the 🔥 has clearly stopped
+ * working and the task is being ignored, so the hot dress flips to the cool one. Inherits the
+ * 21-day floor the created-age treatment used (owner spec 2026-07-13: "Stale (21d)").
  */
-export const AGING_FLOOR_DAYS = 21
+export const STALE_OVERDUE_FLOOR_DAYS = 21
+
+/**
+ * An UNDATED task goes stale this many days after `created_at`. Deliberately much longer than
+ * the overdue floor: a task with no due date may be a long-term idea, not an ignored commitment,
+ * so it earns months on the board before it starts reading cold (owner spec 2026-07-13).
+ */
+export const STALE_UNDATED_FLOOR_DAYS = 90
 
 /** Whole days elapsed since an ISO timestamp (floor), or null if absent/unparseable. */
 function daysSince(iso: string | null, now: Date): number | null {
@@ -274,126 +286,152 @@ function daysSince(iso: string | null, now: Date): number | null {
 }
 
 /**
- * The aging treatment for a given card age in whole days — the tier ladder, shared by the per-card
- * `agingRingStyle` and the per-cluster `clusterAgingRing`. Cool-blue ring + halo that both grow
- * with age, plus (from the middle tier up) a faint cool-blue card TINT — the cold-side mirror of
- * the warm urgency tint, so the coldest cards read icy the way the hottest read warm. `null` under
- * the 21-day floor. The rings are pushed a touch louder than a same-rung warm tier (owner ask
- * 2026-07-12) so an old card genuinely stands out, while the loudest (months) sits just under the
- * overdue ring.
- *
- * | age      | ring + halo                   | tint       |
- * |----------|-------------------------------|------------|
- * | `< 21d`  | none (`null`)                 | —          |
- * | `< 45d`  | 2px ring + 14px haze          | `#f3f8fd`  |
- * | `< 75d`  | 2.5px ring + 20px haze        | `#eaf3fc`  |
- * | `>= 75d` | 3px ring + brighter 28px haze | `#e0edfb`  |
+ * One task's staleness — the single decision the whole cool lane (ring, tint, ❄️ badge, corner
+ * flag) keys off, so a card flips to the cold dress all at once or not at all.
  */
-function ringForAgeDays(days: number): AgingRingStyle | null {
-  if (days < AGING_FLOOR_DAYS) return null
-  if (days < 45)
+export interface StaleInfo {
+  /** The stale AMOUNT: days past due (dated) or days since created (undated). */
+  days: number
+  /** True when measured from the due date (an ignored deadline) vs created_at (an idea gone cold). */
+  overdue: boolean
+  /** The floor that tripped — `days / floor` is the staleness DEPTH driving the ring ladder. */
+  floor: number
+}
+
+/**
+ * The one staleness decision. `daysUntilDue` is the caller's timezone-aware `daysUntil` value
+ * (null = no due date) — the same input `urgencyTier` takes, so the two lanes can never disagree
+ * about what "past due" means:
+ *
+ *   - dated + >= 21d past due  → stale, measured from the due date (the 🔥 flips to ❄️)
+ *   - undated + >= 90d on the board → stale, measured from `created_at`
+ *   - future-dated, recently overdue, staged, or unparseable → not stale (null)
+ *
+ * A staged task never goes stale (it hasn't been "left on the board" yet); the recurring gate (a
+ * chore carries its own status clock) stays with the caller, as it does for the warm lane.
+ */
+export function staleness(
+  task: { created_at: string | null; staged: boolean },
+  daysUntilDue: number | null,
+  now: Date = new Date(),
+): StaleInfo | null {
+  if (task.staged) return null
+  if (daysUntilDue !== null) {
+    const past = -daysUntilDue
+    if (past < STALE_OVERDUE_FLOOR_DAYS) return null
+    return { days: past, overdue: true, floor: STALE_OVERDUE_FLOOR_DAYS }
+  }
+  const days = daysSince(task.created_at, now)
+  if (days === null || days < STALE_UNDATED_FLOOR_DAYS) return null
+  return { days, overdue: false, floor: STALE_UNDATED_FLOOR_DAYS }
+}
+
+/**
+ * The cool ring + icy tint for a staleness, deepening with DEPTH (`days / floor`) so both kinds
+ * ramp on the same ladder: a dated task at 3/6/9 weeks past due hits the same rungs an undated
+ * one hits at 3/6/9 months on the board. Ring/halo/tint values carry over unchanged from the
+ * retired created-age ladder (pushed louder than a same-rung warm tier, owner ask 2026-07-12);
+ * the loudest rung still sits just under the overdue ring.
+ *
+ * | depth        | ring + halo                   | tint       |
+ * |--------------|-------------------------------|------------|
+ * | not stale    | none (`null`)                 | —          |
+ * | `< 2×` floor | 2px ring + 14px haze          | `#f3f8fd`  |
+ * | `< 3×` floor | 2.5px ring + 20px haze        | `#eaf3fc`  |
+ * | `>= 3×`      | 3px ring + brighter 28px haze | `#e0edfb`  |
+ */
+export function staleRingStyle(stale: StaleInfo | null): StaleRingStyle | null {
+  if (!stale) return null
+  const depth = stale.days / stale.floor
+  if (depth < 2)
     return {
-      boxShadow: `0 0 0 2px rgba(${AGING_BLUE},0.6), 0 0 14px 3px rgba(${AGING_BLUE},0.3)`,
+      boxShadow: `0 0 0 2px rgba(${STALE_BLUE},0.6), 0 0 14px 3px rgba(${STALE_BLUE},0.3)`,
       background: '#f3f8fd',
     }
-  if (days < 75)
+  if (depth < 3)
     return {
-      boxShadow: `0 0 0 2.5px rgba(${AGING_BLUE},0.78), 0 0 20px 5px rgba(${AGING_BLUE},0.42)`,
+      boxShadow: `0 0 0 2.5px rgba(${STALE_BLUE},0.78), 0 0 20px 5px rgba(${STALE_BLUE},0.42)`,
       background: '#eaf3fc',
     }
   return {
-    boxShadow: `0 0 0 3px rgba(${AGING_BLUE},0.95), 0 0 28px 7px rgba(${AGING_BLUE},0.55)`,
+    boxShadow: `0 0 0 3px rgba(${STALE_BLUE},0.95), 0 0 28px 7px rgba(${STALE_BLUE},0.55)`,
     background: '#e0edfb',
   }
 }
 
 /**
- * The aging ring by card age (`created_at` → now) — the INVERSE of EisenClaw's old fade
- * (which desaturated + dimmed old cards into the background). An old, undone task is usually
- * one you're avoiding, so it should gain presence, not lose it: a cool-blue ring that grows
- * thicker + a brighter halo the longer the card has sat on the board.
- *
- * A staged task (still in the tray) never rings — it hasn't been "left on the board" yet. Age
- * breakpoints (21/45/75d) are carried over from the retired fade; an undated/unparseable card
- * gets none.
+ * The staleness of a CLUSTER — its DEEPEST-stale (highest `days / floor`) non-recurring member,
+ * so a bubble adopts the coldest task's treatment the same way its urgency glow adopts the
+ * nearest due date. Depth (not raw days) is compared so a task 9 weeks past due out-cools an
+ * undated 4-month-old idea. Recurring members carry their own status color and are skipped;
+ * clustered cards are placed (never staged). `null` when no member is stale.
  */
-export function agingRingStyle(
-  task: { created_at: string | null; staged: boolean },
+export function clusterStaleness(
+  group: ReadonlyArray<{
+    created_at: string | null
+    staged: boolean
+    due: string | null
+    recurring: unknown
+  }>,
+  opts: ScoringOpts,
   now: Date = new Date(),
-): AgingRingStyle | null {
-  if (task.staged) return null
-  const days = daysSince(task.created_at, now)
-  if (days === null) return null
-  return ringForAgeDays(days)
-}
-
-/**
- * The aging ring for a CLUSTER — the ring of its most-aged (oldest `created_at`) NON-recurring
- * member, so a bubble adopts the "hottest" task's treatment the same way its urgency glow adopts
- * the nearest due date (`clusterNearestDue`). Recurring members carry their own status color, not
- * an aging ring, and are skipped; clustered cards are placed (never staged). `null` when no member
- * is old enough (or none has a parseable `created_at`).
- */
-export function clusterAgingRing(
-  group: ReadonlyArray<{ created_at: string | null; recurring: unknown }>,
-  now: Date = new Date(),
-): AgingRingStyle | null {
-  let oldest: number | null = null
+): StaleInfo | null {
+  let deepest: StaleInfo | null = null
   for (const t of group) {
     if (t.recurring) continue
-    const d = daysSince(t.created_at, now)
-    if (d === null) continue
-    if (oldest === null || d > oldest) oldest = d
+    const s = staleness(t, daysUntil(t.due, opts), now)
+    if (!s) continue
+    if (!deepest || s.days / s.floor > deepest.days / deepest.floor) deepest = s
   }
-  return oldest === null ? null : ringForAgeDays(oldest)
+  return deepest
 }
 
 /**
- * Compact human age for the ❄️ aging chip: weeks, then months, then years. The days branch only
- * exists for completeness — the badge never renders below the aging floor (21d), so callers always
- * land on weeks or coarser.
+ * Compact human amount for the ❄️ stale chip: days up to a month (so the chip reads "Stale · 21d"
+ * right at the overdue floor), then weeks, months, years. The undated lane enters at 90d, so it
+ * always lands on months or coarser.
  */
 export function fmtAge(days: number): string {
-  if (days < AGING_FLOOR_DAYS) return `${days}d`
+  if (days < 30) return `${days}d`
   if (days < 70) return `${Math.round(days / 7)}w`
   if (days < 365) return `${Math.round(days / 30)}mo`
   return `${Math.round(days / 365)}y`
 }
 
 /**
- * The ❄️ aging badge — the cold-side mirror of the hot 🔥 flag (`urgencyIcon`). Where 🔥 means "act
- * now", ❄️ means "this has gone stale on the board" AND carries HOW long: `age` is the compact
- * "3w"/"5mo"/"1y" the chip renders, `label` the spelled-out aria text. Keyed off the SAME
- * `AGING_FLOOR_DAYS` as the aging ring/tint, so a card wears the ring, the tint, and this badge as
- * one cool lane. Returns null for a staged card (not yet "left on the board"), a fresh card, or an
- * unparseable created_at. The recurring gate (a chore carries its own status, not an age) is the
- * caller's — exactly as with the ring.
+ * The ❄️ stale badge — what a card wears INSTEAD of the hot dress once it's gone cold. It fills
+ * two slots at once: the corner flag (❄️ replacing the 🔥, `title` as its hover text) and the
+ * chip (`chip` replacing the terracotta "Overdue · Nd"), so callers render one badge, two ways.
+ * Keyed off the SAME `staleness` as the ring/tint — one cool lane, all or nothing. Null when not
+ * stale; the recurring gate is the caller's, exactly as with the ring.
  */
-export interface AgingBadge {
+export interface StaleBadge {
   glyph: string
-  /** Compact age for the chip text ("3w", "5mo", "1y"). */
-  age: string
-  /** Spelled-out aria/title label ("3w on the board"). */
-  label: string
+  /** Compact stale amount ("21d", "6w", "3mo") — the cluster rows' tiny-chip text. */
+  amount: string
+  /** Full chip text ("Stale · 21d") for the grid card + list row. */
+  chip: string
+  /** Spelled-out hover/aria text ("Stale — 21d past due" / "Stale — 3mo on the board"). */
+  title: string
 }
 
-export function agingBadge(
-  task: { created_at: string | null; staged: boolean },
-  now: Date = new Date(),
-): AgingBadge | null {
-  if (task.staged) return null
-  const days = daysSince(task.created_at, now)
-  if (days === null || days < AGING_FLOOR_DAYS) return null
-  const age = fmtAge(days)
-  return { glyph: '❄️', age, label: `${age} on the board` }
+export function staleBadge(stale: StaleInfo | null): StaleBadge | null {
+  if (!stale) return null
+  const amount = fmtAge(stale.days)
+  return {
+    glyph: '❄️',
+    amount,
+    chip: `Stale · ${amount}`,
+    title: stale.overdue ? `Stale — ${amount} past due` : `Stale — ${amount} on the board`,
+  }
 }
 
 /**
- * Inline style for the ❄️ aging chip — the cold-lane mirror of the terracotta overdue chip
- * (`dueChipStyle('overdue')`): a solid azure fill in the same `AGING_BLUE` hue as the ring, so the
- * textual "how old" badge reads as a sibling of the warm "how soon" badge without ever being
- * mistaken for it.
+ * Inline style for the ❄️ stale chip — the cold-lane mirror of the terracotta overdue chip
+ * (`dueChipStyle('overdue')`): a solid azure fill in the same `STALE_BLUE` hue as the ring, so
+ * the textual "how stale" badge reads as a sibling of the warm "how soon" badge without ever
+ * being mistaken for it.
  */
-export function agingChipStyle(): DueChipStyle {
-  return { backgroundColor: `rgb(${AGING_BLUE})`, color: '#fff' }
+export function staleChipStyle(): DueChipStyle {
+  return { backgroundColor: `rgb(${STALE_BLUE})`, color: '#fff' }
 }

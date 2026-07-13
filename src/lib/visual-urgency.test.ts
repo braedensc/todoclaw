@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
-  agingBadge,
-  agingChipStyle,
-  agingRingStyle,
-  clusterAgingRing,
+  clusterStaleness,
   dueChipStyle,
   fmtAge,
   fmtCountdown,
   fmtOverdueAmount,
   gridChipLabel,
+  staleBadge,
+  staleChipStyle,
+  staleness,
+  staleRingStyle,
   urgencyGlowStyle,
   urgencyIcon,
   urgencyTier,
@@ -18,7 +19,8 @@ import {
 // rings/halos, and the two reinforcing channels added alongside them — the graduated card tint
 // (urgencyGlowStyle.background) and the scarce hot-tier icon (urgencyIcon). If a value changes,
 // that is a visual-design decision — update the table in visual-urgency.ts AND the keyframes in
-// index.css, not just the assertion. The aging ring (below) intensifies with card age.
+// index.css, not just the assertion. The cool STALE lane (below) is the hot lane's off-ramp: a
+// task ignored 3+ weeks past due (or undated + months old) flips from 🔥 to ❄️.
 
 describe('urgencyTier', () => {
   it('null due → none; day boundaries land each tier', () => {
@@ -157,150 +159,170 @@ describe('chip label helpers', () => {
   })
 })
 
-describe('agingRingStyle', () => {
+describe('staleness', () => {
   const NOW = new Date('2026-07-02T12:00:00Z')
   // Build a created_at that is exactly `days` old relative to NOW.
   const agedByDays = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString()
+  const fresh = { created_at: agedByDays(1), staged: false }
 
-  it('returns null for a staged card regardless of age', () => {
-    expect(agingRingStyle({ created_at: agedByDays(100), staged: true }, NOW)).toBeNull()
+  it('a DATED task goes stale 21 days past due — measured from the due date, not created_at', () => {
+    // Freshly created but long past due → stale (the amount is time past due).
+    expect(staleness(fresh, -21, NOW)).toEqual({ days: 21, overdue: true, floor: 21 })
+    expect(staleness(fresh, -100, NOW)).toEqual({ days: 100, overdue: true, floor: 21 })
   })
 
-  it('returns null when created_at is missing or unparseable', () => {
-    expect(agingRingStyle({ created_at: null, staged: false }, NOW)).toBeNull()
-    expect(agingRingStyle({ created_at: 'not-a-date', staged: false }, NOW)).toBeNull()
+  it('a recently-overdue or future-dated task is NOT stale (the hot lane still owns it)', () => {
+    const old = { created_at: agedByDays(400), staged: false }
+    expect(staleness(old, -20, NOW)).toBeNull() // overdue, but under the 21d floor
+    expect(staleness(old, 0, NOW)).toBeNull() // due today
+    expect(staleness(old, 30, NOW)).toBeNull() // future-dated — scheduled, not ignored
   })
 
-  it('fresh (< 21d): no ring, including the boundary at 20 days', () => {
-    expect(agingRingStyle({ created_at: agedByDays(0), staged: false }, NOW)).toBeNull()
-    expect(agingRingStyle({ created_at: agedByDays(20), staged: false }, NOW)).toBeNull()
+  it('an UNDATED task goes stale only after 90 days on the board (long-term ideas cool slowly)', () => {
+    expect(staleness({ created_at: agedByDays(89), staged: false }, null, NOW)).toBeNull()
+    expect(staleness({ created_at: agedByDays(90), staged: false }, null, NOW)).toEqual({
+      days: 90,
+      overdue: false,
+      floor: 90,
+    })
   })
 
-  it('21–44d: thin cool-blue ring + faintest cool tint', () => {
+  it('null for a staged card regardless of age or overdue amount', () => {
+    expect(staleness({ created_at: agedByDays(200), staged: true }, null, NOW)).toBeNull()
+    expect(staleness({ created_at: agedByDays(1), staged: true }, -50, NOW)).toBeNull()
+  })
+
+  it('null for an undated card with missing or unparseable created_at', () => {
+    expect(staleness({ created_at: null, staged: false }, null, NOW)).toBeNull()
+    expect(staleness({ created_at: 'not-a-date', staged: false }, null, NOW)).toBeNull()
+  })
+})
+
+describe('staleRingStyle', () => {
+  // Depth ladder: rungs at 1×, 2×, 3× the floor — so 3/6/9 weeks past due hit the same rungs
+  // as 3/6/9 months on the board.
+  const overdueBy = (days: number) => ({ days, overdue: true, floor: 21 })
+  const undatedFor = (days: number) => ({ days, overdue: false, floor: 90 })
+
+  it('null when not stale', () => {
+    expect(staleRingStyle(null)).toBeNull()
+  })
+
+  it('depth < 2×: thin cool-blue ring + faintest icy tint', () => {
     const expected = {
       boxShadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 14px 3px rgba(50,118,205,0.3)',
       background: '#f3f8fd',
     }
-    expect(agingRingStyle({ created_at: agedByDays(21), staged: false }, NOW)).toEqual(expected)
-    expect(agingRingStyle({ created_at: agedByDays(44), staged: false }, NOW)).toEqual(expected)
+    expect(staleRingStyle(overdueBy(21))).toEqual(expected)
+    expect(staleRingStyle(overdueBy(41))).toEqual(expected)
+    expect(staleRingStyle(undatedFor(90))).toEqual(expected)
+    expect(staleRingStyle(undatedFor(179))).toEqual(expected)
   })
 
-  it('45–74d: medium cool-blue ring + cool tint', () => {
+  it('depth < 3×: medium cool-blue ring + icier tint', () => {
     const expected = {
       boxShadow: '0 0 0 2.5px rgba(50,118,205,0.78), 0 0 20px 5px rgba(50,118,205,0.42)',
       background: '#eaf3fc',
     }
-    expect(agingRingStyle({ created_at: agedByDays(45), staged: false }, NOW)).toEqual(expected)
-    expect(agingRingStyle({ created_at: agedByDays(74), staged: false }, NOW)).toEqual(expected)
+    expect(staleRingStyle(overdueBy(42))).toEqual(expected)
+    expect(staleRingStyle(overdueBy(62))).toEqual(expected)
+    expect(staleRingStyle(undatedFor(180))).toEqual(expected)
   })
 
-  it('>= 75d: thick cool-blue ring + brighter halo + iciest tint', () => {
+  it('depth >= 3×: thick cool-blue ring + brighter halo + iciest tint', () => {
     const expected = {
       boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
       background: '#e0edfb',
     }
-    expect(agingRingStyle({ created_at: agedByDays(75), staged: false }, NOW)).toEqual(expected)
-    expect(agingRingStyle({ created_at: agedByDays(365), staged: false }, NOW)).toEqual(expected)
+    expect(staleRingStyle(overdueBy(63))).toEqual(expected)
+    expect(staleRingStyle(overdueBy(365))).toEqual(expected)
+    expect(staleRingStyle(undatedFor(270))).toEqual(expected)
   })
 })
 
-describe('clusterAgingRing', () => {
+describe('clusterStaleness', () => {
   const NOW = new Date('2026-07-02T12:00:00Z')
   const agedByDays = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString()
-  // The >= 75d tier — the strongest ring + iciest tint, expected when the oldest member is months old.
-  const OLDEST_RING = {
-    boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
-    background: '#e0edfb',
+  // daysUntil is timezone-aware; UTC keeps the arithmetic exact for these fixtures.
+  const opts = { timeZone: 'UTC', now: NOW }
+  const dueDaysAgo = (days: number) =>
+    new Date(NOW.getTime() - days * 86_400_000).toISOString().slice(0, 10)
+  interface Member {
+    created_at: string | null
+    staged: boolean
+    due: string | null
+    recurring: unknown
   }
-
-  it('takes the ring of the OLDEST (hottest) non-recurring member in a mixed group', () => {
-    const group = [
-      { created_at: agedByDays(3), recurring: null }, // fresh
-      { created_at: agedByDays(100), recurring: null }, // months old → wins
-      { created_at: agedByDays(30), recurring: null }, // weeks
-    ]
-    expect(clusterAgingRing(group, NOW)).toEqual(OLDEST_RING)
+  const member = (over: Partial<Member>): Member => ({
+    created_at: agedByDays(1),
+    staged: false,
+    due: null,
+    recurring: null,
+    ...over,
   })
 
-  it('ignores recurring members even if they are the oldest', () => {
+  it('takes the DEEPEST-stale member by depth (days/floor), across both stale kinds', () => {
     const group = [
-      { created_at: agedByDays(300), recurring: { frequencyDays: 7 } }, // oldest but recurring → skipped
-      { created_at: agedByDays(30), recurring: null }, // weeks → the ring
+      member({ due: dueDaysAgo(63) }), // 3× the overdue floor → depth 3
+      member({ created_at: agedByDays(100) }), // undated at 100d → depth ~1.1
+      member({ due: dueDaysAgo(2) }), // recently overdue → not stale
     ]
-    expect(clusterAgingRing(group, NOW)).toEqual({
-      boxShadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 14px 3px rgba(50,118,205,0.3)',
-      background: '#f3f8fd',
-    })
+    // Depth 3 wins even though 100d > 63d in raw days.
+    expect(clusterStaleness(group, opts, NOW)).toEqual({ days: 63, overdue: true, floor: 21 })
   })
 
-  it('returns null when no non-recurring member is old enough (or none parseable)', () => {
+  it('skips recurring members and returns null when nobody is stale', () => {
     expect(
-      clusterAgingRing(
-        [
-          { created_at: agedByDays(5), recurring: null },
-          { created_at: agedByDays(19), recurring: null },
-        ],
+      clusterStaleness(
+        [member({ due: dueDaysAgo(400), recurring: { frequencyDays: 7 } }), member({})],
+        opts,
         NOW,
       ),
     ).toBeNull()
-    expect(clusterAgingRing([{ created_at: null, recurring: null }], NOW)).toBeNull()
   })
 })
 
 describe('fmtAge', () => {
-  it('weeks up to 10w, then months, then years', () => {
-    expect(fmtAge(21)).toBe('3w')
+  it('days up to a month, weeks to 10w, then months, then years', () => {
+    expect(fmtAge(21)).toBe('21d')
+    expect(fmtAge(29)).toBe('29d')
+    expect(fmtAge(30)).toBe('4w')
     expect(fmtAge(44)).toBe('6w')
-    expect(fmtAge(60)).toBe('9w')
+    expect(fmtAge(69)).toBe('10w')
     expect(fmtAge(70)).toBe('2mo')
-    expect(fmtAge(74)).toBe('2mo')
-    expect(fmtAge(75)).toBe('3mo')
     expect(fmtAge(90)).toBe('3mo')
     expect(fmtAge(364)).toBe('12mo')
     expect(fmtAge(365)).toBe('1y')
     expect(fmtAge(730)).toBe('2y')
   })
-
-  it('falls back to plain days below the aging floor (never rendered, but well-defined)', () => {
-    expect(fmtAge(0)).toBe('0d')
-    expect(fmtAge(20)).toBe('20d')
-  })
 })
 
-describe('agingBadge', () => {
-  const NOW = new Date('2026-07-02T12:00:00Z')
-  const agedByDays = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString()
-
-  it('null for a staged card regardless of age', () => {
-    expect(agingBadge({ created_at: agedByDays(200), staged: true }, NOW)).toBeNull()
+describe('staleBadge', () => {
+  it('null when not stale', () => {
+    expect(staleBadge(null)).toBeNull()
   })
 
-  it('null when created_at is missing or unparseable', () => {
-    expect(agingBadge({ created_at: null, staged: false }, NOW)).toBeNull()
-    expect(agingBadge({ created_at: 'not-a-date', staged: false }, NOW)).toBeNull()
-  })
-
-  it('null below the aging floor (fresh cards stay unbadged, including the 20-day boundary)', () => {
-    expect(agingBadge({ created_at: agedByDays(0), staged: false }, NOW)).toBeNull()
-    expect(agingBadge({ created_at: agedByDays(20), staged: false }, NOW)).toBeNull()
-  })
-
-  it('❄️ + compact age + spelled-out label from the floor up', () => {
-    expect(agingBadge({ created_at: agedByDays(21), staged: false }, NOW)).toEqual({
+  it('❄️ + compact amount + chip/title text for an ignored deadline', () => {
+    expect(staleBadge({ days: 21, overdue: true, floor: 21 })).toEqual({
       glyph: '❄️',
-      age: '3w',
-      label: '3w on the board',
+      amount: '21d',
+      chip: 'Stale · 21d',
+      title: 'Stale — 21d past due',
     })
-    expect(agingBadge({ created_at: agedByDays(150), staged: false }, NOW)).toEqual({
+  })
+
+  it('…and for an undated idea gone cold, the title says "on the board"', () => {
+    expect(staleBadge({ days: 150, overdue: false, floor: 90 })).toEqual({
       glyph: '❄️',
-      age: '5mo',
-      label: '5mo on the board',
+      amount: '5mo',
+      chip: 'Stale · 5mo',
+      title: 'Stale — 5mo on the board',
     })
   })
 })
 
-describe('agingChipStyle', () => {
+describe('staleChipStyle', () => {
   it('solid azure fill (the cold-lane mirror of the terracotta overdue chip)', () => {
-    expect(agingChipStyle()).toEqual({ backgroundColor: 'rgb(50,118,205)', color: '#fff' })
+    expect(staleChipStyle()).toEqual({ backgroundColor: 'rgb(50,118,205)', color: '#fff' })
   })
 })

@@ -1,7 +1,7 @@
 // The one-line decoder under the grid for the two glow ladders (2026-07-08 workshop): tiny
 // card-like swatches wearing scaled-down versions of the real tier rings, plus the ⏰
-// convention. Two hue lanes: the WARM ladder = due-date urgency, the COOL pair = how long a
-// card has sat on the board (the aging ring — an old, untouched task gains presence). Deliberately
+// convention. Two hue lanes: the WARM ladder = due-date urgency, the COOL pair = staleness (a
+// task ignored long past due — or undated for months — cools off but gains presence). Deliberately
 // quiet (11px, muted) — the cards should explain themselves; this is confirmation, not
 // instruction. Desktop-only by construction (the grid never renders on mobile, ADR-0028; mobile's
 // colored list chips carry their meaning in words).
@@ -33,16 +33,18 @@ const SWATCHES: Swatch[] = [
   },
 ]
 
-// Dot-scaled echoes of the COOL-BLUE agingRingStyle rings — same azure hue (50,118,205), halo
-// scaled to ~1/3 for the dot. Two rungs stand in for the three age tiers (a card older than these
-// just reads "old"). Keep in step with lib/visual-urgency.ts.
-const AGING_SWATCHES: Swatch[] = [
+// Dot-scaled echoes of the COOL-BLUE staleRingStyle rings — same azure hue (50,118,205), halo
+// scaled to ~1/3 for the dot. Two rungs stand in for the three depth tiers (a card colder than
+// these just reads "long stale"). A task goes stale once it's clearly being IGNORED — 3+ weeks
+// past due (the 🔥 cools into ❄️), or months on the board for an undated card. Keep in step with
+// lib/visual-urgency.ts.
+const STALE_SWATCHES: Swatch[] = [
   {
-    label: 'weeks on the board',
+    label: 'stale (long past due)',
     shadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 5px 2px rgba(50,118,205,0.3)',
   },
   {
-    label: 'months on the board',
+    label: 'long stale',
     shadow: '0 0 0 2.5px rgba(50,118,205,0.95), 0 0 6px 2px rgba(50,118,205,0.45)',
   },
 ]
@@ -72,15 +74,15 @@ export function GridLegend() {
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
         <span aria-hidden>⏰</span> has a set time
       </span>
-      {/* Divider between the warm urgency lane and the cool aging lane. */}
+      {/* Divider between the warm urgency lane and the cool stale lane. */}
       <span aria-hidden className="text-border">
         |
       </span>
-      {AGING_SWATCHES.map((s) => (
+      {STALE_SWATCHES.map((s) => (
         <SwatchItem key={s.label} {...s} />
       ))}
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
-        <span aria-hidden>❄️</span> how long it&apos;s sat
+        <span aria-hidden>❄️</span> how long it&apos;s been ignored
       </span>
     </div>
   )

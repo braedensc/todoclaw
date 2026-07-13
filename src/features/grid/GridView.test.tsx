@@ -77,11 +77,11 @@ function makeTask(over: Partial<Task>): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
-    // Fresh by construction: derived from the SAME real clock GridCard's agingRingStyle reads (it
-    // injects no `now`), so a default card stays well under the 21-day aging floor and never
-    // silently crosses a tier as real time passes. A fixed date here would rot — e.g. a
-    // '2026-06-23' default turns aged on 2026-07-14. Aging-specific tests override created_at
-    // with a fixed far-past date (e.g. '2000-01-01') to assert the ring deterministically.
+    // Fresh by construction: derived from the SAME real clock GridCard's staleness check reads
+    // (it injects no `now`), so a default undated card stays well under the 90-day stale floor
+    // and never silently crosses a tier as real time passes. A fixed date here would rot.
+    // Stale-specific tests override created_at with a fixed far-past date (e.g. '2000-01-01'),
+    // or set a due date weeks in the past, to assert the cool dress deterministically.
     created_at: new Date(Date.now() - 86_400_000).toISOString(), // ~1 day ago
     deleted_at: null,
     completed_at: null,
@@ -271,8 +271,11 @@ describe('GridView card visuals', () => {
 
   // Visual urgency wired end-to-end onto the real card (the constant tiers themselves are pinned
   // in lib/visual-urgency.test.ts — here we only prove the card threads them onto the DOM node).
-  it('shows the overdue chip + pulse + warm tint + 🔥 flag for a past-due non-recurring card', () => {
-    tasksFixture = [makeTask({ id: 'od', text: 'Ship it', due: '2000-01-01', staged: false })]
+  it('shows the overdue chip + pulse + warm tint + 🔥 flag for a recently past-due card', () => {
+    // ~2 days past due (real clock; the UTC date-slice may read as 1 day in America/New_York) —
+    // firmly overdue but well under the 21-day stale floor, so the HOT dress owns the card.
+    const due = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)
+    tasksFixture = [makeTask({ id: 'od', text: 'Ship it', due, staged: false })]
     render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
     expect(within(card).getByText(/^Overdue · \d+d$/)).toBeInTheDocument()
@@ -283,17 +286,50 @@ describe('GridView card visuals', () => {
     expect(within(card).getByTitle('Overdue')).toHaveTextContent('🔥')
   })
 
-  it('gives an old (aging) card a cool-blue ring + icy tint instead of fading it', () => {
+  it('cools a LONG-ignored overdue card: ❄️ replaces the 🔥, "Stale · Nw" replaces the overdue chip', () => {
+    // ~60 days past due → 3+ weeks past the stale floor: the whole hot dress flips to the cool one.
+    const due = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10)
+    tasksFixture = [makeTask({ id: 'ignored', text: 'Someday maybe', due, staged: false })]
+    render(<GridHarness />)
+    const card = screen.getByTestId('grid-card')
+    // The hot dress is GONE: no pulse, no 🔥, no terracotta "Overdue · Nd" chip.
+    expect(card.style.animation).toBe('')
+    expect(within(card).queryByTitle('Overdue')).not.toBeInTheDocument()
+    expect(within(card).queryByText(/^Overdue/)).not.toBeInTheDocument()
+    // In its place, the cool one: the ❄️ corner flag — the chip carries the same spelled-out
+    // title, so query for the flag as the ❄️-only element among them…
+    const staleBits = within(card).getAllByTitle(/^Stale — \d+w past due$/)
+    expect(staleBits.some((el) => el.textContent === '❄️')).toBe(true)
+    // …the azure "Stale · Nw" chip, and the mid-depth cool ring + icy tint (60d ≈ 2.9× the floor).
+    expect(within(card).getByText(/^❄️ Stale · \d+w$/)).toBeInTheDocument()
+    expect(card.style.boxShadow).toContain('rgba(50,118,205,0.78)')
+    expect(card.style.background).toBe('rgb(234, 243, 252)') // #eaf3fc
+  })
+
+  it('cools an undated card only after months on the board (a long-term idea, not ignored)', () => {
     tasksFixture = [makeTask({ id: 'old', created_at: '2000-01-01T00:00:00.000Z', staged: false })]
     render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
-    // > 75 days old → the thickest cool-blue aging ring threads onto the card (see agingRingStyle),
-    // plus the iciest cool tint (#e0edfb) — the cold-side mirror of the warm hot-tier tint.
-    // The retired fade is gone: full opacity, no desaturating filter.
+    // Decades past the 90-day undated floor → the deepest cool-blue stale ring threads onto the
+    // card (see staleRingStyle), plus the iciest tint — and the ❄️ badge says how long it's sat.
     expect(card.style.boxShadow).toContain('rgba(50,118,205,0.95)')
     expect(card.style.background).toBe('rgb(224, 237, 251)') // #e0edfb
+    expect(within(card).getByText(/^❄️ Stale · \d+y$/)).toBeInTheDocument()
+    const staleBits = within(card).getAllByTitle(/^Stale — \d+y on the board$/)
+    expect(staleBits.some((el) => el.textContent === '❄️')).toBe(true)
+    // The retired fade stays gone: full opacity, no desaturating filter.
     expect(card.style.opacity).toBe('')
     expect(card.style.filter).toBe('')
+  })
+
+  it('keeps a fresh undated card clean — no ring, no ❄️ (staleness needs months, not weeks)', () => {
+    // 30 days old: past the OLD created-age floor (21d) but far under the undated stale floor.
+    const created_at = new Date(Date.now() - 30 * 86_400_000).toISOString()
+    tasksFixture = [makeTask({ id: 'idea', created_at, staged: false })]
+    render(<GridHarness />)
+    const card = screen.getByTestId('grid-card')
+    expect(card.style.boxShadow).toBe('')
+    expect(within(card).queryByText(/Stale/)).not.toBeInTheDocument()
   })
 
   it('suppresses the urgency glow + due badge on a recurring card (it has its own status)', () => {

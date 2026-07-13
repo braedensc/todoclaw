@@ -14,7 +14,8 @@ due-soon bonus (`src/lib/scoring.ts`).
 - **`ListRow.tsx`** — one ranked row: quadrant-colored rank number + 4px left border, a
   recurring glyph badge (cadence + status in the tooltip, `src/lib/recurring.ts`), a `×N`
   recurring completion badge (`doneCount ≥ 3`, mirrors the grid card), the task text, a due
-  badge (`daysUntil`) or recurring status, and a `staging` badge. The **row body itself is the
+  badge (`daysUntil`), recurring status, or azure `❄️ Stale · Nd` chip (a task ignored 3+ weeks
+  past due — or undated for months — cools out of the warm due badge), and a `staging` badge. The **row body itself is the
   expand toggle** (batch-2 item 9): a single wide button — chevron + rank + badges + text —
   that opens/closes `ExpandedRow` on click or Enter/Space (`aria-expanded`); a leading chevron
   is the cue. Text edit is the secondary gesture: **double-click** (mouse) or **F2** (keyboard)
