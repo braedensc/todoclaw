@@ -12,6 +12,18 @@ import { ok, err, systemErr, updateTaskRow } from './helpers.ts'
 
 const uuid = z.string().uuid()
 
+// A local wall-clock due time (tasks.due_time, ADR due-dates-wall-clock). Accept 24-hour H:MM /
+// HH:MM / HH:MM:SS (lenient on a single-digit hour so "9:30" isn't rejected), and normalize to a
+// uniform HH:MM:SS. Returns null on anything malformed (bad hour, non-numeric) so the caller returns
+// a friendly error instead of writing garbage into the `time` column.
+function normalizeDueTime(t: string): string | null {
+  const m = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/.exec(t.trim())
+  if (!m) return null
+  const hour = Number(m[1])
+  if (hour > 23) return null
+  return `${String(hour).padStart(2, '0')}:${m[2]}:${m[3] ?? '00'}`
+}
+
 // "1 hour before" / "at the due time" — the confirmation phrase for a reminder offset.
 const reminderPhrase = (minutes: number): string =>
   minutes === 0 ? 'at the due time' : `${formatOffset(minutes)} before`
@@ -160,6 +172,12 @@ export const taskCapabilities: Capability[] = [
           .string()
           .nullish()
           .describe('ISO 8601 date (e.g. 2026-07-01) or null for no due date.'),
+        due_time: z
+          .string()
+          .nullish()
+          .describe(
+            'Optional local wall-clock time in 24-hour HH:MM (e.g. "15:00" for 3 PM) to anchor the due date to a specific time. Set this when the user names a time, or when they want a reminder — a reminder needs a due time. Requires a due date; omit for an all-day task.',
+          ),
         urgency: z
           .enum(['low', 'medium', 'high'])
           .nullish()
@@ -208,6 +226,14 @@ export const taskCapabilities: Capability[] = [
         y,
         staged,
         due,
+      }
+      // A due time only makes sense with a due date (the wall-clock model anchors the time TO a day).
+      // Validate + normalize; reject a malformed time or a time with no date so nothing bad is stored.
+      if (i.due_time) {
+        if (!due) return err('A due time needs a due date too — give me a date and the time.')
+        const dt = normalizeDueTime(i.due_time)
+        if (!dt) return err("That time didn't look right — use 24-hour HH:MM, like 15:00 for 3 PM.")
+        row.due_time = dt
       }
       // Only write a size when the model supplied one; otherwise the column stays NULL and Plan My
       // Day infers effort at plan time (the "hybrid" half of the sizing model).
@@ -277,20 +303,47 @@ export const taskCapabilities: Capability[] = [
 
   defineCapability({
     name: 'set_due_date',
-    description: "Set or clear a task's due date; the grid position follows the new due date.",
+    description:
+      "Set or clear a task's due date, and optionally a due TIME; the grid position follows the new due date. Set a time when the user names one, or when they want a reminder (a reminder needs a due time).",
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
         due: z.string().nullable().describe('ISO 8601 date, or null to clear.'),
+        due_time: z
+          .string()
+          .nullish()
+          .describe(
+            'Optional local wall-clock time in 24-hour HH:MM (e.g. "15:00" for 3 PM), or null to clear just the time. Omit to leave the existing time unchanged. Clearing the due date clears the time too.',
+          ),
       })
       .strict(),
     async execute(ctx, i) {
       const now = ctx.now ?? new Date()
       const place = placeByDue(i.due, ctx.timeZone, now)
+      const patch: Record<string, unknown> = {
+        due: i.due,
+        x: place.x,
+        y: place.y,
+        staged: place.staged,
+      }
+      // due_time is three-way: clearing the date clears the time; else a provided time is
+      // validated/set (or null clears just the time); undefined leaves the existing time alone.
+      if (i.due === null) {
+        patch.due_time = null
+      } else if (i.due_time !== undefined) {
+        if (i.due_time === null) {
+          patch.due_time = null
+        } else {
+          const dt = normalizeDueTime(i.due_time)
+          if (!dt)
+            return err("That time didn't look right — use 24-hour HH:MM, like 15:00 for 3 PM.")
+          patch.due_time = dt
+        }
+      }
       return updateTaskRow(
         ctx.client,
         i.task_id,
-        { due: i.due, x: place.x, y: place.y, staged: place.staged },
+        patch,
         i.due ? 'Set the due date for' : 'Cleared the due date for',
       )
     },
