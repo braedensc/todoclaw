@@ -2,6 +2,7 @@
 // Run: deno test --no-check supabase/functions/_shared/plan-prompt.test.ts
 import { assert, assertEquals, assertThrows } from 'jsr:@std/assert@1'
 import {
+  EMIT_PLAN_TOOL,
   PlanRequestSchema,
   SYSTEM_PROMPT,
   buildUserPrompt,
@@ -104,6 +105,21 @@ Deno.test('system prompt distinguishes a fixed appointment from a due-by deadlin
   for (const n of [1, 2, 3, 4, 5, 6, 7]) assert(SYSTEM_PROMPT.includes(`\n${n}. `))
   assert(!SYSTEM_PROMPT.includes('\n8. '))
 })
+
+Deno.test(
+  'system prompt defaults to one small rock; a third is only a chore or ongoing session',
+  () => {
+    // The normal day is one big rock + one small rock. A second is the exception (deadlines/open day),
+    // and a third is allowed ONLY for a must-do recurring chore or an ongoing-project session — never
+    // a third ordinary deliverable. Both the prose and the emit_plan cap keep the plan lean.
+    assert(SYSTEM_PROMPT.includes('default to exactly ONE'))
+    assert(SYSTEM_PROMPT.includes('one big rock plus one small rock'))
+    assert(SYSTEM_PROMPT.includes('THIRD small rock'))
+    assert(SYSTEM_PROMPT.includes('never a third ordinary deliverable'))
+    // The schema caps smallRocks at 3 (focus + up to two extras, the last chore/ongoing only).
+    assertEquals(EMIT_PLAN_TOOL.input_schema.properties.smallRocks.maxItems, 3)
+  },
+)
 
 Deno.test('task size renders with its hour hint only when present; untagged lines omit it', () => {
   const sized: PlanRequest = {
