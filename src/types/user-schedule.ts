@@ -52,6 +52,10 @@ const assistantSchema = z.object({
   tone: z.enum(ASSISTANT_TONES).optional(),
   verbosity: assistantVerbosity.optional(),
   customInstructions: z.string().trim().max(ASSISTANT_INSTRUCTIONS_MAX).optional(),
+  // Memory kill switch: absent ⇒ ON (default). Only `false` is ever persisted; the server reads it
+  // the same way (chat-context.ts: memoryEnabled !== false). Turning it off hides the memory tools +
+  // the SAVED MEMORY block; it does NOT delete stored memories (that's the explicit "Forget" action).
+  memoryEnabled: z.boolean().optional(),
 })
 
 // ---- Schedule (modeled on planning/eisenclaw-export/data/user-schedule-braeden.json) ---------

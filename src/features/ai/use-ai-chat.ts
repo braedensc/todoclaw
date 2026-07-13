@@ -13,6 +13,8 @@ const DOMAIN_QUERY_KEYS: Record<string, readonly unknown[]> = {
   history: ['history'],
   // BabyClaw set_reminder/clear_reminder → refresh the reminder pickers (useTaskReminders).
   reminders: ['task_reminders'],
+  // BabyClaw save/update/delete_memory → refresh the Settings → AI memory list (use-memories).
+  memories: ['assistant_memories'],
 }
 
 // Streaming chat over the ai-chat Edge Function. functions.invoke() doesn't expose streams, so

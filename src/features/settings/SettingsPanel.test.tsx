@@ -11,6 +11,10 @@ vi.mock('../schedule/use-user-schedule', () => ({
   useSaveScheduleConfig: () => ({ mutate: saveMutate, isPending: false, isError: false }),
 }))
 
+// Stub the live memory list (its own data hooks need a QueryClient + Supabase); it is covered by
+// MemoryList.test.tsx. This panel test only exercises the draft fields, not the memory list.
+vi.mock('../ai/MemoryList', () => ({ MemoryList: () => null }))
+
 // Stub the push hook so the panel test doesn't pull in the real Supabase client (which throws at
 // import without env vars) or the browser Push/Notification APIs (absent in jsdom).
 vi.mock('../notifications/use-push-subscription', () => ({
