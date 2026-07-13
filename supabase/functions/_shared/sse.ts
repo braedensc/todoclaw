@@ -29,7 +29,15 @@ export type SseEvent =
       summary: string
       messages: unknown[]
     }
-  | { type: 'message'; role: 'assistant'; content: unknown }
+  | {
+      type: 'message'
+      role: 'assistant'
+      content: unknown
+      // The server's FULL authoritative message array for the turn — BabyClaw's own
+      // tool_use/tool_result turns included (#245). The client adopts it wholesale so its next
+      // resend carries what the assistant actually did. Absent on a response with no history sync.
+      history?: unknown[]
+    }
   | { type: 'done'; stop_reason: string }
   | { type: 'error'; code: string; message?: string }
 
