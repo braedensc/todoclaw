@@ -34,8 +34,10 @@ production project after every green CI on `main`.
   OPTIONS (`_shared/cors.ts`), so the gateway check is redundant **and** harmful — turning it off
   moves the identical check inside the function (no security loss; RLS still isolates data
   independently). `--use-api` bundles server-side (no Docker → removes a CI failure class). A
-  post-deploy smoke asserts an unauthenticated POST to `ai-status` returns **401** (deployed +
-  reachable + own-auth enforced); a 404/000/5xx fails the deploy.
+  post-deploy smoke asserts **every** deployed function is reachable: an unauthenticated POST must
+  answer (the code differs by auth — own-JWT `401`, `DISPATCH_SECRET` `403`, `redeem-invite` `400`),
+  and a `404`/`000`/`5xx` fails the deploy. (Broadened 2026-07-12 from an `ai-status`-only `401`
+  assertion once the deploy list became directory-derived.)
 - **Careful-gating extras.** `concurrency: prod-deploy` (serialize; never `cancel-in-progress` a
   live `db push`) + per-job `timeout-minutes` so a hung run can't hold the lock (and a stuck
   migration aborts, releasing its DB lock); a `github.ref == main` guard on dispatch closes the

@@ -185,42 +185,81 @@ jobs:
         with:
           version: 2.107.0
 
+      - name: Discover deployable functions
+        id: discover
+        if: steps.pre.outputs.configured == 'true'
+        run: |
+          # Derive the deploy list from the tree instead of hardcoding it. Every Edge Function is a
+          # directory under supabase/functions/ with an index.ts; globbing */index.ts naturally
+          # excludes _shared (a helper dir, no index.ts) and any non-function file. A newly added
+          # function is now deployed AND smoke-tested automatically — a hardcoded omission once left
+          # dispatch-reminders undeployed and its pg_cron POST 404'd every minute (silently green).
+          fns=""
+          for idx in supabase/functions/*/index.ts; do
+            [ -f "$idx" ] || continue # zero matches → literal glob; skip it
+            name=$(basename "$(dirname "$idx")")
+            [ "$name" = "_shared" ] && continue # defensive: _shared has no index.ts today
+            fns="${fns:+$fns }$name"
+          done
+          if [ -z "$fns" ]; then
+            echo "::error::no deployable functions found under supabase/functions/*/index.ts — refusing to deploy nothing"
+            exit 1
+          fi
+          echo "Deployable functions: $fns"
+          echo "fns=$fns" >> "$GITHUB_OUTPUT"
+
       - name: Deploy functions
         if: steps.pre.outputs.configured == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          FNS: ${{ steps.discover.outputs.fns }}
         run: |
-          # Deploy the functions explicitly (skips `_shared` / config).
+          # Deploy every function the discover step found (list derived from the tree, not hardcoded —
+          # a function can no longer be silently omitted from the deploy).
           #   --use-api      : bundle server-side, no Docker (removes a whole CI failure class).
           #   --no-verify-jwt: turn OFF the gateway JWT check so the CORS OPTIONS preflight
           #                    reaches the function; each function verifies the JWT itself
           #                    (_shared/auth.ts) and RLS isolates data. Mirrors the
           #                    `verify_jwt = false` in supabase/config.toml (belt-and-suspenders).
-          # dispatch-messages / dispatch-reminders have no user JWT: the crons gate them with
-          # DISPATCH_SECRET. generate-invite/redeem-invite were previously omitted (a gap); admin is
-          # owner-gated. Keep this list in sync with supabase/functions/* — a function missing here is
-          # NEVER deployed (dispatch-reminders was such a gap: its pg_cron POST 404'd every minute).
-          for fn in ai-status plan-my-day ai-chat dispatch-messages dispatch-reminders generate-invite redeem-invite admin; do
+          # dispatch-messages / dispatch-reminders have no user JWT (gated by DISPATCH_SECRET);
+          # admin / generate-invite are owner-gated; redeem-invite is public — all deploy identically.
+          for fn in $FNS; do
             echo "::group::deploy $fn"
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --use-api --no-verify-jwt
             echo "::endgroup::"
           done
 
-      # Cheap post-deploy smoke: prove the functions actually landed and are reachable. An
-      # unauthenticated POST to ai-status must be rejected by the function's OWN auth (401);
-      # a 404/000/5xx means the deploy didn't take. Deeper CORS/ALLOWED_ORIGIN verification is
-      # a separate manual step (needs the prod origin) — see docs/SERVICES.md.
+      # Cheap post-deploy smoke: prove EVERY function actually landed and is reachable. Auth differs
+      # per function, so we can't assert one code for all: own-JWT functions answer 401, the
+      # DISPATCH_SECRET ones 403, redeem-invite validates its body → 400. So the smoke asserts the
+      # response is NOT a not-deployed signal instead — FAIL on 404 (function absent), 000 (no
+      # response/timeout), or 5xx (deployed but crashing); PASS on anything else it actually answered
+      # with (401/403/400/2xx). Deeper CORS/ALLOWED_ORIGIN verification is a separate manual step
+      # (needs the prod origin) — see docs/SERVICES.md.
       - name: Smoke — functions reachable
         if: steps.pre.outputs.configured == 'true'
         env:
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          FNS: ${{ steps.discover.outputs.fns }}
         run: |
-          url="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/ai-status"
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST --max-time 20 \
-            -H 'content-type: application/json' -d '{}' "$url")
-          echo "ai-status unauth POST: HTTP $code"
-          case "$code" in
-            401) echo "deployed + reachable + own-auth enforced (expected)" ;;
-            *) echo "::error::ai-status returned $code (expected 401) — deploy may not have taken"; exit 1 ;;
-          esac
+          base="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1"
+          failed=""
+          for fn in $FNS; do
+            # `|| true` + default keeps a curl timeout/connection error (non-zero exit, code 000)
+            # from aborting the loop under `set -e`, so every function is probed and reported.
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST --max-time 20 \
+              -H 'content-type: application/json' -d '{}' "$base/$fn" || true)
+            code=${code:-000}
+            case "$code" in
+              404) echo "::error::$fn → HTTP 404 (function not deployed)"; failed="$failed $fn" ;;
+              000) echo "::error::$fn → no response / unreachable (curl 000)"; failed="$failed $fn" ;;
+              5??) echo "::error::$fn → HTTP $code (deployed but erroring)"; failed="$failed $fn" ;;
+              *) echo "✓ $fn → HTTP $code (deployed + reachable)" ;;
+            esac
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::post-deploy smoke failed for:$failed"
+            exit 1
+          fi
+          echo "All functions reachable."

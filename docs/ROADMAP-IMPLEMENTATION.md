@@ -40,12 +40,12 @@ build them once, in Phase 0, and the rest inherit their shape.
   is already stale — it has **three** callers today (`redeem-invite`, `admin`,
   `dispatch-messages`). Each phase that adds a fourth/fifth (mcp, stripe-webhook) is a
   security-boundary change warranting an ADR and a comment update.
-- **The hardcoded deploy loop — `.github/workflows/deploy.yml:191`.** It is a *literal*
-  list, not a glob: `for fn in ai-status plan-my-day ai-chat dispatch-messages
-  generate-invite redeem-invite admin`. Every new function (Phase 1 `mcp`, Infra
-  `dispatch-user`, Phase 3a `stripe-webhook`/`create-checkout-session`/
-  `create-billing-portal-session`) **silently will not deploy** until added here. This
-  is a per-phase footgun with no red CI signal.
+- **The deploy loop — `.github/workflows/deploy.yml`. Resolved 2026-07-12:** the deploy
+  **and** smoke loops now derive the function list by globbing
+  `supabase/functions/*/index.ts` (minus `_shared`) instead of a hardcoded literal, so
+  every new function (Phase 1 `mcp`, Infra `dispatch-user`, Phase 3a `stripe-webhook`/
+  `create-checkout-session`/`create-billing-portal-session`) deploys and is smoke-tested
+  automatically. The per-phase "silently won't deploy, no red CI signal" footgun is gone.
 - **The frontend hosting surface — `vercel.json` + `src/lib/route.ts` hash router.**
   Phase 1 (well-known/OAuth rewrites), Phase 2 (PWA manifest/SW), and Phase 3a
   (billing + legal routes) all mutate it; concurrent edits conflict.
