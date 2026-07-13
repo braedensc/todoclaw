@@ -48,9 +48,17 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Schedule + weather are read server-side (the config is authoritative, not client-trusted).
-    const { data: scheduleRow } = await client.from('user_schedule').select('config').maybeSingle()
+    // Schedule + memories are read server-side (config is authoritative, not client-trusted; RLS
+    // scopes both to the caller). Memories are only USED when the kill switch is on.
+    const [{ data: scheduleRow }, memRes] = await Promise.all([
+      client.from('user_schedule').select('config').maybeSingle(),
+      client.from('assistant_memories').select('content').order('created_at', { ascending: true }),
+    ])
     const config = (scheduleRow?.config ?? null) as ScheduleConfig | null
+    const memoryOn = config?.assistant?.memoryEnabled !== false
+    const memories = memoryOn
+      ? ((memRes.data ?? []) as { content: string }[]).map((m) => m.content)
+      : []
     // No location set → skip the weather line entirely (don't default to any city's weather).
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
     const weather = location ? await getWeather(client, location) : null
@@ -60,7 +68,7 @@ Deno.serve(async (req) => {
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildUserPrompt(payload, config, weather) }],
+      messages: [{ role: 'user', content: buildUserPrompt(payload, config, weather, memories) }],
       tools: [EMIT_PLAN_TOOL as unknown as Anthropic.Tool],
       tool_choice: { type: 'tool', name: 'emit_plan' },
     })

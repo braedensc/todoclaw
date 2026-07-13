@@ -31,12 +31,13 @@ export async function generatePlan(
   req: PlanRequest,
   config: ScheduleConfig | null,
   weather: string | null,
+  memories: string[] = [],
 ): Promise<{ plan: PlanResult; usage: { input: number; output: number } }> {
   const msg = await a.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildUserPrompt(req, config, weather) }],
+    messages: [{ role: 'user', content: buildUserPrompt(req, config, weather, memories) }],
     tools: [EMIT_PLAN_TOOL as unknown as Anthropic.Tool],
     tool_choice: { type: 'tool', name: 'emit_plan' },
   })
@@ -69,7 +70,7 @@ export async function runPlanForUser(
 
   try {
     const date = localDateInTZ(timeZone, now)
-    const [schedRes, tasksRes, habitsRes, dailyRes] = await Promise.all([
+    const [schedRes, tasksRes, habitsRes, dailyRes, memRes] = await Promise.all([
       client.from('user_schedule').select('config').maybeSingle(),
       client
         .from('tasks')
@@ -80,9 +81,16 @@ export async function runPlanForUser(
         .is('completed_at', null),
       client.from('habits').select('text, active').is('deleted_at', null),
       client.from('daily_state').select('done').eq('date', date).maybeSingle(),
+      // Saved memories (RLS-scoped). Always fetched (≤30 rows); only USED when memory is on.
+      client.from('assistant_memories').select('content').order('created_at', { ascending: true }),
     ])
 
     const config = (schedRes.data?.config ?? null) as ScheduleConfig | null
+    // Kill switch: config.assistant.memoryEnabled === false ⇒ don't feed memories to the plan.
+    const memoryOn = config?.assistant?.memoryEnabled !== false
+    const memories = memoryOn
+      ? ((memRes.data ?? []) as { content: string }[]).map((m) => m.content)
+      : []
     const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
     // No location set → skip the weather line entirely (don't default to any city's weather).
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
@@ -90,7 +98,7 @@ export async function runPlanForUser(
 
     const req = buildPlanRequest(tasksRes.data ?? [], habitsRes.data ?? [], doneMap, timeZone, now)
 
-    const { plan, usage } = await generatePlan(anthropic(), req, config, weather)
+    const { plan, usage } = await generatePlan(anthropic(), req, config, weather, memories)
     await recordUsage(client, gate.usageId, usage.input, usage.output, 'plan_my_day')
 
     const { error } = await client.rpc('save_daily_plan', { p_date: date, p_plan: plan })
