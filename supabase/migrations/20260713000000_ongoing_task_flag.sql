@@ -40,9 +40,13 @@ comment on column public.tasks.ongoing is
 
 -- Promote existing ongoing projects off the recurring jsonb onto the flag. RHS expressions read the
 -- pre-update row, so `recurring ->> 'targetEnd'` still sees the target before recurring is cleared.
+-- `->>` yields text; `due` is a date column, so the target must be cast — a bare
+-- `coalesce(due, recurring ->> 'targetEnd')` is a plan-time type error (date vs text, SQLSTATE 42804)
+-- that aborts the whole migration. `nullif(…, '')` guards against a stored empty-string target so
+-- ''::date can't error either (legacy targetEnd is a 'YYYY-MM-DD' string or absent/null).
 update public.tasks
    set ongoing   = true,
-       due       = coalesce(due, recurring ->> 'targetEnd'),
+       due       = coalesce(due, nullif(recurring ->> 'targetEnd', '')::date),
        recurring = null
  where recurring ->> 'ongoing' = 'true';
 
