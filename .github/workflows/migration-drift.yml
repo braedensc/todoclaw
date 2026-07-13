@@ -80,6 +80,10 @@ jobs:
               ...pending.map((p) => `- \`${p}\``),
               '',
               'Prod is behind — usually a deploy that failed or was skipped. Check the latest **Deploy (prod)** run and its `migrate` job, then re-run it from `main` (Actions → Deploy (prod) → Run workflow) once the cause is fixed.',
+              '',
+              // @mention + assign the owner so this reaches him even under a "Participating and
+              // @mentions" watch (see deploy-failure-alert.yml for the rationale).
+              `cc @${owner} — prod database is behind the repo.`,
             ].join('\n')
             const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
             const existing = open.data.find((i) => i.title === title && !i.pull_request)
@@ -87,6 +91,6 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body })
               core.info(`Updated #${existing.number}`)
             } else {
-              const created = await github.rest.issues.create({ owner, repo, title, body })
+              const created = await github.rest.issues.create({ owner, repo, title, body, assignees: [owner] })
               core.info(`Opened #${created.data.number}`)
             }

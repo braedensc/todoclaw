@@ -34,6 +34,12 @@ jobs:
               'Migrations and/or Edge Functions did **not** reach prod. A common cause is a migration problem the `Migration guard` CI check now catches on PRs; another is a failing `db push`.',
               '',
               `Investigate the failing job: \`gh run view ${run.id} --log\` (start with the **Apply migrations to prod** step).`,
+              '',
+              // @mention the repo owner so the notification reason is "mention" (delivered + emailed
+              // even under a "Participating and @mentions" watch, and pushed by GitHub Mobile) rather
+              // than "subscribed" — which a solo owner can silently miss. Repeated on every comment so
+              // a still-failing deploy keeps nudging instead of going quiet after the first (missed) issue.
+              `cc @${owner} — prod deploy is broken until this is resolved.`,
             ].join('\n')
             const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
             const existing = open.data.find((i) => i.title === title && !i.pull_request)
@@ -41,6 +47,8 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body })
               core.info(`Commented on #${existing.number}`)
             } else {
-              const created = await github.rest.issues.create({ owner, repo, title, body })
+              // assignees:[owner] gives an additional "assign" notification reason and keeps the owner
+              // subscribed, so later comments on this same issue also reach him.
+              const created = await github.rest.issues.create({ owner, repo, title, body, assignees: [owner] })
               core.info(`Opened #${created.data.number}`)
             }

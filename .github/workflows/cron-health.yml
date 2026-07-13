@@ -113,6 +113,10 @@ jobs:
               ...rows,
               '',
               'These jobs fire every minute but pg_cron reports "succeeded" even when the HTTP call fails — so this is otherwise silent. Check `net._http_response` and `cron.job_run_details` in the SQL editor.',
+              '',
+              // @mention + assign the owner so this reaches him even under a "Participating and
+              // @mentions" watch (see deploy-failure-alert.yml for the rationale).
+              `cc @${owner} — the dispatch/push pipeline is failing.`,
             ].join('\n')
             const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
             const existing = open.data.find((i) => i.title === title && !i.pull_request)
@@ -120,6 +124,6 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body })
               core.info(`Updated #${existing.number}`)
             } else {
-              const created = await github.rest.issues.create({ owner, repo, title, body })
+              const created = await github.rest.issues.create({ owner, repo, title, body, assignees: [owner] })
               core.info(`Opened #${created.data.number}`)
             }
