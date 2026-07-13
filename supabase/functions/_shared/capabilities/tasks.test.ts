@@ -385,3 +385,90 @@ Deno.test('delete_completion reports not-found when no entry matches the id', as
   )
   assert(res.is_error)
 })
+
+// ---- create_task / set_due_date: due_time (so set_reminder isn't a dead-end) -----------------
+// A write-capturing fake: insert() and update() stash the payload; .single() (create) and
+// .maybeSingle() (updateTaskRow) resolve to a matched row so the capability reports success.
+function makeWriteCtx() {
+  let inserted: Row | undefined
+  let updated: Row | undefined
+  const client = {
+    from(_table: string) {
+      let payload: Row | undefined
+      // deno-lint-ignore no-explicit-any
+      const q: any = {
+        insert: (row: Row) => ((payload = row), q),
+        update: (p: Row) => ((payload = p), q),
+        select: () => q,
+        eq: () => q,
+        is: () => q,
+        single: () => (
+          (inserted = payload),
+          Promise.resolve({ data: { id: 'new-id' }, error: null })
+        ),
+        maybeSingle: () => (
+          (updated = payload),
+          Promise.resolve({ data: { text: 'Task' }, error: null })
+        ),
+      }
+      return q
+    },
+  } as unknown as ToolContext['client']
+  const ctx: ToolContext = {
+    client,
+    timeZone: 'America/New_York',
+    now: new Date('2026-07-04T15:00:00Z'),
+  }
+  return { ctx, getInserted: () => inserted, getUpdated: () => updated }
+}
+
+Deno.test(
+  'create_task normalizes a due time to HH:MM:SS (lenient on a single-digit hour)',
+  async () => {
+    const { ctx, getInserted } = makeWriteCtx()
+    const res = await executeTool(
+      'create_task',
+      { text: 'Call dentist', due: '2026-07-06', due_time: '9:30' },
+      ctx,
+    )
+    assert(!res.is_error)
+    assertEquals(getInserted()?.due, '2026-07-06')
+    assertEquals(getInserted()?.due_time, '09:30:00')
+  },
+)
+
+Deno.test('create_task rejects a due time with no due date (nothing is written)', async () => {
+  const { ctx, getInserted } = makeWriteCtx()
+  const res = await executeTool('create_task', { text: 'Floating', due_time: '15:00' }, ctx)
+  assert(res.is_error)
+  assertEquals(getInserted(), undefined) // errored before the insert
+})
+
+Deno.test('create_task rejects a malformed due time', async () => {
+  const { ctx, getInserted } = makeWriteCtx()
+  const res = await executeTool(
+    'create_task',
+    { text: 'Bad time', due: '2026-07-06', due_time: '25:99' },
+    ctx,
+  )
+  assert(res.is_error)
+  assertEquals(getInserted(), undefined)
+})
+
+Deno.test('set_due_date sets the time, and clearing the date clears the time', async () => {
+  const withTime = makeWriteCtx()
+  const r1 = await executeTool(
+    'set_due_date',
+    { task_id: TASK_ID, due: '2026-07-06', due_time: '15:00' },
+    withTime.ctx,
+  )
+  assert(!r1.is_error)
+  assertEquals(withTime.getUpdated()?.due, '2026-07-06')
+  assertEquals(withTime.getUpdated()?.due_time, '15:00:00')
+
+  const cleared = makeWriteCtx()
+  const r2 = await executeTool('set_due_date', { task_id: TASK_ID, due: null }, cleared.ctx)
+  assert(!r2.is_error)
+  assertEquals(cleared.getUpdated()?.due, null)
+  assertEquals(cleared.getUpdated()?.due_time, null) // clearing the date clears the time
+})

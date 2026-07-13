@@ -56,6 +56,15 @@ function recurringStatusPhrase(rec: Recurring | null, now: Date): string | null 
   return `due again in ${daysLeft}d`
 }
 
+// A recurring task never touches the daily done map — completing it just resets recurring.lastDoneAt
+// — so the grid/mobile board hides it for the rest of the local day by comparing lastDoneAt to today
+// (src/lib/recurring.ts recurringDoneToday). Mirror that here so BabyClaw's context matches what the
+// user sees: a recurring chore ticked off today reads as DONE TODAY, not as still-active.
+function recurringDoneToday(rec: Recurring | null, timeZone: string, now: Date): boolean {
+  if (!rec?.lastDoneAt) return false
+  return localDateInTZ(timeZone, new Date(rec.lastDoneAt)) === localDateInTZ(timeZone, now)
+}
+
 // Compact summary of today's saved Plan My Day (daily_state.plan jsonb, DayPlan shape — see
 // src/types/plan.ts), read defensively so a malformed/partial plan never breaks the chat. Null when
 // there's no plan today, so BabyClaw can answer "what's my big rock?" instead of being blind to it.
@@ -209,7 +218,10 @@ export async function loadChatContext(
       recurringStatus: recurringStatusPhrase(rec, now),
       ongoing: (t.ongoing as boolean | null) ?? false,
       reminderOffsets: reminderByTask.get(t.id as string) ?? [],
-      doneToday: doneMap[t.id as string] === true,
+      // A one-off is done via the daily done map; a recurring chore is done via lastDoneAt=today
+      // (it never enters the map) — count either so a recurring task ticked off today leaves ACTIVE
+      // and reads as DONE TODAY, exactly as the grid/mobile board hides it.
+      doneToday: doneMap[t.id as string] === true || recurringDoneToday(rec, timeZone, now),
       completedAt: (t.completed_at as string | null) ?? null,
     }
   })

@@ -128,6 +128,52 @@ Deno.test(
 )
 
 Deno.test(
+  'loadChatContext: a recurring chore done TODAY reads as DONE TODAY, not ACTIVE (mirrors the board)',
+  async () => {
+    // A recurring task never enters the daily done map — completing it resets recurring.lastDoneAt.
+    // The board hides it for the rest of the local day (recurringDoneToday); BabyClaw's context must
+    // match, or it contradicts what the user sees ("you still need to water the plants" after they did).
+    const client = fakeClient({
+      user_schedule: [SCHED],
+      tasks: [
+        // Done today: lastDoneAt is earlier the same local day → out of ACTIVE, into DONE TODAY.
+        {
+          id: 'water',
+          text: 'Water plants',
+          x: 0.5,
+          y: 0.5,
+          due: null,
+          staged: false,
+          recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 3 },
+        },
+        // Done last week: still due-ish, stays ACTIVE with its cadence.
+        {
+          id: 'sweep',
+          text: 'Sweep floors',
+          x: 0.4,
+          y: 0.4,
+          due: null,
+          staged: false,
+          recurring: { frequencyDays: 7, lastDoneAt: '2026-06-30T13:00:00Z', doneCount: 1 },
+        },
+      ],
+      daily_state: [{ date: '2026-07-04', done: {}, habit_done: {}, subtask_done: {} }],
+    })
+
+    const { context } = await loadChatContext(client, NOW)
+    const system = buildSystem(context)
+    const active = system.slice(
+      system.indexOf('=== ACTIVE TASKS'),
+      system.indexOf('=== DONE TODAY'),
+    )
+
+    assert(!active.includes('Water plants'), 'a recurring task done today must leave ACTIVE')
+    assertStringIncludes(active, 'Sweep floors') // last week's is still active
+    assertStringIncludes(system, '=== DONE TODAY ===\n1 completed today: "Water plants"')
+  },
+)
+
+Deno.test(
   'loadChatContext: an ongoing project rides off the ongoing column, decoupled from recurring',
   async () => {
     // `ongoing` is its own column now (not a recurring sub-flag). It maps straight onto PromptTask
