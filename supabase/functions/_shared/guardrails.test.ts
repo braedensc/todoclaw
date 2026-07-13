@@ -1,8 +1,10 @@
 // Deno unit tests for the pure guardrail logic (the DB-backed parts are proven by the psql
 // guardrail proof). Run: deno test --no-check supabase/functions/_shared/
 import { assertEquals } from 'jsr:@std/assert@1'
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import {
   costMicros,
+  recordUsage,
   BUDGET_CAP_MICROS,
   USER_BUDGET_CAP_MICROS,
   USER_SPEND_ALERT_MICROS,
@@ -10,6 +12,7 @@ import {
   crossedSpendAlert,
   LIMITS,
 } from './guardrails.ts'
+import { _resetConfigCache } from './guardrails-config.ts'
 
 Deno.test('costMicros: Sonnet 5 standard pricing ($3/$15 per 1M) → micro-dollars', () => {
   // 1M input = $3 = 3,000,000 micros; 1M output = $15 = 15,000,000 micros.
@@ -76,4 +79,30 @@ Deno.test('per-call clamp is below the alert threshold, so a crossing can never 
 Deno.test('Balanced-tier limits', () => {
   assertEquals(LIMITS.chat, { hour: 30, day: 100 })
   assertEquals(LIMITS.plan_my_day, { hour: 10, day: 10 })
+})
+
+Deno.test('recordUsage binds the budget add to the usage id (M2)', async () => {
+  // The M2 fix: ai_budget_add must be called WITH this call's usageId so the SQL can bind the ledger
+  // increment to a real, rate-limited, not-yet-billed usage row. A regression that dropped p_usage_id
+  // would reopen the direct-RPC amplification hole — this guards the client-side half of that wiring.
+  _resetConfigCache()
+  const calls: Array<{ name: string; args: unknown }> = []
+  const client = {
+    // app_config_get → null makes loadConfig fall back to the constants (uncached); ai_user_budget_check
+    // returns the full cap remaining so no spend-alert crosses and the alert path exits before fetch.
+    rpc(name: string, args?: unknown) {
+      calls.push({ name, args })
+      if (name === 'ai_user_budget_check') return Promise.resolve({ data: 10_000_000, error: null })
+      return Promise.resolve({ data: null, error: null })
+    },
+    auth: { getUser: () => Promise.resolve({ data: { user: null }, error: null }) },
+  } as unknown as SupabaseClient
+
+  await recordUsage(client, 'usage-123', 2000, 500, 'chat')
+
+  const add = calls.find((c) => c.name === 'ai_budget_add')
+  assertEquals(add?.args, { p_usage_id: 'usage-123', p_micros: costMicros(2000, 500) })
+  // The token backfill still targets the same row.
+  const tokens = calls.find((c) => c.name === 'ai_usage_record_tokens')
+  assertEquals((tokens?.args as { p_id: string }).p_id, 'usage-123')
 })

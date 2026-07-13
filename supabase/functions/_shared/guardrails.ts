@@ -102,8 +102,10 @@ export async function precheck(client: SupabaseClient, feature: Feature): Promis
 // Post-call: backfill the request row's token counts (observability) and add this call's cost to
 // the month ledgers via ai_budget_add — which now advances BOTH the global pool and the caller's
 // per-user sub-cap, and clamps the amount server-side (rejects negatives, caps at the per-call
-// ceiling). Best-effort; failures are swallowed so a guardrail-bookkeeping hiccup never fails the
-// user's already-completed request.
+// ceiling). The add is BOUND to this call's usageId (M2, 2026-07-13 audit): the ledger moves only in
+// step with a real, rate-limited usage row, billed at most once — a direct RPC caller can no longer
+// spam the global kill-switch. Best-effort; failures are swallowed so a guardrail-bookkeeping hiccup
+// never fails the user's already-completed request.
 export async function recordUsage(
   client: SupabaseClient,
   usageId: string,
@@ -116,7 +118,10 @@ export async function recordUsage(
     p_input: inputTokens,
     p_output: outputTokens,
   })
-  await client.rpc('ai_budget_add', { p_micros: costMicros(inputTokens, outputTokens) })
+  await client.rpc('ai_budget_add', {
+    p_usage_id: usageId,
+    p_micros: costMicros(inputTokens, outputTokens),
+  })
 
   // Owner spend-alert (best-effort). Read the caller's NEW monthly total, reconstruct the pre-call
   // total from what this call actually added (clamped like the SQL), and page the owner once if this
