@@ -341,44 +341,133 @@ describe('useAiChat', () => {
     ])
   })
 
-  it('keeps inline (non-confirmation) tool exchanges out of the held history', async () => {
-    // In the inline path the server runs the tool loop within one stream and the client never
-    // holds the assistant tool_use turn — so the result must stay UI-only. Pairing it into
-    // history would create a tool_result with no matching tool_use, which the API also rejects.
+  it("adopts the server-authoritative history so BabyClaw's own tool turns survive the next turn", async () => {
+    // The memory fix: the server returns the FULL conversation (its own tool_use/tool_result turns
+    // included) as `history` on the `message` event; the client adopts it wholesale, so the NEXT
+    // resend carries what BabyClaw actually did instead of only its prose — no more denying its own
+    // create_task on a follow-up turn (the confabulation bug).
+    const authoritative = [
+      { role: 'user', content: 'add vacuum house recurring' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'On it.' },
+          { type: 'tool_use', id: 'toolu_c', name: 'create_task', input: { text: 'Vacuum house' } },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_c',
+            content: 'Created "Vacuum house" (id t9).',
+            is_error: false,
+          },
+        ],
+      },
+      { role: 'assistant', content: [{ type: 'text', text: 'Done — recurring every 2 weeks.' }] },
+    ]
     fetchMock
       .mockResolvedValueOnce(
         sseResponse([
           {
             type: 'tool-result',
-            tool_use_id: 'toolu_list',
-            name: 'list_tasks',
+            tool_use_id: 'toolu_c',
+            name: 'create_task',
             ok: true,
-            summary: '3 tasks.',
+            summary: 'Created "Vacuum house" (id t9).',
+            display: 'Created "Vacuum house" on the grid.',
           },
-          { type: 'text-delta', text: 'You have 3 tasks.' },
+          { type: 'text-delta', text: 'Done — recurring every 2 weeks.' },
           {
             type: 'message',
             role: 'assistant',
-            content: [{ type: 'text', text: 'You have 3 tasks.' }],
+            content: [{ type: 'text', text: 'Done — recurring every 2 weeks.' }],
+            history: authoritative,
           },
           { type: 'done', stop_reason: 'end_turn' },
         ]),
       )
       .mockResolvedValueOnce(
         sseResponse([
-          { type: 'message', role: 'assistant', content: [] },
+          { type: 'message', role: 'assistant', content: [], history: [] },
           { type: 'done', stop_reason: 'end_turn' },
         ]),
       )
 
     const { result } = renderHook(() => useAiChat(), { wrapper })
-    act(() => result.current.send('what do I have?'))
+    act(() => result.current.send('add vacuum house recurring'))
     await waitFor(() => expect(result.current.busy).toBe(false))
+    // The tool receipt still shows in the UI…
     expect(result.current.items.some((i) => i.role === 'tool')).toBe(true)
 
-    act(() => result.current.send('ok'))
+    act(() => result.current.send('why did you make it recurring?'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    // …and now the RESENT history carries the tool_use + tool_result turns the server reported.
+    const sent = sentBody(1).messages
+    expect(sent.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user'])
+    const toolUseTurn = sent[1]!.content as { type: string; name?: string }[]
+    expect(toolUseTurn.some((b) => b.type === 'tool_use' && b.name === 'create_task')).toBe(true)
+    const toolResultTurn = sent[2]!.content as { type: string }[]
+    expect(toolResultTurn.some((b) => b.type === 'tool_result')).toBe(true)
+  })
+
+  it('without a history sync, falls back to appending the assistant turn', async () => {
+    // Back-compat: a `message` event with no `history` (a response with no tool turns to preserve)
+    // appends the assistant turn, keeping the resend user-first and alternating.
+    fetchMock
+      .mockResolvedValueOnce(
+        sseResponse([
+          { type: 'text-delta', text: 'Hi there.' },
+          { type: 'message', role: 'assistant', content: [{ type: 'text', text: 'Hi there.' }] },
+          { type: 'done', stop_reason: 'end_turn' },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        sseResponse([
+          { type: 'message', role: 'assistant', content: [], history: [] },
+          { type: 'done', stop_reason: 'end_turn' },
+        ]),
+      )
+
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('hi'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+    act(() => result.current.send('again'))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     expect(sentBody(1).messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+  })
+
+  it('rolls back the optimistic user turn when a turn fails, so the next send does not desync', async () => {
+    // A pre-stream failure (e.g. 429) must not leave a dangling user turn: without rollback the next
+    // send appends a SECOND user turn, breaking Anthropic's user/assistant alternation and wedging
+    // the chat. After rollback the retry carries a single, clean user-first turn.
+    fetchMock.mockResolvedValueOnce(sseResponse([], 429)).mockResolvedValueOnce(
+      sseResponse([
+        { type: 'text-delta', text: 'Hi!' },
+        {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Hi!' }],
+          history: [
+            { role: 'user', content: 'hello again' },
+            { role: 'assistant', content: [{ type: 'text', text: 'Hi!' }] },
+          ],
+        },
+        { type: 'done', stop_reason: 'end_turn' },
+      ]),
+    )
+
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('hello'))
+    await waitFor(() => expect(result.current.error).toMatch(/rate limit/i))
+
+    act(() => result.current.send('hello again'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const sent = sentBody(1).messages
+    expect(sent.map((m) => m.role)).toEqual(['user'])
+    expect(sent[0]!.content).toBe('hello again')
   })
 
   it('maps the pre-stream budget kill-switch (HTTP 503) to the paused message', async () => {
