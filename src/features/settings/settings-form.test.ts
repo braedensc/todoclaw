@@ -42,6 +42,15 @@ describe('settings-form', () => {
     expect('babyclaw' in saved).toBe(false)
   })
 
+  it('persists the memory kill switch only when OFF; ON stays absent (default)', () => {
+    // ON is the default → nothing persisted (config stays minimal, reads back as on).
+    expect(draftToConfig({ ...EMPTY_DRAFT, babyclawMemoryEnabled: true })).toEqual({})
+    // OFF → assistant.memoryEnabled=false, and it round-trips back to off in the draft.
+    const off = draftToConfig({ ...EMPTY_DRAFT, babyclawMemoryEnabled: false })
+    expect(off.assistant).toEqual({ memoryEnabled: false })
+    expect(configToDraft(off).babyclawMemoryEnabled).toBe(false)
+  })
+
   it('parses number fields and clamps out-of-range values', () => {
     const out = draftToConfig({ ...EMPTY_DRAFT, weekdayFreeHours: '30' })
     expect(out.weekday?.freeTimeEstimateHours).toBe(24) // clamped to the 0–24 range

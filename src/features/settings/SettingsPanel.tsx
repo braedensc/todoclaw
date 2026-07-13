@@ -14,6 +14,7 @@ import {
 } from '../../types/user-schedule'
 import { EMPTY_DRAFT, configToDraft, draftToConfig, type SettingsDraft } from './settings-form'
 import { AiPrivacyNote } from '../ai/AiPrivacyNote'
+import { MemoryList } from '../ai/MemoryList'
 import { NotificationSettings } from '../notifications/NotificationSettings'
 
 // Settings — an overlay editing `user_schedule.config`: the schedule the Plan My Day prompt reads
@@ -521,6 +522,13 @@ export function SettingsPanel({
                   onChange={(v) => set('babyclawInstructions', v)}
                   maxLength={ASSISTANT_INSTRUCTIONS_MAX}
                   placeholder="Keep replies concise. Ask before creating tasks without a due date."
+                />
+              </Section>
+
+              <Section title="What BabyClaw remembers" icon="🧠">
+                <MemoryList
+                  memoryEnabled={draft.babyclawMemoryEnabled}
+                  onToggleMemory={(v) => set('babyclawMemoryEnabled', v)}
                 />
               </Section>
 

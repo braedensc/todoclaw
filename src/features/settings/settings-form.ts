@@ -35,6 +35,7 @@ export interface SettingsDraft {
   babyclawTone: '' | AssistantTone
   babyclawVerbosity: '' | AssistantVerbosity
   babyclawInstructions: string
+  babyclawMemoryEnabled: boolean // memory kill switch; true (on) is the default
   // Proactive notifications (ADR-0031). enabled is the toggle; hours are '' until set.
   notificationsEnabled: boolean
   notificationsName: string
@@ -66,6 +67,7 @@ export const EMPTY_DRAFT: SettingsDraft = {
   babyclawTone: '',
   babyclawVerbosity: '',
   babyclawInstructions: '',
+  babyclawMemoryEnabled: true,
   notificationsEnabled: false,
   notificationsName: '',
   morningHour: '',
@@ -106,6 +108,8 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
     babyclawTone: baby.tone ?? '',
     babyclawVerbosity: baby.verbosity ?? '',
     babyclawInstructions: baby.customInstructions ?? '',
+    babyclawMemoryEnabled: baby.memoryEnabled !== false, // absent ⇒ on
+
     notificationsEnabled: notif.enabled ?? false,
     notificationsName: notif.name ?? '',
     morningHour: numToStr(notif.morningHour),
@@ -177,6 +181,8 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     tone: draft.babyclawTone || undefined,
     verbosity: draft.babyclawVerbosity || undefined,
     customInstructions: str(draft.babyclawInstructions),
+    // Persist only when OFF (false); on is the default, so leave it absent to keep config minimal.
+    memoryEnabled: draft.babyclawMemoryEnabled ? undefined : false,
   })
   // Hours persist whenever set (they're preferences); `enabled` is the gate the dispatcher checks.
   // A never-touched notifications section compacts away entirely (no `{}` block persisted).
