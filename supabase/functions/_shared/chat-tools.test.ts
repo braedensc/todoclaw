@@ -11,17 +11,16 @@ import {
   type ToolContext,
 } from './chat-tools.ts'
 
-Deno.test(
-  'complete_task, delete_task, delete_habit, delete_completion are the destructive tools',
-  () => {
-    assertEquals([...DESTRUCTIVE].sort(), [
-      'complete_task',
-      'delete_completion',
-      'delete_habit',
-      'delete_task',
-    ])
-  },
-)
+Deno.test('the completion/deletion tools plus the memory-confirm tools are destructive', () => {
+  assertEquals([...DESTRUCTIVE].sort(), [
+    'complete_task',
+    'delete_completion',
+    'delete_habit',
+    'delete_memory',
+    'delete_task',
+    'propose_memory',
+  ])
+})
 
 Deno.test('all destructive tools are real, advertised tools', () => {
   const names = new Set(TOOL_DEFS.map((t) => t.name))

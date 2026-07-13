@@ -123,9 +123,9 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Type-check (deno check — shared modules + function entrypoints)
+      - name: Type-check (deno check — shared modules, capabilities + function entrypoints)
         working-directory: supabase/functions
-        run: deno check _shared/*.ts */index.ts
+        run: deno check _shared/*.ts _shared/capabilities/*.ts */index.ts
 
       - name: Deno unit tests
         working-directory: supabase/functions

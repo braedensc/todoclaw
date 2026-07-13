@@ -13,6 +13,7 @@ tasks.ts        task capabilities   (list, create, edit, move, due, recurring, r
 habits.ts       habit capabilities  (list, create, rename, active, done, steps…, delete*)
 plan.ts         generate_plan       (delegates to the injected ctx.services.generatePlan)
 preferences.ts  set_assistant_preference  (persists tone / verbosity / a short note — see below)
+memories.ts     save/propose/update/delete_memory  (durable per-user FACTS — the 2nd self-write, below)
 registry.ts     CAPABILITIES[], capabilityByName, DESTRUCTIVE   ← the single source of truth
 ```
 
@@ -31,6 +32,33 @@ unit-testable here; the capability only writes what it is handed, and SYSTEM_PRE
 (a saved note is still a preference and can never widen scope). It is **not destructive** (fully
 reversible from Settings), so it announces the change rather than asking to confirm. The change is
 re-read at the start of the next turn, so it takes effect on BabyClaw's next reply.
+
+### `memories.ts` — the second self-write (durable per-user facts)
+
+`assistant_memories` holds durable **facts** BabyClaw learns about the user ("works out mornings"),
+rendered into the system prompt as a DATA block (chat-prompt.ts `memoryBlock`). Like the preference
+note it is a deliberate model-writable prompt surface, kept safe by **boundedness enforced in code +
+the DB, never trust in the model**:
+
+- **`save_memory`** (auto, non-destructive) is gated by a **code provenance check** — it refuses
+  content derived from stored task/habit/step text, so a task the user merely stored can't launder an
+  instruction into a durable memory (the prompt rule alone can't enforce that; `isDerivedFromStoredText`
+  does). This is the difference from the preference note, whose "only from chat" rule is prompt-only.
+- **`propose_memory`** (inference) is **destructive** → it rides the human-confirmation gate, so an
+  inferred memory is never written without the user's click (the click is its provenance; the
+  provenance code-gate is skipped for it). **`delete_memory`** is destructive too (a hard, irreversible
+  delete — the structural backstop against an injected "forget everything about me").
+- **Caps are DB-enforced** regardless of what the model passes: 240 chars (CHECK), 30 rows/user
+  (trigger), dedup (unique index on `lower(btrim(content))`), plus a per-request write brake in ai-chat.
+- **Kill switch** (`config.assistant.memoryEnabled`): off ⇒ ai-chat filters the memory tools out of the
+  advertised set (the model never sees them) and the block is omitted; the capabilities also re-check.
+- **Delimiter defanging** happens at render (`sanitizeForPrompt`, shared with the preference note): a
+  memory can't forge a `=== SECTION ===` header, a `"""` fence, or a `[[status:]]` marker.
+
+Memories are **not** in `create_backup`/`restore_backup` (AI meta, not planner content) and are
+excluded from the external pg_dump. **Reader scope:** chat only for now — Plan My Day does NOT yet read
+memories; adding it later means the "three readers" change (run-plan select + `dispatch_inputs_for_user`
+RPC + plan prompt) together, or the morning push silently drops them.
 
 Each capability is `{ name, description, schema (zod), destructive, execute(ctx, input) }`. The
 **zod schema is the one source of truth**: it validates input at execution *and* — via

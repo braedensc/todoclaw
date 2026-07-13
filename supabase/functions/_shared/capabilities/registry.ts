@@ -7,12 +7,14 @@ import { taskCapabilities } from './tasks.ts'
 import { habitCapabilities } from './habits.ts'
 import { planCapabilities } from './plan.ts'
 import { preferenceCapabilities } from './preferences.ts'
+import { memoryCapabilities } from './memories.ts'
 
 export const CAPABILITIES: Capability[] = [
   ...taskCapabilities,
   ...habitCapabilities,
   ...planCapabilities,
   ...preferenceCapabilities,
+  ...memoryCapabilities,
 ]
 
 export const capabilityByName: Map<string, Capability> = new Map(

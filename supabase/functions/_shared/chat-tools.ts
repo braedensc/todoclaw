@@ -85,12 +85,20 @@ export async function executeTool(
 // the id. task_id (tasks) and habit_id (habits) are both handled.
 export function destructiveSummary(name: string, input: unknown, label?: string): string {
   const id =
-    (input as { task_id?: string; habit_id?: string })?.task_id ??
-    (input as { habit_id?: string })?.habit_id ??
+    (input as { task_id?: string; habit_id?: string; memory_id?: string })?.task_id ??
+    (input as { habit_id?: string; memory_id?: string })?.habit_id ??
+    (input as { memory_id?: string })?.memory_id ??
     ''
   if (name === 'complete_task') return `Mark ${label ? `"${label}"` : `task ${id}`} done for today`
   if (name === 'delete_task') return `Move ${label ? `"${label}"` : `task ${id}`} to the trash`
   if (name === 'delete_habit') return `Delete the habit ${label ? `"${label}"` : id}`
   if (name === 'delete_completion') return 'Remove a completion from your Done log'
+  // propose_memory carries the fact itself (no id yet); delete_memory carries a memory_id whose text
+  // the caller resolves into `label`. Both show the user exactly what will be saved / forgotten.
+  if (name === 'propose_memory') {
+    const content = String((input as { content?: string })?.content ?? '').slice(0, 240)
+    return `Remember: "${content}"`
+  }
+  if (name === 'delete_memory') return `Forget the note ${label ? `"${label}"` : id}`
   return `Run ${name}`
 }
