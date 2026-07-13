@@ -163,8 +163,8 @@ export function SetupGuide({
         return (
           <Step key="tour" index={index} done={guide.done.tour} title="See how Todoclaw works">
             <StepHint>
-              A 30-second walk through the essentials: the grid, BabyClaw (your AI helper), Plan My
-              Day and its daily check-ins, and habits.
+              Watch a quick example day — a filled-out board, the morning plan, and BabyClaw’s
+              check-ins in action — then a 30-second walk through the essentials.
             </StepHint>
             <StepButton onClick={onStartTour}>Take the tour</StepButton>
           </Step>

@@ -27,6 +27,7 @@ export function WorkArea({
   gridOnly,
   onExitGridOnly,
   quadrantFocus,
+  onSeeExample,
 }: {
   chat: ChatController
   onOpenChat: () => void
@@ -34,6 +35,8 @@ export function WorkArea({
   onExitGridOnly: () => void
   /** Mobile overview→focus state (App-owned so Back pops it and the add sheet reads it). */
   quadrantFocus: QuadrantFocus
+  /** Open the example-day scene (DemoScene) — surfaced from the empty-board states. */
+  onSeeExample?: () => void
 }) {
   // The canvas surface ref — created here, shared between useGrid (drag hooks) and GridSurface.
   const gridRef = useRef<HTMLDivElement>(null)
@@ -46,7 +49,7 @@ export function WorkArea({
   if (isMobile) {
     return (
       <section aria-label="Workspace" className="flex flex-col">
-        <MobileMatrix quadrantFocus={quadrantFocus} />
+        <MobileMatrix quadrantFocus={quadrantFocus} onSeeExample={onSeeExample} />
       </section>
     )
   }
@@ -80,6 +83,7 @@ export function WorkArea({
             onSelectView={setView}
             gridOnly={false}
             onExitGridOnly={onExitGridOnly}
+            onSeeExample={onSeeExample}
           />
         ) : (
           <div className="relative">

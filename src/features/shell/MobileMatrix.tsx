@@ -40,7 +40,17 @@ function meta(key: QuadrantKey) {
 
 const shell = 'rounded-xl border border-border-strong bg-panel p-4'
 
-export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }) {
+export function MobileMatrix({
+  quadrantFocus,
+  onSeeExample,
+}: {
+  quadrantFocus: QuadrantFocus
+  /**
+   * Open the example-day scene (DemoScene) — shown under a fully-empty overview, the moment a
+   * confused new user is most likely staring at. Absent inside the demo scene itself.
+   */
+  onSeeExample?: () => void
+}) {
   const { data: tasks, isLoading, isError } = useTasks()
   const timeZone = useTimeZone()
   const { data: daily } = useDailyState(timeZone)
@@ -260,6 +270,16 @@ export function MobileMatrix({ quadrantFocus }: { quadrantFocus: QuadrantFocus }
           )
         })}
       </div>
+      {/* A fully-empty board: offer the example-day peek right where the new user is looking. */}
+      {active.length === 0 && onSeeExample && (
+        <button
+          type="button"
+          onClick={onSeeExample}
+          className="mt-2.5 w-full rounded-full border border-border-strong bg-card py-2.5 text-[13px] font-medium text-ink transition-colors active:scale-[0.99]"
+        >
+          <span aria-hidden>👀</span> See an example board
+        </button>
+      )}
     </section>
   )
 }

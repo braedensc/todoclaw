@@ -37,6 +37,8 @@ const PAD = 8 // breathing room between the element and the cutout edge
 const CARD_W = 330 // desktop card width; position math clamps with this
 const CARD_GAP = 14 // gap between the cutout and the card
 const CARD_H_ESTIMATE = 190 // enough to decide above-vs-below without measuring the card
+const CARD_H_BULLETS = 330 // a bulleted step's card runs much taller — under-estimating it can
+// park the Next button below the fold (the card is FIXED, so no scroll can ever reveal it)
 
 function findAnchor(target: string): HTMLElement | null {
   const el = document.querySelector(`[data-tour="${target}"]`)
@@ -46,10 +48,17 @@ function findAnchor(target: string): HTMLElement | null {
 export function FeatureTour({
   steps,
   onClose,
+  skipLabel = 'Skip tour',
 }: {
   steps: TourStep[]
   /** `completed` is true only when the user walked through to the final step's Finish. */
   onClose: (completed: boolean) => void
+  /**
+   * The escape hatch's label. The default fits a plain walkthrough; the demo act overrides it
+   * ("Skip to your board") because there skipping ADVANCES to the real tour rather than closing —
+   * the label must say where the click actually goes.
+   */
+  skipLabel?: string
 }) {
   // Resolve once at mount: anchors missing at this breakpoint/route drop out silently.
   const available = useMemo(() => steps.filter((s) => findAnchor(s.target)), [steps])
@@ -112,9 +121,13 @@ export function FeatureTour({
   // spotlight math); desktop puts it under the cutout, flipping above when the fold is close.
   const cardStyle: React.CSSProperties = {}
   if (!isMobile && rect) {
+    const estimate = step.bullets ? CARD_H_BULLETS : CARD_H_ESTIMATE
     const below = rect.top + rect.height + CARD_GAP
-    const fitsBelow = below + CARD_H_ESTIMATE <= window.innerHeight - 12
-    cardStyle.top = fitsBelow ? below : Math.max(12, rect.top - CARD_GAP - CARD_H_ESTIMATE)
+    const fitsBelow = below + estimate <= window.innerHeight - 12
+    const top = fitsBelow ? below : Math.max(12, rect.top - CARD_GAP - estimate)
+    // Final clamp: whatever above-vs-below chose, the whole estimated card must sit inside the
+    // viewport (it may overlap the cutout on a short window — reachable beats pretty).
+    cardStyle.top = Math.min(top, Math.max(12, window.innerHeight - estimate - 12))
     cardStyle.left = Math.min(Math.max(rect.left, 12), window.innerWidth - CARD_W - 12)
     cardStyle.width = CARD_W
   }
@@ -173,7 +186,7 @@ export function FeatureTour({
             onClick={skip}
             className="rounded px-1.5 py-1 text-xs text-muted hover:text-ink"
           >
-            Skip tour
+            {skipLabel}
           </button>
           {/* Progress dots — the filled one is the current step. */}
           <span aria-hidden className="mx-auto flex items-center gap-1">

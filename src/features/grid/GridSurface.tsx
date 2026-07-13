@@ -33,6 +33,11 @@ interface GridSurfaceProps {
   gridOnly: boolean
   /** Leave grid-only mode and return to the normal shell (also wired to Esc in AppShell). */
   onExitGridOnly: () => void
+  /**
+   * Open the example-day scene (DemoScene) from the empty-grid state — the moment a confused new
+   * user is most likely staring at. Absent inside the demo scene itself (its board is never empty).
+   */
+  onSeeExample?: () => void
 }
 
 /**
@@ -53,6 +58,7 @@ export function GridSurface({
   onSelectView,
   gridOnly,
   onExitGridOnly,
+  onSeeExample,
 }: GridSurfaceProps) {
   const {
     timeZone,
@@ -259,9 +265,18 @@ export function GridSurface({
 
         <GridCanvas surfaceRef={gridRef} onBackgroundPointerDown={handleGridPointerDown}>
           {placedTasks.length === 0 && (
-            <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted">
-              No tasks placed — add one above and drag it here.
-            </p>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted">
+              <p>No tasks placed — add one above and drag it here.</p>
+              {onSeeExample && (
+                <button
+                  type="button"
+                  onClick={onSeeExample}
+                  className="pointer-events-auto rounded-full border border-border-strong bg-panel px-3.5 py-1.5 text-[13px] font-medium text-ink shadow-sm transition-colors hover:border-ink"
+                >
+                  <span aria-hidden>👀</span> See an example board
+                </button>
+              )}
+            </div>
           )}
 
           {groups.map((group) => {
