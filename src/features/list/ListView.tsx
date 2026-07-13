@@ -149,10 +149,12 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   }
 
   // Recurring set/edit/remove — all write the `recurring` jsonb through the shared task UPDATE.
+  // Making a task recurring also clears the ongoing flag (the two types are mutually exclusive), so
+  // the SchedulePanel type switch is a single mutation even when crossing from Ongoing → Recurring.
   const handleSetRecurring = (id: string, frequencyDays: number) =>
     updateTask.mutate({
       id,
-      patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
+      patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 }, ongoing: false },
     })
   // Editing the cadence preserves lastDoneAt + doneCount (only the frequency changes).
   const handleSetFrequency = (id: string, frequencyDays: number) => {
@@ -163,28 +165,11 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleRemoveRecurring = (id: string) =>
     updateTask.mutate({ id, patch: { recurring: null } })
 
-  // Ongoing project: reuses the recurring jsonb (frequencyDays = check-in cadence) with ongoing:true
-  // + an optional targetEnd. Preserves lastDoneAt/doneCount when the task already had a cycle, so
-  // adjusting the cadence or target-end never resets the session tally (mirrors handleSetFrequency).
-  const handleSetOngoing = (id: string, checkInDays: number, targetEnd: string | null) => {
-    const prev = active.find((t) => t.id === id)?.recurring
-    updateTask.mutate({
-      id,
-      patch: {
-        recurring: {
-          frequencyDays: checkInDays,
-          lastDoneAt: prev?.lastDoneAt ?? null,
-          doneCount: prev?.doneCount ?? 0,
-          ongoing: true,
-          targetEnd,
-        },
-      },
-    })
-  }
-  // Finish an ongoing project for good — archive it exactly like a one-off (Done tab + history),
-  // unlike the ✓ which only logs a session. Reuses the shared Done RPC via useMarkTaskDone.
-  const handleFinishOngoing = (task: Task) =>
-    markDone.mutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
+  // Ongoing project: a standalone boolean flag (no recurring data). Setting it true also clears any
+  // recurring schedule, keeping the two types exclusive in one mutation. A done ongoing task is
+  // archived by the normal handleDone (it has no recurring branch) — there is no separate Finish.
+  const handleSetOngoing = (id: string, on: boolean) =>
+    updateTask.mutate({ id, patch: on ? { ongoing: true, recurring: null } : { ongoing: false } })
 
   return (
     <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
@@ -206,7 +191,6 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
             onSetFrequency={handleSetFrequency}
             onRemoveRecurring={handleRemoveRecurring}
             onSetOngoing={handleSetOngoing}
-            onFinishOngoing={handleFinishOngoing}
             onDelete={handleDelete}
             onMove={onMoveToQuadrant}
             reminderOffsets={reminders?.get(task.id) ?? []}

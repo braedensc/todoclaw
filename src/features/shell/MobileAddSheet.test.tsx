@@ -47,10 +47,10 @@ describe('MobileAddSheet', () => {
     expect(screen.getByRole('button', { name: 'Schedule' })).toBeInTheDocument() // the quadrant
     const disclosure = screen.getByRole('button', { name: /Add schedule/ })
     expect(disclosure).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('group', { name: 'Repeats' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Task type' })).not.toBeInTheDocument()
 
     fireEvent.click(disclosure)
-    expect(screen.getByRole('group', { name: 'Repeats' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Task type' })).toBeInTheDocument()
     expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
   })
 
@@ -87,6 +87,8 @@ describe('MobileAddSheet', () => {
     fireEvent.change(screen.getByLabelText('Task text'), { target: { value: 'stretch' } })
     fireEvent.click(screen.getByRole('button', { name: 'Do Now' }))
     fireEvent.click(screen.getByRole('button', { name: /Add schedule/ }))
+    // Choose the Recurring type first, then tune the cadence down to Daily.
+    fireEvent.click(screen.getByRole('button', { name: 'Recurring' }))
     fireEvent.click(screen.getByRole('button', { name: 'Daily' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
 
@@ -100,6 +102,7 @@ describe('MobileAddSheet', () => {
     fireEvent.change(screen.getByLabelText('Task text'), { target: { value: 'water plants' } })
     fireEvent.click(screen.getByRole('button', { name: 'Errands' }))
     fireEvent.click(screen.getByRole('button', { name: /Add schedule/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recurring' }))
     // Every… commits the 3-day seed immediately (consistent with Daily/Weekly); + bumps to 4.
     fireEvent.click(screen.getByRole('button', { name: 'Every…' }))
     fireEvent.click(screen.getByRole('button', { name: 'More days between repeats' }))
@@ -107,6 +110,20 @@ describe('MobileAddSheet', () => {
 
     const arg = addMutate.mock.calls[0]![0] as { recurring: Recurring | null }
     expect(arg.recurring).toEqual({ frequencyDays: 4, lastDoneAt: null, doneCount: 0 })
+  })
+
+  it('marking the type Ongoing ships an ongoing task (no recurring) on the insert', () => {
+    renderSheet()
+
+    fireEvent.change(screen.getByLabelText('Task text'), { target: { value: 'learn spanish' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Do Now' }))
+    fireEvent.click(screen.getByRole('button', { name: /Add schedule/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ongoing' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+
+    const arg = addMutate.mock.calls[0]![0] as { ongoing: boolean; recurring: Recurring | null }
+    expect(arg.ongoing).toBe(true)
+    expect(arg.recurring).toBeNull()
   })
 
   it('the 🐾 chat tip closes the sheet and opens the chat', () => {

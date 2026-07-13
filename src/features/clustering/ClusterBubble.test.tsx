@@ -34,6 +34,7 @@ function task(id: string): Task {
     staged: false,
     bucket: 'oneoff',
     recurring: null,
+    ongoing: false,
     created_at: '2026-07-01T00:00:00Z',
     deleted_at: null,
     completed_at: null,

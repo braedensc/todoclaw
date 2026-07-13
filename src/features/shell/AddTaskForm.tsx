@@ -37,10 +37,12 @@ export function scheduleSummary(
   due: string | null,
   dueTime: string | null,
   recurring: Recurring | null,
+  ongoing: boolean,
 ): string | null {
   const parts: string[] = []
   if (due) parts.push(due.slice(5) + (dueTime ? ` · ${formatDueTime(dueTime)}` : ''))
-  if (recurring) parts.push(recurring.ongoing ? 'ongoing' : fmtFrequency(recurring.frequencyDays))
+  if (recurring) parts.push(fmtFrequency(recurring.frequencyDays))
+  else if (ongoing) parts.push('ongoing')
   return parts.length ? parts.join(' · ') : null
 }
 
@@ -58,6 +60,7 @@ export function AddTaskForm({
     text: string,
     dest: QuadrantKey,
     recurring: Recurring | null,
+    ongoing: boolean,
     due: string | null,
     dueTime: string | null,
     reminderMinutes: number[],
@@ -77,6 +80,7 @@ export function AddTaskForm({
   const [due, setDue] = useState<string | null>(null)
   const [dueTime, setDueTime] = useState<string | null>(null)
   const [recurring, setRecurring] = useState<Recurring | null>(null)
+  const [ongoing, setOngoing] = useState(false)
   const [reminderMinutes, setReminderMinutes] = useState<number[]>(
     reminderDefault != null ? [reminderDefault] : [],
   )
@@ -84,14 +88,14 @@ export function AddTaskForm({
   const timeZone = useTimeZone()
 
   const canAdd = text.trim().length > 0 && selected != null
-  const summary = scheduleSummary(due, dueTime, recurring)
+  const summary = scheduleSummary(due, dueTime, recurring, ongoing)
 
   function submit(e: FormEvent) {
     e.preventDefault()
     if (!canAdd || selected == null) return
     // A time never ships without a date (DB CHECK) — the panel guarantees it, this guards it.
     const dt = due ? dueTime : null
-    onAdd(text.trim(), selected, recurring, due, dt, dt ? reminderMinutes : [])
+    onAdd(text.trim(), selected, recurring, ongoing, due, dt, dt ? reminderMinutes : [])
   }
 
   return (
@@ -170,14 +174,16 @@ export function AddTaskForm({
               due={due}
               dueTime={dueTime}
               recurring={recurring}
+              ongoing={ongoing}
               timeZone={timeZone}
               onSetDue={(d, t) => {
                 setDue(d)
                 setDueTime(t)
               }}
-              onSetRecurring={(n) =>
+              onSetRecurring={(n) => {
+                setOngoing(false)
                 setRecurring({ frequencyDays: n, lastDoneAt: null, doneCount: 0 })
-              }
+              }}
               onSetFrequency={(n) =>
                 setRecurring((r) =>
                   r
@@ -186,15 +192,10 @@ export function AddTaskForm({
                 )
               }
               onRemoveRecurring={() => setRecurring(null)}
-              onSetOngoing={(checkInDays, targetEnd) =>
-                setRecurring({
-                  frequencyDays: checkInDays,
-                  lastDoneAt: null,
-                  doneCount: 0,
-                  ongoing: true,
-                  targetEnd,
-                })
-              }
+              onSetOngoing={(on) => {
+                setOngoing(on)
+                if (on) setRecurring(null)
+              }}
               reminderOffsets={reminderMinutes}
               onToggleReminder={(m) =>
                 setReminderMinutes((cur) =>

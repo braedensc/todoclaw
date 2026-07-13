@@ -66,8 +66,8 @@ export interface ClusterPopupProps {
   onSetFrequency: (task: Task, frequencyDays: number) => void
   /** Drop a row's recurring schedule. */
   onRemoveRecurring: (task: Task) => void
-  /** Make / adjust a row as an ongoing project (check-in cadence + optional target-end). */
-  onSetOngoing: (task: Task, checkInDays: number, targetEnd: string | null) => void
+  /** Set/clear a row's ongoing-project flag (setting true also clears any recurring schedule). */
+  onSetOngoing: (task: Task, on: boolean) => void
   /** A row's selected reminder offsets (minutes before due) — from the grid's shared query. */
   reminderOffsetsFor: (task: Task) => readonly number[]
   /** Toggle one of a row's reminder lead times on/off. */
@@ -216,7 +216,7 @@ export function ClusterPopup({
           onSetRecurring={(n) => onSetRecurring(task, n)}
           onSetFrequency={(n) => onSetFrequency(task, n)}
           onRemoveRecurring={() => onRemoveRecurring(task)}
-          onSetOngoing={(checkInDays, targetEnd) => onSetOngoing(task, checkInDays, targetEnd)}
+          onSetOngoing={(on) => onSetOngoing(task, on)}
           reminderOffsets={reminderOffsetsFor(task)}
           onToggleReminder={(m) => onToggleReminder(task, m)}
           onClearReminders={() => onClearReminders(task)}
@@ -240,7 +240,7 @@ interface ClusterPopupRowProps {
   onSetRecurring: (frequencyDays: number) => void
   onSetFrequency: (frequencyDays: number) => void
   onRemoveRecurring: () => void
-  onSetOngoing: (checkInDays: number, targetEnd: string | null) => void
+  onSetOngoing: (on: boolean) => void
   reminderOffsets: readonly number[]
   onToggleReminder: (minutes: number) => void
   onClearReminders: () => void
@@ -471,6 +471,7 @@ function ClusterPopupRow({
                   due={task.due}
                   dueTime={task.due_time}
                   recurring={task.recurring}
+                  ongoing={task.ongoing}
                   timeZone={timeZone}
                   onSetDue={onSetDue}
                   onSetRecurring={onSetRecurring}

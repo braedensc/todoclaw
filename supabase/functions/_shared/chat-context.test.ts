@@ -126,3 +126,35 @@ Deno.test(
     assert(!active.includes('Groceries'), "today's completion must not appear under ACTIVE TASKS")
   },
 )
+
+Deno.test(
+  'loadChatContext: an ongoing project rides off the ongoing column, decoupled from recurring',
+  async () => {
+    // `ongoing` is its own column now (not a recurring sub-flag). It maps straight onto PromptTask
+    // and the board tags the task an "ongoing project", not a recurring cadence.
+    const client = fakeClient({
+      user_schedule: [SCHED],
+      tasks: [
+        {
+          id: 'proj',
+          text: 'Redesign the site',
+          x: 0.4,
+          y: 0.9,
+          due: null,
+          staged: false,
+          recurring: null,
+          ongoing: true,
+        },
+      ],
+      daily_state: [{ date: '2026-07-04', done: {}, habit_done: {}, subtask_done: {} }],
+    })
+
+    const { context } = await loadChatContext(client, NOW)
+
+    const proj = context.tasks.find((t) => t.id === 'proj')
+    assertEquals(proj?.ongoing, true)
+
+    const system = buildSystem(context)
+    assertStringIncludes(system, 'ongoing project')
+  },
+)

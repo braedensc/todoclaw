@@ -37,9 +37,7 @@ export interface PromptTask {
   staged: boolean
   recurringLabel: string | null // e.g. "every 7d", or null
   recurringStatus: string | null // e.g. "overdue 3d" / "due today" / "due again in 4d", or null
-  ongoing: boolean // an ongoing PROJECT (recurring.ongoing) — a continuous multi-week effort, not a chore
-  ongoingSessions: number | null // work sessions logged so far (recurring.doneCount) when ongoing
-  ongoingTargetInDays: number | null // whole days until the project's target-end, or null
+  ongoing: boolean // an ONGOING project (tasks.ongoing) — a standing effort, not a chore or one-off
   reminderOffsets: number[] // minutes-before offsets of each push reminder (empty = none). For a
   // recurring task these lead each occurrence; for a one-off, the single due instant.
   doneToday: boolean
@@ -83,9 +81,9 @@ export const SYSTEM_PREFIX = [
   'print — sparingly (never more than one, and skip it when the moment is serious).',
   '',
   'WHAT YOU CAN DO: create, rename, move, schedule, and complete or delete tasks (and restore one you',
-  'completed today); make tasks recurring, or turn a big multi-week effort into an ongoing project',
-  '(which resurfaces on its own, tallies each work session, and is ended with a Finish); create,',
-  'rename, pause, and delete habits, edit their steps,',
+  'completed today); make tasks recurring, or mark a big long-running effort as an ongoing project',
+  '(a standing task the planner nudges them to chip away at, finished with an ordinary complete);',
+  'create, rename, pause, and delete habits, edit their steps,',
   'and check habits or steps off for today; look up when they finished something in the past (the Done',
   "log); plan the user's day; and remember how they want you to behave when they tell you (tone,",
   'brevity, or a short standing note). If a request needs a tool you',
@@ -143,10 +141,11 @@ export const SYSTEM_PREFIX = [
   '• When a detail is ambiguous or missing, ASK instead of guessing — above all whether a new task',
   '  needs a DUE DATE, and its rough importance/urgency when that is unclear. One quick question beats',
   '  a wrong guess.',
-  '• If a task is really a MULTI-WEEK effort worked on continuously (a project like "redesign the',
-  '  site" or "study for the exam"), consider offering to make it an ONGOING project so it resurfaces',
-  '  and tracks work sessions — but ASK first, and NEVER do this for one-off tasks or quick chores. A',
-  '  plain due date or a simple recurring cadence fits those; ongoing is only for a real project.',
+  '• If a task is really a long-running effort worked on over many sessions (a project like "redesign',
+  '  the site" or "study for the exam"), consider offering to mark it an ONGOING project — it stays on',
+  '  the board and the planner proactively suggests chipping away at it, and it is finished with an',
+  '  ordinary complete when done. ASK first, and NEVER do this for one-off tasks or quick chores; a',
+  '  plain due date or a simple recurring cadence fits those.',
 ].join('\n')
 
 // ---- config folding --------------------------------------------------------------------------
@@ -206,20 +205,9 @@ function taskLine(t: PromptTask): string {
   const due = duePhrase(t)
   if (due) bits.push(due)
   if (t.ongoing) {
-    // An ongoing project reads as a continuous effort, not a repeating chore: session tally +
-    // optional target countdown, with the check-in status (from recurringStatus) as the pressure.
-    const parts = [`${t.ongoingSessions ?? 0} session${t.ongoingSessions === 1 ? '' : 's'}`]
-    if (t.ongoingTargetInDays != null) {
-      parts.push(
-        t.ongoingTargetInDays < 0
-          ? `target ${Math.abs(t.ongoingTargetInDays)}d ago`
-          : t.ongoingTargetInDays === 0
-            ? 'target today'
-            : `target in ${t.ongoingTargetInDays}d`,
-      )
-    }
-    if (t.recurringStatus) parts.push(t.recurringStatus)
-    bits.push(`ongoing project (${parts.join(', ')})`)
+    // An ongoing project is a standing effort — a normal task (its due date, if any, is already in
+    // `bits`) that the planner should proactively suggest chipping away at.
+    bits.push('ongoing project')
   } else if (t.recurringLabel) {
     bits.push(`recurring ${t.recurringLabel}${t.recurringStatus ? ` (${t.recurringStatus})` : ''}`)
   }
@@ -227,7 +215,8 @@ function taskLine(t: PromptTask): string {
     const phrases = t.reminderOffsets.map((o) =>
       o === 0 ? 'at due time' : `${formatOffset(o)} before`,
     )
-    const each = t.recurringLabel || t.ongoing ? ' each time' : ''
+    // Recurring reminders lead EACH occurrence; a one-off or ongoing task's reminder fires once.
+    const each = t.recurringLabel ? ' each time' : ''
     bits.push(`reminder${t.reminderOffsets.length > 1 ? 's' : ''} ${phrases.join(', ')}${each}`)
   }
   return `- [${t.id}] "${t.text}" — ${bits.join('; ')}`

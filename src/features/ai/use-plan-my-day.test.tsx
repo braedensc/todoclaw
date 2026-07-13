@@ -29,6 +29,7 @@ function task(over: Partial<Task> = {}): Task {
     staged: false,
     bucket: 'oneoff',
     recurring: null,
+    ongoing: false,
     created_at: '2026-06-01T00:00:00.000Z',
     deleted_at: null,
     completed_at: null,
@@ -83,6 +84,16 @@ describe('buildPlanRequest', () => {
       dueTime: '15:00:00', // the wall-clock time passes straight through for the plan anchor
       size: null, // untagged task → null, so the planner infers effort
     })
+  })
+
+  it('includes ONGOING projects (flagged) while still excluding recurring chores', () => {
+    const tasks = [
+      task({ id: 'proj', text: 'Novel', ongoing: true, x: 0.4, y: 0.8 }),
+      task({ id: 'chore', recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } }),
+    ]
+    const req = buildPlanRequest(tasks, [], {}, TZ, NOW)
+    expect(req.tasks).toHaveLength(1)
+    expect(req.tasks[0]).toMatchObject({ text: 'Novel', ongoing: true })
   })
 
   it('passes a task size through, and defaults an untagged task to null', () => {

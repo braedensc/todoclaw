@@ -36,7 +36,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'list_tasks',
     description:
-      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, and a `done` flag). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. Use to refresh your view before editing.",
+      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, an `ongoing` project flag, and a `done` flag). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. Use to refresh your view before editing.",
     schema: z.object({}).strict(),
     async execute(ctx) {
       const now = ctx.now ?? new Date()
@@ -44,7 +44,7 @@ export const taskCapabilities: Capability[] = [
       const [tasksRes, dailyRes] = await Promise.all([
         ctx.client
           .from('tasks')
-          .select('id, text, x, y, due, due_time, staged, recurring, completed_at')
+          .select('id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
         ctx.client.from('daily_state').select('done').eq('date', date).maybeSingle(),
@@ -66,6 +66,7 @@ export const taskCapabilities: Capability[] = [
           due_time: t.due_time,
           staged: t.staged,
           recurring: t.recurring,
+          ongoing: t.ongoing,
           done: !!t.completed_at || doneMap[t.id as string] === true,
         }))
       // The JSON goes to the model so it can reference ids; hide it from the user (display: null) —
@@ -170,19 +171,13 @@ export const taskCapabilities: Capability[] = [
           .int()
           .positive()
           .nullish()
-          .describe('If it recurs, the cadence in days; else null.'),
-        ongoing_check_in_days: z
-          .number()
-          .int()
-          .positive()
+          .describe('If it recurs (a repeating chore), the cadence in days; else null.'),
+        ongoing: z
+          .boolean()
           .nullish()
           .describe(
-            'Set ONLY for an ONGOING PROJECT — a continuous multi-week effort worked on repeatedly (e.g. "redesign the site", "study for the bar"), NOT a one-off or a quick chore. The value is how often it should resurface, in days (e.g. 2). Takes precedence over recurring_frequency_days. Omit/null otherwise.',
+            'Set true ONLY for an ONGOING PROJECT — a standing, open-ended effort worked on over many sessions (e.g. "redesign the site", "study for the bar"), NOT a one-off or a quick chore. It behaves like a normal task (an optional, usually far-out due date) but the planner proactively suggests chipping away at it. Mutually exclusive with recurring_frequency_days. Omit/false otherwise.',
           ),
-        target_end: z
-          .string()
-          .nullish()
-          .describe('Ongoing project only: optional target finish date (ISO 8601), or null.'),
       })
       .strict(),
     async execute(ctx, i) {
@@ -198,16 +193,10 @@ export const taskCapabilities: Capability[] = [
       // Only write a size when the model supplied one; otherwise the column stays NULL and Plan My
       // Day infers effort at plan time (the "hybrid" half of the sizing model).
       if (i.size) row.size = i.size
-      // An ongoing project reuses the recurring jsonb (ongoing:true) and takes precedence over a
-      // plain recurring cadence; otherwise a bare cadence makes an ordinary repeating chore.
-      if (i.ongoing_check_in_days) {
-        row.recurring = {
-          frequencyDays: i.ongoing_check_in_days,
-          lastDoneAt: null,
-          doneCount: 0,
-          ongoing: true,
-          targetEnd: i.target_end ?? null,
-        }
+      // An ongoing project is a standalone flag (no recurring data); it takes precedence over a
+      // plain recurring cadence, which otherwise makes an ordinary repeating chore.
+      if (i.ongoing) {
+        row.ongoing = true
       } else if (i.recurring_frequency_days) {
         row.recurring = {
           frequencyDays: i.recurring_frequency_days,
@@ -449,6 +438,8 @@ export const taskCapabilities: Capability[] = [
       // Preserve an existing cycle when only changing cadence (mirrors the list's onSetFrequency),
       // so a retune doesn't snap the task back to "never done". A fresh recurrence starts at null.
       const prev = task.recurring as { lastDoneAt?: string | null; doneCount?: number } | null
+      // Clear `ongoing` in the same write: the two types are mutually exclusive (DB CHECK), so
+      // promoting an ongoing project to a recurring chore must drop the flag or the update is rejected.
       return updateTaskRow(
         ctx.client,
         i.task_id,
@@ -458,6 +449,7 @@ export const taskCapabilities: Capability[] = [
             lastDoneAt: prev?.lastDoneAt ?? null,
             doneCount: prev?.doneCount ?? 0,
           },
+          ongoing: false,
         },
         'Made recurring',
       )
@@ -467,46 +459,15 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'make_ongoing',
     description:
-      'Turn a task into an ONGOING PROJECT — a continuous effort worked on over weeks (e.g. "redesign the website", "study for the bar exam", "learn Spanish"). It keeps resurfacing on the board every `check_in_days`, tallies each work session, and can carry an optional target-end date; it is ended with finish_ongoing when the project is actually complete. Use this ONLY for a genuine multi-week effort — NOT for one-off tasks or quick chores (a due date or make_recurring fits those). Adjusting an already-ongoing task keeps its session count.',
-    schema: z
-      .object({
-        task_id: uuid.describe('The task id (UUID).'),
-        check_in_days: z
-          .number()
-          .int()
-          .min(1)
-          .nullish()
-          .describe('How often it should resurface, in days (default 2).'),
-        target_end: z
-          .string()
-          .nullish()
-          .describe('Optional target finish date (ISO 8601, e.g. 2026-08-01), or null.'),
-      })
-      .strict(),
+      'Mark a task as an ONGOING PROJECT — a standing, open-ended effort worked on over many sessions (e.g. "redesign the website", "study for the bar exam", "learn Spanish"). It behaves like a normal task (it stays on the board with an optional, usually far-out due date), but the daily planner proactively suggests chipping away at it, and it is completed with an ordinary complete_task when it is actually done. Use this ONLY for a genuine long-running effort — NOT for one-off tasks or quick chores (a due date or make_recurring fits those).',
+    schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
-      const { data: task, error: selErr } = await ctx.client
-        .from('tasks')
-        .select('recurring')
-        .eq('id', i.task_id)
-        .is('deleted_at', null)
-        .maybeSingle()
-      if (selErr) return systemErr(selErr.message)
-      if (!task) return err("I couldn't find that task.")
-      // Preserve an existing cycle (last-done + count) so retuning the cadence or target-end never
-      // snaps the project's session tally back to zero — mirrors make_recurring / the list handler.
-      const prev = task.recurring as { lastDoneAt?: string | null; doneCount?: number } | null
+      // Ongoing is a standalone flag; clearing `recurring` in the same write keeps the two types
+      // mutually exclusive (DB CHECK), so promoting a chore to a project drops its cadence.
       return updateTaskRow(
         ctx.client,
         i.task_id,
-        {
-          recurring: {
-            frequencyDays: i.check_in_days ?? 2,
-            lastDoneAt: prev?.lastDoneAt ?? null,
-            doneCount: prev?.doneCount ?? 0,
-            ongoing: true,
-            targetEnd: i.target_end ?? null,
-          },
-        },
+        { ongoing: true, recurring: null },
         'Made ongoing',
       )
     },
@@ -518,7 +479,12 @@ export const taskCapabilities: Capability[] = [
       'Stop a task from recurring OR from being an ongoing project — make it an ordinary one-off task again.',
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
-      return updateTaskRow(ctx.client, i.task_id, { recurring: null }, 'Stopped recurring')
+      return updateTaskRow(
+        ctx.client,
+        i.task_id,
+        { recurring: null, ongoing: false },
+        'Stopped recurring',
+      )
     },
   }),
 
@@ -549,7 +515,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'complete_task',
     description:
-      'Mark a task done for today. For a recurring chore this advances its cycle; for an ONGOING project it logs a work session (the project keeps going — use finish_ongoing to archive it for good). Destructive — the user is asked to confirm before it runs.',
+      'Mark a task done for today. For a recurring chore this advances its cycle (it comes back next interval); for a one-off task or an ONGOING project it archives the task to the Done log. Destructive — the user is asked to confirm before it runs.',
     destructive: true,
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
@@ -563,15 +529,14 @@ export const taskCapabilities: Capability[] = [
       if (selErr) return systemErr(selErr.message)
       if (!task) return err('That task no longer exists.')
 
-      // A recurring task (chore OR ongoing project) is completed by ADVANCING its cycle (lastDoneAt +
-      // doneCount), never through set_task_done — exactly what the grid/list "Done" does (use-grid.ts
-      // handleDone). set_task_done would stamp tasks.completed_at, which hides the task permanently and
-      // freezes the recurrence; for an ongoing project that terminal archive is finish_ongoing, not this.
+      // A recurring CHORE is completed by ADVANCING its cycle (lastDoneAt + doneCount), never through
+      // set_task_done — exactly what the grid/list "Done" does (handleDoneRecurring). set_task_done
+      // would stamp tasks.completed_at, which hides the task permanently and freezes the recurrence.
+      // A one-off task and an ONGOING project both fall through to set_task_done (done = archived).
       const rec = task.recurring as {
         frequencyDays?: number
         lastDoneAt?: string | null
         doneCount?: number
-        ongoing?: boolean
       } | null
       if (rec?.frequencyDays) {
         const patch = {
@@ -585,12 +550,7 @@ export const taskCapabilities: Capability[] = [
           .select('text')
           .maybeSingle()
         if (error) return systemErr(error.message)
-        return ok(
-          rec.ongoing
-            ? `Logged a work session on "${task.text}" — still ongoing.`
-            : `Checked off recurring "${task.text}" — back on its cycle.`,
-          ['tasks'],
-        )
+        return ok(`Checked off recurring "${task.text}" — back on its cycle.`, ['tasks'])
       }
 
       const { error } = await ctx.client.rpc('set_task_done', {
@@ -601,35 +561,6 @@ export const taskCapabilities: Capability[] = [
       })
       if (error) return systemErr(error.message)
       return ok(`Marked "${task.text}" done for today.`, ['daily_state', 'history'])
-    },
-  }),
-
-  defineCapability({
-    name: 'finish_ongoing',
-    description:
-      'Finish an ONGOING project for good — archive it to the Done log (unlike complete_task, which just logs a work session and keeps it going). Use only when the whole project is complete. Destructive — the user is asked to confirm before it runs.',
-    destructive: true,
-    schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
-    async execute(ctx, i) {
-      const now = ctx.now ?? new Date()
-      const { data: task, error: selErr } = await ctx.client
-        .from('tasks')
-        .select('text, bucket')
-        .eq('id', i.task_id)
-        .is('deleted_at', null)
-        .maybeSingle()
-      if (selErr) return systemErr(selErr.message)
-      if (!task) return err('That task no longer exists.')
-      // Archive exactly like a one-off completion (stamps completed_at + writes history), which is
-      // the finish line a repeating cycle never reaches on its own.
-      const { error } = await ctx.client.rpc('set_task_done', {
-        p_date: localDateInTZ(ctx.timeZone, now),
-        p_task_id: i.task_id,
-        p_text: task.text,
-        p_bucket: task.bucket ?? null,
-      })
-      if (error) return systemErr(error.message)
-      return ok(`Finished "${task.text}" — archived to your Done log.`, ['daily_state', 'history'])
     },
   }),
 

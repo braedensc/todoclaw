@@ -140,6 +140,29 @@ Deno.test('PlanRequestSchema tolerates a missing size (deploy-skew safe)', () =>
   assertEquals(PlanRequestSchema.parse(legacy).tasks.length, 1)
 })
 
+Deno.test('an ongoing task renders with the ongoing-project tag in its grid line', () => {
+  const withOngoing: PlanRequest = {
+    ...base,
+    tasks: [
+      {
+        text: 'Write the novel',
+        importance: 90,
+        urgency: 30,
+        due: null,
+        dueInDays: null,
+        ongoing: true,
+      },
+      { text: 'File taxes', importance: 80, urgency: 90, due: '2026-06-25', dueInDays: 1 },
+    ],
+  }
+  const p = buildUserPrompt(withOngoing, schedule, null)
+  // The ongoing flag appends ", ongoing project" to the line so the planner can pace it.
+  assert(p.includes('Write the novel (importance 90, urgency 30, no due date, ongoing project)'))
+  // A normal task carries no ongoing tag.
+  assert(p.includes('File taxes (importance 80, urgency 90, due in 1d)'))
+  assert(!p.includes('File taxes (importance 80, urgency 90, due in 1d, ongoing project)'))
+})
+
 Deno.test('weather block appears only when weather is provided', () => {
   assert(!buildUserPrompt(base, schedule, null).includes('=== WEATHER ==='))
   assert(buildUserPrompt(base, schedule, 'Sunny, 75°F').includes('Sunny, 75°F'))

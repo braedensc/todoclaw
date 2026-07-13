@@ -21,8 +21,6 @@ interface Recurring {
   frequencyDays: number
   lastDoneAt: string | null
   doneCount: number
-  ongoing?: boolean
-  targetEnd?: string | null
 }
 
 export interface LoadedChatContext {
@@ -156,7 +154,7 @@ export async function loadChatContext(
       // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
       // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
       // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
-      .select('id, text, x, y, due, due_time, staged, recurring, completed_at')
+      .select('id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at')
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
     client
@@ -198,7 +196,6 @@ export async function loadChatContext(
   const tasks: PromptTask[] = (tasksRes.data ?? []).map((t) => {
     const rec = t.recurring as Recurring | null
     labelById.set(t.id as string, t.text as string)
-    const isOngoing = !!rec?.ongoing
     return {
       id: t.id as string,
       text: t.text as string,
@@ -210,10 +207,7 @@ export async function loadChatContext(
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       recurringStatus: recurringStatusPhrase(rec, now),
-      ongoing: isOngoing,
-      ongoingSessions: isOngoing ? (rec?.doneCount ?? 0) : null,
-      ongoingTargetInDays:
-        isOngoing && rec?.targetEnd ? daysUntilInTZ(rec.targetEnd, timeZone, now) : null,
+      ongoing: (t.ongoing as boolean | null) ?? false,
       reminderOffsets: reminderByTask.get(t.id as string) ?? [],
       doneToday: doneMap[t.id as string] === true,
       completedAt: (t.completed_at as string | null) ?? null,

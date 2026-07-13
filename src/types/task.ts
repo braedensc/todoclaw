@@ -1,23 +1,18 @@
 import { z } from 'zod'
 
-// Recurring-task shape, stored as jsonb on the task row (planning/EISENCLAW-LOGIC-TO-PORT.md
+// Recurring-task ("chore") shape, stored as jsonb on the task row (planning/EISENCLAW-LOGIC-TO-PORT.md
 // §9, html:123). `frequencyDays` = cadence; `lastDoneAt` = ISO timestamp of last completion
 // (null until first done); `doneCount` = total completions (drives the `×N` badge at >= 3).
+// A recurring task resurfaces on its cadence and RESETS on completion (it never archives).
 //
-// An ONGOING PROJECT (a continuous multi-week effort, e.g. "redesign the site") reuses this SAME
-// engine rather than adding a new field/table: `frequencyDays` becomes the check-in cadence (how
-// often it resurfaces), `lastDoneAt` the last work session, `doneCount` the session count. Two
-// optional keys distinguish it from a chore — `ongoing: true` (reads as a project, not a repeat)
-// and `targetEnd` (an optional 'YYYY-MM-DD' target finish, in the user's timezone like `due`).
-// Both are jsonb keys, so no migration is needed and every pre-ongoing row/test parses unchanged:
-// absent `ongoing` ⇒ the original chore behavior. An ongoing task ENDS via an explicit Finish
-// (archived to history like a one-off), which a plain recurring chore never has.
+// This is CHORE-ONLY. An ONGOING PROJECT used to reuse this engine via an `ongoing`/`targetEnd`
+// key; as of 2026-07-13 ongoing is its own first-class flag on the task row (`tasks.ongoing`),
+// decoupled from recurring — see the header comment on `ongoing` below and the
+// 20260713000000_ongoing_task_flag migration.
 export const RecurringSchema = z.object({
   frequencyDays: z.number(),
   lastDoneAt: z.string().nullable(),
   doneCount: z.number(),
-  ongoing: z.boolean().optional(),
-  targetEnd: z.string().nullable().optional(),
 })
 
 export type Recurring = z.infer<typeof RecurringSchema>
@@ -50,6 +45,12 @@ export const TaskSchema = z.object({
   // yet). `recurring` is null for non-recurring tasks.
   bucket: z.literal('oneoff').nullable(),
   recurring: RecurringSchema.nullable(),
+  // An ONGOING PROJECT (2026-07-13): a standing, open-ended effort. It behaves like a plain task —
+  // optional due/time + reminders, and completion ARCHIVES it (sets completed_at) exactly like a
+  // one-off — but this flag tells Plan My Day / BabyClaw to proactively suggest chipping away at it.
+  // Mutually exclusive with `recurring` (a task is at most one of chore / ongoing; DB CHECK enforces
+  // it). `.catch(false)` keeps rows/fixtures without the column parsing during any deploy skew.
+  ongoing: z.boolean().catch(false),
   // Optional+nullable (not required): a soft, additive field. `.nullish()` keeps task fixtures and
   // any pre-migration client (Vercel/Supabase deploy skew) parsing cleanly when `size` is absent.
   size: TaskSizeSchema.nullish(),

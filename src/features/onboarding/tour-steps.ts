@@ -25,6 +25,15 @@ export const DESKTOP_TOUR: TourStep[] = [
       'conversation). Prefer full control? Switch to Manual.',
   },
   {
+    target: 'task-input',
+    title: 'Three kinds of task',
+    body:
+      'When you schedule a task you can make it one of three kinds: a one-off Task you do once; ' +
+      'a Recurring chore that comes back on a schedule (marking it done just resets it); or an ' +
+      'Ongoing project — a long effort with no real deadline that stays put while todoclaw nudges ' +
+      'you to chip away at it.',
+  },
+  {
     target: 'plan',
     title: 'One tap plans your day',
     body:
@@ -79,6 +88,14 @@ export const MOBILE_TOUR: TourStep[] = [
     body:
       'Tap ➕, describe the task, and pick how urgent + important it feels. It lands in the ' +
       'right box automatically.',
+  },
+  {
+    target: 'nav-add',
+    title: 'Three kinds of task',
+    body:
+      'A task can be a one-off Task (done once), a Recurring chore (comes back on a schedule — ' +
+      'done just resets it), or an Ongoing project (a long effort with no deadline that todoclaw ' +
+      'nudges you to chip away at). You pick when you set its schedule.',
   },
   {
     target: 'nav-chat',
