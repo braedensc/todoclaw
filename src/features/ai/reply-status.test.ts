@@ -30,6 +30,16 @@ describe('splitReply', () => {
     expect(splitReply(mid)).toEqual({ body: mid, status: null, needsInput: false })
   })
 
+  it('strips a trailing status even when its text contains a ] (e.g. a bracketed task name)', () => {
+    // Regression: the capture used to exclude `]`, so a `]` inside the status (a task named
+    // "read [ch 3]") defeated the strip and leaked the raw [[status: …]] marker into the bubble.
+    expect(splitReply('Renamed it!\n[[status: Renamed to "read [ch 3]" 🐾]]')).toEqual({
+      body: 'Renamed it!',
+      status: 'Renamed to "read [ch 3]" 🐾',
+      needsInput: false,
+    })
+  })
+
   it('hides a mid-stream marker that opened but has not closed yet', () => {
     expect(splitReply('Added it!\n[[status: Add')).toEqual({
       body: 'Added it!',
