@@ -37,12 +37,15 @@ export function placeByDue(
 }
 
 export type UrgencyWord = 'low' | 'medium' | 'high'
-export type ImportanceWord = 'low' | 'high'
+export type ImportanceWord = 'low' | 'medium' | 'high'
 
-// Word → coordinate, for the chat move_task tool's verbal path ("make it more important").
+// Word → coordinate, for the chat tools' verbal path (create_task / "make it more important").
 export function urgencyToX(word: UrgencyWord): number {
   return word === 'high' ? 0.84 : word === 'medium' ? 0.55 : 0.18
 }
+// Importance (y): low sits clearly in the minor half, high in the major half, medium on the split.
+// (Was two-level low=0.5 / high=0.75; low dropped to 0.25 so a genuinely minor task — a routine
+// chore — reads as clearly minor instead of straddling the quadrant line.)
 export function importanceToY(word: ImportanceWord): number {
-  return word === 'high' ? 0.75 : 0.5
+  return word === 'high' ? 0.75 : word === 'medium' ? 0.5 : 0.25
 }

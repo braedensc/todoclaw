@@ -53,5 +53,6 @@ Deno.test('word → coordinate mappings', () => {
   assertEquals(urgencyToX('medium'), 0.55)
   assertEquals(urgencyToX('low'), 0.18)
   assertEquals(importanceToY('high'), 0.75)
-  assertEquals(importanceToY('low'), 0.5)
+  assertEquals(importanceToY('medium'), 0.5)
+  assertEquals(importanceToY('low'), 0.25) // clearly minor, not the 0.5 quadrant line
 })

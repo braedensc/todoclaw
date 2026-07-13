@@ -206,6 +206,63 @@ Deno.test('create_task can create an ongoing project in one shot', async () => {
   assertEquals(inserted?.recurring, undefined)
 })
 
+Deno.test('create_task places at the urgency/importance BabyClaw chose', async () => {
+  let inserted: Record<string, unknown> | undefined
+  const res = await executeTool(
+    'create_task',
+    { text: 'Vacuum the house', urgency: 'low', importance: 'low', recurring_frequency_days: 14 },
+    ctx({
+      onInsert: (_t, row) => {
+        inserted = row as Record<string, unknown>
+        return { data: { id: UUID }, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  // A routine chore lands bottom-left (Later): low urgency 0.18, clearly-minor importance 0.25.
+  assertEquals(inserted?.x, 0.18)
+  assertEquals(inserted?.y, 0.25)
+  assertEquals(inserted?.staged, false)
+})
+
+Deno.test('create_task: a due date sets urgency but NOT importance (no auto-slam)', async () => {
+  // The regression from the debug chat: a chore due today was forced to importance 0.75 and slammed
+  // into the Do-Now corner. Now the due date only drives urgency; importance stays neutral.
+  let inserted: Record<string, unknown> | undefined
+  const res = await executeTool(
+    'create_task',
+    { text: 'Vacuum the house', due: '2026-07-04' }, // today in the test's zone
+    ctx({
+      onInsert: (_t, row) => {
+        inserted = row as Record<string, unknown>
+        return { data: { id: UUID }, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(inserted?.x, 0.9) // due today → urgent
+  assertEquals(inserted?.y, 0.5) // importance neutral, NOT 0.75
+  assertEquals(inserted?.staged, false)
+})
+
+Deno.test('create_task with no due date and no urgency/importance stays staged', async () => {
+  let inserted: Record<string, unknown> | undefined
+  const res = await executeTool(
+    'create_task',
+    { text: 'Someday idea' },
+    ctx({
+      onInsert: (_t, row) => {
+        inserted = row as Record<string, unknown>
+        return { data: { id: UUID }, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(inserted?.staged, true)
+  assertEquals(inserted?.x, 0.5)
+  assertEquals(inserted?.y, 0.5)
+})
+
 Deno.test('make_ongoing round-trips, and completing it archives via set_task_done', async () => {
   const made = await executeTool(
     'make_ongoing',
