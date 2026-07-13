@@ -11,7 +11,11 @@
 // treatment. Detection is belt-and-suspenders: the explicit marker, or a reply that plainly ends
 // on a question (older conversations / a forgetful model).
 
-const COMPLETE = /\s*\[\[\s*(?:status:\s*)?([^\]]*?)\s*\]\]\s*$/i
+// The status text may itself contain a single `]` (e.g. a task named "read [ch 3]" echoed into the
+// status) — so the capture excludes NEWLINES, not `]`. The marker is always the reply's last line, so
+// barring newlines keeps the match to that trailing line (an earlier `[[…]]` in the body can't reach
+// the `]]$` across a newline), while `]` inside the status no longer defeats the strip.
+const COMPLETE = /\s*\[\[\s*(?:status:\s*)?([^\n]*?)\s*\]\]\s*$/i
 
 // Trailing decoration that can follow the actual question mark — BabyClaw signs off with 🐾, and
 // quotes/brackets/!/… may trail a "…?" sentence. Stripped before the ends-with-? check.
