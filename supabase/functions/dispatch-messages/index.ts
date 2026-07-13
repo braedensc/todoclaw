@@ -180,11 +180,17 @@ async function maybeGeneratePlan(
   if (!gate.ok) return null
   try {
     const req = buildPlanRequest(inputs.tasks, inputs.habits, inputs.done, timeZone, now)
+    // Saved memories for the plan (service_role DEFINER RPC; returns [] when memory is off). Mirrors
+    // the interactive path so the morning push is personalized the same way. Best-effort: a failure
+    // just means a memory-less plan, never a dropped push.
+    const { data: memData } = await admin.rpc('memories_for_user', { p_user_id: userId })
+    const memories = Array.isArray(memData) ? (memData as string[]) : []
     const { plan, usage } = await generatePlan(
       anthropic(),
       req,
       (inputs.config ?? null) as ScheduleConfig | null,
       null,
+      memories,
     )
     await recordUsageForUser(admin, userId, usage.input, usage.output)
     await admin.rpc('save_daily_plan_for_user', {
