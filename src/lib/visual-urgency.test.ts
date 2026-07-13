@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agingBadge,
+  agingChipStyle,
   agingRingStyle,
   clusterAgingRing,
   dueChipStyle,
+  fmtAge,
   fmtCountdown,
   fmtOverdueAmount,
   gridChipLabel,
@@ -241,5 +244,63 @@ describe('clusterAgingRing', () => {
       ),
     ).toBeNull()
     expect(clusterAgingRing([{ created_at: null, recurring: null }], NOW)).toBeNull()
+  })
+})
+
+describe('fmtAge', () => {
+  it('weeks up to 10w, then months, then years', () => {
+    expect(fmtAge(21)).toBe('3w')
+    expect(fmtAge(44)).toBe('6w')
+    expect(fmtAge(60)).toBe('9w')
+    expect(fmtAge(70)).toBe('2mo')
+    expect(fmtAge(74)).toBe('2mo')
+    expect(fmtAge(75)).toBe('3mo')
+    expect(fmtAge(90)).toBe('3mo')
+    expect(fmtAge(364)).toBe('12mo')
+    expect(fmtAge(365)).toBe('1y')
+    expect(fmtAge(730)).toBe('2y')
+  })
+
+  it('falls back to plain days below the aging floor (never rendered, but well-defined)', () => {
+    expect(fmtAge(0)).toBe('0d')
+    expect(fmtAge(20)).toBe('20d')
+  })
+})
+
+describe('agingBadge', () => {
+  const NOW = new Date('2026-07-02T12:00:00Z')
+  const agedByDays = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString()
+
+  it('null for a staged card regardless of age', () => {
+    expect(agingBadge({ created_at: agedByDays(200), staged: true }, NOW)).toBeNull()
+  })
+
+  it('null when created_at is missing or unparseable', () => {
+    expect(agingBadge({ created_at: null, staged: false }, NOW)).toBeNull()
+    expect(agingBadge({ created_at: 'not-a-date', staged: false }, NOW)).toBeNull()
+  })
+
+  it('null below the aging floor (fresh cards stay unbadged, including the 20-day boundary)', () => {
+    expect(agingBadge({ created_at: agedByDays(0), staged: false }, NOW)).toBeNull()
+    expect(agingBadge({ created_at: agedByDays(20), staged: false }, NOW)).toBeNull()
+  })
+
+  it('❄️ + compact age + spelled-out label from the floor up', () => {
+    expect(agingBadge({ created_at: agedByDays(21), staged: false }, NOW)).toEqual({
+      glyph: '❄️',
+      age: '3w',
+      label: '3w on the board',
+    })
+    expect(agingBadge({ created_at: agedByDays(150), staged: false }, NOW)).toEqual({
+      glyph: '❄️',
+      age: '5mo',
+      label: '5mo on the board',
+    })
+  })
+})
+
+describe('agingChipStyle', () => {
+  it('solid azure fill (the cold-lane mirror of the terracotta overdue chip)', () => {
+    expect(agingChipStyle()).toEqual({ backgroundColor: 'rgb(50,118,205)', color: '#fff' })
   })
 })

@@ -79,6 +79,9 @@ export function GridLegend() {
       {AGING_SWATCHES.map((s) => (
         <SwatchItem key={s.label} {...s} />
       ))}
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span aria-hidden>❄️</span> how long it&apos;s sat
+      </span>
     </div>
   )
 }

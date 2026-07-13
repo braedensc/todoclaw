@@ -6,6 +6,8 @@ import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
 import { ONGOING_GLYPH } from '../../lib/task-type'
 import {
+  agingBadge,
+  agingChipStyle,
   agingRingStyle,
   BASE_CARD_SHADOW,
   dueChipStyle,
@@ -162,6 +164,10 @@ export function GridCard({
   // Cool "aging ring" — the inverse of the retired fade: an old card gains a slate ring so it
   // draws the eye instead of receding. Its own hue lane, so it can co-exist with the warm glow.
   const aging = rc ? null : agingRingStyle(task)
+  // The ❄️ aging chip — the textual "how old" half of that same cool lane (the cold-side mirror of
+  // the terracotta "Overdue · Nd" chip), so an old card doesn't just glow cool but SAYS how long
+  // it's sat. Same recurring gate as the ring (a chore carries its own status, not an age).
+  const iceBadge = rc ? null : agingBadge(task)
 
   // Compose the card's box-shadow from up to two independent channels: the warm urgency ring
   // (due-date driven) and the cool aging ring (age driven). The aging ring is appended so it
@@ -366,6 +372,20 @@ export function GridCard({
           style={dueChipStyle(tier)}
         >
           {gridChipLabel(tier, daysUntilDue, task.due_time, minutesUntilDue)}
+        </span>
+      )}
+
+      {/* ❄️ aging chip — the cool-lane counterpart to the terracotta overdue chip above: a stale
+          card says HOW long it's sat ("❄️ 3w"). Rendered independently of the due chip (a stale
+          task usually has no due date at all), so an old-AND-dued card shows both — a warm "how
+          soon" badge and a cool "how old" badge side by side, never confused for one another. */}
+      {!editing && iceBadge && (
+        <span
+          className="ml-1 mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
+          style={agingChipStyle()}
+          aria-label={iceBadge.label}
+        >
+          {iceBadge.glyph} {iceBadge.age}
         </span>
       )}
 

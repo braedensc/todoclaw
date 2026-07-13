@@ -258,6 +258,13 @@ export interface AgingRingStyle {
  */
 const AGING_BLUE = '50,118,205'
 
+/**
+ * The age (whole days on the board) at/above which a card is "old enough" to wear the cool aging
+ * treatment. The ring, the tint, AND the ❄️ badge all key off this ONE floor, so a card shows the
+ * whole cool lane together or not at all. Same 21-day floor the retired EisenClaw fade used.
+ */
+export const AGING_FLOOR_DAYS = 21
+
 /** Whole days elapsed since an ISO timestamp (floor), or null if absent/unparseable. */
 function daysSince(iso: string | null, now: Date): number | null {
   if (!iso) return null
@@ -283,7 +290,7 @@ function daysSince(iso: string | null, now: Date): number | null {
  * | `>= 75d` | 3px ring + brighter 28px haze | `#e0edfb`  |
  */
 function ringForAgeDays(days: number): AgingRingStyle | null {
-  if (days < 21) return null
+  if (days < AGING_FLOOR_DAYS) return null
   if (days < 45)
     return {
       boxShadow: `0 0 0 2px rgba(${AGING_BLUE},0.6), 0 0 14px 3px rgba(${AGING_BLUE},0.3)`,
@@ -339,4 +346,54 @@ export function clusterAgingRing(
     if (oldest === null || d > oldest) oldest = d
   }
   return oldest === null ? null : ringForAgeDays(oldest)
+}
+
+/**
+ * Compact human age for the ❄️ aging chip: weeks, then months, then years. The days branch only
+ * exists for completeness — the badge never renders below the aging floor (21d), so callers always
+ * land on weeks or coarser.
+ */
+export function fmtAge(days: number): string {
+  if (days < AGING_FLOOR_DAYS) return `${days}d`
+  if (days < 70) return `${Math.round(days / 7)}w`
+  if (days < 365) return `${Math.round(days / 30)}mo`
+  return `${Math.round(days / 365)}y`
+}
+
+/**
+ * The ❄️ aging badge — the cold-side mirror of the hot 🔥 flag (`urgencyIcon`). Where 🔥 means "act
+ * now", ❄️ means "this has gone stale on the board" AND carries HOW long: `age` is the compact
+ * "3w"/"5mo"/"1y" the chip renders, `label` the spelled-out aria text. Keyed off the SAME
+ * `AGING_FLOOR_DAYS` as the aging ring/tint, so a card wears the ring, the tint, and this badge as
+ * one cool lane. Returns null for a staged card (not yet "left on the board"), a fresh card, or an
+ * unparseable created_at. The recurring gate (a chore carries its own status, not an age) is the
+ * caller's — exactly as with the ring.
+ */
+export interface AgingBadge {
+  glyph: string
+  /** Compact age for the chip text ("3w", "5mo", "1y"). */
+  age: string
+  /** Spelled-out aria/title label ("3w on the board"). */
+  label: string
+}
+
+export function agingBadge(
+  task: { created_at: string | null; staged: boolean },
+  now: Date = new Date(),
+): AgingBadge | null {
+  if (task.staged) return null
+  const days = daysSince(task.created_at, now)
+  if (days === null || days < AGING_FLOOR_DAYS) return null
+  const age = fmtAge(days)
+  return { glyph: '❄️', age, label: `${age} on the board` }
+}
+
+/**
+ * Inline style for the ❄️ aging chip — the cold-lane mirror of the terracotta overdue chip
+ * (`dueChipStyle('overdue')`): a solid azure fill in the same `AGING_BLUE` hue as the ring, so the
+ * textual "how old" badge reads as a sibling of the warm "how soon" badge without ever being
+ * mistaken for it.
+ */
+export function agingChipStyle(): DueChipStyle {
+  return { backgroundColor: `rgb(${AGING_BLUE})`, color: '#fff' }
 }
