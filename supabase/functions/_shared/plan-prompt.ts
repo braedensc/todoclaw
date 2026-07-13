@@ -98,7 +98,10 @@ export const EMIT_PLAN_TOOL = {
       smallRocks: {
         type: 'array',
         items: rockSchema,
-        description: '0–3 quick wins that fit around the big rock; [] on a genuinely light day.',
+        maxItems: 2,
+        description:
+          'Quick wins around the big rock: default to ONE; at most TWO, and only add a second ' +
+          'when deadlines press or the day is unusually open; [] on a genuinely light day.',
       },
       habitNote: {
         type: 'string',
@@ -134,8 +137,12 @@ export const SYSTEM_PROMPT = [
   '   task as an ordinary deliverable.',
   '3. PICK AT MOST ONE big rock — the single thing that genuinely warrants focus today (urgent, due',
   '   soon, or high-importance and a good fit for the day). On a light day, set bigRock to null.',
-  '4. ADD 0–3 small rocks. Default to ONE. Add more only when several deadlines are truly imminent.',
-  '   A relaxed day with one or two things is perfectly valid and healthy — say so plainly.',
+  '4. ADD SMALL ROCKS SPARINGLY — 0–2, and default to exactly ONE. The normal, healthy shape of a',
+  '   day is one big rock plus one small rock: a single real focus and a single quick win. Add a',
+  '   SECOND small rock ONLY when there is a concrete reason — several deadlines are genuinely',
+  '   imminent, or the day is unusually open with clear time to spare. Never propose a third. A quiet',
+  '   day with just the big rock (or even a pure rest day) is perfectly valid — say so plainly, and',
+  '   never pad the plan with filler to make it look busy. Fewer, well-chosen rocks beat a full list.',
   "   Weigh each task's size (shown below) against the free time you're given: if the rocks you're",
   "   about to pick clearly add up to more than today's available hours, drop the lowest-priority",
   '   one instead of cramming. Size is a guardrail against over-stuffing — never a quota to fill.',
