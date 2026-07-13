@@ -56,6 +56,13 @@ rate-limit window; (3) a **per-user monthly sub-cap** (`ai_user_budget_ledger` +
 stops one heavy account draining the global $20 pool and pausing AI for everyone. No service-role
 client was introduced — the new ledger uses the same DEFINER-only pattern as `ai_budget_ledger`.
 
+**Further hardening (2026-07-13 audit).** `ai_budget_add` was still callable directly via PostgREST
+often enough to trip the global switch (the clamp bounds one call, not the count). It is now **bound
+to a rate-limited usage row** — it takes the `ai_usage` id from `precheck`, requires it to be the
+caller's own and unbilled (`ai_usage.billed_at`), and bills it at most once — so the ledger can move
+only in step with real, sub-capped usage. See ADR 2026-07-13-babyclaw-budget-invite-hardening (which
+also closes the owner-only-invite bypass, L3).
+
 **Verified.** `supabase db reset` applies the migration; a psql proof confirms the rate-limit
 raises after N, the kill-switch returns negative remaining once over cap, `ai_budget_ledger` is
 `permission denied` for `authenticated`, and the DEFINER functions raise for an anon caller.
