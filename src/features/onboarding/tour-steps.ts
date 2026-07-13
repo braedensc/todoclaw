@@ -26,12 +26,22 @@ export const DESKTOP_TOUR: TourStep[] = [
   },
   {
     target: 'task-input',
-    title: 'Three kinds of task',
-    body:
-      'When you schedule a task you can make it one of three kinds: a one-off Task you do once; ' +
-      'a Recurring chore that comes back on a schedule (marking it done just resets it); or an ' +
-      'Ongoing project — a long effort with no real deadline that stays put while todoclaw nudges ' +
-      'you to chip away at it.',
+    title: '3 types of “Todos”',
+    body: 'Pick which kind you want when you create a task:',
+    bullets: [
+      {
+        lead: 'One-off task',
+        rest: 'something you do once (renew your passport, book a haircut).',
+      },
+      {
+        lead: 'Recurring',
+        rest: 'a chore that comes back on a schedule; marking it done just resets it (water the plants, pay rent).',
+      },
+      {
+        lead: 'Ongoing',
+        rest: 'a long project with no real deadline; it stays put while todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
+      },
+    ],
   },
   {
     target: 'plan',
@@ -91,11 +101,22 @@ export const MOBILE_TOUR: TourStep[] = [
   },
   {
     target: 'nav-add',
-    title: 'Three kinds of task',
-    body:
-      'A task can be a one-off Task (done once), a Recurring chore (comes back on a schedule — ' +
-      'done just resets it), or an Ongoing project (a long effort with no deadline that todoclaw ' +
-      'nudges you to chip away at). You pick when you set its schedule.',
+    title: '3 types of “Todos”',
+    body: 'Pick which kind you want when you create a task:',
+    bullets: [
+      {
+        lead: 'One-off task',
+        rest: 'something you do once (renew your passport, book a haircut).',
+      },
+      {
+        lead: 'Recurring',
+        rest: 'a chore that comes back on a schedule; marking it done just resets it (water the plants, pay rent).',
+      },
+      {
+        lead: 'Ongoing',
+        rest: 'a long project with no real deadline; todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
+      },
+    ],
   },
   {
     target: 'nav-chat',

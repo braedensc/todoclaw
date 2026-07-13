@@ -22,6 +22,8 @@ export interface TourStep {
   target: string
   title: string
   body: string
+  /** Optional bulleted list shown under `body` — each item is a bold lead-in plus its detail. */
+  bullets?: { lead: string; rest: string }[]
 }
 
 interface SpotRect {
@@ -151,6 +153,20 @@ export function FeatureTour({
         </p>
         <h3 className="mt-1 font-serif text-base font-semibold text-ink">{step.title}</h3>
         <p className="mt-1 text-[13px] leading-snug text-muted">{step.body}</p>
+        {step.bullets && (
+          <ul className="mt-2 space-y-1.5 text-[13px] leading-snug text-muted">
+            {step.bullets.map((b) => (
+              <li key={b.lead} className="flex gap-1.5">
+                <span aria-hidden className="text-accent">
+                  •
+                </span>
+                <span>
+                  <span className="font-semibold text-ink">{b.lead}</span> — {b.rest}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
