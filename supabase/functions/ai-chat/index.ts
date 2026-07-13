@@ -17,10 +17,16 @@ import {
   executeTool,
   destructiveSummary,
   type ToolContext,
+  type ToolResult,
 } from '../_shared/chat-tools.ts'
 import { buildSystem } from '../_shared/chat-prompt.ts'
 import { loadChatContext } from '../_shared/chat-context.ts'
 import { runPlanForUser } from '../_shared/run-plan.ts'
+import {
+  MEMORY_TOOL_NAMES,
+  MEMORY_WRITE_TOOL_NAMES,
+  MAX_MEMORY_WRITES_PER_REQUEST,
+} from '../_shared/capabilities/memories.ts'
 
 const MAX_TOOL_ITERATIONS = 8 // per HTTP request — bounds runaway tool loops (and budget burn)
 const MAX_MESSAGES = 100 // cap client-held history growth
@@ -87,8 +93,15 @@ Deno.serve(async (req) => {
   // Rich per-request context (active + done-today tasks with grid position, habits with today's
   // check state, schedule summary, per-user assistant config) for the system prompt, plus a label
   // map (task/habit id → text) for the destructive-confirmation summaries.
-  const { context, timeZone, labelById } = await loadChatContext(client)
+  const { context, timeZone, labelById, memoryEnabled } = await loadChatContext(client)
   const system = buildSystem(context)
+
+  // Kill switch (primary enforcement): when memory is off the model never even SEES the memory tools,
+  // so it can't call them and can't be talked into it. The memory block is already omitted (empty
+  // context.memories). The capability-level check in memories.ts is the defense-in-depth backstop.
+  const tools = (memoryEnabled
+    ? TOOL_DEFS
+    : TOOL_DEFS.filter((t) => !MEMORY_TOOL_NAMES.has(t.name))) as unknown as Anthropic.Tool[]
 
   // The capability layer stays transport-agnostic; the Anthropic-backed Plan My Day path is
   // injected as a service. runPlanForUser carries its OWN plan_my_day rate-limit + budget gate.
@@ -120,6 +133,9 @@ Deno.serve(async (req) => {
         // On a resume-after-confirmation request, the last message is the assistant tool_use turn
         // that we paused on — process it first (no new model call needed yet).
         let pending = lastAssistantToolUses(messages)
+        // Per-request memory-write brake (junk guard): bound how many memories the model can write in
+        // one HTTP request, regardless of how many turns it takes.
+        let memoryWrites = 0
 
         for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
           let toolUses: ToolUseBlock[]
@@ -133,7 +149,7 @@ Deno.serve(async (req) => {
               max_tokens: MAX_TOKENS,
               system,
               messages,
-              tools: TOOL_DEFS as unknown as Anthropic.Tool[],
+              tools,
             })
             ms.on('text', (delta: string) => sse.send({ type: 'text-delta', text: delta }))
             const final = await ms.finalMessage()
@@ -177,8 +193,15 @@ Deno.serve(async (req) => {
                 needsConfirm.name,
                 needsConfirm.input,
                 labelById.get(
-                  (needsConfirm.input as { task_id?: string; habit_id?: string })?.task_id ??
-                    (needsConfirm.input as { habit_id?: string })?.habit_id ??
+                  (
+                    needsConfirm.input as {
+                      task_id?: string
+                      habit_id?: string
+                      memory_id?: string
+                    }
+                  )?.task_id ??
+                    (needsConfirm.input as { habit_id?: string; memory_id?: string })?.habit_id ??
+                    (needsConfirm.input as { memory_id?: string })?.memory_id ??
                     '',
                 ),
               ),
@@ -192,7 +215,24 @@ Deno.serve(async (req) => {
           // All clear — execute every tool in the turn (non-destructive + approved destructive).
           const results: Anthropic.ToolResultBlockParam[] = []
           for (const tu of toolUses) {
-            const res = await executeTool(tu.name, tu.input, toolCtx)
+            // Brake runaway memory writes: past the per-request cap, refuse without executing (a
+            // model-facing error so it stops; hidden from the user).
+            let res: ToolResult
+            if (MEMORY_WRITE_TOOL_NAMES.has(tu.name)) {
+              if (memoryWrites >= MAX_MEMORY_WRITES_PER_REQUEST) {
+                res = {
+                  content:
+                    'Memory write limit for this turn reached — save at most a couple per turn.',
+                  is_error: true,
+                  display: null,
+                }
+              } else {
+                memoryWrites++
+                res = await executeTool(tu.name, tu.input, toolCtx)
+              }
+            } else {
+              res = await executeTool(tu.name, tu.input, toolCtx)
+            }
             sse.send({
               type: 'tool-result',
               tool_use_id: tu.id,

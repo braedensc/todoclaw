@@ -11,11 +11,13 @@ import {
   type AssistantConfig,
   type ChatContext,
   type PromptHabit,
+  type PromptMemory,
   type PromptPlan,
   type PromptTask,
 } from './chat-prompt.ts'
 
 const MAX_CUSTOM_INSTRUCTIONS = 500
+const MAX_MEMORY_CHARS = 240
 
 interface Recurring {
   frequencyDays: number
@@ -26,7 +28,8 @@ interface Recurring {
 export interface LoadedChatContext {
   context: ChatContext
   timeZone: string
-  labelById: Map<string, string> // task + habit id → text, for destructive-confirmation summaries
+  labelById: Map<string, string> // task + habit + memory id → text, for destructive-confirm summaries
+  memoryEnabled: boolean // false ⇒ ai-chat filters out the memory tools + the block is omitted
 }
 
 // Cadence label (mirrors src/lib/recurring.ts fmtFrequency).
@@ -156,7 +159,12 @@ export async function loadChatContext(
   const config = (sched?.config ?? null) as Record<string, unknown> | null
   const date = localDateInTZ(timeZone, now)
 
-  const [tasksRes, habitsRes, dailyRes, remindersRes] = await Promise.all([
+  // Kill switch: memory is on unless config.assistant.memoryEnabled === false. When off, skip the
+  // fetch entirely (no block rendered) and signal ai-chat to filter out the memory tools.
+  const assistantCfg = (config?.assistant ?? {}) as Record<string, unknown>
+  const memoryEnabled = assistantCfg.memoryEnabled !== false
+
+  const [tasksRes, habitsRes, dailyRes, remindersRes, memoriesRes] = await Promise.all([
     client
       .from('tasks')
       // completed_at is fetched (not SQL-filtered) so the render can mirror the grid/list split:
@@ -181,6 +189,14 @@ export async function loadChatContext(
     // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's
     // reminders lead each occurrence, a one-off's lead the single due instant (same rows either way).
     client.from('task_reminders').select('task_id, offset_minutes').is('sent_at', null),
+    // Saved memories (oldest-first = a stable prompt order), only when memory is on. ≤30 rows by
+    // the DB trigger, so no limit needed. RLS scopes it to the caller.
+    memoryEnabled
+      ? client
+          .from('assistant_memories')
+          .select('id, content, updated_at')
+          .order('created_at', { ascending: true })
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
 
   const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
@@ -243,6 +259,19 @@ export async function loadChatContext(
     }
   })
 
+  // Saved memories → PromptMemory. Register each id → content in labelById so a delete_memory
+  // confirmation shows the note's text, not a raw id. Read defensively (skip a malformed row).
+  const memories: PromptMemory[] = []
+  for (const m of (memoriesRes.data ?? []) as Record<string, unknown>[]) {
+    if (typeof m.id !== 'string' || typeof m.content !== 'string' || !m.content) continue
+    labelById.set(m.id, m.content)
+    memories.push({
+      id: m.id,
+      content: m.content.slice(0, MAX_MEMORY_CHARS),
+      savedOn: localDateInTZ(timeZone, new Date((m.updated_at as string) ?? now)),
+    })
+  }
+
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
   const today = fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -256,7 +285,8 @@ export async function loadChatContext(
     habits,
     plan: planSummary(dailyRes.data?.plan),
     assistant: parseAssistant(config),
+    memories,
   }
 
-  return { context, timeZone, labelById }
+  return { context, timeZone, labelById, memoryEnabled }
 }

@@ -120,31 +120,34 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'generate_plan',
     'dismiss_plan',
     'set_assistant_preference',
+    'save_memory',
+    'propose_memory',
+    'update_memory',
+    'delete_memory',
   ]
   for (const n of expected) assert(names.has(n), `missing capability: ${n}`)
   assertEquals(names.size, expected.length)
   assert(!names.has('set_bucket'))
 })
 
-Deno.test(
-  'exactly complete_task, delete_completion, delete_habit, delete_task are destructive',
-  () => {
-    assertEquals([...DESTRUCTIVE].sort(), [
-      'complete_task',
-      'delete_completion',
-      'delete_habit',
-      'delete_task',
-    ])
-    for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
-  },
-)
+Deno.test('exactly the completion/deletion + memory-confirm tools are destructive', () => {
+  assertEquals([...DESTRUCTIVE].sort(), [
+    'complete_task',
+    'delete_completion',
+    'delete_habit',
+    'delete_memory',
+    'delete_task',
+    'propose_memory',
+  ])
+  for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
+})
 
 Deno.test('every capability derives a valid object JSON schema (no leaked $schema)', () => {
   for (const t of TOOL_DEFS) {
     const s = t.input_schema as Record<string, unknown>
     assertEquals(s.type, 'object')
     assert(!('$schema' in s), `${t.name} leaked $schema`)
-    assert(t.description.length > 0)
+    assert(!!t.description && t.description.length > 0) // Anthropic.Tool.description is optional in the type
   }
 })
 
