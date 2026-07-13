@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RC_COLOR, recurringStatus, fmtFrequency, ongoingLabel } from '../../lib/recurring'
+import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
+import { ONGOING_GLYPH } from '../../lib/task-type'
 import {
   agingRingStyle,
   BASE_CARD_SHADOW,
@@ -62,9 +63,8 @@ export interface GridCardProps {
   onSetFrequency: (frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: () => void
-  /** Make / adjust this task as an ongoing project (check-in cadence + optional target-end).
-   *  Reuses the recurring jsonb; the panel's "Ongoing project" entry writes through it. */
-  onSetOngoing: (checkInDays: number, targetEnd: string | null) => void
+  /** Set/clear the ongoing-project flag (setting true also clears any recurring schedule). */
+  onSetOngoing: (on: boolean) => void
   /** This task's selected reminder offsets (minutes before due); empty = none. Shown in the ⋯
    *  menu once the task has a due time; computed by the caller from the shared reminders query. */
   reminderOffsets: readonly number[]
@@ -143,10 +143,6 @@ export function GridCard({
 
   // x/y are guaranteed non-null by the caller's filter, but be defensive for the type.
   const rc = recurringStatus(task.recurring)
-  // Ongoing project vs. repeating chore — both live in `recurring`, so the same status color/hide
-  // apply, but the badge reads as a project (▶ + target/sessions) instead of a repeat (↻ + cadence).
-  const ongoing = ongoingLabel(task.recurring, { timeZone })
-  const repeatGlyph = ongoing ? '▶' : '↻'
   // Data-space quadrant for this card's (x, y). Drives the border color (when not recurring)
   // and a `data-quadrant` hook so E2E specs can assert placement without reading pixel styles
   // (durable across Stage 5's restyle).
@@ -276,11 +272,11 @@ export function GridCard({
       {rc && (
         <span
           aria-hidden
-          title={ongoing ? 'Ongoing project' : 'Repeats'}
+          title="Repeats"
           className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full border bg-card text-[9px] font-bold leading-none shadow-sm"
           style={{ borderColor, color: borderColor }}
         >
-          {repeatGlyph}
+          ↻
         </span>
       )}
 
@@ -301,7 +297,7 @@ export function GridCard({
         </span>
       )}
 
-      {/* Recurring status badge: a full-width colored block, status on line 1 (+ doneCount
+      {/* Recurring (chore) status badge: a full-width colored block, status on line 1 (+ doneCount
           once >= 3) and cadence stacked as line 2 inside the same block — mirrors EisenClaw's
           two-line badge (html:569/587) rather than a single row of separate chips. */}
       {rc && (
@@ -309,22 +305,25 @@ export function GridCard({
           className="mb-0.5 block rounded-[3px] px-1 py-px text-[8.5px] font-bold leading-tight text-white"
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
-          {/* Ongoing project: "▶ ongoing"/target on line 1, session ×N reuses the badge; a chore
-              keeps "↻ status" + cadence. Line 2 carries the target for a project, cadence for a
-              chore — a project's check-in cadence would read like a repeat, so it's hidden. */}
-          <span>
-            {repeatGlyph} {ongoing ? (ongoing.target ?? 'ongoing') : rc.label}
-          </span>
+          <span>↻ {rc.label}</span>
           {showBadge && (
             <span className="ml-[3px] text-[7.5px] font-normal opacity-75">
               {task.recurring?.doneCount}×
             </span>
           )}
-          {task.recurring && !ongoing && (
+          {task.recurring && (
             <span className="block text-[7px] font-normal tracking-[0.03em] opacity-80">
               {fmtFrequency(task.recurring.frequencyDays)}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Ongoing project badge — a standing effort (no cadence/status clock). Outlined accent so it
+          reads as "persistent", distinct from the filled, status-colored recurring block. */}
+      {task.ongoing && (
+        <div className="mb-0.5 block rounded-[3px] border border-primary px-1 py-px text-[8.5px] font-bold leading-tight text-primary">
+          {ONGOING_GLYPH} ongoing
         </div>
       )}
 
@@ -417,6 +416,7 @@ export function GridCard({
                   due={task.due}
                   dueTime={task.due_time}
                   recurring={task.recurring}
+                  ongoing={task.ongoing}
                   timeZone={timeZone}
                   onSetDue={onSetDue}
                   onSetRecurring={onSetRecurring}

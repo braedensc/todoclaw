@@ -54,6 +54,7 @@ export function MobileAddSheet({
     text: string,
     dest: QuadrantKey,
     recurring: Recurring | null,
+    ongoing: boolean,
     due: string | null,
     dueTime: string | null,
     reminderMinutes: number[],
@@ -61,7 +62,7 @@ export function MobileAddSheet({
     const placed = (tasks ?? []).filter((t) => !t.staged)
     const { x, y } = placeInQuadrant(dest, placed)
     addTask.mutate(
-      { text, x, y, staged: false, recurring, due, due_time: dueTime },
+      { text, x, y, staged: false, recurring, ongoing, due, due_time: dueTime },
       {
         onSuccess: (created) => {
           if (dueTime) {

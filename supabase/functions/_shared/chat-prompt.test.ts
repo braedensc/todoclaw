@@ -85,14 +85,18 @@ Deno.test('persona teaches the grid priority model and transparency/ask-when-uns
 })
 
 Deno.test(
-  'persona knows about ongoing projects and gates the suggestion to real multi-week efforts',
+  'persona knows about ongoing projects and gates the suggestion to real long-running efforts',
   () => {
-    // The capability is advertised…
+    // The capability is advertised, framed as a standing effort finished with an ordinary complete…
     assertStringIncludes(SYSTEM_PREFIX, 'ongoing project')
-    // …and the smart-suggestion heuristic: offer it for a multi-week effort, but ASK, and NEVER for
-    // one-offs/quick chores (so BabyClaw doesn't slap "ongoing" on "buy milk").
-    assertStringIncludes(SYSTEM_PREFIX, 'MULTI-WEEK effort')
+    assertStringIncludes(SYSTEM_PREFIX, 'finished with an ordinary complete')
+    // …and the smart-suggestion heuristic: offer it for a long-running effort, but ASK first, and
+    // NEVER for one-offs/quick chores (so BabyClaw doesn't slap "ongoing" on "buy milk").
+    assertStringIncludes(SYSTEM_PREFIX, 'long-running effort')
+    assertStringIncludes(SYSTEM_PREFIX, 'ASK first')
     assertStringIncludes(SYSTEM_PREFIX, 'NEVER do this for one-off')
+    // The retired session/Finish model is gone — no "work session" tally, no separate Finish action.
+    assert(!SYSTEM_PREFIX.toLowerCase().includes('work session'))
   },
 )
 
@@ -109,20 +113,22 @@ Deno.test('buildSystem renders an ongoing project as a continuous effort, not a 
           dueInDays: null,
           dueTime: null,
           staged: false,
+          // An ongoing project takes precedence over any recurring fields — even with a stale cadence
+          // present, the line reads as a project, never "recurring every 2d".
           recurringLabel: 'every 2d',
           recurringStatus: 'due today',
           ongoing: true,
-          ongoingSessions: 7,
-          ongoingTargetInDays: 12,
-          reminderOffset: null,
+          reminderOffsets: [],
           doneToday: false,
           completedAt: null,
         },
       ],
     }),
   )
-  // Reads as a project: sessions + target countdown, NOT "recurring every 2d".
-  assertStringIncludes(sys, 'ongoing project (7 sessions, target in 12d')
+  // Reads as a project: the plain "ongoing project" tag, NOT a session/target countdown or a cadence.
+  assertStringIncludes(sys, 'ongoing project')
+  assert(!sys.includes('7 sessions'))
+  assert(!sys.includes('target in'))
   assert(!sys.includes('recurring every 2d'))
 })
 

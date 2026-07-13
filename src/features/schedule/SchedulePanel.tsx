@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { Recurring } from '../../types/task'
 import { localDateInTZ } from '../../lib/dates'
-import { recurringStatus, RC_COLOR, fmtFrequency, ongoingLabel } from '../../lib/recurring'
+import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
+import { taskType, ONGOING_GLYPH, type TaskType } from '../../lib/task-type'
 import { ReminderPicker } from '../reminders/ReminderPicker'
 import { DueTimezoneHint } from './DueTimezoneHint'
 
@@ -15,8 +16,10 @@ import { DueTimezoneHint } from './DueTimezoneHint'
 //     lead the single due instant; for a RECURRING task the SAME offsets lead each occurrence
 //     (unify 2026-07-12: a recurring reminder is now the same offset model, anchored to the task's
 //     due date+time, not a separate time-of-day alarm)
-//   · a Repeats segmented control (Off / Daily / Weekly / Every… → a ±N-days stepper) plus an
-//     explicit "Ongoing" project entry, replacing the old bare "days between repeats [Set]" stepper
+//   · a Type segmented control (Task / Recurring / Ongoing — the three mutually-exclusive kinds,
+//     2026-07-13). Task and Ongoing share every control above (due/time + reminders); Recurring
+//     reveals a Daily / Weekly / Every… cadence (→ a ±N-days stepper). Switching type is one
+//     instant-commit mutation; the parent handlers keep recurring/ongoing exclusive.
 //
 // Commit semantics are unchanged from the inputs it replaces: every tap writes immediately via
 // the SAME callback contracts the old controls used (onSetDue always writes both columns — the
@@ -44,8 +47,8 @@ const CALENDAR_DAYS = 14
 /** Default cadence seeded into the "Every…" stepper before the user adjusts it. */
 const CUSTOM_REPEAT_SEED = 3
 
-/** Default check-in cadence for a freshly-made ongoing project (resurface every 2 days). */
-const ONGOING_DEFAULT_CHECK_IN = 2
+/** Cadence a task gets when its type is switched to Recurring (weekly); ± then adjusts it. */
+const DEFAULT_RECURRING_CADENCE = 7
 
 /**
  * Calendar-day arithmetic on ISO 'YYYY-MM-DD' strings, done entirely in UTC at noon so it is
@@ -88,25 +91,20 @@ export interface SchedulePanelProps {
   /** Current due time ('HH:MM' or the wire 'HH:MM:SS') or null. */
   dueTime: string | null
   recurring: Recurring | null
+  /** Whether this task is an ONGOING project (drives the type switch; mutually exclusive w/ recurring). */
+  ongoing: boolean
   /** IANA zone that defines "today" for the calendar — same authority as the daily reset. */
   timeZone: string
   /** Commit due date + time. Always both columns: clearing the date clears the time with it. */
   onSetDue: (due: string | null, dueTime: string | null) => void
-  /** Set a fresh recurring schedule of N days (lastDoneAt null, doneCount 0). */
+  /** Set a fresh recurring schedule of N days (lastDoneAt null, doneCount 0). Also clears `ongoing`. */
   onSetRecurring: (frequencyDays: number) => void
   /** Change an already-recurring task's cadence (preserves lastDoneAt + doneCount). */
   onSetFrequency: (frequencyDays: number) => void
-  /** Drop the recurring schedule. */
+  /** Drop the recurring schedule (→ a plain one-off task). */
   onRemoveRecurring: () => void
-  /**
-   * Make / adjust this task as an ONGOING project: a check-in cadence (days) + an optional
-   * target-end ('YYYY-MM-DD' or null). Reuses the recurring jsonb under the hood. Provided only on
-   * surfaces that offer ongoing editing (the list expanded row); where omitted, the ongoing
-   * controls are hidden and an already-ongoing task shows a read-only status line.
-   */
-  onSetOngoing?: (checkInDays: number, targetEnd: string | null) => void
-  /** Finish an ongoing project — archive it to the Done log (list expanded row only). */
-  onFinishOngoing?: () => void
+  /** Set/clear the ONGOING project flag. Setting it true also clears any recurring schedule. */
+  onSetOngoing: (on: boolean) => void
   /** This task's selected reminder offsets (minutes before due); empty = none. Multi-select. */
   reminderOffsets: readonly number[]
   /** Toggle one reminder lead time on/off. */
@@ -127,13 +125,13 @@ export function SchedulePanel({
   due,
   dueTime,
   recurring,
+  ongoing,
   timeZone,
   onSetDue,
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
-  onFinishOngoing,
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
@@ -196,14 +194,22 @@ export function SchedulePanel({
   const status = recurringStatus(recurring)
   const statusColor = status ? RC_COLOR[status.code] : RC_COLOR.ok
 
-  // Ongoing project: the recurring engine reframed as a continuous multi-week effort. When set it
-  // OWNS the Repeats slot (the chore segmented control is replaced), reusing frequencyDays as the
-  // check-in cadence. The editor (stepper / target-end / Finish) shows only where onSetOngoing is
-  // wired (the list expanded row); elsewhere an ongoing task just reads its status line.
-  const isOngoing = !!recurring?.ongoing
-  const ongoing = ongoingLabel(recurring, { now, timeZone })
-  const ongoingFreq = recurring?.frequencyDays ?? ONGOING_DEFAULT_CHECK_IN
-  const ongoingTargetValue = recurring?.targetEnd ? recurring.targetEnd.slice(0, 10) : ''
+  // The three mutually-exclusive types (Task / Recurring / Ongoing) drive one segmented switch.
+  // Each switch is a SINGLE mutation: the parent handlers keep recurring/ongoing exclusive
+  // (onSetRecurring clears ongoing; onSetOngoing(true) clears recurring), so no state holds both.
+  const currentType = taskType({ recurring, ongoing })
+  const selectType = (next: TaskType) => {
+    if (next === currentType) return
+    if (next === 'task') {
+      if (recurring) onRemoveRecurring()
+      else if (ongoing) onSetOngoing(false)
+    } else if (next === 'recurring') {
+      onSetRecurring(DEFAULT_RECURRING_CADENCE)
+    } else {
+      onSetOngoing(true)
+    }
+  }
+
   const stepBtn =
     'h-7 w-7 rounded-lg border border-border-strong bg-card text-sm text-muted hover:text-ink'
 
@@ -406,105 +412,54 @@ export function SchedulePanel({
         </div>
       )}
 
-      {/* ---- Repeat this task (chore) OR Ongoing project — one slot, both live in `recurring`.
-              #227 set the chore case off with a divider + "Repeat this task" header/help; the
-              ongoing case swaps in the project editor instead. ---- */}
+      {/* ---- Task type: one segmented switch across the three mutually-exclusive kinds. A plain
+              TASK and an ONGOING project share every control above (due/time + reminders); only a
+              RECURRING chore adds a cadence. Each switch is one instant-commit mutation. ---- */}
       <div className="border-t border-border pt-3">
-        {isOngoing ? (
+        <span className={sectionLabel}>Type</span>
+        <div
+          role="group"
+          aria-label="Task type"
+          className={`mt-1.5 gap-0.5 rounded-[10px] bg-bg p-0.5 ${touch ? 'flex w-full' : 'inline-flex'}`}
+        >
+          <button
+            type="button"
+            aria-pressed={currentType === 'task'}
+            onClick={() => selectType('task')}
+            className={currentType === 'task' ? segOn : segOff}
+          >
+            Task
+          </button>
+          <button
+            type="button"
+            aria-pressed={currentType === 'recurring'}
+            onClick={() => selectType('recurring')}
+            className={currentType === 'recurring' ? segOn : segOff}
+          >
+            Recurring
+          </button>
+          <button
+            type="button"
+            aria-pressed={currentType === 'ongoing'}
+            onClick={() => selectType('ongoing')}
+            className={currentType === 'ongoing' ? segOn : segOff}
+          >
+            Ongoing
+          </button>
+        </div>
+
+        {/* Recurring (chore): a cadence + a plain-words readback. Marking done resets the timer. */}
+        {currentType === 'recurring' && (
           <>
-            <span className={sectionLabel}>Ongoing project</span>
-            <div className="mt-1.5 flex flex-col gap-2">
-              {/* Readback: sessions logged + optional target countdown + the check-in status. */}
-              <p className="text-[11px]" style={{ color: statusColor }}>
-                ▶ ongoing · {ongoing?.sessions ?? 0}{' '}
-                {ongoing?.sessions === 1 ? 'session' : 'sessions'}
-                {ongoing?.target ? ` · ${ongoing.target}` : ''}
-                {status ? ` · ${status.label}` : ''}
-              </p>
-
-              {onSetOngoing && (
-                <>
-                  {/* Check-in cadence: how often the project resurfaces (reuses frequencyDays). */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-muted">check in every</span>
-                    <button
-                      type="button"
-                      aria-label="Check in less often"
-                      onClick={() =>
-                        onSetOngoing(Math.max(1, ongoingFreq - 1), recurring?.targetEnd ?? null)
-                      }
-                      className={stepBtn}
-                    >
-                      −
-                    </button>
-                    <b className="min-w-[64px] text-center text-xs">{ongoingFreq} days</b>
-                    <button
-                      type="button"
-                      aria-label="Check in more often"
-                      onClick={() =>
-                        onSetOngoing(Math.min(365, ongoingFreq + 1), recurring?.targetEnd ?? null)
-                      }
-                      className={stepBtn}
-                    >
-                      +
-                    </button>
-                  </div>
-
-                  {/* Optional target-end date — a soft finish line, not a hard due date. */}
-                  <label className="flex items-center gap-2 text-[11px] text-muted">
-                    target end
-                    <input
-                      type="date"
-                      aria-label="Target end date"
-                      value={ongoingTargetValue}
-                      onChange={(e) =>
-                        onSetOngoing(ongoingFreq, e.target.value === '' ? null : e.target.value)
-                      }
-                      className="rounded border border-border-strong bg-card px-2 py-1 text-xs"
-                    />
-                  </label>
-
-                  {/* Terminal actions: Finish archives to Done (a plain chore has no finish line);
-                    End reverts to a normal one-time task. */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {onFinishOngoing && (
-                      <button type="button" onClick={onFinishOngoing} className={chipOn}>
-                        ✓ Finish project
-                      </button>
-                    )}
-                    <button type="button" onClick={onRemoveRecurring} className={chipOff}>
-                      End ongoing
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <span className={sectionLabel}>
-              <span aria-hidden>↻ </span>Repeat this task
-            </span>
-            <p className="mt-0.5 text-[11px] leading-snug text-muted">
-              The task itself comes back on a schedule — marking it done just resets its timer
-              instead of sending it to Done. This is about the task, not a reminder.
+            <p className="mt-1.5 text-[11px] leading-snug text-muted">
+              A chore that comes back on a schedule — marking it done resets its timer instead of
+              sending it to Done.
             </p>
             <div
               role="group"
               aria-label="Repeats"
               className={`mt-1.5 gap-0.5 rounded-[10px] bg-bg p-0.5 ${touch ? 'flex w-full' : 'inline-flex'}`}
             >
-              <button
-                type="button"
-                aria-pressed={repeatMode === 'off'}
-                onClick={() => {
-                  setCustomRepeatOpen(false)
-                  if (recurring) onRemoveRecurring()
-                }}
-                className={repeatMode === 'off' ? segOn : segOff}
-              >
-                Off
-              </button>
               <button
                 type="button"
                 aria-pressed={repeatMode === 'daily'}
@@ -557,28 +512,17 @@ export function SchedulePanel({
                 comes back {fmtFrequency(recurring.frequencyDays)} 🦴 · {status.label}
               </p>
             )}
-            {/* Explicit "Ongoing" mode — a first-class alternative to a repeating chore, not a
-                hidden link. A full-width, thumb-sized entry (robust in narrow popovers and the
-                mobile sheet) that switches this task into the ongoing-project editor above, plus a
-                one-line explainer of what "ongoing" means here. Wired on every surface now. */}
-            {onSetOngoing && (
-              <div className="mt-2.5">
-                <button
-                  type="button"
-                  onClick={() => onSetOngoing(ONGOING_DEFAULT_CHECK_IN, null)}
-                  className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border-strong bg-card font-semibold text-muted transition-colors hover:border-primary hover:text-ink ${
-                    touch ? 'min-h-[40px] px-3 text-[13px]' : 'px-3 py-1.5 text-xs'
-                  }`}
-                >
-                  <span aria-hidden>▶</span> Ongoing project
-                </button>
-                <p className="mt-1 text-[11px] leading-snug text-muted">
-                  A continuous effort you check in on and eventually <b>Finish</b> — not a chore
-                  that repeats forever.
-                </p>
-              </div>
-            )}
           </>
+        )}
+
+        {/* Ongoing: no extra controls — it uses the same due/reminders above. Just an explainer of
+            what the flag means (the AI proactively suggests chipping away; done archives it). */}
+        {currentType === 'ongoing' && (
+          <p className="mt-1.5 text-[11px] leading-snug text-muted">
+            <span aria-hidden>{ONGOING_GLYPH} </span>A standing, open-ended effort — it stays on
+            your board and todoclaw nudges you to chip away at it. Give it a far-out due date if it
+            has a target, and just mark it done when it&rsquo;s finished.
+          </p>
         )}
       </div>
 

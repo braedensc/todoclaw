@@ -10,33 +10,33 @@ A recurring task is a regular task with a `recurring` jsonb field
 normal task except: it surfaces on the grid only when due/soon/overdue, and marking it done
 **resets its clock** instead of archiving it (handled in `src/features/list/`, not here).
 
-## Ongoing projects (same engine, project framing)
+## Ongoing projects (a separate task type)
 
-A month-long effort worked on continuously (e.g. "redesign the site") is an **ongoing project** —
-the same `recurring` jsonb with two extra keys, `ongoing: true` and an optional `targetEnd`
-(`'YYYY-MM-DD'`). It reuses the whole engine: `frequencyDays` becomes the **check-in cadence** (how
-often it resurfaces), `lastDoneAt`/`doneCount` become the last work session / **session count**, and
-`recurringStatus` still drives the hide-when-`ok` + color. The differences from a chore:
+An **ongoing project** — a standing, open-ended effort worked on over many sessions (e.g. "redesign
+the site", "learn Spanish") — is **its own task type, not a flavor of recurring** (decoupled
+2026-07-13). It is a standalone boolean column `tasks.ongoing` (migration
+`20260713000000_ongoing_task_flag`), mutually exclusive with `recurring` (a DB CHECK enforces it).
 
-- The ✓ **logs a work session** (advances the cycle), same code path as a recurring done.
-- It has a terminal **Finish** (in the expanded row's schedule editor) that archives it to the Done
-  log via the shared `set_task_done` RPC — the finish line a plain repeat never reaches.
-- It reads as a project: `▶` glyph, a session tally, and a target-end countdown from
-  `ongoingLabel` (`src/lib/recurring.ts`) instead of a `↻` cadence.
+An ongoing project behaves like a plain task: an optional (usually far-out) due date + time,
+reminders, and marking it **done archives it** to the Done log exactly like a one-off. It has no
+cadence, no check-in, no work-session tally, and no separate Finish — "finish" is just a normal
+completion. Its ONE special property is the flag, which tells **Plan My Day** and **BabyClaw** to
+proactively suggest chipping away at it (a no-deadline task the planner would otherwise never
+surface). On the board it wears an `∞` "ongoing" badge (`ONGOING_GLYPH`, `src/lib/task-type.ts`);
+`taskType(task)` in the same file is the shared discriminator.
 
-No migration is needed (the keys live in the jsonb); a row without `ongoing` is byte-for-byte the
-old chore behavior. Config lives in the shared `SchedulePanel` (list expanded row) as a "Make it an
-ongoing project" toggle → the check-in stepper, target-end, and Finish. BabyClaw can also set it
-(`make_ongoing` / `finish_ongoing`, and `create_task`'s ongoing fields) — see
-`supabase/functions/_shared/capabilities/tasks.ts`.
+The type is set in the shared `SchedulePanel`'s three-way **Task / Recurring / Ongoing** switch (the
+parent handlers keep the two types exclusive in one write). BabyClaw sets it via `make_ongoing` (a
+flag — just `task_id`) or `create_task`'s `ongoing` boolean, and clears it via `clear_recurring` —
+see `supabase/functions/_shared/capabilities/tasks.ts`.
 
 ## Reminders (offset before each occurrence)
 
-A recurring task (chore or ongoing project) carries reminders the **same way a one-off does** —
-lead-time **offsets** (unified 2026-07-12): "remind me 1 hour before". The difference is only where
-the offset anchors: a one-off leads its single due instant, a recurring task leads **each
-occurrence** on its cadence (anchored to the task's `due` date + `due_time`), re-arming every cycle
-**regardless of completion**. So the recurring editors show the SAME `ReminderPicker` (offset chips),
+A recurring **chore** carries reminders the **same way a one-off does** — lead-time **offsets**
+(unified 2026-07-12): "remind me 1 hour before". The difference is only where the offset anchors: a
+one-off (or an ongoing project — it is a plain task for reminders) leads its single due instant,
+while a recurring chore leads **each occurrence** on its cadence (anchored to the task's `due` date +
+`due_time`), re-arming every cycle **regardless of completion**. So the recurring editors show the SAME `ReminderPicker` (offset chips),
 gated on a due time, with a one-line "before each time it comes back" note. A recurring task must
 therefore have a due date + time to carry a reminder (the due date = the first/anchor occurrence).
 Writes go through `useTaskReminders` / `useTaskReminderWrites`

@@ -65,6 +65,7 @@ function makeTask(over: Partial<Task>): Task {
     staged: false,
     bucket: 'oneoff',
     recurring: null,
+    ongoing: false,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
@@ -303,20 +304,20 @@ describe('ListView', () => {
   })
 
   describe('recurring section (expanded row — SchedulePanel Repeats)', () => {
-    it('the Weekly preset makes a task recurring via useUpdateTask with a fresh recurring object', () => {
+    it('switching a plain task to Recurring makes it a fresh weekly chore (clears ongoing)', () => {
       tasksData = [makeTask({ id: 's1', text: 'make me recurring', recurring: null })]
       renderList()
 
       fireEvent.click(screen.getByText('make me recurring'))
-      fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Recurring' }))
 
       expect(updateMutate).toHaveBeenCalledWith({
         id: 's1',
-        patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } },
+        patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 }, ongoing: false },
       })
     })
 
-    it('Off clears recurring (recurring: null) via useUpdateTask', () => {
+    it('switching a recurring task back to Task clears recurring', () => {
       tasksData = [
         makeTask({
           id: 'rm1',
@@ -327,9 +328,7 @@ describe('ListView', () => {
       renderList()
 
       fireEvent.click(screen.getByText('stop repeating'))
-      // A recurring task now also has a "Remind me at" Off chip, so scope to the Repeats group.
-      const repeats = within(screen.getByRole('group', { name: 'Repeats' }))
-      fireEvent.click(repeats.getByRole('button', { name: 'Off' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Task' }))
 
       expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
     })
@@ -380,29 +379,21 @@ describe('ListView', () => {
     })
   })
 
-  describe('ongoing projects (expanded row — SchedulePanel)', () => {
-    it('“Make it an ongoing project” writes an ongoing recurring with the default check-in', () => {
+  describe('ongoing projects (expanded row — SchedulePanel type switch)', () => {
+    it('switching a task to Ongoing sets the flag and clears any recurring', () => {
       tasksData = [makeTask({ id: 'o1', text: 'redesign the site', recurring: null })]
       renderList()
 
       fireEvent.click(screen.getByText('redesign the site'))
-      fireEvent.click(screen.getByRole('button', { name: /Ongoing project/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Ongoing' }))
 
       expect(updateMutate).toHaveBeenCalledWith({
         id: 'o1',
-        patch: {
-          recurring: {
-            frequencyDays: 2,
-            lastDoneAt: null,
-            doneCount: 0,
-            ongoing: true,
-            targetEnd: null,
-          },
-        },
+        patch: { ongoing: true, recurring: null },
       })
     })
 
-    it('promoting an existing recurring task to ongoing preserves its session tally', () => {
+    it('switching a recurring task to Ongoing drops its schedule in one write', () => {
       tasksData = [
         makeTask({
           id: 'o2',
@@ -413,96 +404,35 @@ describe('ListView', () => {
       renderList()
 
       fireEvent.click(screen.getByText('ship the redesign'))
-      fireEvent.click(screen.getByRole('button', { name: /Ongoing project/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Ongoing' }))
 
       expect(updateMutate).toHaveBeenCalledWith({
         id: 'o2',
-        patch: {
-          recurring: {
-            frequencyDays: 2,
-            lastDoneAt: RECENT,
-            doneCount: 4,
-            ongoing: true,
-            targetEnd: null,
-          },
-        },
+        patch: { ongoing: true, recurring: null },
       })
     })
 
-    it('setting a target-end keeps the cadence and session tally', () => {
-      tasksData = [
-        makeTask({
-          id: 'o3',
-          text: 'thesis',
-          recurring: { frequencyDays: 3, lastDoneAt: RECENT, doneCount: 6, ongoing: true },
-        }),
-      ]
+    it('switching an ongoing task back to Task clears the flag', () => {
+      tasksData = [makeTask({ id: 'o3', text: 'thesis', ongoing: true })]
       renderList()
 
       fireEvent.click(screen.getByText('thesis'))
-      fireEvent.change(screen.getByLabelText('Target end date'), {
-        target: { value: '2026-09-01' },
-      })
+      fireEvent.click(screen.getByRole('button', { name: 'Task' }))
 
-      expect(updateMutate).toHaveBeenCalledWith({
-        id: 'o3',
-        patch: {
-          recurring: {
-            frequencyDays: 3,
-            lastDoneAt: RECENT,
-            doneCount: 6,
-            ongoing: true,
-            targetEnd: '2026-09-01',
-          },
-        },
-      })
+      expect(updateMutate).toHaveBeenCalledWith({ id: 'o3', patch: { ongoing: false } })
     })
 
-    it('the ✓ on an ongoing task LOGS A SESSION (cycle bump), never archives', () => {
-      tasksData = [
-        makeTask({
-          id: 'o4',
-          text: 'learn spanish',
-          recurring: {
-            frequencyDays: 2,
-            lastDoneAt: RECENT,
-            doneCount: 3,
-            ongoing: true,
-            targetEnd: '2026-08-01',
-          },
-        }),
-      ]
+    it('the ✓ on an ongoing task archives it (done), never a recurring cycle bump', () => {
+      tasksData = [makeTask({ id: 'o4', text: 'learn spanish', bucket: 'oneoff', ongoing: true })]
       renderList()
 
-      fireEvent.click(screen.getByLabelText('Log a work session'))
+      fireEvent.click(screen.getByLabelText('Mark done'))
 
-      expect(markDoneMutate).not.toHaveBeenCalled()
-      const arg = updateMutate.mock.calls[0]![0] as {
-        patch: { recurring: { doneCount: number; ongoing: boolean; targetEnd: string } }
-      }
-      // A session bump preserves the ongoing flag + target-end and increments the tally.
-      expect(arg.patch.recurring.doneCount).toBe(4)
-      expect(arg.patch.recurring.ongoing).toBe(true)
-      expect(arg.patch.recurring.targetEnd).toBe('2026-08-01')
-    })
-
-    it('Finish archives the project via useMarkTaskDone (the finish line a chore lacks)', () => {
-      tasksData = [
-        makeTask({
-          id: 'o5',
-          text: 'move house',
-          bucket: 'oneoff',
-          recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 8, ongoing: true },
-        }),
-      ]
-      renderList()
-
-      fireEvent.click(screen.getByText('move house'))
-      fireEvent.click(screen.getByRole('button', { name: /Finish project/ }))
-
+      // Ongoing done = archived to the Done log, exactly like a one-off — no recurring patch.
+      expect(updateMutate).not.toHaveBeenCalled()
       expect(markDoneMutate).toHaveBeenCalledWith({
-        taskId: 'o5',
-        text: 'move house',
+        taskId: 'o4',
+        text: 'learn spanish',
         bucket: 'oneoff',
         timeZone: 'UTC',
       })

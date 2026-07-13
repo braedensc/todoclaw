@@ -106,7 +106,6 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'clear_recurring',
     'restore_task',
     'complete_task',
-    'finish_ongoing',
     'delete_task',
     'list_habits',
     'create_habit',
@@ -128,14 +127,13 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
 })
 
 Deno.test(
-  'exactly complete_task, delete_task, delete_habit, delete_completion, finish_ongoing are destructive',
+  'exactly complete_task, delete_completion, delete_habit, delete_task are destructive',
   () => {
     assertEquals([...DESTRUCTIVE].sort(), [
       'complete_task',
       'delete_completion',
       'delete_habit',
       'delete_task',
-      'finish_ongoing',
     ])
     for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
   },
@@ -193,7 +191,7 @@ Deno.test('create_task can create an ongoing project in one shot', async () => {
   let inserted: Record<string, unknown> | undefined
   const res = await executeTool(
     'create_task',
-    { text: 'Renovate the kitchen', ongoing_check_in_days: 3, target_end: '2026-09-01' },
+    { text: 'Renovate the kitchen', ongoing: true },
     ctx({
       onInsert: (_t, row) => {
         inserted = row as Record<string, unknown>
@@ -202,32 +200,33 @@ Deno.test('create_task can create an ongoing project in one shot', async () => {
     }),
   )
   assert(!res.is_error)
-  const rec = inserted?.recurring as {
-    frequencyDays: number
-    doneCount: number
-    ongoing: boolean
-    targetEnd: string
-  }
-  assertEquals(rec.frequencyDays, 3)
-  assertEquals(rec.doneCount, 0)
-  assertEquals(rec.ongoing, true)
-  assertEquals(rec.targetEnd, '2026-09-01')
+  // Ongoing is a standalone column now — the inserted row carries `ongoing: true` and NO recurring
+  // object (the two task types are mutually exclusive).
+  assertEquals(inserted?.ongoing, true)
+  assertEquals(inserted?.recurring, undefined)
 })
 
-Deno.test('make_ongoing and finish_ongoing round-trip through the adapter', async () => {
+Deno.test('make_ongoing round-trips, and completing it archives via set_task_done', async () => {
   const made = await executeTool(
     'make_ongoing',
-    { task_id: UUID, check_in_days: 2 },
-    ctx({ onSelect: () => ({ data: { recurring: null }, error: null }) }),
+    { task_id: UUID },
+    ctx({ onUpdate: () => ({ data: { text: 'Big project' }, error: null }) }),
   )
   assert(!made.is_error)
   assertEquals(made.mutated, ['tasks'])
 
+  // finish_ongoing is gone: an ongoing project is completed like any one-off (recurring: null), so
+  // complete_task routes through set_task_done to archive it to the Done log.
   rpcCalls.length = 0
   const finished = await executeTool(
-    'finish_ongoing',
+    'complete_task',
     { task_id: UUID },
-    ctx({ onSelect: () => ({ data: { text: 'Big project', bucket: 'oneoff' }, error: null }) }),
+    ctx({
+      onSelect: () => ({
+        data: { text: 'Big project', bucket: 'oneoff', recurring: null },
+        error: null,
+      }),
+    }),
   )
   assert(!finished.is_error)
   assertEquals(finished.mutated, ['daily_state', 'history'])

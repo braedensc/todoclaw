@@ -76,6 +76,7 @@ function makeTask(over: Partial<Task>): Task {
     staged: false,
     bucket: 'oneoff',
     recurring: null,
+    ongoing: false,
     // Fresh by construction: derived from the SAME real clock GridCard's agingRingStyle reads (it
     // injects no `now`), so a default card stays well under the 21-day aging floor and never
     // silently crosses a tier as real time passes. A fixed date here would rot — e.g. a
@@ -366,7 +367,8 @@ describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
     expect(screen.getByText('Set a due date')).toBeInTheDocument()
     expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Repeats' })).toBeInTheDocument()
+    // The type switch is always shown; the Repeats cadence appears only once Recurring is chosen.
+    expect(screen.getByRole('group', { name: 'Task type' })).toBeInTheDocument()
   })
 
   it('setting a due date writes `due` ONLY — it never repositions the card', () => {
@@ -409,15 +411,27 @@ describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
     expect(updateMutate).toHaveBeenCalledWith({ id: 'm', patch: { due: null, due_time: null } })
   })
 
-  it('the Weekly repeat preset writes a fresh recurring object', () => {
+  it('switching the type to Recurring writes a fresh weekly recurring object (clears ongoing)', () => {
     tasksFixture = [makeTask({ id: 'm', staged: false })]
     render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
-    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recurring' }))
 
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'm',
-      patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } },
+      patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 }, ongoing: false },
+    })
+  })
+
+  it('switching the type to Ongoing sets the flag and clears any recurring', () => {
+    tasksFixture = [makeTask({ id: 'm', staged: false })]
+    render(<GridHarness />)
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    fireEvent.click(screen.getByRole('button', { name: 'Ongoing' }))
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'm',
+      patch: { ongoing: true, recurring: null },
     })
   })
 })
@@ -652,12 +666,12 @@ describe('GridView cluster popup rework', () => {
     fireEvent.click(within(rowA).getByLabelText('Due date and recurring'))
     expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
 
-    // Weekly on the folded task writes a fresh recurring object for THAT task — no drag-out
-    // needed to schedule a clustered task, and no patch may carry x/y.
-    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+    // Switching the folded task's type to Recurring writes a fresh recurring object for THAT task —
+    // no drag-out needed to schedule a clustered task, and no patch may carry x/y.
+    fireEvent.click(screen.getByRole('button', { name: 'Recurring' }))
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'a',
-      patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 } },
+      patch: { recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 }, ongoing: false },
     })
     const patches = updateMutate.mock.calls.map((c) => (c[0] as { patch: object }).patch)
     expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)

@@ -30,11 +30,13 @@ function renderPanel(over: Partial<Parameters<typeof SchedulePanel>[0]> = {}) {
     due: null as string | null,
     dueTime: null as string | null,
     recurring: null as Recurring | null,
+    ongoing: false,
     timeZone: TZ,
     onSetDue: vi.fn(),
     onSetRecurring: vi.fn(),
     onSetFrequency: vi.fn(),
     onRemoveRecurring: vi.fn(),
+    onSetOngoing: vi.fn(),
     reminderOffsets: [] as number[],
     onToggleReminder: vi.fn(),
     onClearReminders: vi.fn(),
@@ -164,34 +166,72 @@ describe('SchedulePanel time + remind', () => {
   })
 })
 
-describe('SchedulePanel repeats', () => {
-  it('Daily on a non-recurring task starts a fresh schedule', () => {
+describe('SchedulePanel type switch', () => {
+  const typeGroup = () => within(screen.getByRole('group', { name: 'Task type' }))
+
+  it('shows the three mutually-exclusive types, with the current one pressed', () => {
+    renderPanel({ recurring: recurringWeekly })
+    const g = typeGroup()
+    expect(g.getByRole('button', { name: 'Recurring' })).toHaveAttribute('aria-pressed', 'true')
+    expect(g.getByRole('button', { name: 'Task' })).toHaveAttribute('aria-pressed', 'false')
+    expect(g.getByRole('button', { name: 'Ongoing' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('switching a plain task to Recurring starts a fresh weekly schedule', () => {
     const p = renderPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'Daily' }))
-    expect(p.onSetRecurring).toHaveBeenCalledWith(1)
-    expect(p.onSetFrequency).not.toHaveBeenCalled()
+    fireEvent.click(typeGroup().getByRole('button', { name: 'Recurring' }))
+    expect(p.onSetRecurring).toHaveBeenCalledWith(7)
+    // The cadence control is hidden until the task actually becomes recurring.
+    expect(screen.queryByRole('group', { name: 'Repeats' })).toBeNull()
   })
 
-  it('Weekly on an already-recurring task preserves history via onSetFrequency', () => {
-    const p = renderPanel({ recurring: { ...recurringWeekly, frequencyDays: 1 } })
-    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
-    expect(p.onSetFrequency).toHaveBeenCalledWith(7)
-    expect(p.onSetRecurring).not.toHaveBeenCalled()
+  it('switching a plain task to Ongoing sets the flag', () => {
+    const p = renderPanel()
+    fireEvent.click(typeGroup().getByRole('button', { name: 'Ongoing' }))
+    expect(p.onSetOngoing).toHaveBeenCalledWith(true)
   })
 
-  it('Off removes the schedule', () => {
+  it('switching a recurring task back to Task drops the schedule', () => {
     const p = renderPanel({ recurring: recurringWeekly })
-    fireEvent.click(screen.getByRole('button', { name: 'Off' }))
+    fireEvent.click(typeGroup().getByRole('button', { name: 'Task' }))
     expect(p.onRemoveRecurring).toHaveBeenCalled()
   })
 
-  it('Every… commits the seed cadence on tap (like Daily/Weekly); ± adjusts it', () => {
-    const p = renderPanel()
+  it('switching an ongoing task back to Task clears the flag', () => {
+    const p = renderPanel({ ongoing: true })
+    fireEvent.click(typeGroup().getByRole('button', { name: 'Task' }))
+    expect(p.onSetOngoing).toHaveBeenCalledWith(false)
+  })
+
+  it('switching an ongoing task to Recurring starts a schedule (parent clears the flag)', () => {
+    const p = renderPanel({ ongoing: true })
+    fireEvent.click(typeGroup().getByRole('button', { name: 'Recurring' }))
+    expect(p.onSetRecurring).toHaveBeenCalledWith(7)
+  })
+})
+
+describe('SchedulePanel recurring cadence', () => {
+  // The Daily/Weekly/Every… cadence control only appears once the task IS recurring.
+  it('Daily on a recurring task retunes the cadence via onSetFrequency', () => {
+    const p = renderPanel({ recurring: recurringWeekly })
+    fireEvent.click(screen.getByRole('button', { name: 'Daily' }))
+    expect(p.onSetFrequency).toHaveBeenCalledWith(1)
+    expect(p.onSetRecurring).not.toHaveBeenCalled()
+  })
+
+  it('Weekly on a daily-recurring task retunes to 7 via onSetFrequency', () => {
+    const p = renderPanel({ recurring: { ...recurringWeekly, frequencyDays: 1 } })
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+    expect(p.onSetFrequency).toHaveBeenCalledWith(7)
+  })
+
+  it('Every… commits the seed cadence on tap; ± adjusts it', () => {
+    const p = renderPanel({ recurring: recurringWeekly })
     fireEvent.click(screen.getByRole('button', { name: 'Every…' }))
     // Opening Every… IS choosing a cadence — the 3-day seed is committed immediately.
-    expect(p.onSetRecurring).toHaveBeenCalledWith(3)
+    expect(p.onSetFrequency).toHaveBeenCalledWith(3)
     fireEvent.click(screen.getByRole('button', { name: 'More days between repeats' }))
-    expect(p.onSetRecurring).toHaveBeenCalledWith(4)
+    expect(p.onSetFrequency).toHaveBeenCalledWith(4)
   })
 
   it('a non-preset cadence reads as Every… with the stepper visible', () => {
@@ -207,68 +247,16 @@ describe('SchedulePanel repeats', () => {
 })
 
 describe('SchedulePanel ongoing project', () => {
-  // NOW = 2026-07-09; check-in every 2 days last worked 2026-07-07 → "due today"; 5 sessions logged;
-  // target 2026-07-31 → 22 days out.
-  const ongoingRec: Recurring = {
-    frequencyDays: 2,
-    lastDoneAt: '2026-07-07T00:00:00Z',
-    doneCount: 5,
-    ongoing: true,
-    targetEnd: '2026-07-31',
-  }
-
-  it('offers an explicit "Ongoing project" mode + help only when ongoing editing is wired', () => {
-    renderPanel()
-    expect(screen.queryByRole('button', { name: /Ongoing project/ })).toBeNull()
-
-    const p = renderPanel({ onSetOngoing: vi.fn() })
-    // The explainer of what "ongoing" means is shown alongside the entry.
-    expect(screen.getByText(/continuous effort you check in on/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Ongoing project/ }))
-    // Default check-in cadence, no target yet.
-    expect(p.onSetOngoing).toHaveBeenCalledWith(2, null)
-  })
-
-  it('an ongoing task replaces the Repeats control with a project readback', () => {
-    renderPanel({ recurring: ongoingRec, onSetOngoing: vi.fn() })
+  it('an ongoing task shows the explainer and no cadence control', () => {
+    renderPanel({ ongoing: true })
+    // No Daily/Weekly cadence for an ongoing project — it behaves like a plain task.
     expect(screen.queryByRole('group', { name: 'Repeats' })).toBeNull()
-    // Sessions logged + target countdown read back on one line (the trailing check-in status is
-    // live-clock, so it isn't pinned here — same as the chore garnish test above).
-    expect(screen.getByText(/ongoing · 5 sessions/)).toBeInTheDocument()
-    expect(screen.getByText(/target in 22d/)).toBeInTheDocument()
+    expect(screen.getByText(/standing, open-ended effort/i)).toBeInTheDocument()
   })
 
-  it('the check-in stepper adjusts the cadence, preserving the target-end', () => {
-    const p = renderPanel({ recurring: ongoingRec, onSetOngoing: vi.fn() })
-    fireEvent.click(screen.getByRole('button', { name: 'Check in more often' }))
-    expect(p.onSetOngoing).toHaveBeenCalledWith(3, '2026-07-31')
-    fireEvent.click(screen.getByRole('button', { name: 'Check in less often' }))
-    expect(p.onSetOngoing).toHaveBeenCalledWith(1, '2026-07-31')
-  })
-
-  it('the target-end input writes it, keeping the cadence', () => {
-    const p = renderPanel({ recurring: ongoingRec, onSetOngoing: vi.fn() })
-    fireEvent.change(screen.getByLabelText('Target end date'), { target: { value: '2026-08-15' } })
-    expect(p.onSetOngoing).toHaveBeenCalledWith(2, '2026-08-15')
-  })
-
-  it('Finish archives the project; End ongoing reverts it to a plain task', () => {
-    const p = renderPanel({
-      recurring: ongoingRec,
-      onSetOngoing: vi.fn(),
-      onFinishOngoing: vi.fn(),
-    })
-    fireEvent.click(screen.getByRole('button', { name: /Finish project/ }))
-    expect(p.onFinishOngoing).toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'End ongoing' }))
-    expect(p.onRemoveRecurring).toHaveBeenCalled()
-  })
-
-  it('without ongoing editing wired (e.g. the grid card menu) it shows a read-only status only', () => {
-    renderPanel({ recurring: ongoingRec })
-    expect(screen.getByText(/ongoing · 5 sessions/)).toBeInTheDocument()
-    // No editor controls when onSetOngoing is absent.
-    expect(screen.queryByText('check in every')).toBeNull()
-    expect(screen.queryByRole('button', { name: /Finish project/ })).toBeNull()
+  it('shares the due/time controls (an ongoing task can carry a due date)', () => {
+    // The calendar renders for every type — an ongoing project can take a far-out due date.
+    renderPanel({ ongoing: true, due: '2026-07-10' })
+    expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
   })
 })

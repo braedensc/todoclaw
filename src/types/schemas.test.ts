@@ -19,6 +19,7 @@ describe('TaskSchema', () => {
     staged: true,
     bucket: null,
     recurring: null,
+    ongoing: false,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
@@ -33,27 +34,24 @@ describe('TaskSchema', () => {
     expect(TaskSchema.safeParse({ ...row, bucket: 'weekly' }).success).toBe(false)
   })
 
-  it('parses a plain chore recurring with no ongoing keys (unchanged behavior)', () => {
+  it('parses a recurring chore as exactly the three cadence keys', () => {
     const parsed = TaskSchema.parse({
       ...row,
       recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
     })
-    expect(parsed.recurring?.ongoing).toBeUndefined()
-    expect(parsed.recurring?.targetEnd).toBeUndefined()
+    expect(parsed.recurring).toEqual({ frequencyDays: 7, lastDoneAt: null, doneCount: 0 })
+    expect(parsed.ongoing).toBe(false)
   })
 
-  it('parses an ongoing project (recurring with ongoing + targetEnd)', () => {
-    const parsed = TaskSchema.parse({
-      ...row,
-      recurring: {
-        frequencyDays: 2,
-        lastDoneAt: null,
-        doneCount: 3,
-        ongoing: true,
-        targetEnd: '2026-08-01',
-      },
-    })
-    expect(parsed.recurring).toMatchObject({ ongoing: true, targetEnd: '2026-08-01' })
+  it('parses an ongoing project (the standalone `ongoing` flag, no recurring data)', () => {
+    const parsed = TaskSchema.parse({ ...row, ongoing: true, recurring: null })
+    expect(parsed.ongoing).toBe(true)
+    expect(parsed.recurring).toBeNull()
+  })
+
+  it('defaults a missing `ongoing` to false (deploy-skew resilience)', () => {
+    const { ongoing: _omit, ...noOngoing } = row
+    expect(TaskSchema.parse(noOngoing).ongoing).toBe(false)
   })
 })
 

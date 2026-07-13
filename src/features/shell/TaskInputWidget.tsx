@@ -190,6 +190,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const [due, setDue] = useState<string | null>(null)
   const [dueTime, setDueTime] = useState<string | null>(null)
   const [recurring, setRecurring] = useState<Recurring | null>(null)
+  const [ongoing, setOngoing] = useState(false)
   const [reminderMinutes, setReminderMinutes] = useState<number[]>(
     reminderDefault != null ? [reminderDefault] : [],
   )
@@ -213,6 +214,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
         due,
         due_time: dt,
         recurring,
+        ongoing,
       },
       {
         onSuccess: (created) => {
@@ -226,6 +228,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           setDueTime(null)
           setReminderMinutes(reminderDefault != null ? [reminderDefault] : [])
           setRecurring(null)
+          setOngoing(false)
         },
       },
     )
@@ -246,9 +249,9 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           {/* One Schedule chip → the shared SchedulePanel in a popover. The chip label echoes
               the drafted schedule ("07-11 3:00 PM · weekly") once one exists. */}
           <ChipPopover
-            label={scheduleSummary(due, dueTime, recurring) ?? 'Schedule'}
+            label={scheduleSummary(due, dueTime, recurring, ongoing) ?? 'Schedule'}
             icon="📅"
-            active={due != null || recurring != null}
+            active={due != null || recurring != null || ongoing}
             open={scheduleOpen}
             onToggle={() => setScheduleOpen((o) => !o)}
             onClose={() => setScheduleOpen(false)}
@@ -260,14 +263,16 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
                   due={due}
                   dueTime={dueTime}
                   recurring={recurring}
+                  ongoing={ongoing}
                   timeZone={timeZone}
                   onSetDue={(d, t) => {
                     setDue(d)
                     setDueTime(t)
                   }}
-                  onSetRecurring={(n) =>
+                  onSetRecurring={(n) => {
+                    setOngoing(false)
                     setRecurring({ frequencyDays: n, lastDoneAt: null, doneCount: 0 })
-                  }
+                  }}
                   onSetFrequency={(n) =>
                     setRecurring((r) =>
                       r
@@ -276,15 +281,10 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
                     )
                   }
                   onRemoveRecurring={() => setRecurring(null)}
-                  onSetOngoing={(checkInDays, targetEnd) =>
-                    setRecurring({
-                      frequencyDays: checkInDays,
-                      lastDoneAt: null,
-                      doneCount: 0,
-                      ongoing: true,
-                      targetEnd,
-                    })
-                  }
+                  onSetOngoing={(on) => {
+                    setOngoing(on)
+                    if (on) setRecurring(null)
+                  }}
                   reminderOffsets={reminderMinutes}
                   onToggleReminder={(m) =>
                     setReminderMinutes((cur) =>

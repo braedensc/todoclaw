@@ -28,6 +28,7 @@ function task(id: string, over: Partial<Task> = {}): Task {
     staged: false,
     bucket: 'oneoff',
     recurring: null,
+    ongoing: false,
     created_at: '2026-07-01T00:00:00Z',
     deleted_at: null,
     completed_at: null,
@@ -127,11 +128,12 @@ describe('ClusterPopup row ⋯ schedule menu', () => {
     expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
   })
 
-  it('panel writes route to the row task: Weekly starts a fresh schedule, No date clears due', () => {
+  it('panel writes route to the row task: Recurring starts a fresh schedule, No date clears due', () => {
     const p = renderPopup([task('a', { due: '2026-07-01' })])
     fireEvent.click(screen.getByRole('button', { name: 'Due date and recurring' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }))
+    // The type switch's "Recurring" seeds a fresh weekly schedule on THIS row.
+    fireEvent.click(screen.getByRole('button', { name: 'Recurring' }))
     expect(p.onSetRecurring).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), 7)
 
     fireEvent.click(screen.getByRole('button', { name: 'No date' }))

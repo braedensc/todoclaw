@@ -27,6 +27,8 @@ interface TaskRow {
   size?: string | null
   staged: boolean
   recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
+  // ONGOING project flag (own column since 2026-07-13). Optional so an old-shaped source still fits.
+  ongoing?: boolean | null
 }
 interface HabitRow {
   text: string
@@ -49,8 +51,9 @@ function recurringStatus(
   return { label: `in ${daysLeft}d`, due: false } // 'ok' — not surfaced to the plan
 }
 
-// Selection mirrors EisenClaw's planMyDay: on-grid = not staged, not done today, not recurring;
-// plus recurring chores that are overdue/due/soon; plus active habits.
+// Selection: on-grid = not staged, not done today, not a recurring chore (ONGOING projects ARE
+// included — they are placed tasks flagged so the planner can pace them); plus recurring chores that
+// are overdue/due/soon; plus active habits.
 export function buildPlanRequest(
   tasks: TaskRow[],
   habits: HabitRow[],
@@ -68,6 +71,7 @@ export function buildPlanRequest(
       dueInDays: daysUntilInTZ(t.due, timeZone, now),
       dueTime: t.due_time,
       size: toPlanSize(t.size),
+      ongoing: t.ongoing ?? false,
     }))
 
   const recurringDue: { text: string; status: string }[] = []

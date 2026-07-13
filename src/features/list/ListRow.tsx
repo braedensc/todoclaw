@@ -12,6 +12,7 @@ import {
   type UrgencyTier,
 } from '../../lib/visual-urgency'
 import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
+import { ONGOING_GLYPH } from '../../lib/task-type'
 import { resolveCollision } from '../../lib/collision'
 import { IconButton } from '../../components/IconButton'
 import { ExpandedRow } from './ExpandedRow'
@@ -59,10 +60,8 @@ interface ListRowProps {
   onSetFrequency: (id: string, frequencyDays: number) => void
   /** Drop the recurring schedule (writes `recurring: null`). */
   onRemoveRecurring: (id: string) => void
-  /** Make / adjust this task as an ongoing project (check-in cadence + optional target-end). */
-  onSetOngoing: (id: string, checkInDays: number, targetEnd: string | null) => void
-  /** Finish an ongoing project — archive it to the Done log. */
-  onFinishOngoing: (task: Task) => void
+  /** Set/clear the ongoing-project flag (setting true also clears any recurring schedule). */
+  onSetOngoing: (id: string, on: boolean) => void
   /** Delete the task — the parent gates this behind a confirm before soft-deleting. */
   onDelete: (task: Task) => void
   /**
@@ -95,7 +94,6 @@ export function ListRow({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
-  onFinishOngoing,
   onDelete,
   onMove,
   reminderOffsets,
@@ -114,10 +112,9 @@ export function ListRow({
   const tier = urgencyTier(due, minutesUntil)
   const status = recurringStatus(task.recurring)
   const showCount = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
-  // An ongoing project reuses the recurring clock, so its ✓ LOGS A WORK SESSION (advances the
-  // cycle) rather than "resets the clock" — the wording tracks that. Finishing it for good is the
-  // Finish action in the expanded row's schedule editor, not this button.
-  const isOngoingTask = !!task.recurring?.ongoing
+  // An ongoing project is a standing effort: it has no cadence and no status clock, so its ✓ simply
+  // archives it (done = finished), exactly like a one-off. The badge is the only row-level marker.
+  const isOngoingTask = task.ongoing
 
   function startEdit() {
     setDraft(task.text)
@@ -186,6 +183,18 @@ export function ListRow({
           aria-label={`Recurring, ${status.label}`}
         >
           ↻
+        </span>
+      )}
+
+      {/* Ongoing project badge — a standing effort (no cadence, no status clock). Accent-colored so
+          it reads as "persistent", never as overdue. */}
+      {isOngoingTask && (
+        <span
+          className="shrink-0 rounded border border-primary px-1 text-sm text-primary"
+          title="Ongoing project"
+          aria-label="Ongoing project"
+        >
+          {ONGOING_GLYPH}
         </span>
       )}
 
@@ -323,20 +332,8 @@ export function ListRow({
           <IconButton
             variant="success"
             onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
-            aria-label={
-              isOngoingTask
-                ? 'Log a work session'
-                : task.recurring
-                  ? 'Mark done (resets clock)'
-                  : 'Mark done'
-            }
-            title={
-              isOngoingTask
-                ? 'Log a work session'
-                : task.recurring
-                  ? 'Done (resets clock)'
-                  : 'Mark done'
-            }
+            aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
+            title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
           >
             ✓
           </IconButton>
@@ -364,8 +361,7 @@ export function ListRow({
           onSetRecurring={(freq) => onSetRecurring(task.id, freq)}
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
-          onSetOngoing={(checkInDays, targetEnd) => onSetOngoing(task.id, checkInDays, targetEnd)}
-          onFinishOngoing={() => onFinishOngoing(task)}
+          onSetOngoing={(on) => onSetOngoing(task.id, on)}
           onRename={startEdit}
           reminderOffsets={reminderOffsets}
           onToggleReminder={onToggleReminder}

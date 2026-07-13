@@ -87,20 +87,12 @@ export function GridSurface({
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
 
-  // Make / adjust a task as an ongoing project (shared by a card's ⋯ menu and a cluster row).
-  // Reuses the recurring jsonb; preserves lastDoneAt/doneCount so promoting a chore keeps history.
-  const setOngoing = (task: Task, checkInDays: number, targetEnd: string | null) =>
+  // Set/clear the ongoing-project flag (shared by a card's ⋯ menu and a cluster row). Setting it
+  // true also clears any recurring schedule, keeping the two types exclusive in a single mutation.
+  const setOngoing = (task: Task, on: boolean) =>
     updateMutate({
       id: task.id,
-      patch: {
-        recurring: {
-          frequencyDays: checkInDays,
-          lastDoneAt: task.recurring?.lastDoneAt ?? null,
-          doneCount: task.recurring?.doneCount ?? 0,
-          ongoing: true,
-          targetEnd,
-        },
-      },
+      patch: on ? { ongoing: true, recurring: null } : { ongoing: false },
     })
 
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
@@ -174,11 +166,11 @@ export function GridSurface({
           reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
         }
         onClearReminders={() => reminderWrites.clear(task.id)}
-        onSetOngoing={(checkInDays, targetEnd) => setOngoing(task, checkInDays, targetEnd)}
+        onSetOngoing={(on) => setOngoing(task, on)}
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,
-            patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
+            patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 }, ongoing: false },
           })
         }
         onSetFrequency={(frequencyDays) => {
@@ -329,7 +321,10 @@ export function GridSurface({
                     onSetRecurring={(task, frequencyDays) =>
                       updateMutate({
                         id: task.id,
-                        patch: { recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 } },
+                        patch: {
+                          recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 },
+                          ongoing: false,
+                        },
                       })
                     }
                     onSetFrequency={(task, frequencyDays) => {

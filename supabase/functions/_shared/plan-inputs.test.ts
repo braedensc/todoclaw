@@ -41,3 +41,27 @@ Deno.test('carries task size through, narrowing a missing or invalid value to nu
     Bad: null,
   })
 })
+
+Deno.test('an ongoing task row surfaces in the plan tasks carrying its ongoing flag', () => {
+  const rows = [
+    // An ongoing project is placed (recurring: null), so it IS included in the plan tasks, tagged so
+    // the planner can pace it.
+    {
+      id: 'proj',
+      text: 'Write the novel',
+      x: 0.4,
+      y: 0.9,
+      due: null,
+      staged: false,
+      recurring: null,
+      ongoing: true,
+    },
+    // A plain task with no flag narrows to ongoing: false.
+    { id: 'plain', text: 'Buy milk', x: 0.6, y: 0.3, due: null, staged: false, recurring: null },
+  ]
+  const req = buildPlanRequest(rows, [], {}, TZ, NOW)
+  assertEquals(Object.fromEntries(req.tasks.map((t) => [t.text, t.ongoing])), {
+    'Write the novel': true,
+    'Buy milk': false,
+  })
+})

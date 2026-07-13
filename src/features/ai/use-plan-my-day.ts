@@ -24,6 +24,7 @@ export interface PlanRequest {
     dueInDays: number | null
     dueTime: string | null
     size: TaskSize | null // coarse effort (S/M/L/XL), or null to let the planner infer it
+    ongoing: boolean // a standing project — chip away at it, never must-finish-today
   }[]
   recurringDue: { text: string; status: string }[]
   habits: string[]
@@ -31,8 +32,9 @@ export interface PlanRequest {
 
 // Build the request payload from the same data the grid/list use, reusing src/lib scoring +
 // recurring so the on-grid filtering and date math live in ONE place. Selection: on-grid =
-// not staged, not completed (permanent tasks.completed_at), not done today, not recurring; plus
-// recurring chores that are overdue/due/soon; plus active habits. Pure → unit-tested.
+// not staged, not completed (permanent tasks.completed_at), not done today, not a recurring chore;
+// ONGOING projects ARE included (they are placed tasks, flagged so the planner can pace them);
+// plus recurring chores that are overdue/due/soon; plus active habits. Pure → unit-tested.
 export function buildPlanRequest(
   tasks: Task[],
   habits: Habit[],
@@ -58,6 +60,7 @@ export function buildPlanRequest(
       dueInDays: daysUntil(t.due, { timeZone, now }),
       dueTime: t.due_time,
       size: t.size ?? null,
+      ongoing: t.ongoing,
     }))
 
   const recurringDue: { text: string; status: string }[] = []
