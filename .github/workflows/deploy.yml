@@ -45,9 +45,12 @@ name: Deploy (prod)
 #       Secrets on the project, or the deployed functions 500 / CORS-block at runtime. The
 #       post-deploy smoke below asserts reachability but cannot check these.
 #
-# Each job PREFLIGHTS its own config and SKIPS (green) when unset, mirroring backup.yml /
-# keepalive.yml — so this merges and stays green until the secrets are added. Run manually
-# from the Actions tab (workflow_dispatch, main only) for the first seed deploy and re-deploys.
+# Each job PREFLIGHTS its own config. Post-first-seed (the secrets ARE set), a MISSING secret now
+# FAILS the job loudly instead of skipping green — a silent skip once shipped functions against an
+# un-migrated schema / left prod behind with the run still green (the class the 2026-07-13 incident
+# exposed). deploy-failure-alert.yml then fires and @mentions the owner, so a rotated/vanished
+# credential can never again ship a half-deploy in silence. Run manually from the Actions tab
+# (workflow_dispatch, main only) for re-deploys.
 # NOTE: workflow_run uses the file version on the DEFAULT branch — edits take effect only once
 # merged to main; you cannot exercise the workflow_run path from a feature branch.
 
@@ -108,12 +111,12 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         run: |
           if [ -z "$SUPABASE_DB_URL" ]; then
-            # ::warning:: (not ::notice::) so a green run is never mistaken for "migrations applied".
-            echo "::warning::BACKUP_DATABASE_URL not set — SKIPPING migrations (the deploy reuses the backup DB URL)."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+            # Past first-seed: a missing URL FAILS the job (was: skip-green). A silent skip left prod
+            # un-migrated while the run went green and functions shipped against the old schema.
+            echo "::error::BACKUP_DATABASE_URL is not set — cannot apply migrations. Set it (Settings → Secrets → Actions) and re-run Deploy (prod)."
+            exit 1
           fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.pre.outputs.configured == 'true'
@@ -151,8 +154,9 @@ jobs:
 
   deploy-functions:
     name: Deploy Edge Functions
-    # Runs after migrate so functions never ship against a failed/half-applied schema. If
-    # migrate SKIPS (unconfigured) it still "succeeds", so functions can deploy on their own.
+    # Runs after migrate so functions never ship against a failed/half-applied schema — migrate now
+    # fails hard on a missing DB URL (needs: below then blocks this job too, rather than shipping
+    # functions against an un-migrated schema).
     needs: [gate, migrate]
     runs-on: ubuntu-latest
     timeout-minutes: 15 # bundling can take a few minutes; bound it so a hang can't hold the lock
@@ -164,11 +168,12 @@ jobs:
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
           if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
-            echo "::warning::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set — SKIPPING function deploy."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+            # Past first-seed: a missing token/ref FAILS the job (was: skip-green) so a rotated
+            # credential can't leave prod silently running the stale function bundle on a green run.
+            echo "::error::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set — cannot deploy functions. Set them (Settings → Secrets/Variables → Actions) and re-run Deploy (prod)."
+            exit 1
           fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.pre.outputs.configured == 'true'
