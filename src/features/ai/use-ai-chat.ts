@@ -17,10 +17,15 @@ const DOMAIN_QUERY_KEYS: Record<string, readonly unknown[]> = {
 
 // Streaming chat over the ai-chat Edge Function. functions.invoke() doesn't expose streams, so
 // we fetch() directly with the user's access token and read the SSE body. The conversation is
-// CLIENT-HELD: we keep the Anthropic message history in a ref and resend it each turn. Destructive
-// tools pause for confirmation — confirm() re-sends with the approved id and the executed
-// tool_result is mirrored back into the held history (the server appends it to its local copy
-// only, never over the wire); deny() feeds a declined tool_result back so the model continues
+// CLIENT-HELD: we keep the Anthropic message history in a ref and resend it each turn. On a normal
+// turn the server returns its FULL authoritative message array on the `message` event — BabyClaw's
+// own tool_use/tool_result turns included — and we ADOPT it wholesale, so the next resend carries
+// what the assistant actually did, not just its prose (without this the inline tool path dropped
+// those turns and BabyClaw would deny its own actions on the following turn). A turn that fails
+// before it commits is rolled back (preTurn) so a dangling user turn never desyncs the history.
+// Destructive tools pause for confirmation — confirm() re-sends with the approved id and the
+// executed tool_result is mirrored back into the held history (the server appends it to its local
+// copy only, never over the wire); deny() feeds a declined tool_result back so the model continues
 // gracefully. Either way every tool_use we hold stays paired — a dangling one 400s at the API.
 
 const FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`
@@ -95,6 +100,12 @@ export function useAiChat() {
   const history = useRef<AnyMsg[]>([])
   const approved = useRef<string[]>([])
   const assistantId = useRef<string | null>(null)
+  // Snapshot of the held history taken BEFORE a fresh user turn is optimistically appended, so a turn
+  // that fails before the model commits (a pre-stream 4xx/5xx or a mid-stream break) can be rolled
+  // back. Otherwise the dangling user turn desyncs Anthropic's user/assistant alternation and the next
+  // send appends a SECOND user turn — wedging the chat until reload. Armed only by send(); a
+  // confirm/deny resume clears it (its in-flight tool pairing must survive a retry).
+  const preTurn = useRef<AnyMsg[] | null>(null)
   // A message the chat was deep-linked from (ADR-0031): shown as an intro bubble and folded into the
   // FIRST outgoing turn so BabyClaw has context — without a separate assistant-first history entry
   // (which would break Anthropic's user-first / alternation rule).
@@ -119,7 +130,9 @@ export function useAiChat() {
       if (!res.ok || !res.body) {
         // Guardrail + input-cap rejections arrive PRE-STREAM as HTTP statuses (ai-chat): 503 =
         // monthly budget kill-switch, 429 = rate limit, 413 = message/history too large. None
-        // are sent in-band.
+        // are sent in-band. The model never ran → undo the optimistic user turn so a retry doesn't
+        // desync the history.
+        rollbackTurn()
         setError(
           res.status === 503
             ? 'AI is paused for this month (budget cap reached).'
@@ -148,11 +161,22 @@ export function useAiChat() {
         }
       }
     } catch {
+      // A mid-stream break before the model committed a turn — same rollback as the pre-stream case.
+      rollbackTurn()
       setError('Chat failed.')
     } finally {
       setBusy(false)
     }
   }, [])
+
+  // Undo the optimistic user turn when a turn fails before it commits (see preTurn). A no-op once a
+  // turn has committed (message handler cleared preTurn) or on a confirm/deny resume (which clears it).
+  function rollbackTurn() {
+    if (preTurn.current) {
+      history.current = preTurn.current
+      preTurn.current = null
+    }
+  }
 
   function handleEvent(ev: Record<string, unknown>) {
     switch (ev.type) {
@@ -202,7 +226,14 @@ export function useAiChat() {
         setPending({ toolUseId: ev.tool_use_id as string, summary: ev.summary as string })
         break
       case 'message':
-        history.current = [...history.current, { role: 'assistant', content: ev.content }]
+        // The server hands back the FULL authoritative conversation as `history` — its own
+        // tool_use/tool_result turns included — so adopt it wholesale; the next resend then carries
+        // what BabyClaw actually did and it stops denying its own actions (the confabulation fix).
+        // Fall back to appending the assistant turn for a response with no history sync.
+        history.current = Array.isArray(ev.history)
+          ? (ev.history as AnyMsg[])
+          : [...history.current, { role: 'assistant', content: ev.content }]
+        preTurn.current = null // this turn committed — nothing to roll back
         assistantId.current = null
         break
       case 'done':
@@ -252,6 +283,7 @@ export function useAiChat() {
         setItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Declined.', ok: false }])
       }
       setPending(null)
+      preTurn.current = null // a resume must not roll back to a stale pre-send snapshot on failure
       void run()
     },
     [pending, run],
@@ -275,6 +307,7 @@ export function useAiChat() {
         ? `(Context — the app sent me this: "${seedRef.current}")\n\n${trimmed}`
         : trimmed
       seedRef.current = null
+      preTurn.current = history.current // snapshot for rollback if this turn fails before it commits
       history.current = [...history.current, { role: 'user', content: outgoing }]
       setItems((xs) => [...xs, { id: nextId(), role: 'user', text: trimmed }])
       void run()

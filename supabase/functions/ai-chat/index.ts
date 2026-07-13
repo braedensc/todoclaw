@@ -141,7 +141,19 @@ Deno.serve(async (req) => {
             outTok += final.usage.output_tokens
 
             if (final.stop_reason !== 'tool_use') {
-              sse.send({ type: 'message', role: 'assistant', content: final.content })
+              // Commit the final assistant turn, then hand the client the FULL authoritative
+              // conversation — including THIS turn's assistant tool_use turns and their tool_result
+              // turns, which the inline (non-destructive) path otherwise never echoes. The client
+              // adopts it wholesale so the next resend carries what BabyClaw actually did; without it
+              // the client re-sends only its own prose and, on the following turn, denies the actions
+              // it took (the confabulation bug — it can't see its own create_task/make_recurring).
+              messages.push({ role: 'assistant', content: final.content })
+              sse.send({
+                type: 'message',
+                role: 'assistant',
+                content: final.content,
+                history: messages,
+              })
               await flushUsage()
               sse.send({ type: 'done', stop_reason: final.stop_reason ?? 'end_turn' })
               return sse.close()
