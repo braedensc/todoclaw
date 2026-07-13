@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useToast } from '../../components/use-toast'
 import { TaskSchema, type Recurring, type Task } from '../../types/task'
 
 const TASKS_KEY = ['tasks'] as const
@@ -51,8 +52,14 @@ export type NewTask =
 // x/y seed at 0.5 (grid center) unless the caller places the task, matching EisenClaw: new tasks
 // default staged:true (DB default) but must have non-null x/y or the priority score computes NaN
 // downstream. Create-into-quadrant passes x/y + staged:false to insert a placed task directly.
+// Every task mutation attaches an onError that surfaces a toast (via useToast). These writes had NO
+// error path — a failed PATCH/INSERT (a dropped connection, a schema drift like PR #240's missing
+// column) resolved silently, so the change just "didn't happen" with no signal. No consumer wires
+// its own onError, so the guard lives here at the shared write path: a failed write can never again
+// look like a no-op, wherever it was triggered from (grid drag, list slider, cluster popup, add).
 export function useAddTask() {
   const qc = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async (input: NewTask) => {
       const parsed: {
@@ -96,6 +103,7 @@ export function useAddTask() {
       return TaskSchema.parse(data)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+    onError: () => toast("Couldn't add that task — try again.", 'error'),
   })
 }
 
@@ -104,12 +112,14 @@ export function useAddTask() {
 // row to the owner; the client never sets user_id.
 export function useUpdateTask() {
   const qc = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: TaskPatch }) => {
       const { error } = await supabase.from('tasks').update(patch).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+    onError: () => toast("Couldn't save your change — try again.", 'error'),
   })
 }
 
@@ -117,6 +127,7 @@ export function useUpdateTask() {
 // delete — the migration grants no DELETE and defines no DELETE policy by design.
 export function useSoftDeleteTask() {
   const qc = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
@@ -126,5 +137,6 @@ export function useSoftDeleteTask() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+    onError: () => toast("Couldn't delete that task — try again.", 'error'),
   })
 }

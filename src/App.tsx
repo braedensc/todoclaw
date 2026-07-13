@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AuthGate } from './features/auth/AuthGate'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
@@ -12,7 +12,7 @@ import { MoreSheet } from './features/shell/MoreSheet'
 import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
 import { useIsMobile } from './hooks/use-is-mobile'
-import { Snackbar } from './components/Snackbar'
+import { ToastProvider, useToast } from './components/use-toast'
 import { quadrantMeta, type QuadrantKey } from './lib/quadrants'
 import { QUADRANT_CENTER } from './lib/quadrant-summary'
 import { BoneIcon } from './components/BoneIcon'
@@ -86,13 +86,9 @@ function AppShell() {
   const quadrantFocus = useQuadrantFocus()
   // Transient confirmation pill ("Added to Errands ✓") floated above the bottom nav — the add
   // sheet closes instantly and the task may land in a quadrant that isn't on screen (audit §4.2).
-  const [toast, setToast] = useState<string | null>(null)
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const showToast = (message: string) => {
-    if (toastTimer.current) clearTimeout(toastTimer.current)
-    setToast(message)
-    toastTimer.current = setTimeout(() => setToast(null), 2400)
-  }
+  // The pill (and the shared <Snackbar>) now live in ToastProvider so error toasts from failed task
+  // writes reach every surface, not just this mobile add flow.
+  const showToast = useToast()
   // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
   // from the header pill (desktop) or the More sheet (mobile); left via the overlay's ✕ pill or Esc.
   const [gridOnly, setGridOnly] = useState(false)
@@ -700,7 +696,6 @@ function AppShell() {
                 onOpenChat={() => setShowChat(true)}
                 onClose={() => setShowAdd(false)}
               />
-              <Snackbar message={toast} />
               <MoreSheet
                 open={showMore}
                 onInbox={() => setShowInbox(true)}
@@ -759,63 +754,69 @@ export default function App() {
   return (
     // ConfirmProvider hosts the single app-themed confirm dialog (useConfirm) for every surface
     // beneath it — replacing bare window.confirm() calls. It wraps the whole shell so any view
-    // (signed-in or auth) can gate a destructive action through it.
+    // (signed-in or auth) can gate a destructive action through it. ToastProvider hosts the single
+    // <Snackbar> + useToast, so the mobile "Added ✓" pill and every failed-write error notice share
+    // one transient toast across all surfaces.
     <ConfirmProvider>
-      {loading ? (
-        <main className="mx-auto min-h-full max-w-3xl p-6 wide:min-h-screen">
-          <p className="text-muted">Loading…</p>
-        </main>
-      ) : session ? (
-        // AppShell owns the full-width layout (its own centered column + the chat push-drawer).
-        <ErrorBoundary>
-          <AppShell />
-        </ErrorBoundary>
-      ) : (
-        // The mascot's front door (style mix, login pass): centered masthead wordmark — no
-        // icon up here, the AuthMascot peeking over the card below is the star — with the claw
-        // swipe and the sign-in tagline. AuthGate renders the card + mascot.
-        <main className="mx-auto flex min-h-full max-w-3xl flex-col items-center p-6 pt-14 wide:min-h-screen">
-          <h1
-            className="font-serif text-[46px] font-[620] leading-none tracking-[-0.015em] text-ink"
-            style={{ fontVariationSettings: "'opsz' 70" }}
-          >
-            Todoclaw
-            <span aria-hidden className="text-accent">
-              .
-            </span>
-          </h1>
-          <svg className="mt-1.5" width="130" height="14" viewBox="0 0 118 14" aria-hidden="true">
-            <path
-              d="M2,4 Q58,15 114,3"
-              stroke="#c2693f"
-              strokeWidth="2.6"
-              strokeLinecap="round"
-              fill="none"
-              opacity="0.9"
-            />
-            <path
-              d="M8,8 Q56,17 104,7"
-              stroke="#c2693f"
-              strokeWidth="2"
-              strokeLinecap="round"
-              fill="none"
-              opacity="0.55"
-            />
-            <path
-              d="M16,12 Q54,18 88,11"
-              stroke="#c2693f"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              fill="none"
-              opacity="0.3"
-            />
-          </svg>
-          <p className="mt-2.5 font-serif text-[17px] italic text-muted">Sit. Stay. Prioritize.</p>
-          <div className="mt-1 w-full">
-            <AuthGate />
-          </div>
-        </main>
-      )}
+      <ToastProvider>
+        {loading ? (
+          <main className="mx-auto min-h-full max-w-3xl p-6 wide:min-h-screen">
+            <p className="text-muted">Loading…</p>
+          </main>
+        ) : session ? (
+          // AppShell owns the full-width layout (its own centered column + the chat push-drawer).
+          <ErrorBoundary>
+            <AppShell />
+          </ErrorBoundary>
+        ) : (
+          // The mascot's front door (style mix, login pass): centered masthead wordmark — no
+          // icon up here, the AuthMascot peeking over the card below is the star — with the claw
+          // swipe and the sign-in tagline. AuthGate renders the card + mascot.
+          <main className="mx-auto flex min-h-full max-w-3xl flex-col items-center p-6 pt-14 wide:min-h-screen">
+            <h1
+              className="font-serif text-[46px] font-[620] leading-none tracking-[-0.015em] text-ink"
+              style={{ fontVariationSettings: "'opsz' 70" }}
+            >
+              Todoclaw
+              <span aria-hidden className="text-accent">
+                .
+              </span>
+            </h1>
+            <svg className="mt-1.5" width="130" height="14" viewBox="0 0 118 14" aria-hidden="true">
+              <path
+                d="M2,4 Q58,15 114,3"
+                stroke="#c2693f"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                fill="none"
+                opacity="0.9"
+              />
+              <path
+                d="M8,8 Q56,17 104,7"
+                stroke="#c2693f"
+                strokeWidth="2"
+                strokeLinecap="round"
+                fill="none"
+                opacity="0.55"
+              />
+              <path
+                d="M16,12 Q54,18 88,11"
+                stroke="#c2693f"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                fill="none"
+                opacity="0.3"
+              />
+            </svg>
+            <p className="mt-2.5 font-serif text-[17px] italic text-muted">
+              Sit. Stay. Prioritize.
+            </p>
+            <div className="mt-1 w-full">
+              <AuthGate />
+            </div>
+          </main>
+        )}
+      </ToastProvider>
     </ConfirmProvider>
   )
 }
