@@ -16,12 +16,22 @@ Deno.test('carries task size through, narrowing a missing or invalid value to nu
       x: 0.8,
       y: 0.7,
       due: null,
+      due_time: null,
       size: 'XL',
       staged: false,
       recurring: null,
     },
     // No size key at all — the dispatch RPC shape before/skew, or any untagged task.
-    { id: 'b', text: 'NoSize', x: 0.8, y: 0.7, due: null, staged: false, recurring: null },
+    {
+      id: 'b',
+      text: 'NoSize',
+      x: 0.8,
+      y: 0.7,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+    },
     // A value outside the S/M/L/XL enum must be dropped to null, never leak to the prompt.
     {
       id: 'c',
@@ -29,6 +39,7 @@ Deno.test('carries task size through, narrowing a missing or invalid value to nu
       x: 0.8,
       y: 0.7,
       due: null,
+      due_time: null,
       size: 'HUGE',
       staged: false,
       recurring: null,
@@ -52,12 +63,22 @@ Deno.test('an ongoing task row surfaces in the plan tasks carrying its ongoing f
       x: 0.4,
       y: 0.9,
       due: null,
+      due_time: null,
       staged: false,
       recurring: null,
       ongoing: true,
     },
     // A plain task with no flag narrows to ongoing: false.
-    { id: 'plain', text: 'Buy milk', x: 0.6, y: 0.3, due: null, staged: false, recurring: null },
+    {
+      id: 'plain',
+      text: 'Buy milk',
+      x: 0.6,
+      y: 0.3,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+    },
   ]
   const req = buildPlanRequest(rows, [], {}, TZ, NOW)
   assertEquals(Object.fromEntries(req.tasks.map((t) => [t.text, t.ongoing])), {
