@@ -3,7 +3,7 @@ import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
-import { clusterAgingRing, urgencyTier } from '../../lib/visual-urgency'
+import { clusterStaleness, staleRingStyle, urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { useConfirm } from '../../components/use-confirm'
@@ -286,10 +286,12 @@ export function GridSurface({
                 screenX={bp.x}
                 screenY={1 - bp.y}
                 // Bubbles stay date-granular (nearest due day → tier): minute-level countdown on
-                // an aggregate bubble would imply a precision the group doesn't have.
+                // an aggregate bubble would imply a precision the group doesn't have. Stale
+                // members are excluded from the nearest-due (clusterNearestDue), so a bubble of
+                // only ignored tasks wears the cool ring below, not a hot pulse.
                 glow={urgencyGlowStyle(urgencyTier(clusterMinD, null))}
-                // The cool-blue aging ring of the cluster's oldest folded card ("hottest" wins).
-                agingRing={clusterAgingRing(group)}
+                // The cool-blue stale ring of the cluster's deepest-stale folded card.
+                staleRing={staleRingStyle(clusterStaleness(group, { timeZone }))}
                 open={open}
                 onToggle={() => selectCluster(open ? null : dominant.id)}
                 // Register the bubble node under the dominant id (same key `memberToNodeKey` uses)

@@ -6,11 +6,12 @@ import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
 import {
-  agingBadge,
-  agingChipStyle,
-  agingRingStyle,
   BASE_CARD_SHADOW,
   dueChipStyle,
+  staleBadge,
+  staleChipStyle,
+  staleness,
+  staleRingStyle,
   urgencyGlowStyle,
   urgencyIcon,
   urgencyTier,
@@ -289,20 +290,23 @@ function ClusterPopupRow({
   // consistently with the grid/list surfaces. A recurring row carries its own status color, so it
   // takes no urgency tier (mirrors the grid card gating glow on non-recurring tasks).
   const d = daysUntil(task.due, { timeZone })
-  const tier = rc ? 'none' : urgencyTier(d, null)
+  // Staleness first — a folded task >= 3 weeks past due (or undated + months old) flips lanes
+  // exactly like its standalone card: gating the tier to 'none' swaps the whole hot dress for
+  // the cool one below.
+  const stale = rc ? null : staleness(task, d)
+  const tier = rc || stale ? 'none' : urgencyTier(d, null)
   // The card's FULL urgency dress — glow ring + pulse + warm tint (+ the 🔥 corner flag below) —
   // so a folded overdue/near-due task reads identically to its standalone card on the map
   // (owner feedback 2026-07-09: not just the tint).
   const glow = urgencyGlowStyle(tier)
   const hotIcon = rc ? null : urgencyIcon(tier)
-  // Cool-blue aging ring, per-row, same as the grid card — composed over the glow (or the base
-  // card shadow when there's no glow, so the row's resting depth isn't lost).
-  const aging = rc ? null : agingRingStyle(task)
-  // ❄️ aging chip, per-row, same as the grid card — the textual "how old" half of the cool lane.
-  const iceBadge = rc ? null : agingBadge(task)
+  // The cool stale dress, per-row, same as the grid card: azure ring + icy tint + the ❄️ badge
+  // (corner flag replacing the 🔥, azure chip replacing the due chip).
+  const staleRing = staleRingStyle(stale)
+  const iceBadge = staleBadge(stale)
   const boxShadow =
-    glow || aging
-      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, aging?.boxShadow].filter(Boolean).join(', ')
+    glow || staleRing
+      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, staleRing?.boxShadow].filter(Boolean).join(', ')
       : undefined
 
   // Dashed, slightly heavier accent sides for a recurring row — same treatment as GridCard.
@@ -367,25 +371,31 @@ function ClusterPopupRow({
         borderLeftColor: sideColor,
         ...recurringBorder,
         touchAction: 'none',
-        // Composed warm-glow + cool aging-ring shadow overrides the resting `shadow-sm`; the tint
-        // is the warm urgency fill if any, else the cool aging fill — exactly the spread GridCard does.
+        // Composed warm-glow OR cool stale-ring shadow overrides the resting `shadow-sm`; the tint
+        // follows the same lane flip (warm while hot, icy once stale) — exactly the spread GridCard
+        // does.
         ...(boxShadow ? { boxShadow } : {}),
         ...(glow?.animation ? { animation: glow.animation } : {}),
-        ...((glow?.background ?? aging?.background)
-          ? { background: glow?.background ?? aging?.background }
+        ...((glow?.background ?? staleRing?.background)
+          ? { background: glow?.background ?? staleRing?.background }
           : {}),
       }}
     >
-      {/* Hot-tier corner flag (🔥 = overdue or due-today) — the color-independent cue, same as the
-          grid card's. Overhangs into the row's own margin, so it never clips the popup's scroller. */}
-      {hotIcon && (
+      {/* Corner flag — 🔥 while hot (overdue/due-today), ❄️ once stale — the color-independent cue,
+          same lane flip as the grid card's. Overhangs into the row's own margin, so it never clips
+          the popup's scroller. */}
+      {(hotIcon || iceBadge) && (
         <span
           aria-hidden
-          title={hotIcon.label}
+          title={hotIcon ? hotIcon.label : iceBadge?.title}
           className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border bg-card text-[10px] leading-none shadow-sm"
-          style={{ borderColor: dueChipStyle(tier).backgroundColor }}
+          style={{
+            borderColor: hotIcon
+              ? dueChipStyle(tier).backgroundColor
+              : staleChipStyle().backgroundColor,
+          }}
         >
-          {hotIcon.glyph}
+          {hotIcon ? hotIcon.glyph : iceBadge?.glyph}
         </span>
       )}
       {editing ? (
@@ -411,9 +421,9 @@ function ClusterPopupRow({
             {task.text}
           </span>
 
-          {/* Status chip: recurring marker, or the cool/warm one-off badges. A dated one-off gets a
-              due-day chip; a stale one-off gets the ❄️ aging chip saying how long it's sat — both
-              can stack (a card can be due soon AND months old), mirroring the grid card. */}
+          {/* Status chip: recurring marker, or ONE one-off badge in whichever lane the task is in —
+              the warm due-day chip while the deadline still means something, or the compact azure
+              "❄️ 21d" it cools into once the task has gone stale, mirroring the grid card. */}
           {rc ? (
             <span
               className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
@@ -422,26 +432,21 @@ function ClusterPopupRow({
             >
               ↻
             </span>
+          ) : iceBadge ? (
+            <span
+              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold"
+              style={staleChipStyle()}
+              title={iceBadge.title}
+            >
+              {iceBadge.glyph} {iceBadge.amount}
+            </span>
           ) : (
-            (d !== null || iceBadge) && (
-              <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
-                {d !== null && (
-                  <span
-                    className="rounded px-1 text-[9px] font-semibold"
-                    style={dueChipStyle(tier)}
-                  >
-                    {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
-                  </span>
-                )}
-                {iceBadge && (
-                  <span
-                    className="rounded px-1 text-[9px] font-semibold"
-                    style={agingChipStyle()}
-                    aria-label={iceBadge.label}
-                  >
-                    {iceBadge.glyph} {iceBadge.age}
-                  </span>
-                )}
+            d !== null && (
+              <span
+                className="flex-shrink-0 rounded px-1 text-[9px] font-semibold"
+                style={dueChipStyle(tier)}
+              >
+                {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
               </span>
             )
           )}

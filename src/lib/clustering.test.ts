@@ -231,4 +231,15 @@ describe('clusterNearestDue', () => {
     })
     expect(clusterNearestDue([a, rec], opts)).toBeNull()
   })
+
+  it('ignores STALE members (>= 21d past due) — they flipped to the cool lane', () => {
+    const stale = makeTask('stale', 0.5, 0.5, { due: '2026-06-11' }) // -21 → stale, skipped
+    const future = makeTask('fut', 0.5, 0.5, { due: '2026-07-10' }) // +8 → wins
+    expect(clusterNearestDue([stale, future], opts)).toBe(8)
+    // A cluster of ONLY stale members has no warm glow at all.
+    expect(clusterNearestDue([stale], opts)).toBeNull()
+    // …but a merely-overdue member (under the floor) still reads hot.
+    const overdue = makeTask('od', 0.5, 0.5, { due: '2026-06-12' }) // -20
+    expect(clusterNearestDue([stale, overdue], opts)).toBe(-20)
+  })
 })
