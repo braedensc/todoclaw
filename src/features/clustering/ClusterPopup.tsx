@@ -6,6 +6,8 @@ import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
 import {
+  agingBadge,
+  agingChipStyle,
   agingRingStyle,
   BASE_CARD_SHADOW,
   dueChipStyle,
@@ -296,6 +298,8 @@ function ClusterPopupRow({
   // Cool-blue aging ring, per-row, same as the grid card — composed over the glow (or the base
   // card shadow when there's no glow, so the row's resting depth isn't lost).
   const aging = rc ? null : agingRingStyle(task)
+  // ❄️ aging chip, per-row, same as the grid card — the textual "how old" half of the cool lane.
+  const iceBadge = rc ? null : agingBadge(task)
   const boxShadow =
     glow || aging
       ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, aging?.boxShadow].filter(Boolean).join(', ')
@@ -407,7 +411,9 @@ function ClusterPopupRow({
             {task.text}
           </span>
 
-          {/* Status chip: recurring marker, or a due-day chip for dated one-offs. */}
+          {/* Status chip: recurring marker, or the cool/warm one-off badges. A dated one-off gets a
+              due-day chip; a stale one-off gets the ❄️ aging chip saying how long it's sat — both
+              can stack (a card can be due soon AND months old), mirroring the grid card. */}
           {rc ? (
             <span
               className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
@@ -417,12 +423,25 @@ function ClusterPopupRow({
               ↻
             </span>
           ) : (
-            d !== null && (
-              <span
-                className="flex-shrink-0 rounded px-1 text-[9px] font-semibold"
-                style={dueChipStyle(tier)}
-              >
-                {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
+            (d !== null || iceBadge) && (
+              <span className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                {d !== null && (
+                  <span
+                    className="rounded px-1 text-[9px] font-semibold"
+                    style={dueChipStyle(tier)}
+                  >
+                    {d < 0 ? '!' : d === 0 ? 'now' : `${d}d`}
+                  </span>
+                )}
+                {iceBadge && (
+                  <span
+                    className="rounded px-1 text-[9px] font-semibold"
+                    style={agingChipStyle()}
+                    aria-label={iceBadge.label}
+                  >
+                    {iceBadge.glyph} {iceBadge.age}
+                  </span>
+                )}
               </span>
             )
           )}

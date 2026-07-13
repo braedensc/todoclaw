@@ -5,6 +5,8 @@ import { quadrantMeta } from '../../lib/quadrants'
 import { daysUntil } from '../../lib/scoring'
 import { formatDueTime, minutesUntilDueTime } from '../../lib/dates'
 import {
+  agingBadge,
+  agingChipStyle,
   dueChipStyle,
   fmtCountdown,
   fmtOverdueAmount,
@@ -111,6 +113,10 @@ export function ListRow({
   const minutesUntil = minutesUntilDueTime(task.due, task.due_time, timeZone, now)
   const tier = urgencyTier(due, minutesUntil)
   const status = recurringStatus(task.recurring)
+  // ❄️ aging badge — the "how old" cool-lane cue, shown on a stale one-off (a recurring task carries
+  // its own status instead). The list has no aging RING (that's grid/cluster only), so this chip is
+  // the sole "this has gone stale" signal here.
+  const iceBadge = status ? null : agingBadge(task, now)
   const showCount = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
   // An ongoing project is a standing effort: it has no cadence and no status clock, so its ✓ simply
   // archives it (done = finished), exactly like a one-off. The badge is the only row-level marker.
@@ -237,6 +243,18 @@ export function ListRow({
             {dueLabel(tier, due, task.due_time, minutesUntil)}
           </span>
         )
+      )}
+
+      {/* ❄️ aging chip — the cool-lane "how old" badge, the counterpart to the warm due badge above.
+          Independent of the due badge, so a stale-and-dued row shows both. */}
+      {iceBadge && (
+        <span
+          className="shrink-0 rounded px-2 py-0.5 text-xs font-medium"
+          style={agingChipStyle()}
+          aria-label={iceBadge.label}
+        >
+          {iceBadge.glyph} {iceBadge.age}
+        </span>
       )}
     </>
   )
