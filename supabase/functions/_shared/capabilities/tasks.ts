@@ -152,7 +152,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'create_task',
     description:
-      'Create a new task. If a due date is given, the grid position is computed automatically (sooner = more urgent); if not, the task is staged at center for the user to place. Ask about a due date first when it is unclear whether one is needed. Also estimate a rough size (S/M/L/XL) from the text when you reasonably can — it helps the daily planner gauge effort — but leave it off when unclear; never pester the user for it.',
+      "Create a new task and place it on the urgency×importance grid. YOU decide where it goes: set `urgency` and `importance` from what the task actually is. Judge importance by STAKES, not by the due date — a routine chore (dishes, vacuum, laundry) is LOW importance even when it's due today, while a consequential task (a deadline that matters, a health thing) is high. A due date, if given, only nudges URGENCY (sooner = more urgent) and never dictates importance. If you give neither urgency/importance nor a due date, the task is staged at center for the user to place. Ask about a due date first when it is unclear whether one is needed. Also estimate a rough size (S/M/L/XL) from the text when you reasonably can — it helps the daily planner gauge effort — but leave it off when unclear; never pester the user for it.",
     schema: z
       .object({
         text: z.string().min(1).max(2000).describe('The task text.'),
@@ -160,6 +160,18 @@ export const taskCapabilities: Capability[] = [
           .string()
           .nullish()
           .describe('ISO 8601 date (e.g. 2026-07-01) or null for no due date.'),
+        urgency: z
+          .enum(['low', 'medium', 'high'])
+          .nullish()
+          .describe(
+            'How urgent — the horizontal axis. Set it from the task itself; a soon due date makes something more urgent but is not required. Omit only when you genuinely cannot tell (a due date will then set urgency, else it stays staged).',
+          ),
+        importance: z
+          .enum(['low', 'medium', 'high'])
+          .nullish()
+          .describe(
+            'How high-stakes — the vertical axis. Judge from what the task IS, never from its due date: a routine chore is low even when due today; something consequential is high. Omit only when you genuinely cannot tell (it then defaults to neutral, never high).',
+          ),
         size: z
           .enum(['S', 'M', 'L', 'XL'])
           .nullish()
@@ -182,13 +194,20 @@ export const taskCapabilities: Capability[] = [
       .strict(),
     async execute(ctx, i) {
       const now = ctx.now ?? new Date()
-      const place = placeByDue(i.due ?? null, ctx.timeZone, now)
+      // Placement is BabyClaw-decided: the urgency/importance it chose win. A due date only informs
+      // URGENCY (days-until-due → x, via placeByDue) and NEVER importance — importance defaults to
+      // neutral, not high, so setting a due date can't slam a routine task into the important half
+      // (the old placeByDue behavior). A task with no placement signal at all stays staged.
+      const due = i.due ?? null
+      const x = i.urgency ? urgencyToX(i.urgency) : due ? placeByDue(due, ctx.timeZone, now).x : 0.5
+      const y = i.importance ? importanceToY(i.importance) : 0.5
+      const staged = !i.urgency && !i.importance && !due
       const row: Record<string, unknown> = {
         text: i.text,
-        x: place.x,
-        y: place.y,
-        staged: place.staged,
-        due: i.due ?? null,
+        x,
+        y,
+        staged,
+        due,
       }
       // Only write a size when the model supplied one; otherwise the column stays NULL and Plan My
       // Day infers effort at plan time (the "hybrid" half of the sizing model).
@@ -206,7 +225,7 @@ export const taskCapabilities: Capability[] = [
       }
       const { data, error } = await ctx.client.from('tasks').insert(row).select('id').single()
       if (error) return systemErr(error.message)
-      const where = place.staged ? ' in the staging tray' : ' on the grid'
+      const where = staged ? ' in the staging tray' : ' on the grid'
       // The model keeps the id (to chain an edit/move next); the user just sees the plain result.
       return ok(
         `Created "${i.text}"${where} (id ${data.id}).`,
@@ -240,7 +259,7 @@ export const taskCapabilities: Capability[] = [
         x: z.number().min(0).max(1).nullish().describe('Urgency 0 (left) → 1 (right).'),
         y: z.number().min(0).max(1).nullish().describe('Importance 0 (bottom) → 1 (top).'),
         urgency: z.enum(['low', 'medium', 'high']).nullish(),
-        importance: z.enum(['low', 'high']).nullish(),
+        importance: z.enum(['low', 'medium', 'high']).nullish(),
       })
       .strict(),
     async execute(ctx, i) {
