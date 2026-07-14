@@ -74,6 +74,7 @@ function demoChat(items: ChatItem[]): ChatController {
     error: null,
     paused: false,
     sessionId: null,
+    activeSession: null,
     send: noop,
     confirm: noop,
     deny: noop,

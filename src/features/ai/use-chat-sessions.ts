@@ -11,7 +11,7 @@ export const CHAT_SESSIONS_KEY = ['chat_sessions'] as const
 async function fetchSessions(): Promise<ChatSession[]> {
   const { data, error } = await supabase
     .from('chat_sessions')
-    .select('id, title, updated_at, pending')
+    .select('id, title, updated_at, origin, kind, pending')
     .order('updated_at', { ascending: false })
     .limit(50)
   if (error) throw error

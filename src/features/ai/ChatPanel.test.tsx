@@ -28,6 +28,7 @@ function chat(over: Partial<ChatController> = {}): ChatController {
     error: null as string | null,
     paused: false,
     sessionId: null as string | null,
+    activeSession: null,
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
@@ -56,9 +57,9 @@ describe('ChatPanel', () => {
     expect(screen.getByText('Added it.')).toBeInTheDocument()
     expect(screen.getByText(/Created "dentist"/)).toBeInTheDocument()
 
-    // BabyClaw's own replies carry his decorative 🐾 mark; the user's messages don't.
-    expect(screen.getByText('Added it.').closest('li')?.textContent).toContain('🐾')
-    expect(screen.getByText('add dentist').closest('li')?.textContent).not.toContain('🐾')
+    // BabyClaw's own replies carry his decorative paw avatar (an SVG); the user's messages don't.
+    expect(screen.getByText('Added it.').closest('li')?.querySelector('svg')).toBeTruthy()
+    expect(screen.getByText('add dentist').closest('li')?.querySelector('svg')).toBeFalsy()
   })
 
   it('shows the confirmation banner and wires Confirm/Cancel', () => {
@@ -66,9 +67,9 @@ describe('ChatPanel', () => {
     render(<ChatPanel chat={c} onClose={vi.fn()} />)
 
     expect(screen.getByText(/Move "dentist" to the trash\?/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, do it' }))
     expect(c.confirm).toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
     expect(c.deny).toHaveBeenCalled()
   })
 
@@ -126,7 +127,7 @@ describe('ChatPanel', () => {
     expect(screen.queryByRole('button', { name: 'New chat' })).not.toBeInTheDocument()
     // The mobile drawer offers a 🕘 History toggle (desktop uses the top-right ChatMenu instead).
     fireEvent.click(screen.getByRole('button', { name: 'Chat history' }))
-    expect(screen.getByText('Chat history')).toBeInTheDocument()
+    expect(screen.getByText('Your chats')).toBeInTheDocument()
     expect(screen.getByText('session list')).toBeInTheDocument()
     // "New chat" comes from the list (mocked here), and it returns to the conversation.
     fireEvent.click(screen.getByRole('button', { name: 'list new chat' }))

@@ -241,6 +241,8 @@ describe('useAiChat', () => {
         id: '11111111-1111-4111-8111-111111111111',
         title: 'Yesterday chat',
         updated_at: new Date().toISOString(),
+        origin: 'user',
+        kind: null,
         pending: {
           awaiting: { tool_use_id: 'toolu_p', name: 'delete_task', summary: 'Delete "X"' },
           approved: [],
@@ -273,12 +275,37 @@ describe('useAiChat', () => {
         id: '22222222-2222-4222-8222-222222222222',
         title: 'Old',
         updated_at: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
+        origin: 'user',
+        kind: null,
         pending: null,
       },
     ]
     fetchMock.mockResolvedValueOnce(sseResponse([session('new'), ...endTurn()]))
     const { result } = renderHook(() => useAiChat(), { wrapper })
     await waitFor(() => expect(result.current).toBeTruthy())
+    act(() => result.current.send('hi'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+    expect(sentBody(0).session_id).toBeNull()
+  })
+
+  it('does NOT auto-resume a proactive (inbox) session — only person-started chats resume', async () => {
+    // The most-recent session is a fresh morning-plan (proactive). It must NOT become the resumed
+    // conversation — those are opened deliberately via their deep link — so sending starts a new chat.
+    sessionsData = [
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        title: 'Morning plan',
+        updated_at: new Date().toISOString(),
+        origin: 'proactive',
+        kind: 'plan',
+        pending: null,
+      },
+    ]
+    fetchMock.mockResolvedValueOnce(sseResponse([session('new'), ...endTurn()]))
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    await waitFor(() => expect(result.current).toBeTruthy())
+    // Not resumed: the persisted proactive base is NOT hydrated and no pending is surfaced.
+    expect(result.current.items).toHaveLength(0)
     act(() => result.current.send('hi'))
     await waitFor(() => expect(result.current.busy).toBe(false))
     expect(sentBody(0).session_id).toBeNull()

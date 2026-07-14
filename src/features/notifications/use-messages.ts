@@ -16,12 +16,15 @@ export interface InboxMessage {
   body: string
   read_at: string | null
   created_at: string
+  // The chat session this message was materialised into (null until first opened). Opening a message
+  // now opens a real, persistent BabyClaw conversation seeded with it — see useOpenMessageChat.
+  session_id: string | null
 }
 
 async function fetchMessages(): Promise<InboxMessage[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, kind, local_date, title, body, read_at, created_at')
+    .select('id, kind, local_date, title, body, read_at, created_at, session_id')
     .order('created_at', { ascending: false })
     .limit(50)
   if (error) throw error
@@ -48,5 +51,30 @@ export function useMarkMessageRead() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: MESSAGES_KEY }),
+  })
+}
+
+/**
+ * Materialise (or reopen) the persistent BabyClaw chat session for an inbox message and return its
+ * id. The RPC (SECURITY DEFINER, fenced to auth.uid()) creates the session + seeds the message as
+ * BabyClaw's opening turn on the first open, and returns the SAME session on every reopen. Opening a
+ * message therefore lands in its OWN conversation — never appended onto whatever chat resumed. The
+ * caller then `openSession`s the returned id. Invalidates ['messages'] so the row's session_id (and
+ * the unified history) reflect the new link.
+ */
+export function useOpenMessageChat() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (messageId: string): Promise<string> => {
+      const { data, error } = await supabase.rpc('chat_open_for_message', {
+        p_message_id: messageId,
+      })
+      if (error) throw error
+      return data as string
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: MESSAGES_KEY })
+      void qc.invalidateQueries({ queryKey: ['chat_sessions'] })
+    },
   })
 }

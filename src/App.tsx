@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AuthGate } from './features/auth/AuthGate'
 import { useSession } from './features/auth/use-session'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
@@ -38,7 +38,7 @@ import { markTourDone } from './features/onboarding/setup-guide-store'
 import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
-import { useRoute, navigate, navigateToChat, chatMessageId } from './lib/route'
+import { useRoute, useChatMessageId, navigate, navigateToChat } from './lib/route'
 import { supabase } from './lib/supabase'
 import { NotificationBell } from './features/notifications/NotificationBell'
 import { InboxPanel } from './features/notifications/InboxPanel'
@@ -46,6 +46,7 @@ import {
   useMessages,
   useUnreadCount,
   useMarkMessageRead,
+  useOpenMessageChat,
 } from './features/notifications/use-messages'
 
 // Plan My Day pill (style mix): the ink fill warmed with a deep-green cast toward one corner,
@@ -156,22 +157,32 @@ function AppShell() {
     ensure()
   }, [ensure])
 
-  // A `#/chat/<id>` route (a notification tap or an inbox click) opens the chat overlay seeded with
-  // that message. The overlay is shown whenever showChat OR the route is 'chat' (chatOpen, below), so
-  // no setState-in-effect is needed here — this effect only seeds + marks the message read once it
-  // loads. seed is idempotent per text; mark is a no-op once read, so re-runs settle.
-  const seedChat = chat.seed
+  // A `#/chat/<id>` deep link (a notification tap or an inbox click) opens that message's OWN
+  // persistent BabyClaw conversation — never seeds it onto whatever chat happened to resume. Keyed on
+  // the message id itself (useChatMessageId), NOT the collapsed 'chat' route, so opening message B
+  // while message A is up re-fires (the old route-keyed effect silently dropped B). openSession clears
+  // any prior live/seed/pending state, so no leak between messages. The overlay is shown by chatOpen
+  // (below), so this effect only resolves the session + marks read.
+  const openSession = chat.openSession
   const mark = markRead.mutate
+  const openMsgChat = useOpenMessageChat().mutate
+  const chatMsgId = useChatMessageId()
+  const openedMsgRef = useRef<string | null>(null)
   useEffect(() => {
-    if (route !== 'chat') return
-    const id = chatMessageId()
-    if (!id || !messages.data) return
-    const msg = messages.data.find((m) => m.id === id)
-    if (!msg) return
-    // Title + body on separate lines — plan-rich bodies are multi-line and the bubble is pre-wrap.
-    seedChat(`${msg.title}\n\n${msg.body}`)
-    if (!msg.read_at) mark(id)
-  }, [route, messages.data, seedChat, mark])
+    if (!chatMsgId) {
+      openedMsgRef.current = null // left the deep link — allow reopening the same message later
+      return
+    }
+    if (openedMsgRef.current === chatMsgId || !messages.data) return
+    const msg = messages.data.find((m) => m.id === chatMsgId)
+    if (!msg) return // not among the loaded messages — leave the drawer on its current conversation
+    openedMsgRef.current = chatMsgId
+    if (!msg.read_at) mark(chatMsgId)
+    // Already materialised → jump straight to it; otherwise create-and-open (seeds BabyClaw's message
+    // as the opening assistant turn), then switch to the returned session.
+    if (msg.session_id) openSession(msg.session_id)
+    else openMsgChat(chatMsgId, { onSuccess: (sid) => openSession(sid) })
+  }, [chatMsgId, messages.data, openSession, mark, openMsgChat])
 
   // Esc leaves grid-only mode (the overlay covers the header, so the ✕ pill + this are the exits).
   useEffect(() => {
@@ -217,7 +228,7 @@ function AppShell() {
             ? 'min-h-0 flex-1 overflow-y-auto overscroll-none '
             : 'min-h-full wide:min-h-screen ') +
           'transition-[padding] duration-300 ease-out ' +
-          (chatOpen ? 'wide:pr-[360px]' : '')
+          (chatOpen ? 'wide:pr-[420px]' : '')
         }
       >
         {/* A focused column: wide enough that the desktop grid is dominant (aspect-locked ≈

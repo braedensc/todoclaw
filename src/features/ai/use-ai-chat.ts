@@ -94,6 +94,13 @@ export function useAiChat() {
   )
   const items = useMemo(() => [...baseItems, ...liveItems], [baseItems, liveItems])
 
+  // The row for the conversation currently open — lets the header show a "collar tag" for a proactive
+  // session (Morning plan / Evening recap / Reminder). Null for a brand-new, not-yet-created chat.
+  const activeSession = useMemo(
+    () => (sessionId ? (sessions.data?.find((s) => s.id === sessionId) ?? null) : null),
+    [sessionId, sessions.data],
+  )
+
   const assistantId = useRef<string | null>(null)
   const seedRef = useRef<string | null>(null)
   // The active session id, mirrored into a ref so stream callbacks (which close over the memoized
@@ -110,7 +117,10 @@ export function useAiChat() {
   const resumedRef = useRef(false)
   if (!resumedRef.current && sessions.data) {
     resumedRef.current = true
-    const recent = sessions.data[0]
+    // Resume only a person-started chat. Proactive sessions (materialised from an inbox message) are
+    // opened deliberately via their deep link, never auto-resumed — otherwise a fresh morning-plan
+    // session would silently become "the most recent chat" the Chat button reopens.
+    const recent = sessions.data.find((s) => s.origin === 'user')
     if (recent && Date.now() - Date.parse(recent.updated_at) < DAY_MS) {
       setSessionId(recent.id)
       setHydrateId(recent.id)
@@ -347,6 +357,7 @@ export function useAiChat() {
     deny,
     seed,
     sessionId,
+    activeSession,
     openSession,
     newChat,
   }
