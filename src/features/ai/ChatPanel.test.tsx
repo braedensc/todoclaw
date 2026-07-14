@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { ChatItem, PendingConfirm } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
+// ChatConversation now imports ChatSessionList → use-chat-sessions → lib/supabase (import-throws
+// without VITE env in CI). Stub the module, and mock the list to a marker so these shell tests need
+// no QueryClientProvider (the list's own data layer is covered in ChatSessionList.test.tsx).
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
+vi.mock('./ChatSessionList', () => ({
+  ChatSessionList: ({ onNew }: { onNew: () => void }) => (
+    <div>
+      <span>session list</span>
+      <button onClick={onNew}>list new chat</button>
+    </div>
+  ),
+}))
 import { ChatPanel } from './ChatPanel'
 
 // ChatPanel is now presentational (B8): the shell owns one shared conversation (useChatController)
@@ -104,5 +116,20 @@ describe('ChatPanel', () => {
     render(<ChatPanel chat={chat({ paused: true })} onClose={vi.fn()} />)
     expect(screen.getByText(/AI is paused for this month/i)).toBeInTheDocument()
     expect(screen.getByLabelText('Message')).toBeDisabled()
+  })
+
+  it('toggles to the history list and back; New chat resets the conversation', () => {
+    const c = chat()
+    render(<ChatPanel chat={c} onClose={vi.fn()} />)
+    // Conversation view first — no history list.
+    expect(screen.queryByText('session list')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Chat history' }))
+    expect(screen.getByText('Chat history')).toBeInTheDocument()
+    expect(screen.getByText('session list')).toBeInTheDocument()
+    // Header ＋ New chat calls the controller.
+    fireEvent.click(screen.getByRole('button', { name: 'Back to conversation' }))
+    expect(screen.queryByText('session list')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
+    expect(c.newChat).toHaveBeenCalled()
   })
 })

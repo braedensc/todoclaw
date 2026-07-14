@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
 import { splitReply } from './reply-status'
+import { ChatSessionList } from './ChatSessionList'
 import { TodoClawIcon } from '../../components/TodoClawIcon'
 
 // The full BabyClaw conversation UI (header + streamed history + confirm gate + input), factored
@@ -32,8 +33,24 @@ export function ChatConversation({
    */
   readOnly?: boolean
 }) {
-  const { items, busy, pending, error, send, confirm, deny, paused } = chat
+  const {
+    items,
+    busy,
+    pending,
+    error,
+    send,
+    confirm,
+    deny,
+    paused,
+    sessionId,
+    openSession,
+    newChat,
+  } = chat
   const [text, setText] = useState('')
+  // Swap the conversation for the saved-chat history list in place (persistent-chats ADR). Both chat
+  // shells (ChatRail + ChatPanel) inherit it. Never shown in the look-only demo (readOnly).
+  const [view, setView] = useState<'conversation' | 'history'>('conversation')
+  const showHistory = !readOnly && view === 'history'
   const listRef = useRef<HTMLUListElement>(null)
 
   // Keep the latest message in view as things stream in.
@@ -55,99 +72,155 @@ export function ChatConversation({
             namesake, so his conversation is where it lives now (the app wordmark carries the
             peeking-pup mark, TodoClawPeek). His 🐾 stays the reply/status glyph everywhere. */}
         <h2 className="flex items-center gap-1.5 font-serif text-lg font-semibold text-ink">
-          <TodoClawIcon className="h-6 w-6" />
-          BabyClaw
+          {showHistory ? (
+            'Chat history'
+          ) : (
+            <>
+              <TodoClawIcon className="h-6 w-6" />
+              BabyClaw
+            </>
+          )}
         </h2>
-        {showClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close chat"
-            className="text-muted hover:text-ink"
-          >
-            ✕
-          </button>
-        )}
+        <div className="flex items-center gap-2 text-muted">
+          {!readOnly &&
+            (showHistory ? (
+              <button
+                type="button"
+                onClick={() => setView('conversation')}
+                aria-label="Back to conversation"
+                className="text-sm hover:text-ink"
+              >
+                ← Back
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={newChat}
+                  aria-label="New chat"
+                  title="Start a new chat"
+                  className="text-lg leading-none hover:text-ink"
+                >
+                  ＋
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('history')}
+                  aria-label="Chat history"
+                  title="Saved conversations"
+                  className="text-base leading-none hover:text-ink"
+                >
+                  🕘
+                </button>
+              </>
+            ))}
+          {showClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close chat"
+              className="hover:text-ink"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
-      <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto overscroll-contain p-4">
-        {items.length === 0 && !paused && (
-          <li className="text-sm text-muted">
-            Meet <span className="font-medium text-ink">BabyClaw</span> <span aria-hidden>🐾</span>{' '}
-            — your personal planning assistant. Tell him what you need in plain English and he’ll
-            add, schedule, move, complete, or clear tasks and habits, or plan your day. Try: “add
-            book dentist, due Friday, high importance.”
-          </li>
-        )}
-        {paused && (
-          <li className="text-sm text-accent">
-            AI is paused for this month — the budget cap was reached. The planner still works
-            without it.
-          </li>
-        )}
-        {items.map((it) => (
-          <Bubble key={it.id} item={it} />
-        ))}
-        {busy && !pending && <li className="text-xs text-muted-light">…</li>}
-      </ul>
+      {showHistory ? (
+        <ChatSessionList
+          currentId={sessionId}
+          onOpen={(id) => {
+            openSession(id)
+            setView('conversation')
+          }}
+          onNew={() => {
+            newChat()
+            setView('conversation')
+          }}
+        />
+      ) : (
+        <>
+          <ul ref={listRef} className="flex-1 space-y-2 overflow-y-auto overscroll-contain p-4">
+            {items.length === 0 && !paused && (
+              <li className="text-sm text-muted">
+                Meet <span className="font-medium text-ink">BabyClaw</span>{' '}
+                <span aria-hidden>🐾</span> — your personal planning assistant. Tell him what you
+                need in plain English and he’ll add, schedule, move, complete, or clear tasks and
+                habits, or plan your day. Try: “add book dentist, due Friday, high importance.”
+              </li>
+            )}
+            {paused && (
+              <li className="text-sm text-accent">
+                AI is paused for this month — the budget cap was reached. The planner still works
+                without it.
+              </li>
+            )}
+            {items.map((it) => (
+              <Bubble key={it.id} item={it} />
+            ))}
+            {busy && !pending && <li className="text-xs text-muted-light">…</li>}
+          </ul>
 
-      {pending && (
-        <div className="border-t border-border bg-card px-4 py-3">
-          {/* Same voice as the Task Manager widget's waiting strip — one consistent "he's stopped,
+          {pending && (
+            <div className="border-t border-border bg-card px-4 py-3">
+              {/* Same voice as the Task Manager widget's waiting strip — one consistent "he's stopped,
               it's your move" signal wherever the conversation surfaces. */}
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">
-            <span aria-hidden className="mr-1">
-              🐾
-            </span>
-            BabyClaw is waiting on your reply
-          </p>
-          <p className="mt-1 text-sm text-ink">{pending.summary}?</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={confirm}
-              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white"
-            >
-              Confirm
-            </button>
-            <button
-              type="button"
-              onClick={deny}
-              className="rounded border border-border-strong px-3 py-1.5 text-sm text-ink"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">
+                <span aria-hidden className="mr-1">
+                  🐾
+                </span>
+                BabyClaw is waiting on your reply
+              </p>
+              <p className="mt-1 text-sm text-ink">{pending.summary}?</p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={confirm}
+                  className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white"
+                >
+                  Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={deny}
+                  className="rounded border border-border-strong px-3 py-1.5 text-sm text-ink"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
-      {error && (
-        <p className="border-t border-border px-4 py-2 text-sm text-accent" role="alert">
-          {error}
-        </p>
-      )}
+          {error && (
+            <p className="border-t border-border px-4 py-2 text-sm text-accent" role="alert">
+              {error}
+            </p>
+          )}
 
-      {!readOnly && (
-        <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border p-3">
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            // While a confirmation is pending, a typed reply answers it (send routes yes/no to
-            // confirm/deny) — the buttons above stay as the one-click path.
-            placeholder={pending ? 'Yes or no — or say what to do instead…' : 'Message…'}
-            aria-label="Message"
-            disabled={paused}
-            enterKeyHint="send"
-            className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={busy || paused || !text.trim()}
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            Send
-          </button>
-        </form>
+          {!readOnly && (
+            <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border p-3">
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                // While a confirmation is pending, a typed reply answers it (send routes yes/no to
+                // confirm/deny) — the buttons above stay as the one-click path.
+                placeholder={pending ? 'Yes or no — or say what to do instead…' : 'Message…'}
+                aria-label="Message"
+                disabled={paused}
+                enterKeyHint="send"
+                className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={busy || paused || !text.trim()}
+                className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                Send
+              </button>
+            </form>
+          )}
+        </>
       )}
     </div>
   )
