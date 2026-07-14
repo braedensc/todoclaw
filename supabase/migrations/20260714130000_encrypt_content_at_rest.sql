@@ -22,7 +22,10 @@
 --   'base64')) and stored via vault.create_secret — there is NO secret literal in this file (Hard Rule
 --   #3). Each environment (local, CI, prod) auto-provisions its own key on first migrate; a `db reset`
 --   regenerates it against an empty schema. The create is guarded by name so it is idempotent and
---   never rotates an existing key out from under encrypted data.
+--   never rotates an existing key out from under encrypted data. Because of that name-guard, an
+--   operator can PRE-SEED their own key (kept offline) before the first migrate and it is adopted
+--   verbatim. BACK UP THE PROD KEY OFFLINE: losing it makes the ciphertext unrecoverable. Full
+--   backup/recovery procedure — and the chat row-backup gap — in docs/RUNBOOK-KEY-RECOVERY.md.
 --
 -- PATTERN: pgcrypto PGP-symmetric (pgp_sym_encrypt/decrypt — random salt per call, so equal plaintexts
 --   yield different ciphertext; authenticated via MDC). pgsodium's Transparent Column Encryption is

@@ -67,7 +67,12 @@ per-edge-function decrypt) and gets its own PR.
   12 KiB); `bytea` is stored raw, not base64-expanded.
 - **`messages.data`** is encrypted for completeness though nothing currently reads it (write-only today).
 - **No Realtime impact** (ADR-0021 stays deferred): these reads are TanStack-Query fetches, now RPCs.
-- **Backups:** chats/`daily_state` are already excluded from `create_backup` and the external `pg_dump`;
-  `messages` is externally dumped — and now dumps as ciphertext, which is the point.
+- **Backups (verified against `backup.yml` + `create_backup`):** the external `pg_dump` excludes
+  `chat_sessions`, `chat_messages`, `assistant_memories` but **includes** `messages` and `daily_state`
+  (now dumped as ciphertext, which is the point); `create_backup` snapshots only tasks/habits/schedule.
+  So the two **chat tables have no row backup at all** — an offline key covers *key* loss, not *row*
+  loss. Key backup/recovery + the chat row-backup gap are the subject of
+  [`docs/RUNBOOK-KEY-RECOVERY.md`](RUNBOOK-KEY-RECOVERY.md) (the escrow is the pgcrypto passphrase, so
+  recovery is independent of the Vault root key and survives project restores/PITR).
 - Extends the persistent-chats security posture (ADR 2026-07-13): writes fenced server-side, reads
   owner-scoped, and now the data itself is opaque at rest.
