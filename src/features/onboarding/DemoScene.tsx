@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { BoneIcon } from '../../components/BoneIcon'
 import { localDateInTZ } from '../../lib/dates'
 import { EMPTY_DAILY_STATE } from '../daily-state/use-daily-state'
 import { useGrid } from '../grid/use-grid'
@@ -24,15 +25,20 @@ import {
 } from './demo-transcript'
 
 // DemoScene — the tour's "example day": a full-screen overlay showing what Todoclaw looks like in
-// real use, BEFORE the walkthrough points at the user's own (empty) shell. Everything on it is the
-// REAL component rendering fake in-memory data:
+// real use. The ENTIRE 8-panel tour plays over this one scene (no second leg over the user's own
+// empty shell), so it also carries the "chrome" the later panels point at — the Plan My Day button,
+// an example Daily-habits card, and an example Settings card. The core surfaces are the REAL
+// components rendering fake in-memory data:
 //
 //   • the board — the real GridSurface (desktop) / MobileMatrix (mobile) fed by a nested,
 //     pre-seeded TanStack QueryClient, so clustering, glow, ↻ / ❄️ badges and quadrant tints are
 //     the live production code paths (a new card treatment shows up here for free);
-//   • the plan — the real PlanBox with a canned, schema-valid plan (demo-transcript.ts);
+//   • the plan — the real PlanBox with a canned, schema-valid plan (demo-transcript.ts), under an
+//     example ✦ Plan My Day button (look-only) so the plan panel shows the button AND its result;
 //   • the check-ins — the real ChatConversation playing the scripted morning push and evening
-//     recap, whose texts are drift-guarded against the actual dispatch builders by a Deno test.
+//     recap, whose texts are drift-guarded against the actual dispatch builders by a Deno test;
+//   • habits + settings — small look-only example cards (`demo-habits` / `demo-settings`) the last
+//     two panels spotlight, so the tour never has to jump to the real shell.
 //
 // ZERO backend traffic and zero AI spend by construction: the nested QueryClient seeds every key
 // the mounted surfaces read and disables fetching outright (`enabled: false` — a missed key shows
@@ -204,16 +210,31 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
         </div>
 
         <QueryClientProvider client={client}>
-          <div data-tour="demo-plan">
-            <PlanBox
-              plan={DEMO_PLAN}
-              paused={false}
-              isPending={false}
-              isError={false}
-              onRetry={noop}
-              onDismiss={noop}
-              mobile={isMobile}
-            />
+          {/* The plan step spotlights this whole block — the ✦ Plan My Day button AND the plan it
+              builds — so the tour shows the button and its result together. The button is example
+              scenery (the scene is inert), styled like the real header pill. */}
+          <div data-tour="demo-plan" className="flex flex-col items-center gap-3">
+            <button
+              type="button"
+              className="whitespace-nowrap rounded-full px-6 py-3 text-sm font-medium text-white"
+              style={{ backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #2c4a3a 115%)' }}
+            >
+              <span aria-hidden className="text-[#e8c47a]">
+                ✦
+              </span>{' '}
+              Plan My Day
+            </button>
+            <div className="w-full">
+              <PlanBox
+                plan={DEMO_PLAN}
+                paused={false}
+                isPending={false}
+                isError={false}
+                onRetry={noop}
+                onDismiss={noop}
+                mobile={isMobile}
+              />
+            </div>
           </div>
 
           <div data-tour="demo-board">
@@ -233,6 +254,45 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
             caption="🌙 8:30 PM — the evening check-in"
             items={eveningItems}
           />
+        </div>
+
+        {/* The last two panels point here — example Daily habits + Settings, so the whole tour is
+            one section over this scene (no jump to the real, empty shell). Look-only scenery. */}
+        <div className="grid grid-cols-1 gap-4 wide:grid-cols-2">
+          <section
+            data-tour="demo-habits"
+            className="overflow-hidden rounded-[14px] border border-border bg-panel"
+          >
+            <p className="border-b border-border bg-card px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+              <BoneIcon className="inline h-2.5 w-auto align-[-1px]" /> Daily habits
+            </p>
+            <ul className="flex flex-col gap-2.5 p-4 text-[13px] text-ink">
+              <li className="flex items-center gap-2.5">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] text-white">
+                  🐾
+                </span>
+                Stretch — 10 minutes
+              </li>
+              <li className="flex items-center gap-2.5 text-muted">
+                <span className="h-6 w-6 rounded-full border border-border-strong" />
+                Walk the dog
+              </li>
+            </ul>
+          </section>
+
+          <section
+            data-tour="demo-settings"
+            className="overflow-hidden rounded-[14px] border border-border bg-panel"
+          >
+            <p className="border-b border-border bg-card px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+              <span aria-hidden>⚙</span> Settings
+            </p>
+            <ul className="flex flex-col gap-2 p-4 text-[13px] text-muted">
+              <li>Daily reset — 4:00 AM</li>
+              <li>Notifications — on</li>
+              <li>Timezone, backups, and this tour</li>
+            </ul>
+          </section>
         </div>
       </div>
     </div>,

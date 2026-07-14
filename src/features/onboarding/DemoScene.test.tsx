@@ -53,13 +53,21 @@ describe('DemoScene', () => {
     expect(screen.getByText('Clean out the garage')).toBeInTheDocument()
     expect(screen.getByText(/none of this is your data/i)).toBeInTheDocument()
 
-    // The plan card renders the canned plan through the real PlanBox.
+    // The plan card renders the canned plan through the real PlanBox, under the example ✦ Plan My
+    // Day button the tour's plan panel spotlights (button + result shown together). getByText, not
+    // getByRole: the whole scene is aria-hidden scenery, so the button has no accessible role.
+    expect(screen.getByText(/Plan My Day/)).toBeInTheDocument()
     expect(screen.getByText(DEMO_PLAN.headline)).toBeInTheDocument()
 
     // Both check-in moments play through the real chat surface.
     expect(screen.getByText(/Good morning!/)).toBeInTheDocument()
     expect(screen.getByText(/Which of these did you knock out today\?/)).toBeInTheDocument()
     expect(screen.getByText(DEMO_EVENING_REPLY)).toBeInTheDocument()
+
+    // The example Daily habits + Settings cards — the tour's last two panels point at these, so the
+    // whole walkthrough stays on this one scene.
+    expect(screen.getByText('Stretch — 10 minutes')).toBeInTheDocument()
+    expect(screen.getByText('Daily reset — 4:00 AM')).toBeInTheDocument()
 
     // Look-only: the chat composer is hidden in the demo cards.
     expect(screen.queryByLabelText('Message')).toBeNull()

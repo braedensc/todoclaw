@@ -97,4 +97,22 @@ describe('demo tour script', () => {
     expect(demoTour(true).some((s) => /❄️|↻/.test(stepText(s)))).toBe(false)
     expect(demoTour(false).some((s) => /❄️|↻/.test(stepText(s)))).toBe(true)
   })
+
+  it('is the full 8-panel single section, in order, on both breakpoints', () => {
+    // The whole tour lives on the one scene — including the plan button, habits, and settings, which
+    // DemoScene renders as example scenery so nothing points at the real (empty) shell. Order matters
+    // (the plan button precedes the check-ins; habits + settings close it out).
+    const expected = [
+      'demo-board', // welcome
+      'demo-board', // sorted by what matters
+      'demo-board', // three kinds of task
+      'demo-plan', // Plan My Day button + the plan it builds
+      'demo-chat-morning',
+      'demo-chat-evening',
+      'demo-habits',
+      'demo-settings',
+    ]
+    for (const isMobile of [false, true])
+      expect(demoTour(isMobile).map((s) => s.target)).toEqual(expected)
+  })
 })
