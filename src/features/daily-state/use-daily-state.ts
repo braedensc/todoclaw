@@ -27,11 +27,9 @@ export type DailyStateMaps = Pick<
 > & { plan: DailyState['plan'] }
 
 async function fetchDailyState(today: string): Promise<DailyStateMaps> {
-  const { data, error } = await supabase
-    .from('daily_state')
-    .select('*')
-    .eq('date', today)
-    .maybeSingle()
+  // plan is encrypted at rest; daily_state_get (DEFINER, fenced to auth.uid()) returns the completion
+  // maps plus the DECRYPTED plan as one row (or null when today has no row yet → empty state).
+  const { data, error } = await supabase.rpc('daily_state_get', { p_date: today })
 
   if (error) throw error
   if (!data) return EMPTY_DAILY_STATE
