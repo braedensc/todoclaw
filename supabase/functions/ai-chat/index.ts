@@ -226,7 +226,12 @@ Deno.serve(async (req) => {
               body.action.note,
             )
             messages.push(results)
+            // meta.display carries the user's typed decline note (e.g. "no, make it Friday instead")
+            // so it renders as their bubble on reload — the note lives in content only for the MODEL,
+            // and rowsToChatItems reads meta, not the tool_result content array.
+            const note = body.action.note?.trim()
             await appendMessage(admin, sessionId, user.id, 'user', results.content, {
+              ...(note ? { display: note } : {}),
               tools: [{ text: 'Declined.', ok: false }],
             })
             await setPending(admin, sessionId, user.id, null)

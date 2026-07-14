@@ -201,6 +201,11 @@ export function useAiChat() {
         break
       }
       case 'tool-result': {
+        // A tool result ends the current assistant narration turn — reset so the NEXT turn's text
+        // starts a fresh bubble instead of appending onto the pre-tool narration. Without this, a
+        // multi-step turn ("On it." → create_task → "All set!") merged into one run-on bubble
+        // rendered BEFORE the tool line, disagreeing with how the reloaded transcript renders it.
+        assistantId.current = null
         // What the USER sees is `display`: undefined → reuse the summary (already a plain sentence);
         // null → an internal lookup we don't surface (no bubble). Never render raw ids / JSON.
         const display =

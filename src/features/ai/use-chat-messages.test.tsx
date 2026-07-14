@@ -66,8 +66,36 @@ describe('rowsToChatItems', () => {
       }),
     ])
     expect(items).toEqual([
-      { id: 'm7-0', role: 'tool', text: 'Created "SCP" on the grid.', ok: true },
-      { id: 'm7-1', role: 'tool', text: 'Removed "y".', ok: false },
+      { id: 'm7-t0', role: 'tool', text: 'Created "SCP" on the grid.', ok: true },
+      { id: 'm7-t1', role: 'tool', text: 'Removed "y".', ok: false },
+    ])
+  })
+
+  it('renders a deny-with-note turn as BOTH the note bubble and the Declined line (reload fidelity)', () => {
+    // A typed corrective decline persists meta.display (the note) + meta.tools (Declined). On reload
+    // the user's words must still show, not just "Declined." — the two are independent.
+    const items = rowsToChatItems([
+      row({
+        seq: 12,
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'x',
+            content: 'User declined this action.',
+            is_error: true,
+          },
+          { type: 'text', text: 'no, make it Friday instead' },
+        ],
+        meta: {
+          display: 'no, make it Friday instead',
+          tools: [{ text: 'Declined.', ok: false }],
+        },
+      }),
+    ])
+    expect(items).toEqual([
+      { id: 'm12', role: 'user', text: 'no, make it Friday instead' },
+      { id: 'm12-t0', role: 'tool', text: 'Declined.', ok: false },
     ])
   })
 
