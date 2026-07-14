@@ -36,6 +36,7 @@ const s = (
   updated_at: new Date().toISOString(),
   origin,
   kind: origin === 'proactive' ? 'plan' : null,
+  local_date: origin === 'proactive' ? '2026-07-14' : null,
   pending: null,
 })
 
@@ -65,9 +66,39 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     render(<ChatSessionList currentId="a" onOpen={vi.fn()} onNew={vi.fn()} />)
     expect(screen.getByText('From BabyClaw')).toBeInTheDocument()
     expect(screen.getByText('You started')).toBeInTheDocument()
-    expect(screen.getByText('Your morning plan')).toBeInTheDocument()
+    expect(screen.getByText(/morning plan/i)).toBeInTheDocument()
     expect(screen.getByText('Plan my week')).toBeInTheDocument()
     expect(screen.getByText('Untitled chat')).toBeInTheDocument()
+  })
+
+  it('day-stamps a plan/recap so it is clear which day it is', () => {
+    messages = [m('m1', { kind: 'plan', local_date: '2026-07-14' })]
+    render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+    // Every weekday ends in "day", so this asserts the format "<Weekday> morning plan".
+    expect(screen.getByText(/^\w+day morning plan$/i)).toBeInTheDocument()
+    // The generic stored title is replaced by the day-stamped one.
+    expect(screen.queryByText('Your morning plan')).toBeNull()
+  })
+
+  it('shows "You started" above "From BabyClaw"', () => {
+    render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+    const mine = screen.getByText('You started')
+    const his = screen.getByText('From BabyClaw')
+    // Sibling group labels: his follows mine in document order → "You started" renders first.
+    expect(mine.compareDocumentPosition(his)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('caps "From BabyClaw" to the 3 most recent messages', () => {
+    // Reminders keep their own titles (no day-stamp), so they stay distinguishable for this count.
+    messages = ['A', 'B', 'C', 'D', 'E'].map((t, i) =>
+      m(`m${i}`, { kind: 'reminder', title: `Task ${t}` }),
+    )
+    render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+    for (const t of ['Task A', 'Task B', 'Task C']) {
+      expect(screen.getByText(t)).toBeInTheDocument()
+    }
+    expect(screen.queryByText('Task D')).toBeNull()
+    expect(screen.queryByText('Task E')).toBeNull()
   })
 
   it('opens a user session on click and starts a new chat via the button', () => {
@@ -84,7 +115,7 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     const onOpen = vi.fn()
     openMsgMutate.mockImplementation((_id, opts) => opts?.onSuccess?.('sess-new'))
     render(<ChatSessionList currentId={null} onOpen={onOpen} onNew={vi.fn()} />)
-    fireEvent.click(screen.getByText('Your morning plan'))
+    fireEvent.click(screen.getByText(/morning plan/i))
     expect(markReadMutate).toHaveBeenCalledWith('m1')
     expect(openMsgMutate).toHaveBeenCalledWith('m1', expect.any(Object))
     expect(onOpen).toHaveBeenCalledWith('sess-new')
@@ -94,7 +125,7 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     const onOpen = vi.fn()
     messages = [m('m1', { session_id: 'sess-1', read_at: new Date().toISOString() })]
     render(<ChatSessionList currentId={null} onOpen={onOpen} onNew={vi.fn()} />)
-    fireEvent.click(screen.getByText('Your morning plan'))
+    fireEvent.click(screen.getByText(/morning plan/i))
     expect(onOpen).toHaveBeenCalledWith('sess-1')
     expect(openMsgMutate).not.toHaveBeenCalled()
     expect(markReadMutate).not.toHaveBeenCalled()

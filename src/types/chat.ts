@@ -27,6 +27,7 @@ export const ChatSessionSchema = z.object({
   updated_at: z.string(),
   origin: z.enum(['user', 'proactive']).catch('user'),
   kind: z.enum(['plan', 'recap', 'reminder']).nullable().catch(null),
+  local_date: z.string().nullable().catch(null), // the proactive message's local day (for the day-stamped tag)
   pending: ChatPendingSchema.nullable().catch(null), // tolerate a legacy/partial shape
 })
 export type ChatSession = z.infer<typeof ChatSessionSchema>

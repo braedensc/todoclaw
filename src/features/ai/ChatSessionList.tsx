@@ -7,6 +7,7 @@ import {
   useOpenMessageChat,
   type InboxMessage,
 } from '../notifications/use-messages'
+import { kindLabel, proactiveDayLabel } from '../notifications/message-format'
 import { useToast } from '../../components/use-toast'
 import { PawPrint } from '../../components/PawPrint'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
@@ -19,10 +20,6 @@ import { SleepingPuppy } from '../../components/SleepingPuppy'
 //     represented by their message row above, so they're filtered out here to avoid duplicates).
 // Rendered only inside ChatConversation's in-drawer history view (both shells), never the look-only
 // demo — so it may freely use the messages/sessions query hooks.
-
-function kindLabel(kind: InboxMessage['kind']): string {
-  return kind === 'plan' ? 'Morning plan' : kind === 'recap' ? 'Evening recap' : 'Reminder'
-}
 
 function relTime(iso: string): string {
   const then = Date.parse(iso)
@@ -82,8 +79,11 @@ export function ChatSessionList({
   const toast = useToast()
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
-  const inbox = messages ?? []
-  // Proactive sessions are shown via their message row (above), so keep only person-started chats.
+  // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't
+  // pile up forever (they arrive newest-first). Your own chats are shown in full, above.
+  const MAX_PROACTIVE = 3
+  const inbox = (messages ?? []).slice(0, MAX_PROACTIVE)
+  // Proactive sessions are shown via their message row, so keep only person-started chats.
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
   const empty = !loading && inbox.length === 0 && userSessions.length === 0
@@ -137,48 +137,7 @@ export function ChatSessionList({
           </div>
         )}
 
-        {/* From BabyClaw — the proactive inbox. */}
-        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
-        {inbox.map((m) => {
-          const active = !!m.session_id && m.session_id === currentId
-          const unread = !m.read_at
-          return (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => openMessage(m)}
-              title={m.title}
-              className={
-                'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
-                (active ? 'bg-card ring-1 ring-border' : 'hover:bg-card')
-              }
-            >
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-puppy/10 text-puppy">
-                <BellGlyph />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span
-                  className={
-                    'block truncate text-sm ' + (unread ? 'font-semibold text-ink' : 'text-ink')
-                  }
-                >
-                  {m.title}
-                </span>
-                <span className="block truncate text-[11px] text-muted-light">
-                  {kindLabel(m.kind)} · {relTime(m.created_at)}
-                </span>
-              </span>
-              {unread && (
-                <span
-                  aria-label="unread"
-                  className="h-2 w-2 shrink-0 rounded-full bg-puppy shadow-[0_0_0_3px_rgba(95,138,163,0.15)]"
-                />
-              )}
-            </button>
-          )
-        })}
-
-        {/* You started — your own conversations. */}
+        {/* You started — your own conversations (shown first, in full). */}
         {userSessions.length > 0 && <GroupLabel>You started</GroupLabel>}
         {userSessions.map((s) => {
           const title = s.title?.trim() || 'Untitled chat'
@@ -238,6 +197,52 @@ export function ChatSessionList({
                 </button>
               )}
             </div>
+          )
+        })}
+
+        {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
+        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
+        {inbox.map((m) => {
+          const active = !!m.session_id && m.session_id === currentId
+          const unread = !m.read_at
+          // Day-stamp his daily check-ins ("Monday morning plan") so it's obvious which day each is;
+          // reminders keep their own task-specific title.
+          const dayTitle = proactiveDayLabel(m.kind, m.local_date)
+          const title = dayTitle ?? m.title
+          const subtitle = dayTitle
+            ? relTime(m.created_at)
+            : `${kindLabel(m.kind)} · ${relTime(m.created_at)}`
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => openMessage(m)}
+              title={title}
+              className={
+                'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
+                (active ? 'bg-card ring-1 ring-border' : 'hover:bg-card')
+              }
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-puppy/10 text-puppy">
+                <BellGlyph />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span
+                  className={
+                    'block truncate text-sm ' + (unread ? 'font-semibold text-ink' : 'text-ink')
+                  }
+                >
+                  {title}
+                </span>
+                <span className="block truncate text-[11px] text-muted-light">{subtitle}</span>
+              </span>
+              {unread && (
+                <span
+                  aria-label="unread"
+                  className="h-2 w-2 shrink-0 rounded-full bg-puppy shadow-[0_0_0_3px_rgba(95,138,163,0.15)]"
+                />
+              )}
+            </button>
           )
         })}
       </div>
