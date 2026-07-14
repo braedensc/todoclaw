@@ -38,9 +38,17 @@ export function useKeyboardViewport(enabled: boolean): KeyboardViewport {
     if (!vv) return
 
     const update = () => {
+      // How much the visual viewport shrank vs. the layout viewport = the keyboard's height. This
+      // is INDEPENDENT of any iOS auto-scroll: offsetTop only moves the visible band, it never
+      // changes its height. So this — not `inset` below — is the reliable "is a keyboard present"
+      // signal. (`inset` folds offsetTop in and collapses toward 0 once iOS scrolls the page to
+      // reveal a focused composer near the bottom; deriving keyboardOpen from it made the sheet
+      // read "keyboard closed" mid-typing — dropping the re-fit AND re-arming swipe-to-dismiss, so a
+      // scroll-to-read pull closed the sheet.)
+      const overlap = Math.max(0, Math.round(window.innerHeight - vv.height))
       const inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
       const height = Math.round(vv.height)
-      const keyboardOpen = inset > KEYBOARD_MIN_PX
+      const keyboardOpen = overlap > KEYBOARD_MIN_PX
       // Skip the state churn (and re-render) when a scroll/resize event leaves the geometry
       // unchanged — visualViewport 'scroll' can fire rapidly while a finger drags.
       setVp((prev) =>
