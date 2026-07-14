@@ -55,7 +55,7 @@ The offline key covers exactly one failure class. Know the boundary:
 permanent-loss risk — *key* loss — which the offline copy fully closes. Everything below the line is
 ordinary DB loss, unchanged by encryption, and is the job of DB backups.
 
-### ⚠️ Row-backup gap you must close
+### ⚠️ Row-backup gap (known & accepted, 2026-07-14)
 
 Row-backup coverage of the four encrypted tables **today**:
 
@@ -68,14 +68,17 @@ Row-backup coverage of the four encrypted tables **today**:
 
 **Your BabyClaw chat transcripts are in no backup at all** — they're excluded from the external dump
 (a deliberate "delete means delete" privacy choice) and `create_backup` only snapshots
-tasks/habits/schedule. So a dropped/truncated chat is gone regardless of the key. To close this,
-pick one:
+tasks/habits/schedule. So a dropped/truncated chat is gone regardless of the key.
+
+**Current decision (2026-07-14): accept this** — chats are treated as ephemeral AI meta, consistent
+with "delete means delete", and messages/daily_state remain covered by the external dump. If that
+calculus changes, close the gap with either:
 
 1. **Enable Supabase managed daily backups / PITR** (Dashboard → Database → Backups). Covers every
-   table in-place, independent of the app. Recommended — it's the general row-loss safety net.
+   table in-place, independent of the app. The general row-loss safety net.
 2. **Stop excluding chats from the external dump** (remove the two `--exclude-table` lines in
    `.github/workflows/backup.yml`). They'd dump as *ciphertext*, so the privacy exposure is bounded —
-   but it partly reverses the "deleted chats don't linger in rotated dumps" stance. A policy call.
+   but it partly reverses the "deleted chats don't linger in rotated dumps" stance.
 
 ---
 
