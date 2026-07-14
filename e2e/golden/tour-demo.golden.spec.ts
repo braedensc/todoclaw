@@ -18,8 +18,7 @@ async function startTourFromGuide(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Take the tour', exact: true }).click()
 }
 
-const tourDone = (page: Page) =>
-  page.evaluate((k) => localStorage.getItem(k), TOUR_DONE_KEY)
+const tourDone = (page: Page) => page.evaluate((k) => localStorage.getItem(k), TOUR_DONE_KEY)
 
 test('the full tour: example day (Act 1) → own shell (Act 2) → latched done', async ({ page }) => {
   await startTourFromGuide(page)
@@ -32,7 +31,9 @@ test('the full tour: example day (Act 1) → own shell (Act 2) → latched done'
   // Walk the four demo steps: board → plan → morning check-in → evening check-in.
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'One tap plans the day' })).toBeVisible()
-  await expect(page.getByText('Invoice first — then three quick wins to clear the deck.', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText('Invoice first — then three quick wins to clear the deck.', { exact: true }),
+  ).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'The plan comes to you' })).toBeVisible()
@@ -42,8 +43,9 @@ test('the full tour: example day (Act 1) → own shell (Act 2) → latched done'
   await expect(page.getByRole('dialog', { name: 'Evenings close the loop' })).toBeVisible()
   await expect(page.getByText(/Which of these did you knock out today\?/)).toBeVisible()
 
-  // Finishing Act 1 hands off to Act 2 over the user's OWN empty shell — the scene is gone.
-  await page.getByRole('button', { name: 'Finish', exact: true }).click()
+  // Finishing Act 1 hands off to Act 2 over the user's OWN empty shell — the scene is gone. The
+  // last-step button says where it goes ("Next: your board"), not a misleading "Finish".
+  await page.getByRole('button', { name: 'Next: your board', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'This board is yours' })).toBeVisible()
   await expect(page.getByText(/none of this is your data/i)).not.toBeVisible()
   await expect(page.getByText('No tasks placed — add one above and drag it here.')).toBeVisible()
@@ -95,7 +97,5 @@ test('Settings → Replay the tour re-runs both acts without resetting the guide
   await page.getByRole('button', { name: 'Replay the tour', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'A board in full swing' })).toBeVisible()
   // The guide's dismissal is untouched (unlike "Show the setup guide", which resets it).
-  expect(
-    await page.evaluate((k) => localStorage.getItem(k), GUIDE_DISMISSED_KEY),
-  ).toBe('1')
+  expect(await page.evaluate((k) => localStorage.getItem(k), GUIDE_DISMISSED_KEY)).toBe('1')
 })

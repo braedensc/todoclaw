@@ -20,6 +20,7 @@ import {
   DEMO_MORNING,
   DEMO_PLAN,
   DEMO_RECAP,
+  DEMO_TRANSCRIPT_DAY,
 } from './demo-transcript'
 
 // DemoScene — the tour's "example day": a full-screen overlay showing what Todoclaw looks like in
@@ -77,14 +78,27 @@ function demoChat(items: ChatItem[]): ChatController {
 const MORNING_ITEMS: ChatItem[] = [
   { id: 'demo-m1', role: 'assistant', text: `${DEMO_MORNING.title}\n\n${DEMO_MORNING.body}` },
 ]
-const EVENING_ITEMS: ChatItem[] = [
-  { id: 'demo-e1', role: 'assistant', text: `${DEMO_RECAP.title}\n\n${DEMO_RECAP.body}` },
-  { id: 'demo-e2', role: 'user', text: DEMO_EVENING_REPLY },
-  ...DEMO_EVENING_TOOL_NOTES.map(
-    (text, i): ChatItem => ({ id: `demo-e-tool-${i}`, role: 'tool', text, ok: true }),
-  ),
-  { id: 'demo-e3', role: 'assistant', text: DEMO_EVENING_CLOSE },
-]
+
+// The recap title/close name a weekday ("Wrapping up Monday"). The demo board is authored relative
+// to the REAL today and the shell dateline (visible around the scene) shows the real weekday, so a
+// fixed "Monday" would read stale on a Thursday. Swap the pinned day for the viewer's actual one at
+// render time — the constants stay verbatim for the Deno drift test (which pins the fixed day).
+function buildEveningItems(): ChatItem[] {
+  const today = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date())
+  const localize = (s: string) => s.split(DEMO_TRANSCRIPT_DAY).join(today)
+  return [
+    {
+      id: 'demo-e1',
+      role: 'assistant',
+      text: `${localize(DEMO_RECAP.title)}\n\n${localize(DEMO_RECAP.body)}`,
+    },
+    { id: 'demo-e2', role: 'user', text: DEMO_EVENING_REPLY },
+    ...DEMO_EVENING_TOOL_NOTES.map(
+      (text, i): ChatItem => ({ id: `demo-e-tool-${i}`, role: 'tool', text, ok: true }),
+    ),
+    { id: 'demo-e3', role: 'assistant', text: localize(DEMO_EVENING_CLOSE) },
+  ]
+}
 
 /**
  * The nested, sealed QueryClient the demo surfaces read from. Seeds every query key the mounted
@@ -157,6 +171,8 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
   const isMobile = useIsMobile()
   // Built once per mount; the browser zone is exactly useTimeZone's fallback for a null schedule.
   const [client] = useState(() => makeDemoClient(Intl.DateTimeFormat().resolvedOptions().timeZone))
+  // Evening bubbles localize the weekday to today — computed once per mount (reads the clock).
+  const [eveningItems] = useState(buildEveningItems)
 
   // Signal readiness AFTER the first commit: App mounts the FeatureTour only then, so the tour's
   // once-at-mount anchor resolution always sees the demo-* anchors (a tour mounted alongside the
@@ -211,7 +227,7 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
           <DemoChatCard
             tourId="demo-chat-evening"
             caption="🌙 8:30 PM — the evening check-in"
-            items={EVENING_ITEMS}
+            items={eveningItems}
           />
         </div>
       </div>

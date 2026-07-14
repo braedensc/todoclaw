@@ -29,7 +29,8 @@ shell; anchors resolve ONCE at mount and missing ones drop out silently. The ful
   ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
   drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs
   the actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert +
-  aria-hidden scenery; `DEMO_TOUR` narrates it via `demo-*` anchors only.
+  aria-hidden scenery; `demoTour(isMobile)` narrates it via `demo-*` anchors only (its first step's
+  copy differs per breakpoint — the desktop grid shows glow/↻/❄️, the mobile overview shows none).
 - **Act 2 — your own shell.** The trimmed per-breakpoint scripts (`DESKTOP_TOUR` / `MOBILE_TOUR`)
   point at the real, empty shell: "you just saw this — here's where it lives."
 

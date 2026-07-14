@@ -35,7 +35,7 @@ import { FeatureTour } from './features/onboarding/FeatureTour'
 import { DemoScene } from './features/onboarding/DemoScene'
 import {
   ADD_TASK_SPOTLIGHT,
-  DEMO_TOUR,
+  demoTour,
   DESKTOP_TOUR,
   MOBILE_TOUR,
 } from './features/onboarding/tour-steps'
@@ -527,7 +527,13 @@ function AppShell() {
                       setSettingsSection('notifications')
                       setShowSettings(true)
                     }}
-                    onStartTour={() => setTour('demo')}
+                    onStartTour={() => {
+                      // Drop any open mobile quadrant-focus list first: it unmounts the
+                      // data-tour="matrix" overview anchor, so Act 2's first (and most important)
+                      // mobile step would silently drop. Matches the Settings-replay path.
+                      quadrantFocus.clear()
+                      setTour('demo')
+                    }}
                     onShowAddTask={isMobile ? () => setShowAdd(true) : () => setTour('add-task')}
                   />
                 </ErrorBoundary>
@@ -561,7 +567,7 @@ function AppShell() {
                     key={tour}
                     steps={
                       tour === 'demo' || tour === 'demo-solo'
-                        ? DEMO_TOUR
+                        ? demoTour(isMobile)
                         : tour === 'full'
                           ? isMobile
                             ? MOBILE_TOUR
@@ -573,6 +579,16 @@ function AppShell() {
                         ? 'Skip to your board'
                         : tour === 'demo-solo'
                           ? 'Close'
+                          : undefined
+                    }
+                    // The demo act's last-step button hands off to Act 2, so it can't say "Finish"
+                    // (the user would think the tour ended, then a fresh overlay appears). demo-solo
+                    // really does end on its last step → "Done".
+                    finishLabel={
+                      tour === 'demo'
+                        ? 'Next: your board'
+                        : tour === 'demo-solo'
+                          ? 'Done'
                           : undefined
                     }
                     onClose={() => {

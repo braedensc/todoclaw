@@ -8,7 +8,7 @@ import { summarizeQuadrants, QUADRANT_ORDER } from '../../lib/quadrant-summary'
 import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
 import { buildDemoTasks } from './demo-board'
 import { DEMO_MORNING_INPUTS, DEMO_PLAN } from './demo-transcript'
-import { DEMO_TOUR } from './tour-steps'
+import { demoTour } from './tour-steps'
 
 // The demo fixtures are load-bearing showcase data: the plan must survive the same Zod gate a
 // real plan does (DailyStateSchema's `.catch(null)` means a malformed plan silently VANISHES in
@@ -85,6 +85,13 @@ describe('demo board fixture', () => {
 
 describe('demo tour script', () => {
   it('targets only demo-* anchors (grid/matrix also exist in the real shell underneath)', () => {
-    for (const step of DEMO_TOUR) expect(step.target).toMatch(/^demo-/)
+    for (const isMobile of [false, true])
+      for (const step of demoTour(isMobile)) expect(step.target).toMatch(/^demo-/)
+  })
+
+  it('serves a breakpoint-specific first step (no glow/↻/❄️ decoder ring on mobile)', () => {
+    // The mobile scene is the quadrant overview — none of the grid-card treatments exist there.
+    expect(demoTour(true)[0]!.body).not.toMatch(/❄️|↻|glow/)
+    expect(demoTour(false)[0]!.body).toMatch(/glow/)
   })
 })

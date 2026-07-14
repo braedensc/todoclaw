@@ -4,7 +4,7 @@ import { ConfirmProvider } from '../../components/use-confirm'
 import { ToastProvider } from '../../components/use-toast'
 import { DemoScene } from './DemoScene'
 import { DEMO_PLAN, DEMO_EVENING_REPLY } from './demo-transcript'
-import { DEMO_TOUR } from './tour-steps'
+import { demoTour } from './tour-steps'
 
 // The scene's whole contract: render the REAL surfaces from the sealed in-memory cache with ZERO
 // backend traffic. The supabase module is replaced by a proxy that fails the test loudly on ANY
@@ -68,9 +68,10 @@ describe('DemoScene', () => {
     expect(supabaseTouched).toEqual([])
   })
 
-  it('mounts an anchor for every DEMO_TOUR step (the tour resolves them once, at mount)', () => {
+  it('mounts an anchor for every demo tour step (the tour resolves them once, at mount)', () => {
     renderScene()
-    for (const step of DEMO_TOUR) {
+    // jsdom → desktop; the demo-* anchors are breakpoint-agnostic, so either script's targets work.
+    for (const step of demoTour(false)) {
       expect(document.querySelector(`[data-tour="${step.target}"]`), step.target).not.toBeNull()
     }
   })

@@ -15,39 +15,47 @@ import type { TourStep } from './FeatureTour'
 /**
  * Act 1 — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid' and
  * 'matrix' also exist in the real shell underneath, and anchors resolve first-match-in-document.
- * One script serves both breakpoints (every target exists on both).
+ * Every target exists on both breakpoints, but the FIRST step's copy is breakpoint-specific: the
+ * desktop scene is the free-canvas grid (glow rings, ↻ / ❄️ badges), the mobile scene is the 2×2
+ * quadrant overview (labels, counts, ⏰ badges — no grid, ADR-0028), so `demoTour(isMobile)` swaps
+ * that one body rather than teaching a decoder ring for a UI half the users never see.
  */
-export const DEMO_TOUR: TourStep[] = [
-  {
-    target: 'demo-board',
-    title: 'A board in full swing',
-    body:
-      'This is an example — not your tasks. Everything you have to do lives in one place, ' +
-      'sorted by how urgent and important it is, so what to do next is always obvious. ' +
-      'Deadlines glow, repeating chores wear ↻, and anything ignored too long turns icy ❄️.',
-  },
-  {
-    target: 'demo-plan',
-    title: 'One tap plans the day',
-    body:
-      'Plan My Day looked at everything on this board and picked a realistic day: one big ' +
-      'rock, a few quick wins, and room for habits — never an overstuffed list.',
-  },
-  {
-    target: 'demo-chat-morning',
-    title: 'The plan comes to you',
-    body:
-      'With notifications on, every morning the day’s plan arrives by itself — on your device ' +
-      'and in the app. No opening a to-do list to remember what matters.',
-  },
-  {
-    target: 'demo-chat-evening',
-    title: 'Evenings close the loop',
-    body:
-      'Each evening BabyClaw checks in. Reply in plain words — “1 and 3” — and he ticks them ' +
-      'off for you. And AI is always optional: everything here also works by hand.',
-  },
-]
+export function demoTour(isMobile: boolean): TourStep[] {
+  return [
+    {
+      target: 'demo-board',
+      title: 'A board in full swing',
+      body: isMobile
+        ? 'This is an example — not your tasks. Everything you have to do sorts into four boxes ' +
+          'by how urgent and important it is, so what to do next is always obvious — “Do Now” is ' +
+          'the box to clear first. The ⏰ badges flag what’s due; tap any box to open its list.'
+        : 'This is an example — not your tasks. Everything you have to do lives in one place, ' +
+          'sorted by how urgent and important it is, so what to do next is always obvious. ' +
+          'Deadlines glow, repeating chores wear ↻, and anything ignored too long turns icy ❄️.',
+    },
+    {
+      target: 'demo-plan',
+      title: 'One tap plans the day',
+      body:
+        'Plan My Day looked at everything on this board and picked a realistic day: one big ' +
+        'rock, a few quick wins, and room for habits — never an overstuffed list.',
+    },
+    {
+      target: 'demo-chat-morning',
+      title: 'The plan comes to you',
+      body:
+        'With notifications on, every morning the day’s plan arrives by itself — on your device ' +
+        'and in the app. No opening a to-do list to remember what matters.',
+    },
+    {
+      target: 'demo-chat-evening',
+      title: 'Evenings close the loop',
+      body:
+        'Each evening BabyClaw checks in. Reply in plain words — “1 and 3” — and he ticks them ' +
+        'off for you. And AI is always optional: everything here also works by hand.',
+    },
+  ]
+}
 
 /** Act 2, desktop: the user's own shell — grid → Task Manager → Plan My Day → inbox → habits. */
 export const DESKTOP_TOUR: TourStep[] = [
@@ -56,8 +64,7 @@ export const DESKTOP_TOUR: TourStep[] = [
     title: 'This board is yours',
     body:
       'Same map as the example: further right = more urgent, higher up = more important — so ' +
-      'the top-right corner is always “do now”. It starts empty; add a task or two and drag ' +
-      'them around as things change.',
+      'the top-right corner is always “do now”. Add tasks and drag them around as things change.',
   },
   {
     target: 'task-input',
@@ -86,7 +93,7 @@ export const DESKTOP_TOUR: TourStep[] = [
     title: 'One tap plans your day',
     body:
       'This ✦ pill builds the plan you just saw in the example — from your real tasks, habits, ' +
-      'and schedule. Add a task or two first, then try it.',
+      'and schedule. With a task or two on the board, give it a try.',
   },
   {
     target: 'inbox',
@@ -112,8 +119,7 @@ export const MOBILE_TOUR: TourStep[] = [
     title: 'These four boxes are yours',
     body:
       'Tasks sort by how urgent and important they are — “Do Now” is the box to clear first. ' +
-      'Tap any box to open its list. It starts empty; your first task lands in the right box ' +
-      'automatically.',
+      'Tap any box to open its list. Each task you add lands in the right box automatically.',
   },
   {
     target: 'nav-add',

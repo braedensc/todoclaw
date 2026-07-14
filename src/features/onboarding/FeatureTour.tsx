@@ -49,6 +49,7 @@ export function FeatureTour({
   steps,
   onClose,
   skipLabel = 'Skip tour',
+  finishLabel = 'Finish',
 }: {
   steps: TourStep[]
   /** `completed` is true only when the user walked through to the final step's Finish. */
@@ -59,12 +60,19 @@ export function FeatureTour({
    * the label must say where the click actually goes.
    */
   skipLabel?: string
+  /**
+   * The last-step primary-button label. Defaults to "Finish"; the demo act overrides it because
+   * its "finish" hands off to the next act rather than ending the tour — same honesty rule as
+   * `skipLabel` (the button must say where the click goes).
+   */
+  finishLabel?: string
 }) {
   // Resolve once at mount: anchors missing at this breakpoint/route drop out silently.
   const available = useMemo(() => steps.filter((s) => findAnchor(s.target)), [steps])
   const [index, setIndex] = useState(0)
   const [rect, setRect] = useState<SpotRect | null>(null)
   const isMobile = useIsMobile()
+  const cardRef = useRef<HTMLDivElement>(null)
   const nextRef = useRef<HTMLButtonElement>(null)
   const step = available[index]
 
@@ -99,11 +107,38 @@ export function FeatureTour({
     }
   }, [step])
 
-  // Keyboard: Esc leaves the tour; focus rides the primary button so Enter pages through.
+  // Keyboard: Esc leaves the tour; focus rides the primary button so Enter pages through. Tab is
+  // TRAPPED inside the step card — the aria-modal="true" dialog owes it, and without it Tab walks
+  // out of this (pointer-blocking-only) overlay into the shell behind it, which during the demo act
+  // is FULLY HIDDEN yet still focusable: a stray Enter could then fire a real, invisible action
+  // (generate a plan → AI spend, mark/delete a real task). Cycling focus at the card's edges seals
+  // every keyboard path to the shell, in every act, so nothing behind the overlay can be activated.
   const skip = useCallback(() => onClose(false), [onClose])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') skip()
+      if (e.key === 'Escape') {
+        skip()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const card = cardRef.current
+      if (!card) return
+      const focusables = Array.from(card.querySelectorAll<HTMLElement>('button:not([disabled])'))
+      if (focusables.length === 0) return
+      const first = focusables[0]!
+      const last = focusables[focusables.length - 1]!
+      const active = document.activeElement
+      if (!card.contains(active)) {
+        // Focus already escaped (or never landed) — pull it back in rather than let Tab wander.
+        e.preventDefault()
+        first.focus()
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -155,31 +190,38 @@ export function FeatureTour({
 
       {/* The step card. */}
       <div
+        ref={cardRef}
         className={
           'fixed rounded-xl border border-border-strong bg-panel p-4 shadow-xl ' +
           (isMobile ? 'inset-x-3 bottom-[104px]' : '')
         }
         style={cardStyle}
       >
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-light">
-          {index + 1} of {available.length}
-        </p>
-        <h3 className="mt-1 font-serif text-base font-semibold text-ink">{step.title}</h3>
-        <p className="mt-1 text-[13px] leading-snug text-muted">{step.body}</p>
-        {step.bullets && (
-          <ul className="mt-2 space-y-1.5 text-[13px] leading-snug text-muted">
-            {step.bullets.map((b) => (
-              <li key={b.lead} className="flex gap-1.5">
-                <span aria-hidden className="text-accent">
-                  •
-                </span>
-                <span>
-                  <span className="font-semibold text-ink">{b.lead}</span> — {b.rest}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* The narration block. aria-live so each step is re-announced as it renders: focus rides
+            the primary button (Enter pages through) and the dialog's aria-label change alone
+            doesn't re-announce, and in the demo act everything behind the card is aria-hidden
+            scenery — the card IS the only accessible content, so its updates must speak. */}
+        <div aria-live="polite" aria-atomic="true">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-light">
+            {index + 1} of {available.length}
+          </p>
+          <h3 className="mt-1 font-serif text-base font-semibold text-ink">{step.title}</h3>
+          <p className="mt-1 text-[13px] leading-snug text-muted">{step.body}</p>
+          {step.bullets && (
+            <ul className="mt-2 space-y-1.5 text-[13px] leading-snug text-muted">
+              {step.bullets.map((b) => (
+                <li key={b.lead} className="flex gap-1.5">
+                  <span aria-hidden className="text-accent">
+                    •
+                  </span>
+                  <span>
+                    <span className="font-semibold text-ink">{b.lead}</span> — {b.rest}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
@@ -212,9 +254,9 @@ export function FeatureTour({
             ref={nextRef}
             type="button"
             onClick={next}
-            className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            className="whitespace-nowrap rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
           >
-            {last ? 'Finish' : 'Next'}
+            {last ? finishLabel : 'Next'}
           </button>
         </div>
       </div>
