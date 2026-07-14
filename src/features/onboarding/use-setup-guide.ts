@@ -7,6 +7,7 @@ import {
   PLAN_DONE_KEY,
   TOUR_DONE_KEY,
   readFlag,
+  readRequested,
   subscribeSetupGuide,
   dismissSetupGuide,
   markPlanTried,
@@ -98,6 +99,8 @@ export function useSetupGuide(planReady: boolean): SetupGuideState {
   const dismissed = useSyncExternalStore(subscribeSetupGuide, () => readFlag(DISMISSED_KEY))
   const planLatched = useSyncExternalStore(subscribeSetupGuide, () => readFlag(PLAN_DONE_KEY))
   const tourLatched = useSyncExternalStore(subscribeSetupGuide, () => readFlag(TOUR_DONE_KEY))
+  // An explicit "Show the setup guide" (Settings) — forces the card up regardless of completion.
+  const requested = useSyncExternalStore(subscribeSetupGuide, readRequested)
   const schedule = useUserSchedule()
   const tasks = useTasks()
 
@@ -166,15 +169,18 @@ export function useSetupGuide(planReady: boolean): SetupGuideState {
   // card has ever rendered incomplete this session, dismiss silently. If the last step completes
   // while the card is open, keep it up in its finished state so the user sees the payoff and closes
   // it themselves. Latched via a render-time state adjustment (the sanctioned derive-state pattern).
+  // An explicit "Show the setup guide" (`requested`) overrides all of this — the user asked to see
+  // it, so it stays up until they dismiss it (and the silent auto-dismiss must not stomp it while
+  // the async account tour-mirror clear is still in flight — the source of the old two-click bug).
   const [sawIncomplete, setSawIncomplete] = useState(false)
   if (!dismissed && loaded && !allDone && !sawIncomplete) setSawIncomplete(true)
   useEffect(() => {
-    if (dismissed || !loaded) return
+    if (dismissed || !loaded || requested) return
     if (allDone && !sawIncomplete) dismissSetupGuide()
-  }, [dismissed, loaded, allDone, sawIncomplete])
+  }, [dismissed, loaded, allDone, sawIncomplete, requested])
 
   return {
-    visible: !dismissed && loaded && (sawIncomplete || !allDone),
+    visible: !dismissed && loaded && (requested || sawIncomplete || !allDone),
     order,
     done,
     tourDone,
