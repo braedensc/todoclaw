@@ -8,9 +8,10 @@ Backup & restore of the user's planner content (Stage 5, PR3). Two ways to save 
 
 ## Files
 
-- **`BackupsPanel.tsx`** — the modal (opened from the header "Backups" button). Lists snapshots
-  newest-first with **Create backup** / **Restore** (restore behind a `window.confirm`), plus a
-  **Download JSON** button. A `z-50` overlay so it covers the mobile bottom tab bar (ADR-0020).
+- **`BackupsPanel.tsx`** — lives in **Settings → Backups** (2026-07-14; `embedded` renders just the
+  content there — no chrome of its own). Lists snapshots newest-first with **Create backup** /
+  **Restore** (restore behind a `window.confirm`), plus a **Download JSON** button. The standalone
+  modal/sheet form is retained for any direct use + its test.
 - **`use-backups.ts`** — TanStack hooks: `useBackups` (list), `useCreateBackup`, `useRestoreBackup`.
   Create/restore are `supabase.rpc(...)` calls; restore invalidates `tasks`/`habits`/`user_schedule`.
 - **`export-json.ts`** — `buildPlannerExport` (pure, tested) + `downloadJson` (browser glue) +
