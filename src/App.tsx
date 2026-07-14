@@ -33,12 +33,7 @@ import { SettingsPanel } from './features/settings/SettingsPanel'
 import { SetupGuide } from './features/onboarding/SetupGuide'
 import { FeatureTour } from './features/onboarding/FeatureTour'
 import { DemoScene } from './features/onboarding/DemoScene'
-import {
-  ADD_TASK_SPOTLIGHT,
-  demoTour,
-  DESKTOP_TOUR,
-  MOBILE_TOUR,
-} from './features/onboarding/tour-steps'
+import { ADD_TASK_SPOTLIGHT, demoTour } from './features/onboarding/tour-steps'
 import { markTourDone } from './features/onboarding/setup-guide-store'
 import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
 import { AdminPage } from './features/admin/AdminPage'
@@ -83,12 +78,12 @@ function AppShell() {
   // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
-  // The spotlight walkthroughs, in acts: 'demo' = the example-day scene (DemoScene) narrated by
-  // DEMO_TOUR, which hands off to 'full' = the per-breakpoint tour over the user's own shell;
-  // 'demo-solo' = just the example (the empty-state "See an example" peek — closes back to home,
-  // latches nothing); 'add-task' = the single-step "Show me where" spotlight on the Task Manager.
-  // Launched only from the home route, so every anchor the scripts name is mounted.
-  const [tour, setTour] = useState<'demo' | 'demo-solo' | 'full' | 'add-task' | null>(null)
+  // The spotlight walkthroughs: 'demo' = the one-section tour over the example-day scene (DemoScene)
+  // narrated by demoTour — finishing OR skipping it latches the guide's tour step; 'demo-solo' = the
+  // same tour launched as the empty-state "See an example" peek (closes back to home, latches
+  // nothing); 'add-task' = the single-step "Show me where" spotlight on the Task Manager. Launched
+  // only from the home route, so every anchor the scripts name is mounted.
+  const [tour, setTour] = useState<'demo' | 'demo-solo' | 'add-task' | null>(null)
   // The demo tour may mount only AFTER the scene's first commit (FeatureTour resolves anchors
   // once, at mount — a tour racing the scene would silently drop every demo-* step).
   const [demoReady, setDemoReady] = useState(false)
@@ -528,9 +523,9 @@ function AppShell() {
                       setShowSettings(true)
                     }}
                     onStartTour={() => {
-                      // Drop any open mobile quadrant-focus list first: it unmounts the
-                      // data-tour="matrix" overview anchor, so Act 2's first (and most important)
-                      // mobile step would silently drop. Matches the Settings-replay path.
+                      // Close any open mobile quadrant-focus list so the shell is back at the
+                      // overview when the tour's example-day overlay closes over it. Matches the
+                      // Settings-replay path.
                       quadrantFocus.clear()
                       setTour('demo')
                     }}
@@ -539,65 +534,38 @@ function AppShell() {
                 </ErrorBoundary>
               )}
 
-              {/* Act 1 of the tour — the example-day scene the demo script spotlights. Mounted
-                  for the guide-launched two-act tour AND the empty-state "See an example" peek. */}
+              {/* The example-day scene the tour spotlights. Mounted for the guide-launched tour
+                  AND the empty-state "See an example" peek — both play the same demo script. */}
               {(tour === 'demo' || tour === 'demo-solo') && (
                 <ErrorBoundary>
                   <DemoScene onReady={() => setDemoReady(true)} />
                 </ErrorBoundary>
               )}
 
-              {/* The spotlight tour — an overlay pointing at the live shell (or the demo scene),
-                  so it mounts beside the content it spotlights. Act sequencing:
-                    'demo'      → ANY close (finish, skip, Esc) advances to 'full' — people skip
-                                  spectacle, not orientation, so leaving the example must never
-                                  swallow the real walkthrough (the skip button says so:
-                                  "Skip to your board");
-                    'full'      → ANY close latches the checklist step (finish or a deliberate
-                                  skip — someone who skipped shouldn't be nagged by an eternal
-                                  unchecked box);
-                    'demo-solo' → closes back to home and latches nothing (it's just a peek);
-                    'add-task'  → latches nothing. */}
-              {tour && (tour === 'full' || tour === 'add-task' || demoReady) && (
+              {/* The spotlight tour — an overlay pointing at the demo scene (or the Task Manager),
+                  so it mounts beside the content it spotlights.
+                    'demo'      → the first-run tour; ANY close (finish, skip, Esc) latches the
+                                  checklist step (someone who skipped shouldn't be nagged by an
+                                  eternal unchecked box);
+                    'demo-solo' → the same tour as a peek — closes back to home, latches nothing;
+                    'add-task'  → the single-step Task Manager spotlight — latches nothing. */}
+              {tour && (tour === 'add-task' || demoReady) && (
                 <ErrorBoundary>
                   <FeatureTour
-                    // Remount per act: the demo→full handoff swaps `steps` on a mounted tour,
-                    // which would otherwise KEEP its step index (finish the 4-step demo, resume
-                    // the 5-step walkthrough at step 4) and its once-resolved anchors.
+                    // Remount per tour type (fresh step index + once-resolved anchors).
                     key={tour}
                     steps={
                       tour === 'demo' || tour === 'demo-solo'
                         ? demoTour(isMobile)
-                        : tour === 'full'
-                          ? isMobile
-                            ? MOBILE_TOUR
-                            : DESKTOP_TOUR
-                          : ADD_TASK_SPOTLIGHT
+                        : ADD_TASK_SPOTLIGHT
                     }
-                    skipLabel={
-                      tour === 'demo'
-                        ? 'Skip to your board'
-                        : tour === 'demo-solo'
-                          ? 'Close'
-                          : undefined
-                    }
-                    // The demo act's last-step button hands off to Act 2, so it can't say "Finish"
-                    // (the user would think the tour ended, then a fresh overlay appears). demo-solo
-                    // really does end on its last step → "Done".
-                    finishLabel={
-                      tour === 'demo'
-                        ? 'Next: your board'
-                        : tour === 'demo-solo'
-                          ? 'Done'
-                          : undefined
-                    }
+                    // The peek's escape hatch just closes ("Close"); the first-run tour uses the
+                    // default "Skip tour".
+                    skipLabel={tour === 'demo-solo' ? 'Close' : undefined}
+                    finishLabel={tour === 'demo' || tour === 'demo-solo' ? 'Done' : undefined}
                     onClose={() => {
                       setDemoReady(false)
                       if (tour === 'demo') {
-                        setTour('full')
-                        return
-                      }
-                      if (tour === 'full') {
                         // Latch locally (instant, this context) AND mirror to the account so the
                         // checkmark survives a browser↔installed-app storage-partition switch (#3).
                         markTourDone()
@@ -730,9 +698,8 @@ function AppShell() {
                   setSettingsSection(undefined)
                 }}
                 onReplayTour={() => {
-                  // Replay = the full two-act tour, WITHOUT resetting the setup guide's other
-                  // checkmarks (install/notifications). Land on home first — the Act 2 anchors
-                  // only exist there.
+                  // Replay the tour WITHOUT resetting the setup guide's other checkmarks
+                  // (install/notifications). Land on home first so the demo scene mounts over it.
                   setShowSettings(false)
                   setSettingsSection(undefined)
                   quadrantFocus.clear()

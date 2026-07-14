@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 
@@ -36,9 +36,8 @@ interface SpotRect {
 const PAD = 8 // breathing room between the element and the cutout edge
 const CARD_W = 330 // desktop card width; position math clamps with this
 const CARD_GAP = 14 // gap between the cutout and the card
-const CARD_H_ESTIMATE = 190 // enough to decide above-vs-below without measuring the card
-const CARD_H_BULLETS = 330 // a bulleted step's card runs much taller — under-estimating it can
-// park the Next button below the fold (the card is FIXED, so no scroll can ever reveal it)
+const CARD_H_ESTIMATE = 190 // first-paint fallback only — real height is measured post-render
+const CARD_H_BULLETS = 330 // taller first-paint fallback for a bulleted step (see cardH below)
 
 function findAnchor(target: string): HTMLElement | null {
   const el = document.querySelector(`[data-tour="${target}"]`)
@@ -71,6 +70,10 @@ export function FeatureTour({
   const available = useMemo(() => steps.filter((s) => findAnchor(s.target)), [steps])
   const [index, setIndex] = useState(0)
   const [rect, setRect] = useState<SpotRect | null>(null)
+  // The card's real rendered height — measured post-render so desktop placement can keep the whole
+  // card (Next button included) on screen even when a step's copy runs long. Null until first measure
+  // (the constants above are the first-paint fallback).
+  const [cardH, setCardH] = useState<number | null>(null)
   const isMobile = useIsMobile()
   const cardRef = useRef<HTMLDivElement>(null)
   const nextRef = useRef<HTMLButtonElement>(null)
@@ -147,6 +150,13 @@ export function FeatureTour({
     nextRef.current?.focus()
   }, [index])
 
+  // Measure the real card height once it's rendered (and re-measure after the anchor rect resolves —
+  // the card is auto-width until placement gives it CARD_W, so its height isn't final before then).
+  // useLayoutEffect runs before paint, so the corrected placement below never flickers.
+  useLayoutEffect(() => {
+    if (cardRef.current) setCardH(cardRef.current.offsetHeight)
+  }, [index, isMobile, rect])
+
   if (!step) return null
 
   const last = index === available.length - 1
@@ -156,13 +166,14 @@ export function FeatureTour({
   // spotlight math); desktop puts it under the cutout, flipping above when the fold is close.
   const cardStyle: React.CSSProperties = {}
   if (!isMobile && rect) {
-    const estimate = step.bullets ? CARD_H_BULLETS : CARD_H_ESTIMATE
+    // Real measured height once available; the estimate only covers the very first paint.
+    const height = cardH ?? (step.bullets ? CARD_H_BULLETS : CARD_H_ESTIMATE)
     const below = rect.top + rect.height + CARD_GAP
-    const fitsBelow = below + estimate <= window.innerHeight - 12
-    const top = fitsBelow ? below : Math.max(12, rect.top - CARD_GAP - estimate)
-    // Final clamp: whatever above-vs-below chose, the whole estimated card must sit inside the
-    // viewport (it may overlap the cutout on a short window — reachable beats pretty).
-    cardStyle.top = Math.min(top, Math.max(12, window.innerHeight - estimate - 12))
+    const fitsBelow = below + height <= window.innerHeight - 12
+    const top = fitsBelow ? below : Math.max(12, rect.top - CARD_GAP - height)
+    // Final clamp: whatever above-vs-below chose, the whole card must sit inside the viewport
+    // (it may overlap the cutout on a short window — reachable beats pretty).
+    cardStyle.top = Math.min(top, Math.max(12, window.innerHeight - height - 12))
     cardStyle.left = Math.min(Math.max(rect.left, 12), window.innerWidth - CARD_W - 12)
     cardStyle.width = CARD_W
   }
@@ -230,11 +241,13 @@ export function FeatureTour({
           >
             {skipLabel}
           </button>
-          {/* Progress dots — the filled one is the current step. */}
+          {/* Progress dots — the filled one is the current step. Keyed by position, not target:
+              a script can point consecutive steps at the same anchor (the demo tour dwells on the
+              board), so targets aren't unique. */}
           <span aria-hidden className="mx-auto flex items-center gap-1">
-            {available.map((s, i) => (
+            {available.map((_s, i) => (
               <span
-                key={s.target}
+                key={i}
                 className={
                   'h-1.5 w-1.5 rounded-full ' + (i === index ? 'bg-accent' : 'bg-border-strong')
                 }

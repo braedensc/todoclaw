@@ -89,9 +89,12 @@ describe('demo tour script', () => {
       for (const step of demoTour(isMobile)) expect(step.target).toMatch(/^demo-/)
   })
 
-  it('serves a breakpoint-specific first step (no glow/↻/❄️ decoder ring on mobile)', () => {
-    // The mobile scene is the quadrant overview — none of the grid-card treatments exist there.
-    expect(demoTour(true)[0]!.body).not.toMatch(/❄️|↻|glow/)
-    expect(demoTour(false)[0]!.body).toMatch(/glow/)
+  it('teaches the grid decoder ring (↻/❄️) on desktop only — the mobile overview has no badges', () => {
+    // The mobile scene is the quadrant overview — none of the grid-card treatments exist there, so
+    // no mobile step (body OR bullets) may reference them; the desktop board step must.
+    const stepText = (s: ReturnType<typeof demoTour>[number]) =>
+      s.body + (s.bullets?.map((b) => `${b.lead} ${b.rest}`).join(' ') ?? '')
+    expect(demoTour(true).some((s) => /❄️|↻/.test(stepText(s)))).toBe(false)
+    expect(demoTour(false).some((s) => /❄️|↻/.test(stepText(s)))).toBe(true)
   })
 })

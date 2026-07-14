@@ -5,17 +5,16 @@ import type { TourStep } from './FeatureTour'
 // words (a first-run non-technical user), each step teaches ONE idea, and the app's core model —
 // tasks on an urgent × important map — leads.
 //
-// The full tour runs in TWO ACTS (App.tsx owns the sequencing):
-//   Act 1 — DEMO_TOUR over the DemoScene (a filled example board + the plan + both check-ins,
-//           all real components on fake data), so a new user SEES the whole system at play;
-//   Act 2 — DESKTOP_TOUR / MOBILE_TOUR over the user's own (empty) shell: "you just saw this —
-//           here's where it lives". Kept deliberately short (the demo already did the showing);
-//           demo 4 + act-two 5 (desktop) / 4 (mobile) steps keeps the whole thing under ~10 taps.
+// The tour is ONE section, played entirely over the DemoScene (a filled example board + the plan +
+// both check-ins, all real components on fake data). It opens with a plain-words "what this is"
+// welcome, explains the board (and the three kinds of task you can add) on the live example, then
+// walks the plan and the morning/evening check-ins. No second act over the user's own empty shell:
+// the example already showed the whole loop, and repeating it there only bred redundancy.
 
 /**
- * Act 1 — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid' and
- * 'matrix' also exist in the real shell underneath, and anchors resolve first-match-in-document.
- * Every target exists on both breakpoints, but the FIRST step's copy is breakpoint-specific: the
+ * The demo tour — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid'
+ * and 'matrix' also exist in the real shell underneath, and anchors resolve first-match-in-document.
+ * Every target exists on both breakpoints, but the BOARD step's copy is breakpoint-specific: the
  * desktop scene is the free-canvas grid (glow rings, ↻ / ❄️ badges), the mobile scene is the 2×2
  * quadrant overview (labels, counts, ⏰ badges — no grid, ADR-0028), so `demoTour(isMobile)` swaps
  * that one body rather than teaching a decoder ring for a UI half the users never see.
@@ -24,21 +23,49 @@ export function demoTour(isMobile: boolean): TourStep[] {
   return [
     {
       target: 'demo-board',
-      title: 'A board in full swing',
+      title: 'Welcome to Todoclaw',
+      body:
+        'Todoclaw keeps everything you have to do in one place, sorted by how urgent and important ' +
+        'it is — then plans a realistic day for you each morning and checks in each evening. ' +
+        'Here’s a day already in motion.',
+    },
+    {
+      target: 'demo-board',
+      title: 'Sorted by what matters',
       body: isMobile
-        ? 'This is an example — not your tasks. Everything you have to do sorts into four boxes ' +
-          'by how urgent and important it is, so what to do next is always obvious — “Do Now” is ' +
-          'the box to clear first. The ⏰ badges flag what’s due; tap any box to open its list.'
-        : 'This is an example — not your tasks. Everything you have to do lives in one place, ' +
-          'sorted by how urgent and important it is, so what to do next is always obvious. ' +
-          'Deadlines glow, repeating chores wear ↻, and anything ignored too long turns icy ❄️.',
+        ? 'Everything sorts into four boxes by how urgent and important it is, so what to do next ' +
+          'is always obvious — “Do Now” is the box to clear first. The ⏰ badges flag what’s due; ' +
+          'tap any box to open its list.'
+        : 'Further right is more urgent, higher up is more important — so the top-right corner is ' +
+          'always what to do next. Tasks heat up as they come due, then cool down and turn icy ❄️ ' +
+          'once ignored too long. Repeating chores wear the ↻ arrow.',
+    },
+    {
+      target: 'demo-board',
+      title: 'Three kinds of task',
+      body: 'Everything you add is one of three kinds:',
+      bullets: [
+        {
+          lead: 'One-off',
+          rest: 'something you do once (renew your passport, book a haircut).',
+        },
+        {
+          lead: 'Recurring',
+          rest: 'a chore that comes back on a schedule; marking it done just resets it (water the plants, pay rent).',
+        },
+        {
+          lead: 'Ongoing',
+          rest: 'a long project with no real deadline; it stays put while Todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
+        },
+      ],
     },
     {
       target: 'demo-plan',
-      title: 'One tap plans the day',
+      title: 'One tap plans your day',
       body:
-        'Plan My Day looked at everything on this board and picked a realistic day: one big ' +
-        'rock, a few quick wins, and room for habits — never an overstuffed list.',
+        'Plan My Day looks at your whole board and picks a realistic day — one big rock, a few ' +
+        'quick wins, and room for habits — never an overstuffed list. This is the plan it built ' +
+        'from the example board.',
     },
     {
       target: 'demo-chat-morning',
@@ -56,108 +83,6 @@ export function demoTour(isMobile: boolean): TourStep[] {
     },
   ]
 }
-
-/** Act 2, desktop: the user's own shell — grid → Task Manager → Plan My Day → inbox → habits. */
-export const DESKTOP_TOUR: TourStep[] = [
-  {
-    target: 'grid',
-    title: 'This board is yours',
-    body:
-      'Same map as the example: further right = more urgent, higher up = more important — so ' +
-      'the top-right corner is always “do now”. Add tasks and drag them around as things change.',
-  },
-  {
-    target: 'task-input',
-    title: 'Add tasks by just saying them',
-    body:
-      'Tell BabyClaw — your AI helper — things like “dentist Friday 2pm, remind me an hour ' +
-      'before” and he handles the rest. Prefer full control? Switch to Manual. Either way, ' +
-      'every task is one of three kinds:',
-    bullets: [
-      {
-        lead: 'One-off task',
-        rest: 'something you do once (renew your passport, book a haircut).',
-      },
-      {
-        lead: 'Recurring',
-        rest: 'a chore that comes back on a schedule; marking it done just resets it (water the plants, pay rent).',
-      },
-      {
-        lead: 'Ongoing',
-        rest: 'a long project with no real deadline; it stays put while todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
-      },
-    ],
-  },
-  {
-    target: 'plan',
-    title: 'One tap plans your day',
-    body:
-      'This ✦ pill builds the plan you just saw in the example — from your real tasks, habits, ' +
-      'and schedule. With a task or two on the board, give it a try.',
-  },
-  {
-    target: 'inbox',
-    title: 'Check-ins land here',
-    body:
-      'The morning plan and the evening check-in you just watched arrive on their own — on ' +
-      'your device with notifications on, and always here in the inbox.',
-  },
-  {
-    target: 'habits',
-    title: 'Daily habits',
-    body:
-      'Small routines you repeat — stretch, meds, walk the dog. Create and organize them ' +
-      'here; once you have some, they appear on your home screen where you paw-check them ' +
-      'off each day. They reset every morning.',
-  },
-]
-
-/** Act 2, mobile: quadrant overview → ➕ add → Chat → More. */
-export const MOBILE_TOUR: TourStep[] = [
-  {
-    target: 'matrix',
-    title: 'These four boxes are yours',
-    body:
-      'Tasks sort by how urgent and important they are — “Do Now” is the box to clear first. ' +
-      'Tap any box to open its list. Each task you add lands in the right box automatically.',
-  },
-  {
-    target: 'nav-add',
-    title: 'Add a task here',
-    body:
-      'Tap ➕, describe the task, and pick how urgent + important it feels. Every task is one ' +
-      'of three kinds:',
-    bullets: [
-      {
-        lead: 'One-off task',
-        rest: 'something you do once (renew your passport, book a haircut).',
-      },
-      {
-        lead: 'Recurring',
-        rest: 'a chore that comes back on a schedule; marking it done just resets it (water the plants, pay rent).',
-      },
-      {
-        lead: 'Ongoing',
-        rest: 'a long project with no real deadline; todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
-      },
-    ],
-  },
-  {
-    target: 'nav-chat',
-    title: 'Or just tell BabyClaw',
-    body:
-      'Chat is BabyClaw, your AI helper — say “add vet appointment Friday 3pm, remind me an ' +
-      'hour before” and it’s done. He can also move, finish, and clean up tasks for you.',
-  },
-  {
-    target: 'nav-more',
-    title: 'Habits, inbox, and everything else',
-    body:
-      'Create daily habits here — small routines like stretch or meds to paw-check off each ' +
-      'day. Your inbox (where the morning plan and evening check-in land), Settings, and ' +
-      'Backups live in More too.',
-  },
-]
 
 /** The one-step "Show me where" spotlight for the setup guide's add-your-first-task step. */
 export const ADD_TASK_SPOTLIGHT: TourStep[] = [
