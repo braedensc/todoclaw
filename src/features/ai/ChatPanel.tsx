@@ -5,7 +5,7 @@ import { ChatConversation } from './ChatConversation'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useBodyScrollLock } from '../../hooks/use-body-scroll-lock'
 import { useSwipeDismiss } from '../../hooks/use-swipe-dismiss'
-import { useKeyboardInset } from '../../hooks/use-keyboard-inset'
+import { useKeyboardViewport } from '../../hooks/use-keyboard-viewport'
 
 // MOBILE chat shell (< 720px): a bottom sheet overlay. On desktop the chat is a push-drawer
 // (ChatRail) that shrinks the grid instead of covering it — there's no room to push on a phone,
@@ -26,15 +26,18 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
   useBodyScrollLock(isMobile)
 
   const panelRef = useRef<HTMLElement>(null)
+  // iOS overlays the keyboard over the (dvh-sized) sheet instead of resizing it — the sheet keeps
+  // its full height, so its top runs off-screen and the composer hides behind the keys. `kb` gives
+  // the visible height + keyboard overlap; while the keyboard is up we re-fit the sheet into the
+  // visible region below (audit §3.3). CLOSED (all zero) when the keyboard is down or unsupported.
+  const kb = useKeyboardViewport(isMobile)
   // Swipe-down-to-dismiss — same gesture as BottomSheet (shared hook): the grab handle drives the
   // pointer path, and on mobile the whole panel is a scroll-aware touch surface (the message list
   // still scrolls; a downward pull with the list at top drags the sheet). The aside carries the
-  // `bottom-sheet-panel` class, so it inherits the drag transition + spring-back.
-  const swipe = useSwipeDismiss(onClose, panelRef, isMobile)
-  // iOS overlays the keyboard over the (dvh-sized) sheet instead of resizing it, hiding the
-  // composer behind the keys — pad the panel bottom by the measured overlap so the composer rides
-  // above the keyboard, compressing the message list instead (audit §3.3). 0 when closed.
-  const keyboardInset = useKeyboardInset(isMobile)
+  // `bottom-sheet-panel` class, so it inherits the drag transition + spring-back. The body-touch
+  // path is gated OFF while the keyboard is open: with content re-fitted above the keys, a
+  // downward pull to read scrollback must scroll — never accidentally dismiss the sheet.
+  const swipe = useSwipeDismiss(onClose, panelRef, isMobile && !kb.keyboardOpen)
 
   // Portaled to <body> like BottomSheet, so a later-mounted portal sheet at the same z-index
   // can't paint over it and no transformed/padded ancestor interferes with `fixed`.
@@ -57,9 +60,12 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         className="bottom-sheet-panel absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col rounded-t-2xl border border-border-strong bg-panel pb-[env(safe-area-inset-bottom)] shadow-xl"
         style={{
           ...(swipe.offset ? { transform: `translateY(${swipe.offset}px)` } : {}),
-          // Inline paddingBottom overrides the class's safe-area padding only while the keyboard
-          // is up (the home indicator is behind the keys then anyway).
-          ...(keyboardInset > 0 ? { paddingBottom: keyboardInset } : {}),
+          // Keyboard up: the keyboard owns the bottom `inset` px of the layout viewport, so pin the
+          // sheet bottom there and give it the visible `height` — this lands the whole sheet
+          // (composer included) above the keys with its top on-screen, instead of a full-height
+          // sheet whose top is off-screen. Overrides the class's bottom-0/h-[92dvh]; paddingBottom
+          // drops to 0 (the home indicator is behind the keyboard now).
+          ...(kb.keyboardOpen ? { bottom: kb.inset, height: kb.height, paddingBottom: 0 } : {}),
         }}
       >
         {/* Grab handle — the draggable dismiss affordance (touch-action:none so scroll doesn't
