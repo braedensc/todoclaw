@@ -98,13 +98,17 @@ vi.mock('./features/ai/use-ai-status', () => ({
 vi.mock('./features/ai/use-ai-chat', () => ({
   useAiChat: () => ({
     items: [],
+    liveItems: [],
     busy: false,
     pending: null,
     error: null,
+    sessionId: null,
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
     seed: vi.fn(),
+    openSession: vi.fn(),
+    newChat: vi.fn(),
   }),
 }))
 // Daily habits live off the main page now (a gear-area popup + a compact inline name list).

@@ -24,14 +24,18 @@ const gridStub = { pendingTasks: [] } as unknown as GridApi
 function chatStub(over: Partial<ChatController> = {}): ChatController {
   return {
     items: [] as ChatItem[],
+    liveItems: [] as ChatItem[],
     busy: false,
     pending: null,
     error: null,
     paused: false,
+    sessionId: null,
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
     seed: vi.fn(),
+    openSession: vi.fn(),
+    newChat: vi.fn(),
     ...over,
   } as ChatController
 }
@@ -80,9 +84,11 @@ describe('TaskInputWidget', () => {
   })
 
   it('a question from BabyClaw shows the waiting strip without confirm buttons, linking the full chat', () => {
+    // The status/flash read THIS visit's liveItems (not hydrated history) — a cold resume of an old
+    // question must NOT read as "waiting", so a live question here is what surfaces the strip.
     const onOpenChat = renderWidget(
       chatStub({
-        items: [
+        liveItems: [
           { id: 'u1', role: 'user', text: 'add groceries' },
           {
             id: 'a1',
@@ -99,6 +105,18 @@ describe('TaskInputWidget', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'open the full chat' }))
     expect(onOpenChat).toHaveBeenCalledOnce()
+  })
+
+  it('a cold resume (question only in hydrated history, not liveItems) does NOT read as waiting', () => {
+    // The persistence fix: opening the app on a resumed session must not replay last night's question
+    // as an active "waiting on you" state. Only liveItems (this visit) drive the widget status.
+    renderWidget(
+      chatStub({
+        items: [{ id: 'a1', role: 'assistant', text: 'Sure! When is it due?' }], // hydrated base
+        liveItems: [], // nothing streamed this visit
+      }),
+    )
+    expect(screen.queryByText(/waiting on your reply/i)).not.toBeInTheDocument()
   })
 
   it('switching to Manual while BabyClaw waits dots his tab so the state stays visible', () => {

@@ -43,7 +43,9 @@ interface TaskInputWidgetProps {
 
 export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputWidgetProps) {
   const [mode, setMode] = useState<Mode>('babyclaw')
-  const status = deriveBabyClawStatus(chat)
+  // Status reads THIS visit's live items only (not hydrated history) — else opening the app cold on
+  // a resumed session would replay last night's "waiting on you" as if BabyClaw were actively stopped.
+  const status = deriveBabyClawStatus({ ...chat, items: chat.liveItems })
 
   return (
     // mt-2.5 reserves room for the title pill straddling the top border. The section landmark
@@ -390,12 +392,15 @@ function BabyClawInput({
   onOpenChat: () => void
 }) {
   const [text, setText] = useState('')
-  const { send, busy, paused, pending, items, confirm, deny } = chat
+  const { send, busy, paused, pending, liveItems, confirm, deny } = chat
 
   // Transient "what just happened" chip: flash the newest tool outcome for ~2s, then let it fall
   // back to the resting status line. Keyed on the newest tool item's id so it fires once per
-  // completed action and not for history already present when BabyClaw mode mounts.
-  const lastTool = useMemo(() => [...items].reverse().find((i) => i.role === 'tool'), [items])
+  // completed action. Reads liveItems (this visit) so a hydrated history line never flashes.
+  const lastTool = useMemo(
+    () => [...liveItems].reverse().find((i) => i.role === 'tool'),
+    [liveItems],
+  )
   const flashId = lastTool?.id
   const flashOk = lastTool?.ok !== false
   const flashVerb = lastTool ? toolVerb(lastTool.text) : ''
