@@ -26,6 +26,7 @@ import {
   DISMISSED_KEY,
   PLAN_DONE_KEY,
   TOUR_DONE_KEY,
+  dismissSetupGuide,
   markTourDone,
   resetSetupGuide,
 } from './setup-guide-store'
@@ -36,6 +37,9 @@ const loadedSchedule = (config: object = {}) => ({
 })
 
 beforeEach(() => {
+  // resetSetupGuide sets a session-only module flag (`requested`); dismiss clears it so the
+  // forced-show state can't leak between tests.
+  dismissSetupGuide()
   localStorage.clear()
   mockSchedule.mockReturnValue(loadedSchedule())
   mockTasks.mockReturnValue({ data: [], isLoading: false })
@@ -195,6 +199,34 @@ describe('useSetupGuide', () => {
     act(() => resetSetupGuide())
     expect(result.current.visible).toBe(true)
     expect(result.current.tourDone).toBe(false)
+  })
+
+  it('shows on the FIRST explicit request even for a fully-set-up user (async tour-mirror clear)', () => {
+    // Repro of the two-click bug. A fully-set-up user's tour step reads done via the ACCOUNT mirror
+    // (config.onboarding.tourSeen), which Settings' "Show the setup guide" clears with an ASYNC
+    // save. On the click's synchronous render every step still reads done, so before the fix the
+    // silent auto-dismiss stomped the card and it took a second click. The mirror stays `true`
+    // here — the fix must show the card without waiting for the clear to land.
+    mockStandalone.mockReturnValue(true) // install done
+    mockSchedule.mockReturnValue(
+      loadedSchedule({ notifications: { enabled: true }, onboarding: { tourSeen: true } }),
+    )
+    vi.stubGlobal('Notification', { permission: 'granted' })
+
+    const { result } = renderHook(() => useSetupGuide(true)) // planReady → fully set up
+    // Auto-dismissed silently on load (nothing left to do).
+    expect(result.current.allDone).toBe(true)
+    expect(result.current.visible).toBe(false)
+    expect(localStorage.getItem(DISMISSED_KEY)).toBe('1')
+
+    // One explicit request shows it — even though every step still reads done this render.
+    act(() => resetSetupGuide())
+    expect(result.current.allDone).toBe(true) // mirror still set → nothing flipped it
+    expect(result.current.visible).toBe(true)
+
+    // And dismissing ends the forced-show (no eternal card).
+    act(() => result.current.dismiss())
+    expect(result.current.visible).toBe(false)
   })
 
   it('withholds judgment while the schedule row is still loading', () => {
