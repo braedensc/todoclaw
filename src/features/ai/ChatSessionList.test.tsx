@@ -70,6 +70,24 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     expect(screen.getByText('Untitled chat')).toBeInTheDocument()
   })
 
+  it('shows "You started" above "From BabyClaw"', () => {
+    render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+    const mine = screen.getByText('You started')
+    const his = screen.getByText('From BabyClaw')
+    // Sibling group labels: his follows mine in document order → "You started" renders first.
+    expect(mine.compareDocumentPosition(his)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('caps "From BabyClaw" to the 3 most recent messages', () => {
+    messages = ['A', 'B', 'C', 'D', 'E'].map((t, i) => m(`m${i}`, { title: `Plan ${t}` }))
+    render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+    for (const t of ['Plan A', 'Plan B', 'Plan C']) {
+      expect(screen.getByText(t)).toBeInTheDocument()
+    }
+    expect(screen.queryByText('Plan D')).toBeNull()
+    expect(screen.queryByText('Plan E')).toBeNull()
+  })
+
   it('opens a user session on click and starts a new chat via the button', () => {
     const onOpen = vi.fn()
     const onNew = vi.fn()
