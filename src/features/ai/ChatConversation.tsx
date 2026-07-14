@@ -21,10 +21,16 @@ export function ChatConversation({
   chat,
   onClose,
   showClose = true,
+  readOnly = false,
 }: {
   chat: ChatController
   onClose: () => void
   showClose?: boolean
+  /**
+   * Hide the composer entirely — for look-only renders (the onboarding DemoScene's canned
+   * check-ins). A visible input would invite a reply the surface can't take.
+   */
+  readOnly?: boolean
 }) {
   const { items, busy, pending, error, send, confirm, deny, paused } = chat
   const [text, setText] = useState('')
@@ -121,26 +127,28 @@ export function ChatConversation({
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border p-3">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          // While a confirmation is pending, a typed reply answers it (send routes yes/no to
-          // confirm/deny) — the buttons above stay as the one-click path.
-          placeholder={pending ? 'Yes or no — or say what to do instead…' : 'Message…'}
-          aria-label="Message"
-          disabled={paused}
-          enterKeyHint="send"
-          className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={busy || paused || !text.trim()}
-          className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          Send
-        </button>
-      </form>
+      {!readOnly && (
+        <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border p-3">
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            // While a confirmation is pending, a typed reply answers it (send routes yes/no to
+            // confirm/deny) — the buttons above stay as the one-click path.
+            placeholder={pending ? 'Yes or no — or say what to do instead…' : 'Message…'}
+            aria-label="Message"
+            disabled={paused}
+            enterKeyHint="send"
+            className="min-w-0 flex-1 rounded border border-border-strong bg-card px-3 py-2 text-sm disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={busy || paused || !text.trim()}
+            className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            Send
+          </button>
+        </form>
+      )}
     </div>
   )
 }
