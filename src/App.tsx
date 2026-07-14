@@ -459,7 +459,6 @@ function AppShell() {
                       <NotificationBell
                         onClick={() => setShowInbox(true)}
                         className="relative hover:text-ink"
-                        tour="inbox"
                       />
                       <button
                         type="button"
