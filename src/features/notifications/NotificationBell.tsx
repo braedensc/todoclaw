@@ -13,7 +13,7 @@ export function NotificationBell({
   className?: string
   /** Icon + badge only (no "Inbox" label) — for the tight mobile top bar. */
   compact?: boolean
-  /** FeatureTour anchor name (`data-tour`) — the "your day comes to you" step points here. */
+  /** Optional FeatureTour anchor name (`data-tour`); no live tour step targets the bell today. */
   tour?: string
 }) {
   const unread = useUnreadCount()

@@ -35,7 +35,7 @@ function NavItem({
   active?: boolean
   /** Unread indicator — a small slate dot on the glyph (the More tab, since Inbox lives inside). */
   badge?: boolean
-  /** FeatureTour anchor name (`data-tour`) — the setup guide's walkthrough points at some tabs. */
+  /** Optional FeatureTour anchor name (`data-tour`); no live tour step targets the nav tabs today. */
   tour?: string
 }) {
   return (
@@ -109,15 +109,7 @@ export function MobileBottomNav({
       <NavItem glyph="⌂" label="Home" onClick={onHome} active={route === 'home'} />
       <NavItem glyph="✚" label="Add" onClick={onAdd} primary tour="nav-add" />
       {/* 🐾 is BabyClaw's identity mark app-wide (add-sheet toggle, Settings) — the chat IS him. */}
-      {onChat && (
-        <NavItem
-          glyph="🐾"
-          label="Chat"
-          onClick={onChat}
-          active={route === 'chat'}
-          tour="nav-chat"
-        />
-      )}
+      {onChat && <NavItem glyph="🐾" label="Chat" onClick={onChat} active={route === 'chat'} />}
       <NavItem glyph="✓" label="Done" onClick={onDone} active={route === 'done'} />
       <NavItem glyph="⋯" label="More" onClick={onMore} badge={unread > 0} tour="nav-more" />
     </nav>
