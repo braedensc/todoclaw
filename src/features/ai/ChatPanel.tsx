@@ -81,8 +81,8 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         {/* flex-1 min-h-0 so the conversation (h-full) fills the space LEFT after the handle,
             rather than 92dvh — otherwise the input would be pushed below the safe area. */}
         <div className="flex min-h-0 flex-1 flex-col">
-          {/* Mobile has no top-right nav for a ChatMenu, so the session switcher lives in-drawer
-              here (a 🕘 History toggle in the header). Desktop's ChatRail leaves it off. */}
+          {/* The in-drawer session switcher (the "See all chats" button → the unified inbox + saved
+              chats) — the same on both shells now that the separate inbox is retired. */}
           <ChatConversation chat={chat} onClose={onClose} showClose={false} enableSessions />
         </div>
       </aside>

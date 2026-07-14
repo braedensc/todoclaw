@@ -26,7 +26,6 @@ import { useChatController } from './features/ai/use-chat-controller'
 import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { ChatRail } from './features/ai/ChatRail'
-import { ChatMenu } from './features/ai/ChatMenu'
 import { DonePage } from './features/done/DonePage'
 import { DoneSheet } from './features/done/DoneSheet'
 import { SettingsPanel } from './features/settings/SettingsPanel'
@@ -38,10 +37,8 @@ import { markTourDone } from './features/onboarding/setup-guide-store'
 import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
-import { useRoute, useChatMessageId, navigate, navigateToChat } from './lib/route'
+import { useRoute, useChatMessageId, navigate } from './lib/route'
 import { supabase } from './lib/supabase'
-import { NotificationBell } from './features/notifications/NotificationBell'
-import { InboxPanel } from './features/notifications/InboxPanel'
 import {
   useMessages,
   useUnreadCount,
@@ -116,11 +113,10 @@ function AppShell() {
   )}`
   // One conversation for the whole shell — shared by the inline BabyClaw reply and the chat popup.
   const chat = useChatController()
-  // In-app inbox (ADR-0031): the bell/badge + the message list overlay.
-  const [showInbox, setShowInbox] = useState(false)
+  // Proactive messages (ADR-0031) no longer have a separate inbox — the chat drawer IS the inbox
+  // (its "See all chats" list shows them). `messages` still feeds the #/chat deep-link resolver
+  // below; the unread count rides on the Chat entry (desktop nav badge + mobile Chat-tab dot).
   const messages = useMessages()
-  // Unread count — the bell moved off the mobile top bar into the More sheet, so App surfaces the
-  // count on the More tab (a dot) and the Inbox row inside it.
   const unread = useUnreadCount()
   const markRead = useMarkMessageRead()
   const confirm = useConfirm()
@@ -456,10 +452,25 @@ function AppShell() {
                       aria-label="Account"
                       className="flex items-center gap-4 text-xs text-muted"
                     >
-                      <NotificationBell
-                        onClick={() => setShowInbox(true)}
+                      {/* Chat comes first (where the inbox bell used to be) — it IS the inbox now,
+                          so the unread count rides here. 🐾 is BabyClaw's identity mark app-wide. */}
+                      <button
+                        type="button"
+                        onClick={() => setShowChat(true)}
+                        title="BabyClaw — chat & your daily plan/recap"
+                        data-tour="chat"
                         className="relative hover:text-ink"
-                      />
+                      >
+                        <span aria-hidden>🐾</span> Chat
+                        {unread > 0 && (
+                          <span
+                            aria-hidden
+                            className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-puppy px-1 text-[10px] font-semibold leading-none text-white"
+                          >
+                            {unread > 9 ? '9+' : unread}
+                          </span>
+                        )}
+                      </button>
                       <button
                         type="button"
                         onClick={() => navigate('reminders')}
@@ -495,7 +506,6 @@ function AppShell() {
                       >
                         <span aria-hidden>✓</span> Done
                       </button>
-                      <ChatMenu chat={chat} onOpenChat={() => setShowChat(true)} />
                       <button
                         type="button"
                         onClick={() => void confirmSignOut()}
@@ -708,18 +718,6 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
-          {showInbox && (
-            <ErrorBoundary>
-              <InboxPanel
-                onClose={() => setShowInbox(false)}
-                onOpenMessage={(id) => {
-                  setShowInbox(false)
-                  navigateToChat(id)
-                }}
-              />
-            </ErrorBoundary>
-          )}
-
           {/* Mobile chrome (Concept D): the ➕ add sheet, the "More" overflow sheet, and the toast.
               The thumb-zone bottom nav itself lives OUTSIDE this scroll region — it's an in-flow
               child of the flex column (below) so it always hugs the screen bottom. Hidden in
@@ -738,8 +736,6 @@ function AppShell() {
               />
               <MoreSheet
                 open={showMore}
-                onInbox={() => setShowInbox(true)}
-                unread={unread}
                 onReminders={() => navigate('reminders')}
                 onSettings={() => setShowSettings(true)}
                 onAdmin={isOwner ? () => navigate('admin') : undefined}

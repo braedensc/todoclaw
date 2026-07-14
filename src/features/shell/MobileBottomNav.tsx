@@ -33,7 +33,7 @@ function NavItem({
   primary?: boolean
   /** This destination is the current route — selected treatment + marks it the current page. */
   active?: boolean
-  /** Unread indicator — a small slate dot on the glyph (the More tab, since Inbox lives inside). */
+  /** Unread indicator — a small slate dot on the glyph (the Chat tab, for unread plan/recap). */
   badge?: boolean
   /** Optional FeatureTour anchor name (`data-tour`); no live tour step targets the nav tabs today. */
   tour?: string
@@ -94,7 +94,7 @@ export function MobileBottomNav({
   onChat?: () => void
   onDone: () => void
   onMore: () => void
-  /** Unread inbox count — surfaces a dot on the More tab (Inbox now lives inside More). */
+  /** Unread plan/recap count — surfaces a dot on the Chat tab (the chat drawer is the inbox now). */
   unread?: number
 }) {
   return (
@@ -108,10 +108,19 @@ export function MobileBottomNav({
     >
       <NavItem glyph="⌂" label="Home" onClick={onHome} active={route === 'home'} />
       <NavItem glyph="✚" label="Add" onClick={onAdd} primary tour="nav-add" />
-      {/* 🐾 is BabyClaw's identity mark app-wide (add-sheet toggle, Settings) — the chat IS him. */}
-      {onChat && <NavItem glyph="🐾" label="Chat" onClick={onChat} active={route === 'chat'} />}
+      {/* 🐾 is BabyClaw's identity mark app-wide (add-sheet toggle, Settings) — the chat IS him, and
+          IS the inbox now, so the unread plan/recap dot rides on this tab. */}
+      {onChat && (
+        <NavItem
+          glyph="🐾"
+          label="Chat"
+          onClick={onChat}
+          active={route === 'chat'}
+          badge={unread > 0}
+        />
+      )}
       <NavItem glyph="✓" label="Done" onClick={onDone} active={route === 'done'} />
-      <NavItem glyph="⋯" label="More" onClick={onMore} badge={unread > 0} tour="nav-more" />
+      <NavItem glyph="⋯" label="More" onClick={onMore} tour="nav-more" />
     </nav>
   )
 }

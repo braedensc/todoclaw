@@ -67,10 +67,10 @@ export function ChatConversation({
    */
   readOnly?: boolean
   /**
-   * Show an in-drawer session switcher (a 🕘 History toggle → the saved-chat list). ON for the
-   * MOBILE bottom sheet, which has no top-right nav to host the switcher. OFF for the desktop rail,
-   * where the top-right ChatMenu owns session management and the drawer stays purely the conversation
-   * (persistent-chats UX, 2026-07-14). New-chat always lives in the list, never in this header.
+   * Show the in-drawer session switcher (the "See all chats" button → the unified inbox + saved-chat
+   * list, with a back button). ON for both real shells (desktop rail + mobile sheet) since the inbox
+   * was retired and the drawer IS the inbox now. OFF only for the look-only demo. New-chat lives in
+   * the list, never in this header.
    */
   enableSessions?: boolean
 }) {
@@ -116,15 +116,20 @@ export function ChatConversation({
       {/* Header band — a soft puppy-wash gradient with the peeking pup over its top-left edge. */}
       <div className="relative shrink-0 border-b border-border bg-gradient-to-b from-puppy/10 to-transparent px-4 pb-3 pt-3">
         {showHistory ? (
-          <div className="flex items-center justify-between">
-            <h2 className="font-serif text-lg font-semibold text-ink">Your chats</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-puppy/10 text-puppy">
+                <PawPrint className="h-3.5 w-3.5" />
+              </span>
+              Your chats
+            </h2>
             <button
               type="button"
               onClick={() => setView('conversation')}
               aria-label="Back to conversation"
-              className="text-sm text-muted hover:text-ink"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong bg-card px-3 py-1 text-xs font-medium text-ink hover:border-puppy/50"
             >
-              ← Back
+              ← Back to chat
             </button>
           </div>
         ) : (
@@ -138,15 +143,11 @@ export function ChatConversation({
             />
             <div className="min-w-0">
               <h2 className="font-serif text-lg font-semibold leading-tight text-ink">BabyClaw</h2>
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                <span
-                  aria-hidden
-                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(91,138,114,0.16)]"
-                />
-                your planning pup
-              </p>
-              {tag && (
-                <span className="mt-1.5 inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-border-strong bg-card px-2.5 py-0.5 text-[11px] text-muted">
+              {/* The session name sits right under his name (desktop + mobile) — a "collar tag" for a
+                  proactive message (Morning plan / …), or the chat's title. Falls back to his tagline
+                  for a fresh, unnamed chat. */}
+              {tag ? (
+                <span className="mt-1 inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-border-strong bg-card px-2.5 py-0.5 text-[11px] text-muted">
                   {tag.bell ? (
                     <BellGlyph className="h-3 w-3 shrink-0 text-puppy" />
                   ) : (
@@ -154,6 +155,14 @@ export function ChatConversation({
                   )}
                   <span className="truncate font-medium text-ink">{tag.label}</span>
                 </span>
+              ) : (
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
+                  <span
+                    aria-hidden
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(91,138,114,0.16)]"
+                  />
+                  your planning pup
+                </p>
               )}
             </div>
             <div className="flex shrink-0 items-center gap-2 text-muted">
@@ -161,11 +170,10 @@ export function ChatConversation({
                 <button
                   type="button"
                   onClick={() => setView('history')}
-                  aria-label="Chat history"
-                  title="Saved conversations"
-                  className="text-base leading-none hover:text-ink"
+                  title="Your inbox + saved chats"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-card px-2.5 py-1 text-[11px] font-medium text-ink hover:border-puppy/50"
                 >
-                  🕘
+                  <ListGlyph className="h-3 w-3 text-puppy" /> See all chats
                 </button>
               )}
               {showClose && (
@@ -382,6 +390,24 @@ function PawDot({ d }: { d?: string }) {
       className="inline-block h-1.5 w-1.5 rounded-full bg-puppy motion-safe:animate-[pawpad_1.05s_infinite]"
       style={d ? { animationDelay: d } : undefined}
     />
+  )
+}
+
+// The "See all chats" glyph — a small stacked list, sized by the caller.
+function ListGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M4 6h16M4 12h16M4 18h10" />
+    </svg>
   )
 }
 

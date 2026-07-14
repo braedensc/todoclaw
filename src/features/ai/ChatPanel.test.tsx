@@ -125,8 +125,8 @@ describe('ChatPanel', () => {
     // Conversation view first — no history list, and NO ＋ New chat button in the header.
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'New chat' })).not.toBeInTheDocument()
-    // The mobile drawer offers a 🕘 History toggle (desktop uses the top-right ChatMenu instead).
-    fireEvent.click(screen.getByRole('button', { name: 'Chat history' }))
+    // Both shells now offer the in-drawer "See all chats" switcher (the separate inbox is retired).
+    fireEvent.click(screen.getByRole('button', { name: /see all chats/i }))
     expect(screen.getByText('Your chats')).toBeInTheDocument()
     expect(screen.getByText('session list')).toBeInTheDocument()
     // "New chat" comes from the list (mocked here), and it returns to the conversation.
