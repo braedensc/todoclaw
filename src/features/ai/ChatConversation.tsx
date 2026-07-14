@@ -5,6 +5,7 @@ import type { ChatController } from './use-chat-controller'
 import type { ChatSession } from '../../types/chat'
 import { splitReply } from './reply-status'
 import { ChatSessionList } from './ChatSessionList'
+import { proactiveDayLabel } from '../notifications/message-format'
 import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
 import { PawPrint } from '../../components/PawPrint'
@@ -37,14 +38,9 @@ const SUGGESTIONS = ['Plan my day', "What's overdue?", 'Add a task'] as const
 function sessionTag(s: ChatSession | null): { label: string; bell: boolean } | null {
   if (!s) return null
   if (s.origin === 'proactive') {
-    const label =
-      s.kind === 'plan'
-        ? 'Morning plan'
-        : s.kind === 'recap'
-          ? 'Evening recap'
-          : s.kind === 'reminder'
-            ? 'Reminder'
-            : 'From BabyClaw'
+    // Day-stamp his morning/evening check-ins ("Monday morning plan"); a reminder keeps its own
+    // task-specific title (falls back to a generic label if it somehow has none).
+    const label = proactiveDayLabel(s.kind, s.local_date) ?? s.title?.trim() ?? 'From BabyClaw'
     return { label, bell: true }
   }
   const title = s.title?.trim()

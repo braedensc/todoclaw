@@ -7,6 +7,7 @@ import {
   useOpenMessageChat,
   type InboxMessage,
 } from '../notifications/use-messages'
+import { kindLabel, proactiveDayLabel } from '../notifications/message-format'
 import { useToast } from '../../components/use-toast'
 import { PawPrint } from '../../components/PawPrint'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
@@ -19,10 +20,6 @@ import { SleepingPuppy } from '../../components/SleepingPuppy'
 //     represented by their message row above, so they're filtered out here to avoid duplicates).
 // Rendered only inside ChatConversation's in-drawer history view (both shells), never the look-only
 // demo — so it may freely use the messages/sessions query hooks.
-
-function kindLabel(kind: InboxMessage['kind']): string {
-  return kind === 'plan' ? 'Morning plan' : kind === 'recap' ? 'Evening recap' : 'Reminder'
-}
 
 function relTime(iso: string): string {
   const then = Date.parse(iso)
@@ -208,12 +205,19 @@ export function ChatSessionList({
         {inbox.map((m) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
+          // Day-stamp his daily check-ins ("Monday morning plan") so it's obvious which day each is;
+          // reminders keep their own task-specific title.
+          const dayTitle = proactiveDayLabel(m.kind, m.local_date)
+          const title = dayTitle ?? m.title
+          const subtitle = dayTitle
+            ? relTime(m.created_at)
+            : `${kindLabel(m.kind)} · ${relTime(m.created_at)}`
           return (
             <button
               key={m.id}
               type="button"
               onClick={() => openMessage(m)}
-              title={m.title}
+              title={title}
               className={
                 'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
                 (active ? 'bg-card ring-1 ring-border' : 'hover:bg-card')
@@ -228,11 +232,9 @@ export function ChatSessionList({
                     'block truncate text-sm ' + (unread ? 'font-semibold text-ink' : 'text-ink')
                   }
                 >
-                  {m.title}
+                  {title}
                 </span>
-                <span className="block truncate text-[11px] text-muted-light">
-                  {kindLabel(m.kind)} · {relTime(m.created_at)}
-                </span>
+                <span className="block truncate text-[11px] text-muted-light">{subtitle}</span>
               </span>
               {unread && (
                 <span
