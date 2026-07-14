@@ -28,7 +28,8 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   *.test.ts      # deno unit tests for the pure logic (cors, cost, prompt, placement, registry, dates)
 ai-status/       # PR2 proof endpoint: returns the caller's budget/rate-limit state (no model call)
 plan-my-day/     # PR3: schedule + weather-aware daily plan (forced emit_plan tool → structured JSON)
-ai-chat/         # BabyClaw: streaming chat over the capability registry; confirm before destructive ops (ADR-0017)
+ai-chat/         # BabyClaw: streaming chat over the capability registry; confirm before destructive ops
+                 #   (ADR-0017); SERVER-authoritative persistent transcript (chat_sessions/messages, persistent-chats ADR)
 generate-invite/ # OWNER-ONLY: mint a redeemable invite code + shareable link (ADR-0030)
 redeem-invite/   # PUBLIC: redeem a code → create the account via service-role admin.createUser (ADR-0030)
 dispatch-messages/ # CRON (notify.yml): proactive daily plan/recap push; DISPATCH_SECRET-gated (ADR-0031)
@@ -61,10 +62,11 @@ Backed by `supabase/migrations/20260624010000_ai_usage_and_budget.sql`:
 
 ## Invite codes (ADR-0030)
 
-The one deliberate exception to "no service-role in functions": creating a brand-new Auth account
-requires `auth.admin.createUser`, which has no non-admin path. So `_shared/admin.ts` is the single
-service-role client, fenced to **redeem-invite** and **dispatch-messages** (ADR-0031) — the two
-callers with no user JWT. Everything else is still least-privilege: the
+One of **two** deliberate service-role touchpoints in the functions (the other is `adminClient()` in
+`_shared/auth.ts`, for persistent-chat transcript writes — see the persistent-chats ADR). Creating a
+brand-new Auth account requires `auth.admin.createUser`, which has no non-admin path. So `_shared/admin.ts`
+is the service-role client for accounts, fenced to **redeem-invite** and **dispatch-messages** (ADR-0031) —
+the two callers with no user JWT. Everything else is still least-privilege: the
 claim / throttle / release logic lives in `SECURITY DEFINER` RPCs
 (`supabase/migrations/20260707044212_invites.sql`) granted to `service_role` **only**, so the whole
 invite mechanism is off the public PostgREST surface. Backed by three tables — `invites` (owner-RLS,

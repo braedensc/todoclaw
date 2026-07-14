@@ -20,6 +20,9 @@ const USER_SCOPED_TABLES = [
   'habits',
   'user_schedule',
   'backups',
+  // Persistent BabyClaw chats (persistent-chats ADR). chat_messages cascades from chat_sessions,
+  // so wiping sessions is enough — but list both so an added FK/behavior change stays covered.
+  'chat_sessions',
 ] as const
 
 /**

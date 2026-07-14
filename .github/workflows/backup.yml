@@ -42,8 +42,14 @@ jobs:
         env:
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         run: |
+          # Exclude the privacy-sensitive, HARD-deleted AI-meta tables: chat transcripts
+          # (persistent-chats ADR) and assistant_memories (its 20260713030000 migration already
+          # documents this exclusion — wiring it here closes that gap). Keeping them out of rotated
+          # dumps honors "delete means delete" so a deleted chat/memory can't linger in an old backup.
           docker run --rm -e PGCONN="$BACKUP_DATABASE_URL" postgres:17-alpine \
-            sh -c 'pg_dump "$PGCONN" --schema=public --no-owner --no-privileges' \
+            sh -c 'pg_dump "$PGCONN" --schema=public --no-owner --no-privileges \
+              --exclude-table=public.chat_sessions --exclude-table=public.chat_messages \
+              --exclude-table=public.assistant_memories' \
             > backup.sql
           echo "dump size: $(wc -c < backup.sql) bytes"
           test -s backup.sql || { echo "::error::empty dump"; exit 1; }
