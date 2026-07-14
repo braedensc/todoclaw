@@ -8,7 +8,7 @@ on a live example day).
 
 Platform-adaptive steps, each auto-detecting completion:
 
-1. **See how Todoclaw works** — launches the two-act tour (below).
+1. **See how Todoclaw works** — launches the feature tour (below).
 2. **Install as a web app** — platform-specific gesture (iOS: Share → Add to Home Screen, which is
    *required* for push there; macOS Safari: File → Add to Dock; Chromium: a native install button
    via `beforeinstallprompt`, or address-bar instructions). Hidden where no gesture exists
@@ -19,26 +19,29 @@ Platform-adaptive steps, each auto-detecting completion:
 ## The tour (FeatureTour + tour-steps + DemoScene)
 
 `FeatureTour` is a generic spotlight engine: each step names a `data-tour` anchor in the mounted
-shell; anchors resolve ONCE at mount and missing ones drop out silently. The full tour runs in
-**two acts** (sequenced by App.tsx):
+shell; anchors resolve ONCE at mount and missing ones drop out silently. It also measures the real
+card height post-render, so a step whose copy runs long can't park its Next button below the fold
+(the card is `position: fixed` and never scrolls).
 
-- **Act 1 — the example day.** `DemoScene` is a full-screen overlay showing the app in real use:
-  the REAL board components (GridSurface / MobileMatrix) fed by a nested, sealed TanStack
-  QueryClient (`enabled: false` + every key pre-seeded → zero backend traffic, and new card
-  treatments show up in the demo for free), the real PlanBox with a canned plan, and the real
-  ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
-  drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs
-  the actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert +
-  aria-hidden scenery; `demoTour(isMobile)` narrates it via `demo-*` anchors only (its first step's
-  copy differs per breakpoint — the desktop grid shows glow/↻/❄️, the mobile overview shows none).
-- **Act 2 — your own shell.** The trimmed per-breakpoint scripts (`DESKTOP_TOUR` / `MOBILE_TOUR`)
-  point at the real, empty shell: "you just saw this — here's where it lives."
+The tour is **one section**, played entirely over the example day. `DemoScene` is a full-screen
+overlay showing the app in real use: the REAL board components (GridSurface / MobileMatrix) fed by a
+nested, sealed TanStack QueryClient (`enabled: false` + every key pre-seeded → zero backend traffic,
+and new card treatments show up in the demo for free), the real PlanBox with a canned plan, and the
+real ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
+drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the
+actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden
+scenery; `demoTour(isMobile)` narrates it via `demo-*` anchors only. Its six steps open with a
+plain-words welcome, explain the board and the three kinds of task on the live example, then walk
+the plan and the two check-ins. The BOARD step's copy differs per breakpoint — the desktop grid
+shows the heat/cool/↻/❄️ decoder ring, the mobile quadrant overview shows none. There is no second
+act over the user's own empty shell: the example already showed the whole loop, so pointing at the
+empty shell only repeated it.
 
-Skip semantics are act-aware: leaving Act 1 (the skip button reads "Skip to your board") ADVANCES
-to Act 2 — people skip spectacle, not orientation. Only closing Act 2 latches the tour done
-(localStorage + the `config.onboarding.tourSeen` account mirror). The empty-board states offer a
-standalone "See an example board" peek (`demo-solo` — closes back to home, latches nothing), and
-Settings has "Replay the tour" (both acts, without resetting the guide's checkmarks).
+Finishing OR skipping the tour latches it done (localStorage + the `config.onboarding.tourSeen`
+account mirror) — someone who skips shouldn't be nagged by an eternal unchecked box. The empty-board
+states offer the same walkthrough as a standalone "See an example board" peek (`demo-solo` — its
+escape hatch reads "Close", and it closes back to home latching nothing), and Settings has "Replay
+the tour" (without resetting the guide's checkmarks).
 
 The demo fixtures live in `demo-board.ts` (tasks authored relative to *today* so the board always
 renders mid-story — its header lists every visual state it intentionally exercises; extend it when
