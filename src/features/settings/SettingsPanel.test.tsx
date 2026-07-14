@@ -14,6 +14,8 @@ vi.mock('../schedule/use-user-schedule', () => ({
 // Stub the live memory list (its own data hooks need a QueryClient + Supabase); it is covered by
 // MemoryList.test.tsx. This panel test only exercises the draft fields, not the memory list.
 vi.mock('../ai/MemoryList', () => ({ MemoryList: () => null }))
+// Backups is live data (its own hooks); stub it to a marker so the tab renders without Supabase.
+vi.mock('../backups/BackupsPanel', () => ({ BackupsPanel: () => <div>backups content</div> }))
 
 // Stub the push hook so the panel test doesn't pull in the real Supabase client (which throws at
 // import without env vars) or the browser Push/Notification APIs (absent in jsdom).
@@ -55,6 +57,13 @@ describe('SettingsPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'AI' }))
     expect(screen.getByLabelText('Tone')).toBeInTheDocument()
     expect(screen.getByLabelText('Custom instructions')).toBeInTheDocument()
+  })
+
+  it('surfaces Backups under its own tab (moved out of the header/More sheet)', () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    expect(screen.queryByText('backups content')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Backups' }))
+    expect(screen.getByText('backups content')).toBeInTheDocument()
   })
 
   it('caps the freeform fields with a hard maxLength', () => {

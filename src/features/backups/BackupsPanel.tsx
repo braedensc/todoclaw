@@ -14,7 +14,16 @@ import { useIsMobile } from '../../hooks/use-is-mobile'
 // mobile bottom tab bar, per ADR-0020, with a ✕). MOBILE renders the same content in a slide-up
 // BottomSheet — swipe-down / scrim / Escape dismiss, no ✕.
 
-export function BackupsPanel({ onClose }: { onClose: () => void }) {
+// `embedded` renders just the content (no modal/sheet chrome, no ✕) so it can live INSIDE the
+// Settings → Backups tab, which owns the surrounding chrome. Standalone (modal/sheet) is retained
+// for any direct use + its own test.
+export function BackupsPanel({
+  onClose = () => {},
+  embedded = false,
+}: {
+  onClose?: () => void
+  embedded?: boolean
+}) {
   const backups = useBackups()
   const create = useCreateBackup()
   const restore = useRestoreBackup()
@@ -104,6 +113,9 @@ export function BackupsPanel({ onClose }: { onClose: () => void }) {
       )}
     </>
   )
+
+  // Embedded in the Settings → Backups tab: no chrome of its own.
+  if (embedded) return content
 
   // Mobile: a slide-up sheet (swipe/scrim/Escape to dismiss, no ✕); the sheet supplies the title.
   if (isMobile) {

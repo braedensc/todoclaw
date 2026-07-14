@@ -118,18 +118,19 @@ describe('ChatPanel', () => {
     expect(screen.getByLabelText('Message')).toBeDisabled()
   })
 
-  it('toggles to the history list and back; New chat resets the conversation', () => {
+  it('toggles the in-drawer history list on mobile; New chat lives in the list, not the header', () => {
     const c = chat()
     render(<ChatPanel chat={c} onClose={vi.fn()} />)
-    // Conversation view first — no history list.
+    // Conversation view first — no history list, and NO ＋ New chat button in the header.
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'New chat' })).not.toBeInTheDocument()
+    // The mobile drawer offers a 🕘 History toggle (desktop uses the top-right ChatMenu instead).
     fireEvent.click(screen.getByRole('button', { name: 'Chat history' }))
     expect(screen.getByText('Chat history')).toBeInTheDocument()
     expect(screen.getByText('session list')).toBeInTheDocument()
-    // Header ＋ New chat calls the controller.
-    fireEvent.click(screen.getByRole('button', { name: 'Back to conversation' }))
-    expect(screen.queryByText('session list')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }))
+    // "New chat" comes from the list (mocked here), and it returns to the conversation.
+    fireEvent.click(screen.getByRole('button', { name: 'list new chat' }))
     expect(c.newChat).toHaveBeenCalled()
+    expect(screen.queryByText('session list')).not.toBeInTheDocument()
   })
 })

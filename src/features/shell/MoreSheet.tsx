@@ -55,7 +55,6 @@ export function MoreSheet({
   unread = 0,
   onReminders,
   onSettings,
-  onBackups,
   onAdmin,
   onSignOut,
   onClose,
@@ -68,7 +67,6 @@ export function MoreSheet({
   /** Navigates to the Daily habits page (#/reminders). */
   onReminders: () => void
   onSettings: () => void
-  onBackups: () => void
   // Owner-only: present only when the signed-in user is the app owner — opens the Admin panel (which
   // now holds invite management too). Omitted for everyone else.
   onAdmin?: () => void
@@ -90,7 +88,6 @@ export function MoreSheet({
           onClick={run(onReminders)}
         />
         <MoreItem glyph="⚙" label="Settings" onClick={run(onSettings)} />
-        <MoreItem glyph="↻" label="Backups" onClick={run(onBackups)} />
         <MoreItem glyph="⏻" label="Sign out" onClick={run(onSignOut)} danger />
       </div>
     </BottomSheet>
