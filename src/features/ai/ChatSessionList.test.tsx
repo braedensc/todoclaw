@@ -20,6 +20,8 @@ const s = (id: string, title: string | null): ChatSession => ({
   id,
   title,
   updated_at: new Date().toISOString(),
+  origin: 'user',
+  kind: null,
   pending: null,
 })
 

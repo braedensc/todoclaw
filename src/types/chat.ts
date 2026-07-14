@@ -17,10 +17,16 @@ export const ChatPendingSchema = z.object({
 export type ChatPending = z.infer<typeof ChatPendingSchema>
 
 // A conversation row (the history list). `pending` is null unless a confirmation is mid-flight.
+// `origin` distinguishes a person-started chat ('user') from one materialised from an inbox message
+// ('proactive', BabyClaw-initiated); `kind` carries the proactive message type for the collar tag +
+// unified-history grouping. Both default defensively so an older row (pre-consolidation) reads as a
+// plain user chat.
 export const ChatSessionSchema = z.object({
   id: z.string().uuid(),
   title: z.string().nullable(),
   updated_at: z.string(),
+  origin: z.enum(['user', 'proactive']).catch('user'),
+  kind: z.enum(['plan', 'recap', 'reminder']).nullable().catch(null),
   pending: ChatPendingSchema.nullable().catch(null), // tolerate a legacy/partial shape
 })
 export type ChatSession = z.infer<typeof ChatSessionSchema>
@@ -36,6 +42,9 @@ export const ChatMessageRowSchema = z.object({
     .object({
       display: z.string().optional(),
       tools: z.array(z.object({ text: z.string(), ok: z.boolean() })).optional(),
+      // A server-seeded context turn that primes the model but is never shown to the person (the
+      // hidden framing turn a proactive/inbox session opens with). rowsToChatItems skips it.
+      hidden: z.boolean().optional(),
     })
     .nullable()
     .catch(null),

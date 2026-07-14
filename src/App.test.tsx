@@ -52,12 +52,13 @@ vi.mock('./features/schedule/use-user-schedule', () => ({
     isError: false,
   }),
 }))
-// The inbox bell/badge + deep-link seed effect read messages (useQuery/useMutation). Stub them so
+// The inbox bell/badge + deep-link open effect read messages (useQuery/useMutation). Stub them so
 // the shell renders without a QueryClientProvider / network.
 vi.mock('./features/notifications/use-messages', () => ({
   useMessages: () => ({ data: [], isLoading: false }),
   useUnreadCount: () => 0,
   useMarkMessageRead: () => ({ mutate: vi.fn() }),
+  useOpenMessageChat: () => ({ mutate: vi.fn() }),
 }))
 vi.mock('./features/daily-state/use-daily-state', () => ({
   useDailyState: () => ({

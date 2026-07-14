@@ -247,6 +247,22 @@ input[type='range'] {
   }
 }
 
+/* BabyClaw chat "sniffing that out…" typing indicator (ChatConversation) — three paw-pad dots that
+   bounce in sequence. Applied via Tailwind's motion-safe:animate-[pawpad_...] so reduced-motion
+   parks them still (no keyframe runs); the dots then just sit quietly. */
+@keyframes pawpad {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 0.9;
+    transform: translateY(-3px);
+  }
+}
+
 /* Bottom sheet (src/components/BottomSheet.tsx) — a modal sheet that slides up from the bottom edge
    over a fading scrim, the mobile surface for the Move-to-quadrant / Add / task-detail flows.
    Class-based (like the thinking affordance) so reduced-motion can neutralize both the slide and

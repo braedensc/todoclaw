@@ -26,6 +26,21 @@ describe('rowsToChatItems', () => {
     expect(items[0]!.text).toBe('what now?')
   })
 
+  it('skips a hidden framing turn (a proactive session’s server-seeded context primes the model only)', () => {
+    const items = rowsToChatItems([
+      row({
+        seq: 1,
+        role: 'user',
+        content: 'The app just opened my morning plan for me — I may want to adjust it.',
+        meta: { hidden: true },
+      }),
+      row({ seq: 2, role: 'assistant', content: 'Your morning plan\n\n1. Ship the deck' }),
+    ])
+    expect(items).toEqual([
+      { id: 'm2', role: 'assistant', text: 'Your morning plan\n\n1. Ship the deck' },
+    ])
+  })
+
   it('renders an assistant turn as one bubble (text blocks joined; tool_use blocks ignored)', () => {
     const items = rowsToChatItems([
       row({

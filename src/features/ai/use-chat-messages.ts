@@ -61,6 +61,9 @@ function assistantText(content: unknown): string {
 export function rowsToChatItems(rows: ChatMessageRow[]): ChatItem[] {
   const items: ChatItem[] = []
   for (const r of rows) {
+    // A server-seeded framing turn (a proactive session's hidden context) primes the model only —
+    // never rendered. The server keeps it in the model window; the person never sees it.
+    if (r.meta?.hidden) continue
     if (r.role === 'user') {
       // A user bubble, THEN any tool lines — the two are independent so a deny-with-note turn shows
       // both the note (meta.display) and the "Declined." line. meta.display (seed bare words / typed

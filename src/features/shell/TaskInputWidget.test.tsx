@@ -30,6 +30,7 @@ function chatStub(over: Partial<ChatController> = {}): ChatController {
     error: null,
     paused: false,
     sessionId: null,
+    activeSession: null,
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),

@@ -62,6 +62,21 @@ export function useRoute(): AppRoute {
   return useSyncExternalStore(subscribe, currentRoute, () => 'home')
 }
 
+/**
+ * The message id of the current `#/chat/<id>` deep link (or null), as a reactive value. Unlike
+ * `useRoute` — which collapses every `#/chat/*` to the single string `'chat'` — this tracks the id
+ * itself, so a subscriber re-runs when the hash moves from one message to another WITHOUT leaving the
+ * chat route (opening message B while message A's chat is still up). App keys its seed/open effect on
+ * this so message→message never silently drops the second one.
+ */
+export function useChatMessageId(): string | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => chatMessageId(),
+    () => null,
+  )
+}
+
 // Whether we've navigated within the app this session. Guards `goBack` against walking off the app
 // on a cold deep link (a fresh tab opened straight to `/#/done` has no in-app history to pop to).
 let hasNavigatedWithinApp = false
