@@ -5,11 +5,11 @@ import type { TourStep } from './FeatureTour'
 // words (a first-run non-technical user), each step teaches ONE idea, and the app's core model —
 // tasks on an urgent × important map — leads.
 //
-// The tour is ONE section, played entirely over the DemoScene (a filled example board + the plan +
-// both check-ins, all real components on fake data). It opens with a plain-words "what this is"
-// welcome, explains the board (and the three kinds of task you can add) on the live example, then
-// walks the plan and the morning/evening check-ins. No second act over the user's own empty shell:
-// the example already showed the whole loop, and repeating it there only bred redundancy.
+// The tour is ONE section, played entirely over the DemoScene — no second leg over the user's own
+// empty shell (that only bred redundancy). Eight panels, all pointing at the one example scene:
+// welcome → board → three task kinds → Plan My Day (button + the plan it builds) → morning →
+// evening → daily habits → settings. Everything the tour highlights (the plan button, the habits
+// card, the settings card) is example scenery ON the scene, so the walkthrough never jumps surfaces.
 
 /**
  * The demo tour — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid'
@@ -63,9 +63,9 @@ export function demoTour(isMobile: boolean): TourStep[] {
       target: 'demo-plan',
       title: 'One tap plans your day',
       body:
-        'Plan My Day looks at your whole board and picks a realistic day — one big rock, a few ' +
-        'quick wins, and room for habits — never an overstuffed list. This is the plan it built ' +
-        'from the example board.',
+        'This ✦ Plan My Day button turns your whole board into a realistic day — one big rock, a ' +
+        'few quick wins, and room for habits, never an overstuffed list. One tap builds the plan ' +
+        'you see here.',
     },
     {
       target: 'demo-chat-morning',
@@ -79,7 +79,21 @@ export function demoTour(isMobile: boolean): TourStep[] {
       title: 'Evenings close the loop',
       body:
         'Each evening BabyClaw checks in. Reply in plain words — “1 and 3” — and he ticks them ' +
-        'off for you. And AI is always optional: everything here also works by hand.',
+        'off for you.',
+    },
+    {
+      target: 'demo-habits',
+      title: 'Daily habits',
+      body:
+        'Small routines you repeat — stretch, meds, walk the dog. Build them once and they show up ' +
+        'on your home screen to paw-check off each day; they reset every morning.',
+    },
+    {
+      target: 'demo-settings',
+      title: 'Settings and the rest',
+      body:
+        'Your daily reset time, notifications, timezone, backups, and this tour all live in ' +
+        'Settings. And AI is always optional — everything here works by hand too.',
     },
   ]
 }
