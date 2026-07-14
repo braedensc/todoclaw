@@ -325,6 +325,37 @@ describe('useAiChat', () => {
     expect(result.current.error).toMatch(/already handled/i)
   })
 
+  it('keeps multi-step narration in SEPARATE bubbles (a tool result ends the prior bubble)', async () => {
+    // "On it." (tool_use turn) → create_task → "All set!" (terminal turn) must render as two distinct
+    // assistant bubbles with the tool line between them — matching the reloaded transcript — not one
+    // run-on bubble before the tool line.
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        session('s'),
+        { type: 'text-delta', text: 'On it.' },
+        {
+          type: 'tool-result',
+          tool_use_id: 't1',
+          name: 'create_task',
+          ok: true,
+          summary: 'Created "x".',
+          display: 'Created "x".',
+        },
+        { type: 'text-delta', text: 'All set!' },
+        ...endTurn(),
+      ]),
+    )
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('add x'))
+    await waitFor(() => expect(result.current.busy).toBe(false))
+    expect(result.current.items.map((i) => `${i.role}:${i.text}`)).toEqual([
+      'user:add x',
+      'assistant:On it.',
+      'tool:Created "x".',
+      'assistant:All set!',
+    ])
+  })
+
   it('live-refresh: invalidates the mutated data domains on a successful tool-result', async () => {
     fetchMock.mockResolvedValueOnce(
       sseResponse([

@@ -44,7 +44,7 @@ export function ChatSessionList({
     })
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-col">
       <button
         type="button"
         onClick={onNew}
@@ -55,7 +55,9 @@ export function ChatSessionList({
         </span>
         New chat
       </button>
-      <ul className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-2 pb-3">
+      {/* Content-sized (grows to fit, scrolls past ~20rem) so this list works both in the top-right
+          dropdown (ChatMenu) and the mobile chat drawer's history swap. */}
+      <ul className="max-h-80 space-y-1 overflow-y-auto overscroll-contain px-2 pb-3">
         {isLoading && <li className="px-2 text-sm text-muted">Loading…</li>}
         {!isLoading && (sessions?.length ?? 0) === 0 && (
           <li className="px-2 text-sm text-muted">No saved conversations yet.</li>

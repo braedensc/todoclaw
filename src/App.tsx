@@ -26,7 +26,7 @@ import { useChatController } from './features/ai/use-chat-controller'
 import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { ChatRail } from './features/ai/ChatRail'
-import { BackupsPanel } from './features/backups/BackupsPanel'
+import { ChatMenu } from './features/ai/ChatMenu'
 import { DonePage } from './features/done/DonePage'
 import { DoneSheet } from './features/done/DoneSheet'
 import { SettingsPanel } from './features/settings/SettingsPanel'
@@ -66,7 +66,6 @@ const planPillStyle = { backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #
 function AppShell() {
   const route = useRoute()
   const [showChat, setShowChat] = useState(false)
-  const [showBackups, setShowBackups] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   // Set when Settings should open scrolled to a specific section (the setup guide's
   // "Turn on notifications" deep-link); cleared on close so a normal open starts at the top.
@@ -486,13 +485,7 @@ function AppShell() {
                       >
                         <span aria-hidden>✓</span> Done
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowBackups(true)}
-                        className="hover:text-ink"
-                      >
-                        <span aria-hidden>↻</span> Backups
-                      </button>
+                      <ChatMenu chat={chat} onOpenChat={() => setShowChat(true)} />
                       <button
                         type="button"
                         onClick={() => void confirmSignOut()}
@@ -682,13 +675,8 @@ function AppShell() {
             </ErrorBoundary>
           )}
 
-          {/* Route-independent overlays: Settings and Backups sit over whatever route is active. */}
-          {showBackups && (
-            <ErrorBoundary>
-              <BackupsPanel onClose={() => setShowBackups(false)} />
-            </ErrorBoundary>
-          )}
-
+          {/* Route-independent overlay: Settings sits over whatever route is active. Backups now
+              lives inside Settings → Backups (no longer its own overlay). */}
           {showSettings && (
             <ErrorBoundary>
               <SettingsPanel
@@ -744,7 +732,6 @@ function AppShell() {
                 unread={unread}
                 onReminders={() => navigate('reminders')}
                 onSettings={() => setShowSettings(true)}
-                onBackups={() => setShowBackups(true)}
                 onAdmin={isOwner ? () => navigate('admin') : undefined}
                 onSignOut={() => void confirmSignOut()}
                 onClose={() => setShowMore(false)}

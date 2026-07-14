@@ -16,6 +16,7 @@ import { EMPTY_DRAFT, configToDraft, draftToConfig, type SettingsDraft } from '.
 import { AiPrivacyNote } from '../ai/AiPrivacyNote'
 import { MemoryList } from '../ai/MemoryList'
 import { NotificationSettings } from '../notifications/NotificationSettings'
+import { BackupsPanel } from '../backups/BackupsPanel'
 
 // Settings — an overlay editing `user_schedule.config`: the schedule the Plan My Day prompt reads
 // (so it stops assuming your day), a bounded Plan My Day "preferences" note, and BabyClaw tuning.
@@ -218,11 +219,12 @@ function Section({
   )
 }
 
-type SettingsTab = 'plan' | 'notifications' | 'ai'
+type SettingsTab = 'plan' | 'notifications' | 'ai' | 'backups'
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'plan', label: 'Plan My Day' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'ai', label: 'AI' },
+  { id: 'backups', label: 'Backups' },
 ]
 
 function TabBar({ tab, onTab }: { tab: SettingsTab; onTab: (t: SettingsTab) => void }) {
@@ -548,6 +550,10 @@ export function SettingsPanel({
           )}
 
           {tab === 'notifications' && <NotificationSettings draft={draft} set={set} />}
+
+          {/* Backups is live data with its own Create/Restore actions (not part of the settings
+              draft) — the shared Save/Cancel footer below still applies to the other tabs' form. */}
+          {tab === 'backups' && <BackupsPanel embedded />}
 
           {save.isError && (
             <p className="text-sm text-accent">Couldn't save your settings — please try again.</p>

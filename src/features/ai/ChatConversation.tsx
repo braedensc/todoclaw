@@ -23,6 +23,7 @@ export function ChatConversation({
   onClose,
   showClose = true,
   readOnly = false,
+  enableSessions = false,
 }: {
   chat: ChatController
   onClose: () => void
@@ -32,6 +33,13 @@ export function ChatConversation({
    * check-ins). A visible input would invite a reply the surface can't take.
    */
   readOnly?: boolean
+  /**
+   * Show an in-drawer session switcher (a 🕘 History toggle → the saved-chat list). ON for the
+   * MOBILE bottom sheet, which has no top-right nav to host the switcher. OFF for the desktop rail,
+   * where the top-right ChatMenu owns session management and the drawer stays purely the conversation
+   * (persistent-chats UX, 2026-07-14). New-chat always lives in the list, never in this header.
+   */
+  enableSessions?: boolean
 }) {
   const {
     items,
@@ -47,10 +55,8 @@ export function ChatConversation({
     newChat,
   } = chat
   const [text, setText] = useState('')
-  // Swap the conversation for the saved-chat history list in place (persistent-chats ADR). Both chat
-  // shells (ChatRail + ChatPanel) inherit it. Never shown in the look-only demo (readOnly).
   const [view, setView] = useState<'conversation' | 'history'>('conversation')
-  const showHistory = !readOnly && view === 'history'
+  const showHistory = enableSessions && view === 'history'
   const listRef = useRef<HTMLUListElement>(null)
 
   // Keep the latest message in view as things stream in.
@@ -82,7 +88,7 @@ export function ChatConversation({
           )}
         </h2>
         <div className="flex items-center gap-2 text-muted">
-          {!readOnly &&
+          {enableSessions &&
             (showHistory ? (
               <button
                 type="button"
@@ -93,26 +99,15 @@ export function ChatConversation({
                 ← Back
               </button>
             ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={newChat}
-                  aria-label="New chat"
-                  title="Start a new chat"
-                  className="text-lg leading-none hover:text-ink"
-                >
-                  ＋
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView('history')}
-                  aria-label="Chat history"
-                  title="Saved conversations"
-                  className="text-base leading-none hover:text-ink"
-                >
-                  🕘
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => setView('history')}
+                aria-label="Chat history"
+                title="Saved conversations"
+                className="text-base leading-none hover:text-ink"
+              >
+                🕘
+              </button>
             ))}
           {showClose && (
             <button

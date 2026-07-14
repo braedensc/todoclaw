@@ -62,15 +62,17 @@ export function rowsToChatItems(rows: ChatMessageRow[]): ChatItem[] {
   const items: ChatItem[] = []
   for (const r of rows) {
     if (r.role === 'user') {
-      if (r.meta?.tools?.length) {
-        r.meta.tools.forEach((t, i) =>
-          items.push({ id: `m${r.seq}-${i}`, role: 'tool', text: t.text, ok: t.ok }),
-        )
-      } else if (typeof r.content === 'string') {
-        items.push({ id: `m${r.seq}`, role: 'user', text: r.meta?.display ?? r.content })
-      } else if (r.meta?.display) {
+      // A user bubble, THEN any tool lines — the two are independent so a deny-with-note turn shows
+      // both the note (meta.display) and the "Declined." line. meta.display (seed bare words / typed
+      // decline note) wins over the raw content; a plain text turn falls back to the string content.
+      if (r.meta?.display) {
         items.push({ id: `m${r.seq}`, role: 'user', text: r.meta.display })
+      } else if (typeof r.content === 'string') {
+        items.push({ id: `m${r.seq}`, role: 'user', text: r.content })
       }
+      r.meta?.tools?.forEach((t, i) =>
+        items.push({ id: `m${r.seq}-t${i}`, role: 'tool', text: t.text, ok: t.ok }),
+      )
     } else {
       const text = assistantText(r.content)
       if (text) items.push({ id: `m${r.seq}`, role: 'assistant', text })
