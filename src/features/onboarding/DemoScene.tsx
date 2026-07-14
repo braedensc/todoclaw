@@ -62,14 +62,18 @@ const DEMO_QUADRANT_FOCUS: QuadrantFocus = {
 function demoChat(items: ChatItem[]): ChatController {
   return {
     items,
+    liveItems: items, // the demo is all "this visit" — status/flash read liveItems
     busy: false,
     pending: null,
     error: null,
     paused: false,
+    sessionId: null,
     send: noop,
     confirm: noop,
     deny: noop,
     seed: noop,
+    openSession: noop,
+    newChat: noop,
   }
 }
 

@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+// use-chat-messages imports lib/supabase, which THROWS at import when the VITE_* env vars are unset
+// (CI has none). Stub it so importing the pure mapper never touches real env (memory: import-throw).
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
 import { rowsToChatItems } from './use-chat-messages'
 import type { ChatMessageRow } from '../../types/chat'
 
