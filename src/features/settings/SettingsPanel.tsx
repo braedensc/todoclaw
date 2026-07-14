@@ -257,10 +257,16 @@ function TabBar({ tab, onTab }: { tab: SettingsTab; onTab: (t: SettingsTab) => v
 export function SettingsPanel({
   onClose,
   initialSection,
+  onReplayTour,
 }: {
   onClose: () => void
   /** Open scrolled to a section — the setup guide deep-links to 'notifications'. */
   initialSection?: 'notifications'
+  /**
+   * Re-run the two-act tour (example day + walkthrough) WITHOUT resetting the setup guide's
+   * other checkmarks — the lightweight replay next to the full "Show the setup guide" reset.
+   */
+  onReplayTour?: () => void
 }) {
   const scheduleQuery = useUserSchedule()
   const save = useSaveScheduleConfig()
@@ -548,20 +554,32 @@ export function SettingsPanel({
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-            {/* Re-surface the first-run setup guide on this device (features/onboarding). */}
-            <button
-              type="button"
-              onClick={() => {
-                // Clear BOTH halves of the tour checkmark (localStorage + account mirror) so the
-                // guide fully resets and the tour can be re-taken (#3).
-                resetSetupGuide()
-                clearTourSeen()
-                onClose()
-              }}
-              className="text-xs text-muted underline hover:text-ink"
-            >
-              Show the setup guide
-            </button>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              {/* Watch the tour again (example day + walkthrough) without touching the guide. */}
+              {onReplayTour && (
+                <button
+                  type="button"
+                  onClick={onReplayTour}
+                  className="text-xs text-muted underline hover:text-ink"
+                >
+                  Replay the tour
+                </button>
+              )}
+              {/* Re-surface the first-run setup guide on this device (features/onboarding). */}
+              <button
+                type="button"
+                onClick={() => {
+                  // Clear BOTH halves of the tour checkmark (localStorage + account mirror) so the
+                  // guide fully resets and the tour can be re-taken (#3).
+                  resetSetupGuide()
+                  clearTourSeen()
+                  onClose()
+                }}
+                className="text-xs text-muted underline hover:text-ink"
+              >
+                Show the setup guide
+              </button>
+            </div>
             <div className="flex items-center gap-3">
               <button
                 type="button"
