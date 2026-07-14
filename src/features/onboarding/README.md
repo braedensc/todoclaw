@@ -23,25 +23,32 @@ shell; anchors resolve ONCE at mount and missing ones drop out silently. It also
 card height post-render, so a step whose copy runs long can't park its Next button below the fold
 (the card is `position: fixed` and never scrolls).
 
-The tour is **one section**, played entirely over the example day. `DemoScene` is a full-screen
-overlay showing the app in real use: the REAL board components (GridSurface / MobileMatrix) fed by a
-nested, sealed TanStack QueryClient (`enabled: false` + every key pre-seeded → zero backend traffic,
-and new card treatments show up in the demo for free), the real PlanBox with a canned plan, and the
-real ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
-drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the
-actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden
-scenery; `demoTour(isMobile)` narrates it via `demo-*` anchors only. Its six steps open with a
-plain-words welcome, explain the board and the three kinds of task on the live example, then walk
-the plan and the two check-ins. The BOARD step's copy differs per breakpoint — the desktop grid
-shows the heat/cool/↻/❄️ decoder ring, the mobile quadrant overview shows none. There is no second
-act over the user's own empty shell: the example already showed the whole loop, so pointing at the
-empty shell only repeated it.
+The tour runs in **two legs** (sequenced by App.tsx):
 
-Finishing OR skipping the tour latches it done (localStorage + the `config.onboarding.tourSeen`
-account mirror) — someone who skips shouldn't be nagged by an eternal unchecked box. The empty-board
-states offer the same walkthrough as a standalone "See an example board" peek (`demo-solo` — its
-escape hatch reads "Close", and it closes back to home latching nothing), and Settings has "Replay
-the tour" (without resetting the guide's checkmarks).
+- **Leg 1 — the example day.** `DemoScene` is a full-screen overlay showing the app in real use: the
+  REAL board components (GridSurface / MobileMatrix) fed by a nested, sealed TanStack QueryClient
+  (`enabled: false` + every key pre-seeded → zero backend traffic, and new card treatments show up
+  in the demo for free), the real PlanBox with a canned plan, and the real ChatConversation playing
+  the scripted morning push + evening check-in. The check-in texts are drift-guarded by a Deno test
+  (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the actual dispatch builders
+  over the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden scenery;
+  `demoTour(isMobile)` narrates it via `demo-*` anchors only. Its six steps open with a plain-words
+  welcome, explain the board and the three kinds of task on the live example, then walk the plan and
+  the two check-ins. The BOARD step's copy differs per breakpoint — the desktop grid shows the
+  heat/cool/↻/❄️ decoder ring, the mobile quadrant overview shows none.
+- **Leg 2 — your own shell.** `SHELL_TOUR_DESKTOP` / `SHELL_TOUR_MOBILE` point at the real shell:
+  "you just saw it work — here's where each piece lives." Add-a-task, the Plan My Day button, the
+  inbox, habits, and settings. It deliberately does NOT re-explain the board or re-list the task
+  kinds (leg 1 already did — saying it twice is the redundancy we cut when the two legs were merged
+  into one flow).
+
+Leg semantics: leaving leg 1 (skip button reads "Skip to your app", last-step button "Next: your
+app") ADVANCES to leg 2 — people skip spectacle, not orientation. Only closing leg 2 latches the
+tour done (localStorage + the `config.onboarding.tourSeen` account mirror) — someone who skips
+shouldn't be nagged by an eternal unchecked box. The empty-board states offer leg 1 alone as a
+standalone "See an example board" peek (`demo-solo` — its escape hatch reads "Close", and it closes
+back to home latching nothing), and Settings has "Replay the tour" (both legs, without resetting the
+guide's checkmarks).
 
 The demo fixtures live in `demo-board.ts` (tasks authored relative to *today* so the board always
 renders mid-story — its header lists every visual state it intentionally exercises; extend it when

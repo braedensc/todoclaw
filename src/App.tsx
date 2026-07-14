@@ -33,7 +33,12 @@ import { SettingsPanel } from './features/settings/SettingsPanel'
 import { SetupGuide } from './features/onboarding/SetupGuide'
 import { FeatureTour } from './features/onboarding/FeatureTour'
 import { DemoScene } from './features/onboarding/DemoScene'
-import { ADD_TASK_SPOTLIGHT, demoTour } from './features/onboarding/tour-steps'
+import {
+  ADD_TASK_SPOTLIGHT,
+  demoTour,
+  SHELL_TOUR_DESKTOP,
+  SHELL_TOUR_MOBILE,
+} from './features/onboarding/tour-steps'
 import { markTourDone } from './features/onboarding/setup-guide-store'
 import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
 import { AdminPage } from './features/admin/AdminPage'
@@ -78,12 +83,13 @@ function AppShell() {
   // The mobile "More" overflow sheet (Settings / Backups / Sign out) and the "+" add sheet.
   const [showMore, setShowMore] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
-  // The spotlight walkthroughs: 'demo' = the one-section tour over the example-day scene (DemoScene)
-  // narrated by demoTour — finishing OR skipping it latches the guide's tour step; 'demo-solo' = the
-  // same tour launched as the empty-state "See an example" peek (closes back to home, latches
-  // nothing); 'add-task' = the single-step "Show me where" spotlight on the Task Manager. Launched
-  // only from the home route, so every anchor the scripts name is mounted.
-  const [tour, setTour] = useState<'demo' | 'demo-solo' | 'add-task' | null>(null)
+  // The spotlight walkthroughs, in two legs: 'demo' = leg 1 over the example-day scene (DemoScene)
+  // narrated by demoTour, which hands off to 'full' = leg 2 over the user's OWN shell (SHELL_TOUR —
+  // add-a-task, Plan My Day, inbox, habits, settings). Only closing leg 2 latches the guide's tour
+  // step. 'demo-solo' = leg 1 alone as the empty-state "See an example" peek (closes back to home,
+  // latches nothing); 'add-task' = the single-step "Show me where" spotlight on the Task Manager.
+  // Launched only from the home route, so every anchor the scripts name is mounted.
+  const [tour, setTour] = useState<'demo' | 'demo-solo' | 'full' | 'add-task' | null>(null)
   // The demo tour may mount only AFTER the scene's first commit (FeatureTour resolves anchors
   // once, at mount — a tour racing the scene would silently drop every demo-* step).
   const [demoReady, setDemoReady] = useState(false)
@@ -542,30 +548,52 @@ function AppShell() {
                 </ErrorBoundary>
               )}
 
-              {/* The spotlight tour — an overlay pointing at the demo scene (or the Task Manager),
-                  so it mounts beside the content it spotlights.
-                    'demo'      → the first-run tour; ANY close (finish, skip, Esc) latches the
-                                  checklist step (someone who skipped shouldn't be nagged by an
-                                  eternal unchecked box);
-                    'demo-solo' → the same tour as a peek — closes back to home, latches nothing;
+              {/* The spotlight tour — an overlay pointing at the demo scene (leg 1), the user's own
+                  shell (leg 2), or the Task Manager. Sequencing:
+                    'demo'      → leg 1; ANY close (finish, skip, Esc) advances to 'full' — people
+                                  skip spectacle, not orientation, so leaving the example must never
+                                  swallow the real walkthrough (the skip button says so:
+                                  "Skip to your app");
+                    'full'      → leg 2; ANY close latches the checklist step (finish or a deliberate
+                                  skip — someone who skipped shouldn't be nagged by an eternal
+                                  unchecked box);
+                    'demo-solo' → leg 1 alone as a peek — closes back to home, latches nothing;
                     'add-task'  → the single-step Task Manager spotlight — latches nothing. */}
-              {tour && (tour === 'add-task' || demoReady) && (
+              {tour && (tour === 'full' || tour === 'add-task' || demoReady) && (
                 <ErrorBoundary>
                   <FeatureTour
-                    // Remount per tour type (fresh step index + once-resolved anchors).
+                    // Remount per leg: the demo→full handoff swaps `steps` on a mounted tour, which
+                    // would otherwise KEEP its step index and once-resolved anchors.
                     key={tour}
                     steps={
                       tour === 'demo' || tour === 'demo-solo'
                         ? demoTour(isMobile)
-                        : ADD_TASK_SPOTLIGHT
+                        : tour === 'full'
+                          ? isMobile
+                            ? SHELL_TOUR_MOBILE
+                            : SHELL_TOUR_DESKTOP
+                          : ADD_TASK_SPOTLIGHT
                     }
-                    // The peek's escape hatch just closes ("Close"); the first-run tour uses the
-                    // default "Skip tour".
-                    skipLabel={tour === 'demo-solo' ? 'Close' : undefined}
-                    finishLabel={tour === 'demo' || tour === 'demo-solo' ? 'Done' : undefined}
+                    skipLabel={
+                      tour === 'demo'
+                        ? 'Skip to your app'
+                        : tour === 'demo-solo'
+                          ? 'Close'
+                          : undefined
+                    }
+                    // Leg 1's last-step button hands off to leg 2, so it can't say "Finish" (the user
+                    // would think the tour ended, then a fresh overlay appears). demo-solo really
+                    // does end on its last step → "Done".
+                    finishLabel={
+                      tour === 'demo' ? 'Next: your app' : tour === 'demo-solo' ? 'Done' : undefined
+                    }
                     onClose={() => {
                       setDemoReady(false)
                       if (tour === 'demo') {
+                        setTour('full')
+                        return
+                      }
+                      if (tour === 'full') {
                         // Latch locally (instant, this context) AND mirror to the account so the
                         // checkmark survives a browser↔installed-app storage-partition switch (#3).
                         markTourDone()

@@ -8,7 +8,7 @@ import { summarizeQuadrants, QUADRANT_ORDER } from '../../lib/quadrant-summary'
 import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
 import { buildDemoTasks } from './demo-board'
 import { DEMO_MORNING_INPUTS, DEMO_PLAN } from './demo-transcript'
-import { demoTour } from './tour-steps'
+import { demoTour, SHELL_TOUR_DESKTOP, SHELL_TOUR_MOBILE } from './tour-steps'
 
 // The demo fixtures are load-bearing showcase data: the plan must survive the same Zod gate a
 // real plan does (DailyStateSchema's `.catch(null)` means a malformed plan silently VANISHES in
@@ -96,5 +96,25 @@ describe('demo tour script', () => {
       s.body + (s.bullets?.map((b) => `${b.lead} ${b.rest}`).join(' ') ?? '')
     expect(demoTour(true).some((s) => /❄️|↻/.test(stepText(s)))).toBe(false)
     expect(demoTour(false).some((s) => /❄️|↻/.test(stepText(s)))).toBe(true)
+  })
+})
+
+describe('shell tour script (leg 2)', () => {
+  it('targets the real shell, never the demo scene — leg 2 runs after the DemoScene unmounts', () => {
+    for (const step of [...SHELL_TOUR_DESKTOP, ...SHELL_TOUR_MOBILE])
+      expect(step.target, step.title).not.toMatch(/^demo-/)
+  })
+
+  it('does not re-explain the board or re-list the three task kinds (leg 1 already did)', () => {
+    // The whole point of merging the two legs: say each thing once. Leg 2 points at where things
+    // live; it must not repeat leg 1's board decoder ring or its one-off/recurring/ongoing rundown.
+    for (const step of [...SHELL_TOUR_DESKTOP, ...SHELL_TOUR_MOBILE]) {
+      expect(step.bullets, step.title).toBeUndefined()
+      expect(step.body, step.title).not.toMatch(/one-off|ongoing/i)
+    }
+  })
+
+  it('spotlights the real Plan My Day button in leg 2 (the piece the user asked to see)', () => {
+    expect(SHELL_TOUR_DESKTOP.some((s) => s.target === 'plan')).toBe(true)
   })
 })

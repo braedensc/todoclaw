@@ -1,8 +1,9 @@
 import { test, expect } from '../helpers/fixtures'
 
 // Mobile (< 720px, ADR-0028) has no grid: the DemoScene shows the example day through the real
-// MobileMatrix quadrant overview instead, and the same one-section demoTour narrates it (scene-level
-// demo-* anchors exist on both breakpoints; only the BOARD step's copy differs per breakpoint).
+// MobileMatrix quadrant overview instead, and the same demoTour narrates leg 1 (scene-level demo-*
+// anchors exist on both breakpoints; only the BOARD step's copy differs per breakpoint). Leg 2 then
+// runs the trimmed SHELL_TOUR_MOBILE over the bottom nav (➕ add, Chat, More).
 
 test('the example peek shows a lit-up quadrant overview on mobile', async ({ page }) => {
   // The empty mobile overview offers the peek under the 2×2 grid.
@@ -18,7 +19,9 @@ test('the example peek shows a lit-up quadrant overview on mobile', async ({ pag
   await expect(page.getByRole('dialog')).not.toBeVisible()
 })
 
-test('the tour walks the example day with mobile board copy', async ({ page }) => {
+test('the tour runs mobile board copy (leg 1) then the bottom-nav walkthrough (leg 2)', async ({
+  page,
+}) => {
   // Launch via the guide (open by default; the collapsed banner only exists after a manual
   // collapse, so "Take the tour" is directly reachable).
   await page.evaluate(() => localStorage.removeItem('todoclaw.setup-guide.dismissed'))
@@ -33,4 +36,8 @@ test('the tour walks the example day with mobile board copy', async ({ page }) =
   await expect(board).toBeVisible()
   await expect(board).toContainText('Do Now')
   await expect(board).not.toContainText('❄️')
+
+  // Skipping the example advances to leg 2 over the mobile bottom nav (not a dead end).
+  await page.getByRole('button', { name: 'Skip to your app', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Add a task here' })).toBeVisible()
 })
