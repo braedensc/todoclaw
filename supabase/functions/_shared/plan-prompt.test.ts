@@ -106,20 +106,26 @@ Deno.test('system prompt distinguishes a fixed appointment from a due-by deadlin
   assert(!SYSTEM_PROMPT.includes('\n8. '))
 })
 
-Deno.test(
-  'system prompt defaults to one small rock; a third is only a chore or ongoing session',
-  () => {
-    // The normal day is one big rock + one small rock. A second is the exception (deadlines/open day),
-    // and a third is allowed ONLY for a must-do recurring chore or an ongoing-project session — never
-    // a third ordinary deliverable. Both the prose and the emit_plan cap keep the plan lean.
-    assert(SYSTEM_PROMPT.includes('default to exactly ONE'))
-    assert(SYSTEM_PROMPT.includes('one big rock plus one small rock'))
-    assert(SYSTEM_PROMPT.includes('THIRD small rock'))
-    assert(SYSTEM_PROMPT.includes('never a third ordinary deliverable'))
-    // The schema caps smallRocks at 3 (focus + up to two extras, the last chore/ongoing only).
-    assertEquals(EMIT_PLAN_TOOL.input_schema.properties.smallRocks.maxItems, 3)
-  },
-)
+Deno.test('big rock is substance-not-urgency; quick wins stay short, lean, and cap at two', () => {
+  // The failures this rewrite fixes: a ~15min urgent errand was chosen as the big rock, a ~1.5h task
+  // was filed as a "quick win", and three quick wins were stacked. The big rock is now picked for
+  // SUBSTANCE (a real M/L/XL block), never for raw urgency, and a small (S) task can never take the
+  // slot; quick wins are size-gated to short S/M tasks and hard-capped at two.
+  // Big rock: substance over urgency, and a short task is disqualified from the slot.
+  assert(SYSTEM_PROMPT.includes('SUBSTANTIAL, high-impact focus'))
+  assert(SYSTEM_PROMPT.includes('NOT for the highest urgency'))
+  assert(SYSTEM_PROMPT.includes('is NEVER the big rock'))
+  // Quick wins: short only, long tasks barred, lean by default, ongoing sessions routed to big rock.
+  assert(SYSTEM_PROMPT.includes('quick wins only'))
+  assert(SYSTEM_PROMPT.includes('is NEVER a small rock'))
+  assert(SYSTEM_PROMPT.includes('EXACTLY ONE quick win'))
+  assert(SYSTEM_PROMPT.includes('AT MOST TWO'))
+  assert(SYSTEM_PROMPT.includes('ongoing-project session here'))
+  // An ongoing-project session is steered to the big rock, not padded onto the quick-wins list.
+  assert(SYSTEM_PROMPT.includes('PREFER making it the BIG ROCK'))
+  // The schema hard-caps smallRocks at 2 so three quick wins can't be emitted.
+  assertEquals(EMIT_PLAN_TOOL.input_schema.properties.smallRocks.maxItems, 2)
+})
 
 Deno.test('task size renders with its hour hint only when present; untagged lines omit it', () => {
   const sized: PlanRequest = {

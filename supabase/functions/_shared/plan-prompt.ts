@@ -94,16 +94,20 @@ export const EMIT_PLAN_TOOL = {
       },
       bigRock: {
         anyOf: [{ type: 'null' }, rockSchema],
-        description: 'The one task worth focusing on today, or null on a light/rest day.',
+        description:
+          'The ONE substantial, high-impact focus of the day — a real block of work (M/L/XL, ' +
+          '~45min+), chosen for impact not raw urgency. Never a small (S, ~<=20min) task, even an ' +
+          'urgent or overdue one. null on a light/rest day.',
       },
       smallRocks: {
         type: 'array',
         items: rockSchema,
-        maxItems: 3,
+        maxItems: 2,
         description:
-          'Quick wins around the big rock: default to ONE. A second only when deadlines press or ' +
-          'the day is unusually open; a third ONLY for a must-do recurring chore or an ' +
-          'ongoing-project session, never a third ordinary deliverable. [] on a genuinely light day.',
+          'Genuinely SHORT quick wins (S/M, ~<=45min) around the big rock — a long task (L/XL, ~1h+) ' +
+          'is NEVER here (it is the big rock or it waits), and neither is an ongoing-project session ' +
+          '(that is the big rock). Default to ONE, at most TWO: a second only for another imminent ' +
+          'deadline or one must-do low-effort recurring chore. [] on a genuinely light day.',
       },
       habitNote: {
         type: 'string',
@@ -137,19 +141,23 @@ export const SYSTEM_PROMPT = [
   '   listed as its OWN task (e.g. "pack for trip", "buy a gift") is a normal deliverable — plan',
   '   that if it fits, but never invent prep that is not on the grid. When genuinely unsure, treat a',
   '   task as an ordinary deliverable.',
-  '3. PICK AT MOST ONE big rock — the single thing that genuinely warrants focus today (urgent, due',
-  '   soon, or high-importance and a good fit for the day). On a light day, set bigRock to null.',
-  '4. ADD SMALL ROCKS SPARINGLY — default to exactly ONE. The normal, healthy shape of a day is',
-  '   one big rock plus one small rock: a single real focus and a single quick win. Add a SECOND',
-  '   small rock ONLY when there is a concrete reason — several deadlines are genuinely imminent, or',
-  '   the day is unusually open with clear time to spare. A THIRD small rock is fine ONLY when it is',
-  '   a low-effort recurring chore that genuinely must happen today, or a short session on an ongoing',
-  '   project (chipping away, not finishing) — never a third ordinary deliverable stacked on. A quiet',
-  '   day with just the big rock (or even a pure rest day) is perfectly valid — say so plainly, and',
-  '   never pad the plan with filler to make it look busy. Fewer, well-chosen rocks beat a full list.',
-  "   Weigh each task's size (shown below) against the free time you're given: if the rocks you're",
-  "   about to pick clearly add up to more than today's available hours, drop the lowest-priority",
-  '   one instead of cramming. Size is a guardrail against over-stuffing — never a quota to fill.',
+  "3. PICK AT MOST ONE big rock — the day's single SUBSTANTIAL, high-impact focus: a real block of",
+  '   work (M/L/XL, ~45min+) or the single most consequential deliverable. Choose it for IMPACT and',
+  '   substance, NOT for the highest urgency or most-overdue score — urgency decides the ORDER you',
+  '   tackle things, not which slot they fill. A small task (S, ~<=20min), even if urgent or overdue,',
+  "   is NEVER the big rock — it is a quick win (rule 4). If today's only pressing items are all small,",
+  '   either set bigRock to null or promote a worthwhile larger task (e.g. an ongoing-project session)',
+  '   into the slot. On a light day, null is right.',
+  '4. ADD SMALL ROCKS SPARINGLY — quick wins only, each a genuinely SHORT task (S/M, ~<=45min). A long',
+  '   task (L/XL, ~1h+) is NEVER a small rock — it is the big rock or it waits for another day. Default',
+  '   to EXACTLY ONE quick win — one real focus plus one quick win is the healthy shape of a day — and',
+  '   AT MOST TWO. Add a SECOND only for a concrete reason: another genuinely imminent deadline, or one',
+  '   low-effort recurring chore that truly must happen today. Never stack on more, and never file an',
+  '   ongoing-project session here — that is the big rock (rule 3). A quiet day with just the big rock,',
+  '   or a pure rest day (bigRock null, no small rocks), is perfectly valid — say so plainly, and never',
+  "   pad with filler to look busy. Weigh each task's size (shown below) against your free hours: if the",
+  "   rocks clearly add up to more than today's available time, drop the lowest-priority one instead of",
+  '   cramming. Size is a guardrail against over-stuffing — never a quota to fill.',
   '5. RESPECT THE SCHEDULE. Assign each rock a slot (morning/lunch/afternoon/evening) that fits the',
   "   user's real availability. Treat any listed recurring commitments as time already on the",
   '   calendar — plan around them, and never propose a commitment itself as a task.',
@@ -166,9 +174,11 @@ export const SYSTEM_PROMPT = [
   'ONGOING PROJECTS: a task tagged "ongoing project" is a standing, open-ended effort with no hard',
   'deadline (e.g. "write the novel", "learn Spanish"). It will not pressure you with a due date, so',
   'it is easy to overlook — but chipping away at it regularly is the whole point. On a lighter day, or',
-  'when few deadlines press, PROACTIVELY offer one as the big rock or a small rock (it is a great fit',
-  'for a focused block), paced toward its due date if it has one. Never tell the user to "finish" it',
-  'or treat it as must-finish-today — a session on it is progress, not completion.',
+  'when few deadlines press, PROACTIVELY give one a focused block — and because a real session is',
+  'substantial, PREFER making it the BIG ROCK rather than padding it onto the quick-wins list, paced',
+  'toward its due date if it has one. Only make it a small rock if it is genuinely short (S/M) and',
+  'something bigger already owns the day. Never tell the user to "finish" it or treat it as',
+  'must-finish-today — a session on it is progress, not completion.',
   '',
   'A task line may carry a rough size — S (~15m), M (~45m), L (~2h), XL (~half-day). When a task has',
   'no size, estimate its effort yourself from the text before weighing the day (rule 4).',
