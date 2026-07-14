@@ -26,7 +26,10 @@ Functions (`supabase/functions/`).
   (`set_assistant_preference`) — via a transport-agnostic
   capability registry (`supabase/functions/_shared/capabilities/`, MCP-ready). `use-ai-chat` fetches
   the `ai-chat` Edge Function directly (to read the SSE stream — `functions.invoke` doesn't stream),
-  holds the conversation client-side, and drives the confirm/decline round-trip. On each successful
+  and drives the confirm/decline round-trip. The transcript is **server-authoritative and persistent**
+  now (persistent-chats ADR): the client sends a single `{ session_id, message }` or `{ session_id,
+  action }` — never history — and renders the opened session's hydrated base (`use-chat-messages`) plus
+  this visit's live-streamed turns; the session list is `use-chat-sessions`. On each successful
   **mutating** tool result the server reports which data domains changed, and `use-ai-chat`
   **invalidates the matching TanStack Query keys so the grid/list/habits/Done live-refresh instantly**
   (`DOMAIN_QUERY_KEYS`). Tools are user-scoped (RLS); the model never sets `user_id`. Persona +
@@ -45,8 +48,9 @@ Functions (`supabase/functions/`).
   boundedness is the safety property. See `capabilities/README.md` (`set_assistant_preference`).
 
 - **`AiPrivacyNote.tsx`** — a short, honest disclosure kept in **Settings → "AI & privacy"**: AI
-  runs on the owner's Anthropic key, your task/message text is sent to Anthropic, and chat isn't
-  saved. The full opt-in **consent gate** is still deferred (ADR-0014/0015); this is the lightweight
+  runs on the owner's Anthropic key, your task/message text is sent to Anthropic, your conversations
+  and memories are saved (and deletable — chats from the history, memory from Settings → AI). The full
+  opt-in **consent gate** is still deferred (ADR-0014/0015); this is the lightweight
   notice. Moved out of the chat window (2026-07-06) so the assistant UI isn't cluttered — the
   disclosure now lives once, in Settings.
 

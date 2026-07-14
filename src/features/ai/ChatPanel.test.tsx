@@ -10,14 +10,18 @@ import { ChatPanel } from './ChatPanel'
 function chat(over: Partial<ChatController> = {}): ChatController {
   return {
     items: [] as ChatItem[],
+    liveItems: [] as ChatItem[],
     busy: false,
     pending: null as PendingConfirm | null,
     error: null as string | null,
     paused: false,
+    sessionId: null as string | null,
     send: vi.fn(),
     confirm: vi.fn(),
     deny: vi.fn(),
     seed: vi.fn(),
+    openSession: vi.fn(),
+    newChat: vi.fn(),
     ...over,
   }
 }
