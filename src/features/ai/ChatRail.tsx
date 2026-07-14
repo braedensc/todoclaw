@@ -8,6 +8,10 @@ import { ChatConversation } from './ChatConversation'
 // scales down uniformly — clustering thresholds are unaffected). Hidden below the breakpoint
 // (`wide:flex`), where the covering ChatPanel bottom-sheet takes over. Kept mounted and slid off
 // via translate so the open/close transition is smooth.
+//
+// The session switcher lives IN the drawer now (the "See all chats" button swaps to the unified
+// history, with a back button) — the old top-right ChatMenu dropdown is retired, so desktop and
+// mobile drive sessions the same way (`enableSessions`).
 export function ChatRail({
   chat,
   open,
@@ -26,7 +30,7 @@ export function ChatRail({
         (open ? 'translate-x-0' : 'pointer-events-none translate-x-full')
       }
     >
-      <ChatConversation chat={chat} onClose={onClose} />
+      <ChatConversation chat={chat} onClose={onClose} enableSessions />
     </aside>
   )
 }

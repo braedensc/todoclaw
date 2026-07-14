@@ -4,7 +4,6 @@ import { MoreSheet } from './MoreSheet'
 
 describe('MoreSheet', () => {
   const handlers = () => ({
-    onInbox: vi.fn(),
     onReminders: vi.fn(),
     onSettings: vi.fn(),
     onSignOut: vi.fn(),
@@ -18,21 +17,13 @@ describe('MoreSheet', () => {
 
   it('lists the overflow actions when open', () => {
     render(<MoreSheet open {...handlers()} />)
-    // Backups moved into Settings → Backups (2026-07-14), so it's no longer a top-level More item.
-    for (const label of ['Inbox', 'Daily habits', 'Settings', 'Sign out']) {
+    // Backups moved into Settings → Backups (2026-07-14); the Inbox retired into the Chat drawer
+    // (2026-07-14) — so neither is a top-level More item anymore.
+    for (const label of ['Daily habits', 'Settings', 'Sign out']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     }
     expect(screen.queryByRole('button', { name: 'Backups' })).toBeNull()
-  })
-
-  it('shows an unread chip on the Inbox row and opens the inbox on tap', () => {
-    const h = handlers()
-    render(<MoreSheet open {...h} unread={3} />)
-    const inbox = screen.getByRole('button', { name: 'Inbox' })
-    expect(inbox).toHaveTextContent('3')
-    fireEvent.click(inbox)
-    expect(h.onInbox).toHaveBeenCalledTimes(1)
-    expect(h.onClose).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Inbox' })).toBeNull()
   })
 
   it('runs the action and closes the sheet on tap', () => {
