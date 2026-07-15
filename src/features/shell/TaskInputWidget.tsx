@@ -28,7 +28,9 @@ import { PawSteps } from '../../components/Thinking'
 //    When BabyClaw STOPS on a question or a destructive-tool confirmation, the whole frame turns
 //    terracotta and breathes, and a "waiting on your reply" strip (with inline Yes/No for
 //    confirmations) makes the blocked state unmissable — even from Manual mode, where the
-//    BabyClaw tab grows an attention dot. Full history opens in the chat drawer via "Open chat".
+//    BabyClaw tab grows an attention dot. "Open chat" opens the drawer on whatever the WIDGET is
+//    doing: this visit's conversation if one is going, else a brand-new chat (never the shared
+//    controller's auto-resumed session, which the widget had no part in).
 
 type Mode = 'manual' | 'babyclaw'
 
@@ -46,6 +48,20 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
   // Status reads THIS visit's live items only (not hydrated history) — else opening the app cold on
   // a resumed session would replay last night's "waiting on you" as if BabyClaw were actively stopped.
   const status = deriveBabyClawStatus({ ...chat, items: chat.liveItems })
+
+  // "Open chat" follows THE WIDGET, not whatever session the controller happens to hold. The shared
+  // controller auto-resumes the newest < 24h conversation at mount (use-ai-chat), so an untouched
+  // widget used to open last night's history — a chat the user never started from here. Same
+  // liveItems rule as the status line above: a live thread is this visit's streamed turns, plus a
+  // confirmation still awaiting an answer (that one is restored from the resumed row and has no
+  // liveItems of its own, so the waiting strip's "open the full chat" link must land ON the
+  // question rather than wipe it). Nothing live → start a fresh chat, so the drawer opens where the
+  // widget actually is. Sending still resumes as before; only this button re-anchors.
+  const hasLiveThread = chat.liveItems.length > 0 || chat.pending !== null
+  const handleOpenChat = () => {
+    if (!hasLiveThread) chat.newChat()
+    onOpenChat()
+  }
 
   return (
     // mt-2.5 reserves room for the title pill straddling the top border. The section landmark
@@ -84,8 +100,12 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
             />
             <button
               type="button"
-              onClick={onOpenChat}
-              title="Open the full BabyClaw conversation"
+              onClick={handleOpenChat}
+              title={
+                hasLiveThread
+                  ? 'Open the full BabyClaw conversation'
+                  : 'Start a new BabyClaw conversation'
+              }
               className={
                 'rounded px-2 py-0.5 text-[11px] transition-colors ' +
                 (status.waiting
@@ -99,7 +119,7 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
           {mode === 'manual' ? (
             <ManualInput grid={grid} canPlace={canPlace} />
           ) : (
-            <BabyClawInput chat={chat} status={status} onOpenChat={onOpenChat} />
+            <BabyClawInput chat={chat} status={status} onOpenChat={handleOpenChat} />
           )}
         </div>
       </div>
