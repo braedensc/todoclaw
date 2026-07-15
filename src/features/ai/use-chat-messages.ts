@@ -42,8 +42,9 @@ interface AssistantBlock {
 }
 
 // Concatenate an assistant turn's text blocks (skip tool_use/other blocks). Defensive against a
-// string content (shouldn't happen for assistant, but never throw on a stored row).
-function assistantText(content: unknown): string {
+// string content (shouldn't happen for assistant, but never throw on a stored row). Exported so the
+// list's preview line derives BabyClaw's words exactly the way the transcript does.
+export function assistantText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   return (content as AssistantBlock[])
