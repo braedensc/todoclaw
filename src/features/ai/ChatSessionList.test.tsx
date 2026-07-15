@@ -117,6 +117,65 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     expect(screen.queryByText('Task E')).toBeNull()
   })
 
+  describe('ranking BabyClaw check-ins by last message', () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+    const proactive = (id: string, updated_at: string): ChatSession => ({
+      ...s(id, null, 'proactive'),
+      updated_at,
+    })
+    const check = (
+      id: string,
+      title: string,
+      created_at: string,
+      session_id: string | null = null,
+    ) => m(id, { kind: 'reminder', title, created_at, session_id })
+
+    it('ranks a check-in by its LAST message, not when BabyClaw sent it', () => {
+      // "Task Old" arrived 3 days ago but you replied to it a minute ago; "Task New" arrived this
+      // morning and has sat untouched. The live conversation belongs on top.
+      messages = [
+        check('m-new', 'Task New', hoursAgo(2)),
+        check('m-old', 'Task Old', hoursAgo(72), 'sess-old'),
+      ]
+      sessions = [proactive('sess-old', hoursAgo(0))]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.getAllByText(/^Task /).map((e) => e.textContent)).toEqual([
+        'Task Old',
+        'Task New',
+      ])
+    })
+
+    it('the cap keeps the most recently ACTIVE check-ins, not the most recently arrived', () => {
+      // Sorting has to run BEFORE the cap: D arrived last of the four, but you're mid-reply in it,
+      // so it must survive and push the stalest one (C) out.
+      messages = ['A', 'B', 'C', 'D'].map((t, i) => check(`m${i}`, `Task ${t}`, hoursAgo(i + 1)))
+      messages[3] = check('m3', 'Task D', hoursAgo(4), 'sess-d')
+      sessions = [proactive('sess-d', hoursAgo(0))]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.getAllByText(/^Task /).map((e) => e.textContent)).toEqual([
+        'Task D',
+        'Task A',
+        'Task B',
+      ])
+      expect(screen.queryByText('Task C')).toBeNull()
+    })
+
+    it("stamps a check-in with its last message's time, not its arrival", () => {
+      messages = [check('m1', 'Task X', hoursAgo(72), 'sess-x')]
+      sessions = [proactive('sess-x', hoursAgo(0))]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.getByText(/Reminder · just now/)).toBeInTheDocument()
+      expect(screen.queryByText(/3d ago/)).toBeNull()
+    })
+
+    it('an unopened check-in still ranks on its arrival — that IS its last message', () => {
+      messages = [check('m-a', 'Task A', hoursAgo(5)), check('m-b', 'Task B', hoursAgo(1))]
+      sessions = []
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.getAllByText(/^Task /).map((e) => e.textContent)).toEqual(['Task B', 'Task A'])
+    })
+  })
+
   it('opens a user session on click and starts a new chat via the button', () => {
     const onOpen = vi.fn()
     const onNew = vi.fn()

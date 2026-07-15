@@ -141,9 +141,23 @@ export function ChatSessionList({
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't
-  // pile up forever (they arrive newest-first). Your own chats are shown in full, above.
+  // pile up forever. Your own chats are shown in full, above.
   const MAX_PROACTIVE = 3
-  const inbox = (messages ?? []).slice(0, MAX_PROACTIVE)
+  // Rank a check-in by its LAST MESSAGE, not its arrival. `messages` arrives newest-first by
+  // created_at, which is when BabyClaw SENT it — so replying to Monday's plan today left it sitting
+  // three days down, and the cap below could drop the very conversation you were mid-reply in. Once
+  // a check-in is opened it has a session, whose updated_at is the last-message clock
+  // (chat_append_message bumps it every turn); an unopened one has no session, so its arrival time
+  // IS its last message. Sorting must happen BEFORE the cap or it keeps the wrong three.
+  const inbox = useMemo(() => {
+    const byId = new Map((sessions ?? []).map((s) => [s.id, s]))
+    const lastActivity = (m: InboxMessage) =>
+      (m.session_id ? byId.get(m.session_id)?.updated_at : null) ?? m.created_at
+    return [...(messages ?? [])]
+      .sort((a, b) => Date.parse(lastActivity(b)) - Date.parse(lastActivity(a)))
+      .slice(0, MAX_PROACTIVE)
+      .map((m) => ({ msg: m, time: lastActivity(m) }))
+  }, [messages, sessions])
   // Proactive sessions are shown via their message row, so keep only person-started chats.
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
@@ -270,7 +284,7 @@ export function ChatSessionList({
 
         {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
         {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
-        {inbox.map((m) => {
+        {inbox.map(({ msg: m, time: lastAt }) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
           // Day-stamp his daily check-ins ("Monday morning plan") so it's obvious which day each is;
@@ -278,10 +292,9 @@ export function ChatSessionList({
           const dayTitle = proactiveDayLabel(m.kind, m.local_date)
           const title = dayTitle ?? m.title
           // A day-stamped title already says which check-in this is; a reminder's title is the task,
-          // so it keeps its kind label.
-          const time = dayTitle
-            ? relTime(m.created_at)
-            : `${kindLabel(m.kind)} · ${relTime(m.created_at)}`
+          // so it keeps its kind label. The stamp is the row's last message (the same clock it's
+          // ranked by) — showing the arrival time here would read "3d ago" on a chat you just replied to.
+          const time = dayTitle ? relTime(lastAt) : `${kindLabel(m.kind)} · ${relTime(lastAt)}`
           // Once opened, preview where the conversation actually got to. Until then there is no
           // session to read, and the check-in's own body IS its last (only) message.
           const seen = m.session_id ? previewBySession.get(m.session_id) : undefined

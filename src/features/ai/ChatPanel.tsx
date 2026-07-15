@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChatController } from './use-chat-controller'
 import { ChatConversation } from './ChatConversation'
+import type { ChatView } from './ChatConversation'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useBodyScrollLock } from '../../hooks/use-body-scroll-lock'
 import { useSwipeDismiss } from '../../hooks/use-swipe-dismiss'
@@ -19,7 +20,18 @@ import { useKeyboardViewport } from '../../hooks/use-keyboard-viewport'
 // (src/index.css). Dismissal matches every other mobile sheet: a swipe-down on the grab handle,
 // a scrim tap, or Back (when opened via a #/chat deep link, App routes the close through
 // `navigate('home')`). No ✕ on mobile — ChatConversation gets `showClose={false}`.
-export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: () => void }) {
+export function ChatPanel({
+  chat,
+  onClose,
+  view,
+  onViewChange,
+}: {
+  chat: ChatController
+  onClose: () => void
+  /** Which face to show. Owned by App so both shells agree and each entry point can aim the drawer. */
+  view?: ChatView
+  onViewChange?: (view: ChatView) => void
+}) {
   // Lock only on mobile: this component also mounts (display:none) on desktop, where ChatRail is
   // a non-modal push drawer and the page must keep scrolling.
   const isMobile = useIsMobile()
@@ -83,7 +95,14 @@ export function ChatPanel({ chat, onClose }: { chat: ChatController; onClose: ()
         <div className="flex min-h-0 flex-1 flex-col">
           {/* The in-drawer session switcher (the "See all chats" button → the unified inbox + saved
               chats) — the same on both shells now that the separate inbox is retired. */}
-          <ChatConversation chat={chat} onClose={onClose} showClose={false} enableSessions />
+          <ChatConversation
+            chat={chat}
+            onClose={onClose}
+            showClose={false}
+            enableSessions
+            view={view}
+            onViewChange={onViewChange}
+          />
         </div>
       </aside>
     </div>,
