@@ -23,7 +23,7 @@ shell; anchors resolve ONCE at mount and missing ones drop out silently. It also
 card height post-render, so a step whose copy runs long can't park its Next button below the fold
 (the card is `position: fixed` and never scrolls).
 
-The tour is **one section — eight panels**. `DemoScene` mounts INLINE in the real shell — below the
+The tour is **one section — nine panels**. `DemoScene` mounts INLINE in the real shell — below the
 real header/masthead, in the exact spot App.tsx would otherwise render the real PlanBox /
 RemindersInline / WorkArea (which App.tsx hides while the tour is up, so nothing stacks two boards).
 It is not a portal or a fixed overlay, so the real chrome around it — the header, the mascot mark,
@@ -34,10 +34,11 @@ the demo for free), the real RemindersInline habits strip above the board, and t
 ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
 drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the
 actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden
-scenery; `demoTour(isMobile)` narrates its first seven steps via `demo-*` anchors. The eight panels:
+scenery; `demoTour(isMobile)` narrates its first eight steps via `demo-*` anchors. The nine panels:
 welcome → board → three task kinds → **Plan My Day (the ✦ button + the plan it builds)** → morning →
-evening → daily habits → the rest of the app. Two steps' copy differs per breakpoint: the BOARD step
-(the desktop grid has the heat/cool/↻/❄️ decoder ring, the mobile quadrant overview has none) and the
+evening → chat-runs-the-whole-app → daily habits → the rest of the app. Two steps' copy differs per
+breakpoint: the BOARD step (the desktop grid has the heat/cool/↻/❄️ decoder ring, the mobile
+quadrant overview has none) and the
 closing options step (below).
 
 The ONE thing that stays look-only is the plan panel (`demo-plan`: a fake ✦ Plan My Day button +

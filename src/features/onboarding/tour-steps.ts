@@ -7,14 +7,15 @@ import type { TourStep } from './FeatureTour'
 //
 // The tour is ONE section: DemoScene mounts inline in the real shell (below the real header, in
 // place of the real board/plan/reminders it stands in for — see DemoScene's own comment), so the
-// real chrome around it is never hidden. Eight panels: welcome → board → three task kinds →
-// Plan My Day (button + the plan it builds) → morning → evening → daily habits → the rest of the
-// app. The first seven point at the example scene's own `demo-*` anchors (the board, the look-only
-// plan block, the two chat cards, the real habits strip mounted there); the LAST one points at the
-// REAL Account nav / bottom bar sitting right there in the shell — no look-alike copy.
+// real chrome around it is never hidden. Nine panels: welcome → board → three task kinds →
+// Plan My Day (button + the plan it builds) → morning → evening → chat-runs-it-all → daily habits
+// → the rest of the app. The first eight point at the example scene's own `demo-*` anchors (the
+// board, the look-only plan block, the two chat cards, the real habits strip mounted there); the
+// LAST one points at the REAL Account nav / bottom bar sitting right there in the shell — no
+// look-alike copy.
 
 /**
- * The demo tour. Steps 1–7 target the DemoScene's own `demo-*` wrapper anchors: 'grid' and 'matrix'
+ * The demo tour. Steps 1–8 target the DemoScene's own `demo-*` wrapper anchors: 'grid' and 'matrix'
  * also exist in the real shell underneath, and anchors resolve first-match-in-document. The closing
  * step targets `options`, the REAL Account nav (desktop header) / bottom bar (mobile) — DemoScene
  * doesn't cover them, so there's nothing to fake.
@@ -34,9 +35,9 @@ export function demoTour(isMobile: boolean): TourStep[] {
       target: 'demo-board',
       title: 'Welcome to TodoClaw',
       body:
-        'TodoClaw keeps everything you have to do in one place, sorted by how urgent and important ' +
-        'it is — then plans a realistic day for you each morning and checks in each evening. ' +
-        'Here’s a day already in motion.',
+        'TodoClaw is an AI-powered planner. Everything you have to do lands in one place, sorted ' +
+        'by how urgent and important it is — and BabyClaw, your AI pup, plans a realistic day ' +
+        'each morning and checks in each evening. Here’s a day already in motion.',
     },
     {
       target: 'demo-board',
@@ -88,7 +89,15 @@ export function demoTour(isMobile: boolean): TourStep[] {
       title: 'Evenings close the loop',
       body:
         'Each evening BabyClaw checks in. Reply in plain words — “1 and 3” — and he ticks them ' +
-        'off for you.',
+        'off for you: each green ✓ receipt is him really updating your board.',
+    },
+    {
+      target: 'demo-chat-evening',
+      title: 'Chat runs the whole app',
+      body:
+        'Check-ins are just the start: tell BabyClaw “add dentist Friday 2pm,” “push the invoice ' +
+        'to Monday,” or “what’s overdue?” — anytime, in plain words. He does it and stamps a ' +
+        'receipt, like the ones here.',
     },
     {
       target: 'demo-habits',
@@ -106,10 +115,12 @@ export function demoTour(isMobile: boolean): TourStep[] {
       body: isMobile
         ? 'The bar along the bottom is always there: BabyClaw’s chat, and Done for everything ' +
           'you’ve finished. Your habits and Settings — notifications, timezone, backups, and this ' +
-          'tour — live under “More”. And AI is always optional; everything here works by hand too.'
+          'tour — live under “More”. And you hold the leash: everything BabyClaw does with AI, ' +
+          'you can also do by hand — the whole planner works without him.'
         : 'Along the top: BabyClaw’s chat, your daily habits, Done for everything you’ve ' +
-          'finished, and Settings — notifications, your timezone, backups, and this tour. And AI ' +
-          'is always optional; everything here works by hand too.',
+          'finished, and Settings — notifications, your timezone, backups, and this tour. And ' +
+          'you hold the leash: everything BabyClaw does with AI, you can also do by hand — the ' +
+          'whole planner works without him.',
     },
   ]
 }

@@ -114,7 +114,7 @@ describe('SetupGuide', () => {
     expect(screen.getByText('Add TodoClaw to your Home Screen')).toBeInTheDocument()
     expect(screen.getByText('Turn on daily notifications')).toBeInTheDocument()
     expect(screen.getByText('Add a task, then let TodoClaw plan your day')).toBeInTheDocument()
-    expect(screen.getByText(/to-do list on a map/)).toBeInTheDocument()
+    expect(screen.getByText(/AI-powered planner/)).toBeInTheDocument()
     expect(screen.getByText('0/4')).toBeInTheDocument()
   })
 

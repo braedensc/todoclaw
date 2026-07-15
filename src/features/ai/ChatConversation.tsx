@@ -195,7 +195,7 @@ export function ChatConversation({
                     aria-hidden
                     className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(91,138,114,0.16)]"
                   />
-                  your planning pup
+                  your AI planning pup
                 </p>
               )}
             </div>
@@ -363,7 +363,8 @@ function EmptyState({ readOnly }: { readOnly: boolean }) {
         {readOnly ? 'Meet BabyClaw' : "BabyClaw's having a nap"}
       </p>
       <p className="max-w-[32ch] text-sm leading-relaxed text-muted">
-        Tell him what's on your plate and he'll add, move, plan, or clear it — in plain English.
+        Anything you can do in the app, he can do for you — add, move, plan your day, tick things
+        off. Plain English is all it takes.
       </p>
     </li>
   )

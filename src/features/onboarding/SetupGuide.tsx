@@ -341,8 +341,8 @@ export function SetupGuide({
       {/* The one-line pitch: what TodoClaw IS, before any step asks for anything. */}
       <p className="mt-0.5 text-[13px] leading-snug text-muted">
         {guide.allDone
-          ? 'You know your way around, TodoClaw is installed, and your daily plan will find you. Go get it.'
-          : `Welcome! TodoClaw is your to-do list on a map — tasks land by how urgent and important they are, so what to do next is always obvious. ${
+          ? 'You know your way around, TodoClaw is installed, and BabyClaw will fetch your plan each morning. Go get it.'
+          : `Welcome! TodoClaw is an AI-powered planner: tasks land on a map by how urgent and important they are, BabyClaw builds you a realistic day each morning and checks in each evening — and you can run it all by chatting with him. ${
               guide.stepCount === 4 ? 'Four' : 'Three'
             } quick steps:`}
       </p>

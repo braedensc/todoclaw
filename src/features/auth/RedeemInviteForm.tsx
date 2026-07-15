@@ -88,7 +88,8 @@ export function RedeemInviteForm({
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold text-ink">Redeem your invite</h2>
       <p className="text-sm text-muted">
-        You were invited to TodoClaw. Enter your code and pick a password to create your account.
+        You were invited to TodoClaw — an AI-powered planner with a puppy at the helm. Enter your
+        code and pick a password to create your account.
       </p>
 
       <input

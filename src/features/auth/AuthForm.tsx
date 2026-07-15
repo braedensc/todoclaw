@@ -31,6 +31,7 @@ export function AuthForm() {
     // and the golden auth.setup).
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold text-ink">Sign in</h2>
+      <p className="text-sm text-muted">AI plans your day. A puppy delivers it.</p>
 
       <input
         type="email"

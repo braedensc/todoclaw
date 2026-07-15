@@ -148,8 +148,8 @@ describe('demo tour script', () => {
     expect(closing(true).body).not.toMatch(/along the top/i)
   })
 
-  it('is the full 8-panel single section, in order, on both breakpoints', () => {
-    // The first seven steps live on DemoScene (the plan button and the habits strip); the last one
+  it('is the full 9-panel single section, in order, on both breakpoints', () => {
+    // The first eight steps live on DemoScene (the plan button and the habits strip); the last one
     // points at the real Account nav / bottom bar in the shell around it. Order matters (the plan
     // button precedes the check-ins; habits then the real options close it out).
     const expected = [
@@ -158,7 +158,8 @@ describe('demo tour script', () => {
       'demo-board', // three kinds of task
       'demo-plan', // Plan My Day button + the plan it builds
       'demo-chat-morning',
-      'demo-chat-evening',
+      'demo-chat-evening', // evenings close the loop
+      'demo-chat-evening', // chat runs the whole app (same anchor — its receipts are the proof)
       'demo-habits',
       'options',
     ]

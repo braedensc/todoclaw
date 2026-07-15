@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from '../helpers/fixtures'
 
-// The feature tour is ONE section (8 panels). DemoScene mounts INLINE in the real shell — below the
+// The feature tour is ONE section (9 panels). DemoScene mounts INLINE in the real shell — below the
 // real header/mascot, in place of the real board/plan/reminders it stands in for — so the chrome
 // around it (masthead, Account nav, mobile bottom bar) is always the real thing, never a look-alike.
 // Only the plan panel (`demo-plan`) is look-only scenery, since a first-run user has no real plan
@@ -31,11 +31,14 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
   // Opens with a plain-words welcome over a lived-in example board; the real header/mascot stay
   // visible above it the whole time (DemoScene mounts inline, not as a covering overlay).
   await expect(page.getByRole('dialog', { name: 'Welcome to TodoClaw' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: /TodoClaw/ })).toBeVisible()
+  // exact:true — Playwright's name match is a SUBSTRING, so /TodoClaw/ also matches the tour card's
+  // own "Welcome to TodoClaw" heading (a strict-mode violation). Only the masthead is "TodoClaw".
+  await expect(page.getByRole('heading', { name: 'TodoClaw', exact: true })).toBeVisible()
   await expect(page.getByText('Clean out the garage')).toBeVisible()
 
-  // Walk all eight panels: welcome → board → task kinds → plan → morning → evening → habits →
-  // settings, every one spotlighting an element on the single example scene.
+  // Walk all nine panels: welcome → board → task kinds → plan → morning → evening → chat →
+  // habits → the rest of the app. The first eight spotlight the example scene; the last one the
+  // REAL Account nav in the shell around it.
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Sorted by what matters' })).toBeVisible()
 
@@ -58,6 +61,9 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Evenings close the loop' })).toBeVisible()
   await expect(page.getByText(/Which of these did you knock out today\?/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Chat runs the whole app' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Daily habits' })).toBeVisible()
