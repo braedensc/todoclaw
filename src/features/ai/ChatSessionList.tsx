@@ -141,14 +141,17 @@ export function ChatSessionList({
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't
-  // pile up forever. Your own chats are shown in full, above.
-  const MAX_PROACTIVE = 3
+  // pile up forever. Your own chats are shown in full, above. This is a DISPLAY cap on rows — not a
+  // retention window: nothing is deleted (`messages` has no DELETE grant and no prune job; a row
+  // outlives the cap and dies only with the account). The note under the group says "showing", never
+  // "stored", because the difference is the user's data.
+  const MAX_PROACTIVE = 5
   // Rank a check-in by its LAST MESSAGE, not its arrival. `messages` arrives newest-first by
   // created_at, which is when BabyClaw SENT it — so replying to Monday's plan today left it sitting
   // three days down, and the cap below could drop the very conversation you were mid-reply in. Once
   // a check-in is opened it has a session, whose updated_at is the last-message clock
   // (chat_append_message bumps it every turn); an unopened one has no session, so its arrival time
-  // IS its last message. Sorting must happen BEFORE the cap or it keeps the wrong three.
+  // IS its last message. Sorting must happen BEFORE the cap or it keeps the wrong ones.
   const inbox = useMemo(() => {
     const byId = new Map((sessions ?? []).map((s) => [s.id, s]))
     const lastActivity = (m: InboxMessage) =>
@@ -158,6 +161,9 @@ export function ChatSessionList({
       .slice(0, MAX_PROACTIVE)
       .map((m) => ({ msg: m, time: lastActivity(m) }))
   }, [messages, sessions])
+  // The note earns its place only when the cap actually hides something — with nothing held back
+  // there's nothing to explain, and a standing footnote would just be noise.
+  const proactiveHidden = (messages?.length ?? 0) - inbox.length
   // Proactive sessions are shown via their message row, so keep only person-started chats.
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
@@ -324,6 +330,12 @@ export function ChatSessionList({
             </button>
           )
         })}
+        {/* Says "showing", not "stored" — the cap hides rows, it does not delete them. */}
+        {proactiveHidden > 0 && (
+          <p className="px-2 pb-1 pt-1.5 text-[10px] leading-snug text-muted-light">
+            Showing your {MAX_PROACTIVE} most recent check-ins.
+          </p>
+        )}
       </div>
     </div>
   )

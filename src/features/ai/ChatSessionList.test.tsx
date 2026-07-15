@@ -104,17 +104,27 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     expect(mine.compareDocumentPosition(his)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
-  it('caps "From BabyClaw" to the 3 most recent messages', () => {
+  it('caps "From BabyClaw" to the 5 most recent messages, and says so when it hides any', () => {
     // Reminders keep their own titles (no day-stamp), so they stay distinguishable for this count.
-    messages = ['A', 'B', 'C', 'D', 'E'].map((t, i) =>
+    messages = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((t, i) =>
       m(`m${i}`, { kind: 'reminder', title: `Task ${t}` }),
     )
     render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
-    for (const t of ['Task A', 'Task B', 'Task C']) {
+    for (const t of ['Task A', 'Task B', 'Task C', 'Task D', 'Task E']) {
       expect(screen.getByText(t)).toBeInTheDocument()
     }
-    expect(screen.queryByText('Task D')).toBeNull()
-    expect(screen.queryByText('Task E')).toBeNull()
+    expect(screen.queryByText('Task F')).toBeNull()
+    expect(screen.queryByText('Task G')).toBeNull()
+    // The note explains the two that are missing — and promises only what's true: they're not
+    // SHOWN. Nothing deletes a check-in, so it must never claim they aren't stored.
+    expect(screen.getByText('Showing your 5 most recent check-ins.')).toBeInTheDocument()
+  })
+
+  it('no note when nothing is hidden — there is nothing to explain', () => {
+    messages = ['A', 'B'].map((t, i) => m(`m${i}`, { kind: 'reminder', title: `Task ${t}` }))
+    render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+    expect(screen.getByText('Task A')).toBeInTheDocument()
+    expect(screen.queryByText(/most recent check-ins/)).toBeNull()
   })
 
   describe('ranking BabyClaw check-ins by last message', () => {
@@ -146,18 +156,23 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     })
 
     it('the cap keeps the most recently ACTIVE check-ins, not the most recently arrived', () => {
-      // Sorting has to run BEFORE the cap: D arrived last of the four, but you're mid-reply in it,
-      // so it must survive and push the stalest one (C) out.
-      messages = ['A', 'B', 'C', 'D'].map((t, i) => check(`m${i}`, `Task ${t}`, hoursAgo(i + 1)))
-      messages[3] = check('m3', 'Task D', hoursAgo(4), 'sess-d')
-      sessions = [proactive('sess-d', hoursAgo(0))]
+      // Sorting has to run BEFORE the cap: F arrived last of the six, but you're mid-reply in it,
+      // so it must survive and push the stalest one (E) out. Six rows for a cap of five — enough
+      // that the cap actually bites, so this can't quietly stop testing it.
+      messages = ['A', 'B', 'C', 'D', 'E', 'F'].map((t, i) =>
+        check(`m${i}`, `Task ${t}`, hoursAgo(i + 1)),
+      )
+      messages[5] = check('m5', 'Task F', hoursAgo(6), 'sess-f')
+      sessions = [proactive('sess-f', hoursAgo(0))]
       render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
       expect(screen.getAllByText(/^Task /).map((e) => e.textContent)).toEqual([
-        'Task D',
+        'Task F',
         'Task A',
         'Task B',
+        'Task C',
+        'Task D',
       ])
-      expect(screen.queryByText('Task C')).toBeNull()
+      expect(screen.queryByText('Task E')).toBeNull()
     })
 
     it("stamps a check-in with its last message's time, not its arrival", () => {
