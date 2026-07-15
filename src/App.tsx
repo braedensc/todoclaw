@@ -12,6 +12,7 @@ import { MoreSheet } from './features/shell/MoreSheet'
 import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
 import { useIsMobile } from './hooks/use-is-mobile'
+import { BACKGROUND_DISMISS_ATTR } from './hooks/use-background-dismiss'
 import { ToastProvider, useToast } from './components/use-toast'
 import { quadrantMeta, type QuadrantKey } from './lib/quadrants'
 import { QUADRANT_CENTER } from './lib/quadrant-summary'
@@ -252,6 +253,10 @@ function AppShell() {
       }
     >
       <div
+        // Page background — the gutters either side of the centered column, and any space below the
+        // content. Pressing it closes the open desktop chat rail (ChatRail/useBackgroundDismiss);
+        // only a press on this exact element counts, so everything inside still acts normally.
+        {...{ [BACKGROUND_DISMISS_ATTR]: true }}
         className={
           (isMobile
             ? 'min-h-0 flex-1 overflow-y-auto overscroll-none '
@@ -266,7 +271,11 @@ function AppShell() {
             freed (B2). */}
         {/* The bottom nav is now an in-flow flex child (below), not a fixed overlay, so the content
             column no longer needs a pb-28 spacer to clear it. */}
-        <div className="mx-auto max-w-3xl p-6 wide:max-w-[1280px]">
+        <div
+          // The column's own padding is background too — same exact-target rule as the wrapper above.
+          {...{ [BACKGROUND_DISMISS_ATTR]: true }}
+          className="mx-auto max-w-3xl p-6 wide:max-w-[1280px]"
+        >
           {/* Home vs. an overlay. 'home' renders the header, plan, inline reminders, and work area.
               The 'chat' route is home + the chat overlay — a notification tap must land on the main
               screen with the drawer open, not a blank shell. 'reminders' (Daily habits) AND 'done'

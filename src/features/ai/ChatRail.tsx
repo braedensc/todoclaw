@@ -1,6 +1,8 @@
 import type { ChatController } from './use-chat-controller'
 import { ChatConversation } from './ChatConversation'
 import type { ChatView } from './ChatConversation'
+import { useIsMobile } from '../../hooks/use-is-mobile'
+import { useBackgroundDismiss } from '../../hooks/use-background-dismiss'
 
 // DESKTOP chat shell (≥ 720px): a slide-out RIGHT column that PUSHES the grid left instead of
 // covering it (B2 decision). It's a fixed, full-height panel pinned to the viewport's right edge;
@@ -27,6 +29,18 @@ export function ChatRail({
   view?: ChatView
   onViewChange?: (view: ChatView) => void
 }) {
+  // Press the page's inert background (empty grid canvas, the gutters around the content column) to
+  // close. This rail has no scrim to tap — it pushes the grid rather than covering it — so without
+  // this the only way out is the header ✕. Deliberately NOT a plain click-outside: the app stays
+  // live behind a push drawer, so adding a task, opening settings, or dragging a card must all
+  // leave it open. See useBackgroundDismiss for why that's an allowlist.
+  //
+  // Mobile is excluded: this rail is display:none there (`wide:flex`) while the covering ChatPanel
+  // sheet takes over, and that sheet already dismisses on a scrim tap / swipe / Back. Without the
+  // guard this still-mounted rail would close that sheet on a background press behind the scrim.
+  const isMobile = useIsMobile()
+  useBackgroundDismiss(onClose, open && !isMobile)
+
   return (
     <aside
       aria-label="Chat"
