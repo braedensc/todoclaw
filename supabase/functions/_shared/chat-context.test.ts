@@ -204,3 +204,53 @@ Deno.test(
     assertStringIncludes(system, 'ongoing project')
   },
 )
+
+// BabyClaw's Location line prefers the CONFIRMED place (config.locationResolved, what wttr.in's
+// geocoder actually matched) over the raw typed string — so it agrees with the place the plan's
+// weather line describes instead of parroting back whatever was typed.
+const withConfig = (config: Record<string, unknown>) =>
+  fakeClient({
+    user_schedule: [{ timezone: 'America/New_York', config }],
+    tasks: [],
+    daily_state: [{ date: '2026-07-04', done: {}, habit_done: {}, subtask_done: {} }],
+  })
+
+Deno.test(
+  'loadChatContext: the Location line uses the confirmed place, not the typed string',
+  async () => {
+    const { context } = await loadChatContext(
+      withConfig({
+        location: 'Portlnad, OR', // a typo wttr.in silently geocodes to Roberts, Oregon
+        locationResolved: 'Roberts, Oregon, United States of America',
+      }),
+      NOW,
+    )
+    const system = buildSystem(context)
+    // The confirmed place wins: BabyClaw and the weather line now describe the SAME town.
+    assertStringIncludes(system, 'Location: Roberts, Oregon, United States of America.')
+    assert(!system.includes('Portlnad'), 'the raw typo leaked into the prompt')
+  },
+)
+
+Deno.test(
+  'loadChatContext: the Location line falls back to the typed string when unconfirmed',
+  async () => {
+    // Every config written before locationResolved existed looks like this. It must keep its
+    // Location line — a silent regression here would quietly strip context from existing users.
+    const { context } = await loadChatContext(withConfig({ location: 'Atlanta, GA' }), NOW)
+    assertStringIncludes(buildSystem(context), 'Location: Atlanta, GA.')
+  },
+)
+
+Deno.test('loadChatContext: a blank confirmed place does not blank the Location line', async () => {
+  const { context } = await loadChatContext(
+    withConfig({ location: 'Atlanta, GA', locationResolved: '   ' }),
+    NOW,
+  )
+  assertStringIncludes(buildSystem(context), 'Location: Atlanta, GA.')
+})
+
+Deno.test('loadChatContext: no location renders no Location line', async () => {
+  const { context } = await loadChatContext(withConfig({ planNotes: 'Mornings only.' }), NOW)
+  assert(!buildSystem(context).includes('Location:'), 'rendered a Location line with no location')
+})

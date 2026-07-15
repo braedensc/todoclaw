@@ -48,12 +48,17 @@ function sessionTag(s: ChatSession | null): { label: string; bell: boolean } | n
   return title ? { label: title, bell: false } : null
 }
 
+/** Which face the drawer shows: the open conversation, or the "Your chats" list. */
+export type ChatView = 'conversation' | 'history'
+
 export function ChatConversation({
   chat,
   onClose,
   showClose = true,
   readOnly = false,
   enableSessions = false,
+  view = 'conversation',
+  onViewChange,
 }: {
   chat: ChatController
   onClose: () => void
@@ -70,6 +75,15 @@ export function ChatConversation({
    * the list, never in this header.
    */
   enableSessions?: boolean
+  /**
+   * Which face to show — CONTROLLED by the shell (App) rather than held here, because the ENTRY
+   * POINT decides: the nav Chat entry opens the list, the widget's "Open chat" and a #/chat deep
+   * link open a conversation. Holding it here also couldn't work for the desktop rail, which stays
+   * mounted between opens and would keep whatever face it was left on. Defaults suit the look-only
+   * demo, which has no session switcher (enableSessions off → the list is unreachable anyway).
+   */
+  view?: ChatView
+  onViewChange?: (view: ChatView) => void
 }) {
   const {
     items,
@@ -86,7 +100,6 @@ export function ChatConversation({
     newChat,
   } = chat
   const [text, setText] = useState('')
-  const [view, setView] = useState<'conversation' | 'history'>('conversation')
   const showHistory = enableSessions && view === 'history'
   const listRef = useRef<HTMLUListElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -146,7 +159,7 @@ export function ChatConversation({
             </h2>
             <button
               type="button"
-              onClick={() => setView('conversation')}
+              onClick={() => onViewChange?.('conversation')}
               aria-label="Back to conversation"
               className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong bg-card px-3 py-1 text-xs font-medium text-ink hover:border-puppy/50"
             >
@@ -190,7 +203,7 @@ export function ChatConversation({
               {enableSessions && (
                 <button
                   type="button"
-                  onClick={() => setView('history')}
+                  onClick={() => onViewChange?.('history')}
                   title="Your inbox + saved chats"
                   className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-card px-2.5 py-1 text-[11px] font-medium text-ink hover:border-puppy/50"
                 >
@@ -217,11 +230,11 @@ export function ChatConversation({
           currentId={sessionId}
           onOpen={(id) => {
             openSession(id)
-            setView('conversation')
+            onViewChange?.('conversation')
           }}
           onNew={() => {
             newChat()
-            setView('conversation')
+            onViewChange?.('conversation')
           }}
         />
       ) : (

@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-// Todoclaw service worker (ADR-0031). Its whole job is Web Push: receive a push, show the
+// TodoClaw service worker (ADR-0031). Its whole job is Web Push: receive a push, show the
 // notification, and on click focus/open the app at a deep link (the two-way reply happens in-app,
 // not in the notification). Built by vite-plugin-pwa (injectManifest) — it runs in the WebWorker
 // lib, so it lives outside the app's tsc pass (excluded in tsconfig.app.json).
@@ -29,7 +29,7 @@ interface PushPayload {
 
 // The dispatcher sends JSON; degrade gracefully to text or a generic notice so a push never no-ops.
 function readPush(event: PushEvent): PushPayload {
-  const fallback: PushPayload = { title: 'Todoclaw', body: 'You have a new update.', url: '/' }
+  const fallback: PushPayload = { title: 'TodoClaw', body: 'You have a new update.', url: '/' }
   if (!event.data) return fallback
   try {
     const data = event.data.json() as Partial<PushPayload>

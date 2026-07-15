@@ -1,6 +1,6 @@
 # INVENTORY.md — Stack, Accounts & Secrets Tracker
 
-A single **at-a-glance** map of the whole Todoclaw stack: every technology, every account, every
+A single **at-a-glance** map of the whole TodoClaw stack: every technology, every account, every
 environment variable / secret **by name**, where each one lives, and the automated processes that
 tie them together. It's the "single pane of glass" for an audit, a key rotation, or onboarding a new
 environment.
@@ -34,7 +34,7 @@ Everything the app depends on across the stack. Dashboards are where you'd rotat
 usage. Billing posture: **only Anthropic can actually charge you** — Supabase Free and Vercel Hobby
 _pause_ a resource at the limit instead of billing (§5).
 
-| Service | What it does for Todoclaw | Account / login | Dashboard | Tier |
+| Service | What it does for TodoClaw | Account / login | Dashboard | Tier |
 |---|---|---|---|---|
 | **GitHub** | Source repo, CI (Actions), branch protection, secret scanning, Dependabot | `braedensc` (`gh` CLI: `repo, workflow, read:org, gist`) | [repo](https://github.com/braedensc/todoclaw) | Public repo → free Actions + security scanning |
 | **Supabase** | Entire backend: Postgres, Auth, RLS, Realtime, Edge Functions (Deno) | owner account | [project](https://supabase.com/dashboard/project/hknmhkzumkjhylxclrcy) | Free (pauses, never bills) |

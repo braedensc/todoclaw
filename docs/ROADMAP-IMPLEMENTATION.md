@@ -1,4 +1,4 @@
-# Todoclaw Scaling Roadmap — Implementation Plan
+# TodoClaw Scaling Roadmap — Implementation Plan
 
 Companion to [`ROADMAP.md`](./ROADMAP.md): the file-level plan for the six scaling
 workstreams, grounded in the codebase as of 2026-07-08 via multi-agent research and
@@ -312,7 +312,7 @@ that pauses AI for everyone; (2) an admin-controlled, allowlisted model per feat
 ## Phase 1 — Offload with MCP (BYO-AI)
 
 **Goal:** Expose the existing transport-agnostic capability registry over a Model
-Context Protocol (MCP) Streamable-HTTP endpoint so users can drive their own Todoclaw
+Context Protocol (MCP) Streamable-HTTP endpoint so users can drive their own TodoClaw
 planner from their own Claude/ChatGPT subscription — inference on the user's wallet,
 only tool *execution* (DB writes, and optionally the owner-key `generate_plan`) on ours.
 This is the second adapter over `_shared/capabilities/`, exactly the "future MCP server"
@@ -418,7 +418,7 @@ the layer was designed for, with no change to any capability.
 - [ ] Register/list the server as a Claude connector and verify the full browser OAuth consent → token → tools/call loop. Treat ChatGPT MCP as out of scope for now (newer/gated) — Claude connectors first.
 - **Files:** `supabase/config.toml`, `vercel.json`
 - **New:** OAuth discovery handlers, possible consent UI page, `vercel.json` rewrite rules for `/.well-known/*`
-- **Done when:** adding Todoclaw as a Claude.ai custom connector triggers OAuth (discovery → DCR → PKCE → consent), after which Claude lists and calls tools under the authenticated user's RLS identity — no pasted token.
+- **Done when:** adding TodoClaw as a Claude.ai custom connector triggers OAuth (discovery → DCR → PKCE → consent), after which Claude lists and calls tools under the authenticated user's RLS identity — no pasted token.
 
 #### WS6 — Guardrails, rate limit, config & CI wiring · `S`
 > Split by dependency order: the **config.toml + deploy.yml** half is a prerequisite for
@@ -733,7 +733,7 @@ and "adminClient fenced to one caller" claims were both wrong; corrected below)
 
 ## Phase 3b — Infra cutover & hardening (infrastructure)
 
-**Goal:** Keep Todoclaw responsive and within budget as the user base grows from 5 → 500
+**Goal:** Keep TodoClaw responsive and within budget as the user base grows from 5 → 500
 → 5000: break the serial hourly dispatcher into a parallel fan-out, add retention/pruning
 to the append-only tables, and cut the managed tiers (Supabase Free → Pro, Vercel Hobby →
 Pro) over before Free-tier ceilings force an outage — sequenced against the tier triggers.
@@ -852,7 +852,7 @@ Pro) over before Free-tier ceilings force an outage — sequenced against the ti
 
 ## Phase 4 — Go native (iOS, separate project)
 
-**Goal:** Decide IF and HOW Todoclaw goes native on iOS via a four-rung ladder (PWA →
+**Goal:** Decide IF and HOW TodoClaw goes native on iOS via a four-rung ladder (PWA →
 Capacitor → React Native/Expo → Swift/SwiftUI), with the reuse fraction, cost, and unlock
 at each rung. **This is a scoping section, not a build plan** — the deliverable is a
 go/no-go decision framework. The forcing function for going past rung 1 is native Apple

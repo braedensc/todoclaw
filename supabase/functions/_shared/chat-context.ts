@@ -117,10 +117,26 @@ function parseAssistant(config: Record<string, unknown> | null): AssistantConfig
   return { tone, verbosity, customInstructions }
 }
 
+// First of `vals` that's a non-blank string, trimmed; null if none. Guards against a jsonb key that
+// is absent, null, blank, or (defensively — this config is user-shaped) not a string at all.
+function firstText(...vals: unknown[]): string | null {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return null
+}
+
 function scheduleSummary(config: Record<string, unknown> | null, dayOfWeek: string): string | null {
   if (!config) return null
   const bits: string[] = []
-  if (typeof config.location === 'string') bits.push(`Location: ${config.location}.`)
+  // Prefer the CONFIRMED place (what wttr.in's geocoder matched — see resolve-location) over the
+  // raw typed string. It's canonical, so it disambiguates the Portlands instead of leaving the
+  // model to guess; it's the place the plan's weather line actually describes, so the two can't
+  // contradict each other; and a typo'd string ("Portlnad, OR") is noise the model may invent
+  // around. Falls back to the raw text for configs written before locationResolved existed, or
+  // where the lookup never succeeded — those still get today's behavior, just unconfirmed.
+  const place = firstText(config.locationResolved, config.location)
+  if (place) bits.push(`Location: ${place}.`)
   const isWeekend = dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday'
   const weekday = (config.weekday ?? {}) as Record<string, unknown>
   const weekend = (config.weekend ?? {}) as Record<string, Record<string, unknown>>

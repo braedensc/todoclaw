@@ -1,5 +1,6 @@
 import type { ChatController } from './use-chat-controller'
 import { ChatConversation } from './ChatConversation'
+import type { ChatView } from './ChatConversation'
 
 // DESKTOP chat shell (≥ 720px): a slide-out RIGHT column that PUSHES the grid left instead of
 // covering it (B2 decision). It's a fixed, full-height panel pinned to the viewport's right edge;
@@ -16,10 +17,15 @@ export function ChatRail({
   chat,
   open,
   onClose,
+  view,
+  onViewChange,
 }: {
   chat: ChatController
   open: boolean
   onClose: () => void
+  /** Which face to show. Owned by App — this rail stays mounted, so it can't hold the state itself. */
+  view?: ChatView
+  onViewChange?: (view: ChatView) => void
 }) {
   return (
     <aside
@@ -30,7 +36,13 @@ export function ChatRail({
         (open ? 'translate-x-0' : 'pointer-events-none translate-x-full')
       }
     >
-      <ChatConversation chat={chat} onClose={onClose} enableSessions />
+      <ChatConversation
+        chat={chat}
+        onClose={onClose}
+        enableSessions
+        view={view}
+        onViewChange={onViewChange}
+      />
     </aside>
   )
 }

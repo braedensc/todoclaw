@@ -63,8 +63,8 @@ export function TimezoneMismatchBanner({
       <span aria-hidden>🕐</span>
       <span className="min-w-0 flex-1 basis-52">
         Your device clock is on <strong>{zoneLabel(deviceZone)}</strong> time ({clockIn(deviceZone)}
-        ), but Todoclaw is set to <strong>{zoneLabel(stored)}</strong> ({clockIn(stored)}). Due
-        dates, reminders, and the daily reset follow the Todoclaw timezone.
+        ), but TodoClaw is set to <strong>{zoneLabel(stored)}</strong> ({clockIn(stored)}). Due
+        dates, reminders, and the daily reset follow the TodoClaw timezone.
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <button

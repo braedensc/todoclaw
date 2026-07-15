@@ -13,6 +13,7 @@ import { kindLabel, proactiveDayLabel } from '../notifications/message-format'
 import { useToast } from '../../components/use-toast'
 import { PawPrint } from '../../components/PawPrint'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
+import { BarkingClaw } from '../../components/BarkingClaw'
 
 // The unified "Your chats" list — BabyClaw's inbox AND your conversations in one warm place (the
 // inbox is retired as a separate surface; the chat drawer IS the inbox now). Two groups:
@@ -60,9 +61,13 @@ function BellGlyph() {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+// `icon` rides at the group's own scale, not the label's — the heading text is 11px caps, and a glyph
+// shrunk to match would be a smudge. Anything passed here must be decorative (aria-hidden): the text
+// is the accessible name.
+function GroupLabel({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return (
-    <p className="mt-3 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
+    <p className="mt-3 flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
+      {icon}
       {children}
     </p>
   )
@@ -141,9 +146,29 @@ export function ChatSessionList({
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't
-  // pile up forever (they arrive newest-first). Your own chats are shown in full, above.
-  const MAX_PROACTIVE = 3
-  const inbox = (messages ?? []).slice(0, MAX_PROACTIVE)
+  // pile up forever. Your own chats are shown in full, above. This is a DISPLAY cap on rows — not a
+  // retention window: nothing is deleted (`messages` has no DELETE grant and no prune job; a row
+  // outlives the cap and dies only with the account). The note under the group says "showing", never
+  // "stored", because the difference is the user's data.
+  const MAX_PROACTIVE = 5
+  // Rank a check-in by its LAST MESSAGE, not its arrival. `messages` arrives newest-first by
+  // created_at, which is when BabyClaw SENT it — so replying to Monday's plan today left it sitting
+  // three days down, and the cap below could drop the very conversation you were mid-reply in. Once
+  // a check-in is opened it has a session, whose updated_at is the last-message clock
+  // (chat_append_message bumps it every turn); an unopened one has no session, so its arrival time
+  // IS its last message. Sorting must happen BEFORE the cap or it keeps the wrong ones.
+  const inbox = useMemo(() => {
+    const byId = new Map((sessions ?? []).map((s) => [s.id, s]))
+    const lastActivity = (m: InboxMessage) =>
+      (m.session_id ? byId.get(m.session_id)?.updated_at : null) ?? m.created_at
+    return [...(messages ?? [])]
+      .sort((a, b) => Date.parse(lastActivity(b)) - Date.parse(lastActivity(a)))
+      .slice(0, MAX_PROACTIVE)
+      .map((m) => ({ msg: m, time: lastActivity(m) }))
+  }, [messages, sessions])
+  // The note earns its place only when the cap actually hides something — with nothing held back
+  // there's nothing to explain, and a standing footnote would just be noise.
+  const proactiveHidden = (messages?.length ?? 0) - inbox.length
   // Proactive sessions are shown via their message row, so keep only person-started chats.
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
@@ -269,8 +294,12 @@ export function ChatSessionList({
         })}
 
         {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
-        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
-        {inbox.map((m) => {
+        {inbox.length > 0 && (
+          <GroupLabel icon={<BarkingClaw className="-my-1 h-8 w-auto shrink-0" />}>
+            From BabyClaw
+          </GroupLabel>
+        )}
+        {inbox.map(({ msg: m, time: lastAt }) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
           // Day-stamp his daily check-ins ("Monday morning plan") so it's obvious which day each is;
@@ -278,14 +307,18 @@ export function ChatSessionList({
           const dayTitle = proactiveDayLabel(m.kind, m.local_date)
           const title = dayTitle ?? m.title
           // A day-stamped title already says which check-in this is; a reminder's title is the task,
-          // so it keeps its kind label.
-          const time = dayTitle
-            ? relTime(m.created_at)
-            : `${kindLabel(m.kind)} · ${relTime(m.created_at)}`
+          // so it keeps its kind label. The stamp is the row's last message (the same clock it's
+          // ranked by) — showing the arrival time here would read "3d ago" on a chat you just replied to.
+          const time = dayTitle ? relTime(lastAt) : `${kindLabel(m.kind)} · ${relTime(lastAt)}`
           // Once opened, preview where the conversation actually got to. Until then there is no
           // session to read, and the check-in's own body IS its last (only) message.
           const seen = m.session_id ? previewBySession.get(m.session_id) : undefined
           const preview = seen?.text || assistantSnippet(m.body)
+          // You've said something back (>1 visible message — the RPC drops the hidden framing turn,
+          // so a check-in you merely received sits at exactly 1). Tints the whole row, which is what
+          // makes engaged-vs-untouched legible down the GROUP at a glance; the count badge only
+          // answers the question row by row, once you're already looking at that row.
+          const engaged = (seen?.count ?? 0) > 1
           return (
             <button
               key={m.id}
@@ -294,7 +327,13 @@ export function ChatSessionList({
               title={title}
               className={
                 'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
-                (active ? 'bg-card ring-1 ring-border' : 'hover:bg-card')
+                // The open conversation still wins the row's background — it's the stronger state,
+                // and stacking both would just muddy each.
+                (active
+                  ? 'bg-card ring-1 ring-border'
+                  : engaged
+                    ? 'bg-puppy/[0.07] hover:bg-card'
+                    : 'hover:bg-card')
               }
             >
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-puppy/10 text-puppy">
@@ -311,6 +350,12 @@ export function ChatSessionList({
             </button>
           )
         })}
+        {/* Says "showing", not "stored" — the cap hides rows, it does not delete them. */}
+        {proactiveHidden > 0 && (
+          <p className="px-2 pb-1 pt-1.5 text-[10px] leading-snug text-muted-light">
+            Showing your {MAX_PROACTIVE} most recent check-ins.
+          </p>
+        )}
       </div>
     </div>
   )

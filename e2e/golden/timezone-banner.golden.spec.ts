@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test'
 test.use({ timezoneId: 'Pacific/Auckland' })
 
 const banner = (page: import('@playwright/test').Page) =>
-  page.getByRole('status').filter({ hasText: 'Todoclaw is set to' })
+  page.getByRole('status').filter({ hasText: 'TodoClaw is set to' })
 
 test('mismatch banner names both zones; Keep dismisses and persists across reload', async ({
   page,

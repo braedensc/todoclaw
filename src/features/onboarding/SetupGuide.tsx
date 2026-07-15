@@ -86,17 +86,17 @@ function StepButton({
 // The install step's wording per install gesture — the words on the actual buttons, never "PWA".
 // ('unknown' has no install step, so its entries are never shown — kept only to satisfy the map.)
 const INSTALL_STEP_TITLE: Record<InstallContext, string> = {
-  ios: 'Add Todoclaw to your Home Screen',
-  'macos-safari': 'Add Todoclaw to your Dock',
-  chromium: 'Install the Todoclaw app',
-  unknown: 'Install the Todoclaw app',
+  ios: 'Add TodoClaw to your Home Screen',
+  'macos-safari': 'Add TodoClaw to your Dock',
+  chromium: 'Install the TodoClaw app',
+  unknown: 'Install the TodoClaw app',
 }
 const INSTALL_STEP_HINT: Record<InstallContext, string> = {
-  ios: 'Gives Todoclaw its own icon — and it’s how your iPhone lets it send you notifications (the next step). The guide shows every tap.',
+  ios: 'Gives TodoClaw its own icon — and it’s how your iPhone lets it send you notifications (the next step). The guide shows every tap.',
   'macos-safari':
-    'Gives Todoclaw its own Dock icon and window, and lets its notifications reach you. The guide shows exactly what to click.',
+    'Gives TodoClaw its own Dock icon and window, and lets its notifications reach you. The guide shows exactly what to click.',
   chromium:
-    'Give Todoclaw its own window and taskbar/dock icon — it launches and behaves like a real app.',
+    'Give TodoClaw its own window and taskbar/dock icon — it launches and behaves like a real app.',
   unknown: '',
 }
 
@@ -161,7 +161,7 @@ export function SetupGuide({
     switch (key) {
       case 'tour':
         return (
-          <Step key="tour" index={index} done={guide.done.tour} title="See how Todoclaw works">
+          <Step key="tour" index={index} done={guide.done.tour} title="See how TodoClaw works">
             <StepHint>
               Watch a quick example day — a filled-out board, the morning plan, and BabyClaw’s
               check-ins in action.
@@ -221,8 +221,8 @@ export function SetupGuide({
               // install step (rendered just above this one on Apple) first.
               <StepHint>
                 {install.context === 'ios'
-                  ? 'Add Todoclaw to your Home Screen first (the step above) — iPhone only lets the installed app send notifications. Then turn them on inside it.'
-                  : 'Add Todoclaw to your Dock first (the step above) — then turn notifications on inside the app so they reach you reliably.'}
+                  ? 'Add TodoClaw to your Home Screen first (the step above) — iPhone only lets the installed app send notifications. Then turn them on inside it.'
+                  : 'Add TodoClaw to your Dock first (the step above) — then turn notifications on inside the app so they reach you reliably.'}
               </StepHint>
             )}
           </Step>
@@ -233,7 +233,7 @@ export function SetupGuide({
             key="plan"
             index={index}
             done={guide.done.plan}
-            title="Add a task, then let Todoclaw plan your day"
+            title="Add a task, then let TodoClaw plan your day"
           >
             {!guide.taskAdded ? (
               <>
@@ -338,11 +338,11 @@ export function SetupGuide({
           </button>
         )}
       </div>
-      {/* The one-line pitch: what Todoclaw IS, before any step asks for anything. */}
+      {/* The one-line pitch: what TodoClaw IS, before any step asks for anything. */}
       <p className="mt-0.5 text-[13px] leading-snug text-muted">
         {guide.allDone
-          ? 'You know your way around, Todoclaw is installed, and your daily plan will find you. Go get it.'
-          : `Welcome! Todoclaw is your to-do list on a map — tasks land by how urgent and important they are, so what to do next is always obvious. ${
+          ? 'You know your way around, TodoClaw is installed, and your daily plan will find you. Go get it.'
+          : `Welcome! TodoClaw is your to-do list on a map — tasks land by how urgent and important they are, so what to do next is always obvious. ${
               guide.stepCount === 4 ? 'Four' : 'Three'
             } quick steps:`}
       </p>
