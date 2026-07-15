@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 
-// Sign-in only. Todoclaw is an invite-only app (Stage 4, ADR-0014): public sign-up stays
+// Sign-in only. TodoClaw is an invite-only app (Stage 4, ADR-0014): public sign-up stays
 // disabled, so this form offers no open account-creation path. Accounts are created by owner
 // invite — either in the Supabase dashboard, or by redeeming an owner-generated invite code
 // (ADR-0030, see RedeemInviteForm, reached via AuthGate). AI features run on the owner's key for

@@ -1,6 +1,6 @@
 # Edge Functions (Deno)
 
-Server-side AI for Todoclaw. **The Anthropic key never leaves the server** — all model calls
+Server-side AI for TodoClaw. **The Anthropic key never leaves the server** — all model calls
 run here, never in the frontend bundle (CLAUDE.md Hard Rule; ADR-0015). Deno 2 runtime
 (`supabase/config.toml` → `[edge_runtime]`).
 
@@ -14,7 +14,7 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   invite-code.ts # high-entropy Crockford-base32 invite-code generator + redeem URL
   anthropic.ts   # Anthropic SDK client factory + MODEL/MAX_TOKENS (owner key from env)
   guardrails.ts  # per-user rate limits + global budget kill-switch + cost math
-  weather.ts     # wttr.in summary, cached ~30min via weather_cache (DEFINER get/put)
+  weather.ts     # wttr.in summary (cached ~30min via weather_cache) + resolveLocation (nearest_area echo)
   plan-prompt.ts # Plan My Day prompt builder + emit_plan tool (structured output)
   plan-inputs.ts # server-side buildPlanRequest (task/habit selection + date math, ported from src/lib)
   run-plan.ts    # in-process Plan My Day path (own plan_my_day gate); injected into BabyClaw's generate_plan
@@ -27,6 +27,7 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   dates.ts       # localDateInTZ port (for user-local date math)
   *.test.ts      # deno unit tests for the pure logic (cors, cost, prompt, placement, registry, dates)
 ai-status/       # PR2 proof endpoint: returns the caller's budget/rate-limit state (no model call)
+resolve-location/ # echo back the place wttr.in matched for a typed location, so Settings can confirm it
 plan-my-day/     # PR3: schedule + weather-aware daily plan (forced emit_plan tool → structured JSON)
 ai-chat/         # BabyClaw: streaming chat over the capability registry; confirm before destructive ops
                  #   (ADR-0017); SERVER-authoritative persistent transcript (chat_sessions/messages, persistent-chats ADR)

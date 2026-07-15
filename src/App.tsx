@@ -26,6 +26,7 @@ import { useChatController } from './features/ai/use-chat-controller'
 import { useTimeZone } from './features/schedule/use-time-zone'
 import { ChatPanel } from './features/ai/ChatPanel'
 import { ChatRail } from './features/ai/ChatRail'
+import type { ChatView } from './features/ai/ChatConversation'
 import { DonePage } from './features/done/DonePage'
 import { DoneSheet } from './features/done/DoneSheet'
 import { SettingsPanel } from './features/settings/SettingsPanel'
@@ -64,6 +65,12 @@ const planPillStyle = { backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #
 function AppShell() {
   const route = useRoute()
   const [showChat, setShowChat] = useState(false)
+  // Which face the chat drawer opens on. Owned HERE, not inside ChatConversation, because the
+  // ENTRY POINT decides: the nav Chat entry means "go to my chats" (the list), while the widget's
+  // "Open chat" and a #/chat/<id> deep link mean one specific conversation. It also has to be
+  // settable per open — the desktop rail stays mounted and slides off (ChatRail), so drawer-local
+  // state would keep whatever face it was left on and a later nav click couldn't re-aim it.
+  const [chatView, setChatView] = useState<ChatView>('conversation')
   const [showSettings, setShowSettings] = useState(false)
   // Set when Settings should open scrolled to a specific section (the setup guide's
   // "Turn on notifications" deep-link); cleared on close so a normal open starts at the top.
@@ -142,7 +149,7 @@ function AppShell() {
   // Sign out sits one tap deep in the mobile More sheet, right under Backups — a mis-tap used to
   // cost a full re-login (audit §4.7). Same guard on the desktop header link for consistency.
   const confirmSignOut = async () => {
-    if (await confirm({ title: 'Sign out of Todoclaw?', confirmLabel: 'Sign out' }))
+    if (await confirm({ title: 'Sign out of TodoClaw?', confirmLabel: 'Sign out' }))
       void supabase.auth.signOut()
   }
 
@@ -164,6 +171,17 @@ function AppShell() {
   const openMsgChat = useOpenMessageChat().mutate
   const chatMsgId = useChatMessageId()
   const openedMsgRef = useRef<string | null>(null)
+  // A deep link names ONE conversation, so aim the drawer at it — a notification tapped while the
+  // drawer was last left on the list would otherwise resolve the session behind the list. Done on
+  // the TRANSITION to a new link (guarded by state, adjusted during render — React's sanctioned
+  // derive-from-changed-props pattern) so that "See all chats" still works while a deep link is up,
+  // and so it isn't a set-state-in-effect. The guard is state, not a ref: a ref would survive
+  // StrictMode's discarded first render pass and swallow the update.
+  const [aimedMsgId, setAimedMsgId] = useState<string | null>(null)
+  if (chatMsgId !== aimedMsgId) {
+    setAimedMsgId(chatMsgId)
+    if (chatMsgId) setChatView('conversation')
+  }
   useEffect(() => {
     if (!chatMsgId) {
       openedMsgRef.current = null // left the deep link — allow reopening the same message later
@@ -197,6 +215,16 @@ function AppShell() {
   const closeChat = () => {
     setShowChat(false)
     if (route === 'chat') navigate('home')
+  }
+  // The two ways to open the drawer, each naming the face it wants. Every opener goes through one
+  // of these so no caller can open the drawer without saying what it's opening ON.
+  const openChatList = () => {
+    setChatView('history')
+    setShowChat(true)
+  }
+  const openChatConversation = () => {
+    setChatView('conversation')
+    setShowChat(true)
   }
 
   return (
@@ -268,7 +296,7 @@ function AppShell() {
                             playful
                             className="-my-1 h-12 w-12 shrink-0 drop-shadow-sm"
                           />
-                          Todoclaw
+                          TodoClaw
                           <span aria-hidden className="-ml-1 text-accent">
                             .
                           </span>
@@ -362,7 +390,7 @@ function AppShell() {
                             playful
                             className="h-7 w-7 wide:-my-3 wide:mr-0.5 wide:h-[62px] wide:w-[62px] wide:drop-shadow-sm"
                           />
-                          Todoclaw
+                          TodoClaw
                           <span aria-hidden className="-ml-1.5 text-accent">
                             .
                           </span>
@@ -456,8 +484,8 @@ function AppShell() {
                           so the unread count rides here. 🐾 is BabyClaw's identity mark app-wide. */}
                       <button
                         type="button"
-                        onClick={() => setShowChat(true)}
-                        title="BabyClaw — chat & your daily plan/recap"
+                        onClick={openChatList}
+                        title="BabyClaw — your chats, daily plan & recap"
                         data-tour="chat"
                         className="relative hover:text-ink"
                       >
@@ -660,7 +688,7 @@ function AppShell() {
               <ErrorBoundary>
                 <WorkArea
                   chat={chat}
-                  onOpenChat={() => setShowChat(true)}
+                  onOpenChat={openChatConversation}
                   gridOnly={gridOnly}
                   onExitGridOnly={() => setGridOnly(false)}
                   quadrantFocus={quadrantFocus}
@@ -731,7 +759,7 @@ function AppShell() {
                   const c = QUADRANT_CENTER[dest]
                   showToast(`Added to ${quadrantMeta(c.x, c.y).label} ✓`)
                 }}
-                onOpenChat={() => setShowChat(true)}
+                onOpenChat={openChatConversation}
                 onClose={() => setShowAdd(false)}
               />
               <MoreSheet
@@ -765,7 +793,7 @@ function AppShell() {
             }
           }}
           onAdd={() => setShowAdd(true)}
-          onChat={() => setShowChat(true)}
+          onChat={openChatList}
           onDone={() => navigate('done')}
           onMore={() => setShowMore(true)}
         />
@@ -773,10 +801,16 @@ function AppShell() {
 
       {/* Chat — desktop push-drawer (shrinks the grid) + mobile covering bottom-sheet. Both are
           driven by the same `showChat` flag; only one is visible per breakpoint. */}
-      <ChatRail chat={chat} open={chatOpen} onClose={closeChat} />
+      <ChatRail
+        chat={chat}
+        open={chatOpen}
+        onClose={closeChat}
+        view={chatView}
+        onViewChange={setChatView}
+      />
       {chatOpen && (
         <ErrorBoundary>
-          <ChatPanel chat={chat} onClose={closeChat} />
+          <ChatPanel chat={chat} onClose={closeChat} view={chatView} onViewChange={setChatView} />
         </ErrorBoundary>
       )}
     </div>
@@ -812,7 +846,7 @@ export default function App() {
               className="font-serif text-[46px] font-[620] leading-none tracking-[-0.015em] text-ink"
               style={{ fontVariationSettings: "'opsz' 70" }}
             >
-              Todoclaw
+              TodoClaw
               <span aria-hidden className="text-accent">
                 .
               </span>

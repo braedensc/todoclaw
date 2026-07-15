@@ -109,11 +109,11 @@ describe('SetupGuide', () => {
     mockGuide.mockReturnValue(baseState())
     render(<SetupGuide {...noopProps} />)
     expect(screen.getByRole('region', { name: 'Setup guide' })).toBeInTheDocument()
-    expect(screen.getByText('See how Todoclaw works')).toBeInTheDocument()
+    expect(screen.getByText('See how TodoClaw works')).toBeInTheDocument()
     // Install + notifications are now SEPARATE, separately-titled steps.
-    expect(screen.getByText('Add Todoclaw to your Home Screen')).toBeInTheDocument()
+    expect(screen.getByText('Add TodoClaw to your Home Screen')).toBeInTheDocument()
     expect(screen.getByText('Turn on daily notifications')).toBeInTheDocument()
-    expect(screen.getByText('Add a task, then let Todoclaw plan your day')).toBeInTheDocument()
+    expect(screen.getByText('Add a task, then let TodoClaw plan your day')).toBeInTheDocument()
     expect(screen.getByText(/AI-powered planner/)).toBeInTheDocument()
     expect(screen.getByText('0/4')).toBeInTheDocument()
   })
@@ -131,7 +131,7 @@ describe('SetupGuide', () => {
     render(<SetupGuide {...noopProps} />)
     // Notifications can't be enabled from an iOS tab — no button, it points at the install step.
     expect(screen.queryByRole('button', { name: /Turn on notifications/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/Add Todoclaw to your Home Screen first/)).toBeInTheDocument()
+    expect(screen.getByText(/Add TodoClaw to your Home Screen first/)).toBeInTheDocument()
     // The install step's own button opens the drawn walkthrough.
     fireEvent.click(screen.getByRole('button', { name: 'Show me how' }))
     expect(screen.getByText(/“Add to Home Screen”/)).toBeInTheDocument()

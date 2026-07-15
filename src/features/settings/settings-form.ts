@@ -19,6 +19,10 @@ export interface CommitmentDraft {
 
 export interface SettingsDraft {
   location: string
+  // The place wttr.in matched for `location`, echoed under the field as a confirmation. Set by the
+  // resolve-on-blur lookup and CLEARED the instant `location` is edited, so the label can never
+  // describe a place other than what's currently typed. '' = nothing resolved (yet).
+  locationResolved: string
   wakeTime: string
   workStart: string
   workEnd: string
@@ -51,6 +55,7 @@ export interface SettingsDraft {
 
 export const EMPTY_DRAFT: SettingsDraft = {
   location: '',
+  locationResolved: '',
   wakeTime: '',
   workStart: '',
   workEnd: '',
@@ -92,6 +97,9 @@ export function configToDraft(config: ScheduleConfig | null | undefined): Settin
   const notif = c.notifications ?? {}
   return {
     location: c.location ?? '',
+    // Seeds the confirmation line on open, so a saved location still shows what it matched without
+    // a fresh network round trip. Absent on any config written before locationResolved existed.
+    locationResolved: c.locationResolved ?? '',
     wakeTime: wd.wakeTime ?? '',
     workStart: wd.workStart ?? '',
     workEnd: wd.workEnd ?? '',
@@ -205,8 +213,12 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
           ? undefined
           : Number(draft.reminderDefault),
   })
+  const location = str(draft.location)
   const raw = compact({
-    location: str(draft.location),
+    location,
+    // A label without the location it describes is orphaned state, so clearing the location drops
+    // it too. (The editor also clears it on every edit; this is the save-time backstop.)
+    locationResolved: location ? str(draft.locationResolved) : undefined,
     weekday,
     weekend,
     commitments: commitments.length ? commitments : undefined,

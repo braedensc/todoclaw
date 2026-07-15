@@ -17,8 +17,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: false,
       manifest: {
-        name: 'Todoclaw',
-        short_name: 'Todoclaw',
+        name: 'TodoClaw',
+        short_name: 'TodoClaw',
         description:
           'AI-powered day planner: an urgency × importance map, a morning plan, an evening check-in — run it all by chat.',
         theme_color: '#2e2a24',

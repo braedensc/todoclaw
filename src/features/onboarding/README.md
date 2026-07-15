@@ -8,7 +8,7 @@ on a live example day).
 
 Platform-adaptive steps, each auto-detecting completion:
 
-1. **See how Todoclaw works** — launches the feature tour (below).
+1. **See how TodoClaw works** — launches the feature tour (below).
 2. **Install as a web app** — platform-specific gesture (iOS: Share → Add to Home Screen, which is
    *required* for push there; macOS Safari: File → Add to Dock; Chromium: a native install button
    via `beforeinstallprompt`, or address-bar instructions). Hidden where no gesture exists
@@ -26,20 +26,32 @@ card height post-render, so a step whose copy runs long can't park its Next butt
 The tour is **one section — nine panels, all on the example day**. `DemoScene` is a full-screen
 overlay showing the app in real use: the REAL board components (GridSurface / MobileMatrix) fed by a
 nested, sealed TanStack QueryClient (`enabled: false` + every key pre-seeded → zero backend traffic,
-and new card treatments show up in the demo for free), the real PlanBox with a canned plan, and the
-real ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
-drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the
-actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden
-scenery; `demoTour(isMobile)` narrates it via `demo-*` anchors only. The nine panels: welcome →
-board → three task kinds → **Plan My Day (the ✦ button + the plan it builds)** → morning → evening →
-chat-runs-the-whole-app → daily habits → settings. The BOARD step's copy differs per breakpoint — the desktop grid shows the
-heat/cool/↻/❄️ decoder ring, the mobile quadrant overview shows none.
+and new card treatments show up in the demo for free), the real PlanBox with a canned plan, the real
+RemindersInline habits strip above the board, and the real ChatConversation playing the scripted
+morning push + evening check-in. The check-in texts are drift-guarded by a Deno test
+(`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the actual dispatch builders over
+the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden scenery; `demoTour(isMobile)`
+narrates it via `demo-*` anchors only. The nine panels: welcome → board → three task kinds →
+**Plan My Day (the ✦ button + the plan it builds)** → morning → evening → chat-runs-the-whole-app →
+daily habits → the rest of the app. Two steps' copy differs per breakpoint: the BOARD step (the
+desktop grid has the heat/cool/↻/❄️ decoder ring, the mobile quadrant overview has none) and the
+closing options step (below).
 
-Crucially, the last three "chrome" targets — the Plan My Day button, an example **Daily-habits**
-card, and an example **Settings** card — are look-only scenery rendered ON the DemoScene, NOT the
-real shell's buttons. That's deliberate: pointing at the real shell would mean tearing down the
-example mid-tour (a visible surface jump), so instead everything the tour spotlights lives on the
-one scene. There is no second leg.
+Crucially, the "chrome" the tour points at is look-only scenery rendered ON the DemoScene, NOT the
+real shell's controls: the ✦ Plan My Day button, and the options chrome (`demo-options`). That's
+deliberate — pointing at the real shell would mean tearing down the example mid-tour (a visible
+surface jump), so everything the tour spotlights lives on the one scene. There is no second leg.
+The options chrome is the one piece shaped per breakpoint, because the real app is: desktop copies
+the header's Account nav across the top, while mobile mounts the real `MobileBottomNav` at the
+bottom (ADR-0028 — a phone has no header nav; Chat/Done are tabs and habits/Settings sit under
+"⋯ More"). Everything else — including the habits strip — is the real component over seeded data.
+
+⚠️ Every anchor here is `demo-`-prefixed for a reason worth keeping: the real shell's `habits` /
+`settings` / `done` anchors are still in the DOM behind the overlay, the portal appends *after*
+`#root`, and `FeatureTour` resolves anchors with `querySelector` (first match in document order). An
+unprefixed name wouldn't fail loudly — it would silently spotlight an invisible button behind the
+scene. `demo-content.test.ts` pins the `/^demo-/` rule. For the same reason, specs asserting demo
+chrome must scope to the `[data-tour="demo-*"]` anchor rather than use a bare `getByText`.
 
 Finishing OR skipping the tour latches it done (localStorage + the `config.onboarding.tourSeen`
 account mirror) — someone who skips shouldn't be nagged by an eternal unchecked box. The empty-board
@@ -47,10 +59,11 @@ states offer the same walkthrough as a standalone "See an example board" peek (`
 escape hatch reads "Close", and it closes back to home latching nothing), and Settings has "Replay
 the tour" (without resetting the guide's checkmarks).
 
-The demo fixtures live in `demo-board.ts` (tasks authored relative to *today* so the board always
-renders mid-story — its header lists every visual state it intentionally exercises; extend it when
-a new card treatment ships) and `demo-transcript.ts` (the plan + check-ins, dependency-free so the
-Deno drift test can import it).
+The demo fixtures live in `demo-board.ts` (the app-typed ones: tasks authored relative to *today* so
+the board always renders mid-story — its header lists every visual state it intentionally exercises,
+extend it when a new card treatment ships — plus the habits, derived from the transcript so the strip
+and the morning push can't disagree) and `demo-transcript.ts` (the plan + check-ins, dependency-free
+so the Deno drift test can import it).
 
 ## Design notes
 

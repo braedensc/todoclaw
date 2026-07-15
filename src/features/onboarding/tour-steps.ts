@@ -8,25 +8,32 @@ import type { TourStep } from './FeatureTour'
 // The tour is ONE section, played entirely over the DemoScene — no second leg over the user's own
 // empty shell (that only bred redundancy). Nine panels, all pointing at the one example scene:
 // welcome → board → three task kinds → Plan My Day (button + the plan it builds) → morning →
-// evening → chat-runs-it-all → daily habits → settings. Everything the tour highlights (the plan
-// button, the habits card, the settings card) is example scenery ON the scene, so the walkthrough
-// never jumps surfaces.
+// evening → chat-runs-it-all → daily habits → the rest of the app. Everything the tour highlights
+// lives ON the scene, so the walkthrough never jumps surfaces: the habits panel points at the REAL
+// habits strip the scene mounts over seeded data, and the plan button + options chrome are
+// look-only copies of the real controls (the originals are wired to real handlers in the shell
+// this overlay covers).
 
 /**
  * The demo tour — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid'
  * and 'matrix' also exist in the real shell underneath, and anchors resolve first-match-in-document.
- * Every target exists on both breakpoints, but the BOARD step's copy is breakpoint-specific: the
- * desktop scene is the free-canvas grid (glow rings, ↻ / ❄️ badges), the mobile scene is the 2×2
- * quadrant overview (labels, counts, ⏰ badges — no grid, ADR-0028), so `demoTour(isMobile)` swaps
- * that one body rather than teaching a decoder ring for a UI half the users never see.
+ *
+ * Every target exists on both breakpoints; two bodies are breakpoint-specific because the two
+ * surfaces genuinely differ (ADR-0028), and `demoTour(isMobile)` swaps only the copy:
+ *  - BOARD — desktop is the free-canvas grid (glow rings, ↻ / ❄️ badges), mobile is the 2×2
+ *    quadrant overview (labels, counts, ⏰ badges, no grid). Teaching the grid's decoder ring to
+ *    users who will never see a grid is worse than saying less.
+ *  - THE REST OF THE APP — desktop's options are the header nav across the top; mobile has no
+ *    header nav at all (bottom-bar tabs + "More"), and the scene mirrors that, so this step's copy
+ *    must name the place the spotlight is actually sitting on.
  */
 export function demoTour(isMobile: boolean): TourStep[] {
   return [
     {
       target: 'demo-board',
-      title: 'Welcome to Todoclaw',
+      title: 'Welcome to TodoClaw',
       body:
-        'Todoclaw is an AI-powered planner. Everything you have to do lands in one place, sorted ' +
+        'TodoClaw is an AI-powered planner. Everything you have to do lands in one place, sorted ' +
         'by how urgent and important it is — and BabyClaw, your AI pup, plans a realistic day ' +
         'each morning and checks in each evening. Here’s a day already in motion.',
     },
@@ -56,7 +63,7 @@ export function demoTour(isMobile: boolean): TourStep[] {
         },
         {
           lead: 'Ongoing',
-          rest: 'a long project with no real deadline; it stays put while Todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
+          rest: 'a long project with no real deadline; it stays put while TodoClaw nudges you to chip away (learn Spanish, declutter the garage).',
         },
       ],
     },
@@ -94,16 +101,24 @@ export function demoTour(isMobile: boolean): TourStep[] {
       target: 'demo-habits',
       title: 'Daily habits',
       body:
-        'Small routines you repeat — stretch, meds, walk the dog. Build them once and they show up ' +
-        'on your home screen to paw-check off each day; they reset every morning.',
+        'Small routines you repeat — stretch, meds, walk the dog. Build them once and they sit ' +
+        'right above your board every day; tap the paw to check one off. They reset every morning.',
     },
     {
-      target: 'demo-settings',
-      title: 'Settings and the rest',
-      body:
-        'Your daily reset time, notifications, timezone, backups, and this tour all live in ' +
-        'Settings. And you hold the leash: everything BabyClaw does with AI, you can also do by ' +
-        'hand — the whole planner works without him.',
+      target: 'demo-options',
+      title: 'The rest of the app',
+      // Name only what Settings actually holds: its tabs are Plan My Day / Notifications / AI /
+      // Backups, plus the timezone picker and "Replay the tour". There is no reset-time control —
+      // the daily reset is local midnight in your stored timezone, so the timezone IS the knob.
+      body: isMobile
+        ? 'The bar along the bottom is always there: BabyClaw’s chat, and Done for everything ' +
+          'you’ve finished. Your habits and Settings — notifications, timezone, backups, and this ' +
+          'tour — live under “More”. And you hold the leash: everything BabyClaw does with AI, ' +
+          'you can also do by hand — the whole planner works without him.'
+        : 'Along the top: BabyClaw’s chat, your daily habits, Done for everything you’ve ' +
+          'finished, and Settings — notifications, your timezone, backups, and this tour. And ' +
+          'you hold the leash: everything BabyClaw does with AI, you can also do by hand — the ' +
+          'whole planner works without him.',
     },
   ]
 }

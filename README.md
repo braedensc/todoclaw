@@ -1,13 +1,13 @@
-# Todoclaw 🐾
+# TodoClaw 🐾
 
 **An AI-powered, Eisenhower-matrix task planner.**
 
-Todoclaw lays your tasks out on a 2-D board where **position is priority**: left-to-right is
+TodoClaw lays your tasks out on a 2-D board where **position is priority**: left-to-right is
 _urgency_, bottom-to-top is _importance_. Instead of a flat list, you get a picture of what
 actually matters today — the top-right corner is "do this now," the rest can wait. It's fully
 usable on its own; the AI features are additive and opt-in.
 
-> Todoclaw is a ground-up rebuild of an earlier personal planner ("EisenClaw") as a standalone,
+> TodoClaw is a ground-up rebuild of an earlier personal planner ("EisenClaw") as a standalone,
 > multi-tenant web app.
 
 ---
@@ -91,5 +91,5 @@ Branch naming, PR conventions, and CI expectations are documented in
 
 ## License
 
-Todoclaw is licensed under the **GNU AGPL-3.0**. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+TodoClaw is licensed under the **GNU AGPL-3.0**. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 [`CLA.md`](CLA.md) for licensing and contribution terms.

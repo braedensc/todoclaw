@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test'
 // dev server + Playwright wiring end to end without needing a database.
 test('boots and shows the sign-in form when logged out', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Todoclaw' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'TodoClaw' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   await expect(page.getByPlaceholder('you@example.com')).toBeVisible()
 })

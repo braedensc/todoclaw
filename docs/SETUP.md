@@ -1,6 +1,6 @@
 # SETUP.md
 
-How to run Todoclaw locally end-to-end: prerequisites, env vars, common commands, and
+How to run TodoClaw locally end-to-end: prerequisites, env vars, common commands, and
 troubleshooting. Filled in incrementally as the stack is wired up.
 
 ---

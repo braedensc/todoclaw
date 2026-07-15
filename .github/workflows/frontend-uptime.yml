@@ -35,14 +35,14 @@ jobs:
         run: |
           # Two failure classes: transport (non-200 / no response) and content (200 but not the app
           # shell — a provider error/placeholder page). Retry a few times so a single blip doesn't
-          # page; only a sustained failure opens an issue. `<title>Todoclaw</title>` is the shell marker.
+          # page; only a sustained failure opens an issue. `<title>TodoClaw</title>` is the shell marker.
           code=""
           ok=false
           for attempt in 1 2 3; do
             resp=$(curl -sS --max-time 20 -w '\n%{http_code}' "$PROD_URL" || true)
             code=$(printf '%s' "$resp" | tail -n1)
             html=$(printf '%s' "$resp" | sed '$d')
-            if [ "$code" = "200" ] && printf '%s' "$html" | grep -q '<title>Todoclaw</title>'; then
+            if [ "$code" = "200" ] && printf '%s' "$html" | grep -q '<title>TodoClaw</title>'; then
               ok=true
               break
             fi
