@@ -295,6 +295,11 @@ export function ChatSessionList({
           // session to read, and the check-in's own body IS its last (only) message.
           const seen = m.session_id ? previewBySession.get(m.session_id) : undefined
           const preview = seen?.text || assistantSnippet(m.body)
+          // You've said something back (>1 visible message — the RPC drops the hidden framing turn,
+          // so a check-in you merely received sits at exactly 1). Tints the whole row, which is what
+          // makes engaged-vs-untouched legible down the GROUP at a glance; the count badge only
+          // answers the question row by row, once you're already looking at that row.
+          const engaged = (seen?.count ?? 0) > 1
           return (
             <button
               key={m.id}
@@ -303,7 +308,13 @@ export function ChatSessionList({
               title={title}
               className={
                 'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
-                (active ? 'bg-card ring-1 ring-border' : 'hover:bg-card')
+                // The open conversation still wins the row's background — it's the stronger state,
+                // and stacking both would just muddy each.
+                (active
+                  ? 'bg-card ring-1 ring-border'
+                  : engaged
+                    ? 'bg-puppy/[0.07] hover:bg-card'
+                    : 'hover:bg-card')
               }
             >
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-puppy/10 text-puppy">
