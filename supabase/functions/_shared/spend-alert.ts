@@ -26,7 +26,7 @@ const usd = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`
 export function formatSpendAlert(a: SpendAlert): string {
   const who = a.userEmail ? `${a.userEmail} (${a.userId})` : a.userId
   return (
-    `⚠️ Todoclaw AI spend alert — user ${who} has spent ${usd(a.spentMicros)} on AI this month ` +
+    `⚠️ TodoClaw AI spend alert — user ${who} has spent ${usd(a.spentMicros)} on AI this month ` +
     `(${a.period}), crossing the ${usd(a.thresholdMicros)} alert threshold (per-user cap ` +
     `${usd(a.capMicros)}). Last call: ${a.feature}. If this is unexpected, investigate for misuse ` +
     `or a compromised account.`

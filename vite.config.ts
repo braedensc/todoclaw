@@ -17,8 +17,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: false,
       manifest: {
-        name: 'Todoclaw',
-        short_name: 'Todoclaw',
+        name: 'TodoClaw',
+        short_name: 'TodoClaw',
         description: 'Your free-canvas Eisenhower-matrix task planner.',
         theme_color: '#2e2a24',
         background_color: '#f8f2e6',

@@ -24,7 +24,7 @@ import {
   DEMO_TRANSCRIPT_DAY,
 } from './demo-transcript'
 
-// DemoScene — the tour's "example day": a full-screen overlay showing what Todoclaw looks like in
+// DemoScene — the tour's "example day": a full-screen overlay showing what TodoClaw looks like in
 // real use. The ENTIRE 8-panel tour plays over this one scene (no second leg over the user's own
 // empty shell), so it also carries the "chrome" the later panels point at — the Plan My Day button,
 // an example Daily-habits card, and an example Settings card. The core surfaces are the REAL
@@ -206,7 +206,7 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
         {/* The framing ribbon — the one thing that must never be missable: this is an example.
             Sticky, so it stays pinned while the tour scrolls the scene from board to check-ins. */}
         <div className="sticky top-2 z-10 rounded-full border border-border-strong bg-panel px-4 py-2 text-center text-[13px] font-medium text-ink shadow-sm">
-          <span aria-hidden>👀</span> An example day in Todoclaw — none of this is your data. Your
+          <span aria-hidden>👀</span> An example day in TodoClaw — none of this is your data. Your
           board starts fresh.
         </div>
 

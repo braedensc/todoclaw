@@ -1,6 +1,6 @@
 # SERVICES.md
 
-Every external account and service Todoclaw uses: what each does, how they connect,
+Every external account and service TodoClaw uses: what each does, how they connect,
 which keys live where, and links to dashboards. Updated as each service is added.
 
 > **Looking for the at-a-glance list?** [INVENTORY.md](INVENTORY.md) is the value-free roster —

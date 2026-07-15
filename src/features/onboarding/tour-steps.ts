@@ -23,9 +23,9 @@ export function demoTour(isMobile: boolean): TourStep[] {
   return [
     {
       target: 'demo-board',
-      title: 'Welcome to Todoclaw',
+      title: 'Welcome to TodoClaw',
       body:
-        'Todoclaw keeps everything you have to do in one place, sorted by how urgent and important ' +
+        'TodoClaw keeps everything you have to do in one place, sorted by how urgent and important ' +
         'it is — then plans a realistic day for you each morning and checks in each evening. ' +
         'Here’s a day already in motion.',
     },
@@ -55,7 +55,7 @@ export function demoTour(isMobile: boolean): TourStep[] {
         },
         {
           lead: 'Ongoing',
-          rest: 'a long project with no real deadline; it stays put while Todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
+          rest: 'a long project with no real deadline; it stays put while TodoClaw nudges you to chip away (learn Spanish, declutter the garage).',
         },
       ],
     },

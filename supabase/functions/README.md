@@ -1,6 +1,6 @@
 # Edge Functions (Deno)
 
-Server-side AI for Todoclaw. **The Anthropic key never leaves the server** — all model calls
+Server-side AI for TodoClaw. **The Anthropic key never leaves the server** — all model calls
 run here, never in the frontend bundle (CLAUDE.md Hard Rule; ADR-0015). Deno 2 runtime
 (`supabase/config.toml` → `[edge_runtime]`).
 

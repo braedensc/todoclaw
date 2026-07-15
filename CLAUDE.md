@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Todoclaw is a standalone, multi-tenant-ready web app — a ground-up rebuild that *originated* from EisenClaw, an older personal Eisenhower-matrix planner. Tasks live on a free-canvas 2D grid (urgency × importance). The app is fully usable without AI; AI features are opt-in.
+TodoClaw is a standalone, multi-tenant-ready web app — a ground-up rebuild that *originated* from EisenClaw, an older personal Eisenhower-matrix planner. Tasks live on a free-canvas 2D grid (urgency × importance). The app is fully usable without AI; AI features are opt-in.
 
-**Todoclaw is its own product — EisenClaw is NOT the spec (parity retired 2026-07-09).** The app has fully eclipsed EisenClaw. Its own code, its `src/lib` Vitest suite, these docs, and product judgment are the **sole authority** for behavior, UX, and what "done" means. Do **not** judge a feature by "parity" or try to "match EisenClaw" — when something is wrong, fix it on Todoclaw's own merits. `planning/` survives only as **historical origin** and as provenance for constants that were already ported (scoring weights, clustering thresholds, collision step); those live in code and are pinned by `src/lib/*.test.ts`, which is the oracle — not the EisenClaw docs.
+**TodoClaw is its own product — EisenClaw is NOT the spec (parity retired 2026-07-09).** The app has fully eclipsed EisenClaw. Its own code, its `src/lib` Vitest suite, these docs, and product judgment are the **sole authority** for behavior, UX, and what "done" means. Do **not** judge a feature by "parity" or try to "match EisenClaw" — when something is wrong, fix it on TodoClaw's own merits. `planning/` survives only as **historical origin** and as provenance for constants that were already ported (scoring weights, clustering thresholds, collision step); those live in code and are pinned by `src/lib/*.test.ts`, which is the oracle — not the EisenClaw docs.
 
 **Historical reference material** (all under `planning/`, gitignored — read for origin/provenance, never commit, never treat as a target):
 - `eisenclaw-export/docs/eisenclaw.md` — the original behavior write-up (historical, not a spec)

@@ -142,7 +142,7 @@ function AppShell() {
   // Sign out sits one tap deep in the mobile More sheet, right under Backups — a mis-tap used to
   // cost a full re-login (audit §4.7). Same guard on the desktop header link for consistency.
   const confirmSignOut = async () => {
-    if (await confirm({ title: 'Sign out of Todoclaw?', confirmLabel: 'Sign out' }))
+    if (await confirm({ title: 'Sign out of TodoClaw?', confirmLabel: 'Sign out' }))
       void supabase.auth.signOut()
   }
 
@@ -268,7 +268,7 @@ function AppShell() {
                             playful
                             className="-my-1 h-12 w-12 shrink-0 drop-shadow-sm"
                           />
-                          Todoclaw
+                          TodoClaw
                           <span aria-hidden className="-ml-1 text-accent">
                             .
                           </span>
@@ -362,7 +362,7 @@ function AppShell() {
                             playful
                             className="h-7 w-7 wide:-my-3 wide:mr-0.5 wide:h-[62px] wide:w-[62px] wide:drop-shadow-sm"
                           />
-                          Todoclaw
+                          TodoClaw
                           <span aria-hidden className="-ml-1.5 text-accent">
                             .
                           </span>
@@ -812,7 +812,7 @@ export default function App() {
               className="font-serif text-[46px] font-[620] leading-none tracking-[-0.015em] text-ink"
               style={{ fontVariationSettings: "'opsz' 70" }}
             >
-              Todoclaw
+              TodoClaw
               <span aria-hidden className="text-accent">
                 .
               </span>

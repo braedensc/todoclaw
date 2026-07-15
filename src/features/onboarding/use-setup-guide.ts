@@ -69,7 +69,7 @@ export interface SetupGuideState {
   order: SetupStepKey[]
   /** Per-step completion, keyed (SetupGuide renders `order` and looks each step up here). */
   done: Record<SetupStepKey, boolean>
-  /** The "See how Todoclaw works" tour has been taken (or deliberately skipped). */
+  /** The "See how TodoClaw works" tour has been taken (or deliberately skipped). */
   tourDone: boolean
   /** Install facts for the install step's wizard + its own checkmark. */
   install: {

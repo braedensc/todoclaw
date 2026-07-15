@@ -113,11 +113,11 @@ function InstallTip({ platform }: { platform: ApplePlatform }) {
       {platform === 'macos-safari' ? (
         <>
           Tip: in Safari, choose <span className="text-ink">File → Add to Dock</span> to install
-          Todoclaw as an app — its own window, and steadier notifications.
+          TodoClaw as an app — its own window, and steadier notifications.
         </>
       ) : (
         <>
-          Tip: tap <span className="text-ink">Share → Add to Home Screen</span> to install Todoclaw.
+          Tip: tap <span className="text-ink">Share → Add to Home Screen</span> to install TodoClaw.
           On iPhone &amp; iPad this is required to receive notifications.
         </>
       )}
@@ -288,7 +288,7 @@ export function NotificationSettings({ draft, set }: { draft: SettingsDraft; set
           Task reminders
         </h3>
         <p className="mt-0.5 text-xs text-muted">
-          Give a task a due time and Todoclaw can nudge you before it. This sets the default; you
+          Give a task a due time and TodoClaw can nudge you before it. This sets the default; you
           can change or remove it per task. Reminders reach any device where notifications are on.
         </p>
         <div className="mt-3">

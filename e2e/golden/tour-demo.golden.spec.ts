@@ -23,7 +23,7 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
   await startTourFromGuide(page)
 
   // Opens with a plain-words welcome, unmistakably framed as an example over a lived-in board.
-  await expect(page.getByRole('dialog', { name: 'Welcome to Todoclaw' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Welcome to TodoClaw' })).toBeVisible()
   await expect(page.getByText(/none of this is your data/i)).toBeVisible()
   await expect(page.getByText('Clean out the garage')).toBeVisible()
 
@@ -71,7 +71,7 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
 test('skipping the tour also latches done (no eternal unchecked box)', async ({ page }) => {
   await startTourFromGuide(page)
 
-  await expect(page.getByRole('dialog', { name: 'Welcome to Todoclaw' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Welcome to TodoClaw' })).toBeVisible()
   await page.getByRole('button', { name: 'Skip tour', exact: true }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
   expect(await tourDone(page)).toBe('1')
@@ -80,7 +80,7 @@ test('skipping the tour also latches done (no eternal unchecked box)', async ({ 
 test('the empty grid offers an example peek that latches nothing', async ({ page }) => {
   // Guide stays dismissed (storageState) — this is the post-guide empty-board entry point.
   await page.getByRole('button', { name: 'See an example board', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Welcome to Todoclaw' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Welcome to TodoClaw' })).toBeVisible()
   await expect(page.getByText(/none of this is your data/i)).toBeVisible()
 
   // The peek closes straight back to the shell — no latch.
@@ -93,7 +93,7 @@ test('the empty grid offers an example peek that latches nothing', async ({ page
 test('Settings → Replay the tour re-runs it without resetting the guide', async ({ page }) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Replay the tour', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Welcome to Todoclaw' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Welcome to TodoClaw' })).toBeVisible()
   // The guide's dismissal is untouched (unlike "Show the setup guide", which resets it).
   expect(await page.evaluate((k) => localStorage.getItem(k), GUIDE_DISMISSED_KEY)).toBe('1')
 })

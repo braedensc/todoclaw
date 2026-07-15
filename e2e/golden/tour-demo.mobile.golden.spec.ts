@@ -7,7 +7,7 @@ import { test, expect } from '../helpers/fixtures'
 test('the example peek shows a lit-up quadrant overview on mobile', async ({ page }) => {
   // The empty mobile overview offers the peek under the 2×2 grid.
   await page.getByRole('button', { name: 'See an example board', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Welcome to Todoclaw' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Welcome to TodoClaw' })).toBeVisible()
   await expect(page.getByText(/none of this is your data/i)).toBeVisible()
 
   // The demo matrix is populated — quadrant previews list example tasks (top-3 per quadrant).
@@ -25,7 +25,7 @@ test('the tour walks the example day with mobile board copy', async ({ page }) =
   await page.reload()
   await page.getByRole('button', { name: 'Take the tour', exact: true }).click()
 
-  await expect(page.getByRole('dialog', { name: 'Welcome to Todoclaw' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Welcome to TodoClaw' })).toBeVisible()
   await page.getByRole('button', { name: 'Next', exact: true }).click()
 
   // The board step's mobile copy names the quadrant boxes ("Do Now") — no grid ↻/❄️ decoder ring.

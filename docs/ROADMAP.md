@@ -1,8 +1,8 @@
-# Todoclaw Scaling Roadmap
+# TodoClaw Scaling Roadmap
 
 **Status:** planning · drafted 2026-07-08 · MVP → broader audience
 
-A sequenced set of workstreams to take Todoclaw from a handful of trusted testers to a
+A sequenced set of workstreams to take TodoClaw from a handful of trusted testers to a
 paying audience, plus the infrastructure scaling triggers underneath them. The order is
 not arbitrary: each thread lowers the cost or unlocks the reach the next one needs.
 
@@ -18,7 +18,7 @@ model fall out naturally:
 - **Guest** — no login, one tap to try. A small, strictly-metered taste of the AI on the
   cheapest model, in its own isolated budget bucket. The acquisition top of the funnel.
 - **Free** — full planner, no AI. ~$0 marginal cost.
-- **BYO-AI (via MCP)** — the user connects Todoclaw to their own Claude/ChatGPT
+- **BYO-AI (via MCP)** — the user connects TodoClaw to their own Claude/ChatGPT
   subscription; **inference runs on their wallet**, only cheap RLS-scoped tool
   execution runs on ours.
 - **Pro (managed)** — we run the AI, metered by the **per-user monthly budget
