@@ -157,14 +157,30 @@ export function ChatConversation({
               </span>
               Your chats
             </h2>
-            <button
-              type="button"
-              onClick={() => onViewChange?.('conversation')}
-              aria-label="Back to conversation"
-              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong bg-card px-3 py-1 text-xs font-medium text-ink hover:border-puppy/50"
-            >
-              ← Back to chat
-            </button>
+            {/* Back AND close: this face needs its own ✕ (same `showClose` rule as the conversation
+                header below). Without it the desktop rail could only be closed from the
+                conversation, so landing here — which is where the nav's Chat entry aims — meant
+                going "back" to a chat you didn't want just to reach the ✕. */}
+            <div className="flex shrink-0 items-center gap-2 text-muted">
+              <button
+                type="button"
+                onClick={() => onViewChange?.('conversation')}
+                aria-label="Back to conversation"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong bg-card px-3 py-1 text-xs font-medium text-ink hover:border-puppy/50"
+              >
+                ← Back to chat
+              </button>
+              {showClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close chat"
+                  className="hover:text-ink"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex items-start justify-between gap-2 pl-[52px]">

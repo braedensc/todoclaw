@@ -6,6 +6,7 @@ import { useGrid } from './use-grid'
 import { GridSurface } from './GridSurface'
 import { NewItemStrip } from '../shell/NewItemStrip'
 import { ConfirmProvider } from '../../components/use-confirm'
+import { BACKGROUND_DISMISS_ATTR } from '../../hooks/use-background-dismiss'
 
 // The grid was split (B8): the drag/placement orchestration lives in `useGrid`, the canvas render
 // in `GridSurface`, and the not-yet-placed "new item" cards (card-in-place, B2 — replacing the old
@@ -634,6 +635,20 @@ describe('GridView clustering', () => {
 
     fireEvent.pointerDown(screen.getByTestId('grid-canvas'))
     expect(screen.queryByTestId('cluster-popup')).not.toBeInTheDocument()
+  })
+})
+
+// Pressing inert background closes the open desktop chat rail (useBackgroundDismiss). That hook
+// matches the pressed element EXACTLY, so what matters here is WHICH element carries the marker:
+// the canvas must, and the cards sitting on it must not — otherwise starting a drag would close
+// the drawer out from under you.
+describe('GridView background-dismiss marker', () => {
+  it('marks the canvas as background, and never a card on it', () => {
+    tasksFixture = [makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 })]
+    render(<GridHarness />)
+
+    expect(screen.getByTestId('grid-canvas')).toHaveAttribute(BACKGROUND_DISMISS_ATTR)
+    expect(screen.getByTestId('grid-card')).not.toHaveAttribute(BACKGROUND_DISMISS_ATTR)
   })
 })
 
