@@ -13,6 +13,7 @@ import { kindLabel, proactiveDayLabel } from '../notifications/message-format'
 import { useToast } from '../../components/use-toast'
 import { PawPrint } from '../../components/PawPrint'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
+import { BarkingClaw } from '../../components/BarkingClaw'
 
 // The unified "Your chats" list — BabyClaw's inbox AND your conversations in one warm place (the
 // inbox is retired as a separate surface; the chat drawer IS the inbox now). Two groups:
@@ -60,9 +61,13 @@ function BellGlyph() {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+// `icon` rides at the group's own scale, not the label's — the heading text is 11px caps, and a glyph
+// shrunk to match would be a smudge. Anything passed here must be decorative (aria-hidden): the text
+// is the accessible name.
+function GroupLabel({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return (
-    <p className="mt-3 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
+    <p className="mt-3 flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
+      {icon}
       {children}
     </p>
   )
@@ -289,7 +294,11 @@ export function ChatSessionList({
         })}
 
         {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
-        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
+        {inbox.length > 0 && (
+          <GroupLabel icon={<BarkingClaw className="-my-1 h-8 w-auto shrink-0" />}>
+            From BabyClaw
+          </GroupLabel>
+        )}
         {inbox.map(({ msg: m, time: lastAt }) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
@@ -305,6 +314,11 @@ export function ChatSessionList({
           // session to read, and the check-in's own body IS its last (only) message.
           const seen = m.session_id ? previewBySession.get(m.session_id) : undefined
           const preview = seen?.text || assistantSnippet(m.body)
+          // You've said something back (>1 visible message — the RPC drops the hidden framing turn,
+          // so a check-in you merely received sits at exactly 1). Tints the whole row, which is what
+          // makes engaged-vs-untouched legible down the GROUP at a glance; the count badge only
+          // answers the question row by row, once you're already looking at that row.
+          const engaged = (seen?.count ?? 0) > 1
           return (
             <button
               key={m.id}
@@ -313,7 +327,13 @@ export function ChatSessionList({
               title={title}
               className={
                 'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
-                (active ? 'bg-card ring-1 ring-border' : 'hover:bg-card')
+                // The open conversation still wins the row's background — it's the stronger state,
+                // and stacking both would just muddy each.
+                (active
+                  ? 'bg-card ring-1 ring-border'
+                  : engaged
+                    ? 'bg-puppy/[0.07] hover:bg-card'
+                    : 'hover:bg-card')
               }
             >
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-puppy/10 text-puppy">
