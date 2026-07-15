@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
 import type { ChatSession } from '../../types/chat'
@@ -9,6 +9,7 @@ import { proactiveDayLabel } from '../notifications/message-format'
 import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
 import { PawPrint } from '../../components/PawPrint'
+import { useIsMobile } from '../../hooks/use-is-mobile'
 
 // The full BabyClaw conversation UI (header + streamed history + confirm gate + input), factored
 // out of ChatPanel so BOTH chat shells render the same thing:
@@ -88,6 +89,8 @@ export function ChatConversation({
   const [view, setView] = useState<'conversation' | 'history'>('conversation')
   const showHistory = enableSessions && view === 'history'
   const listRef = useRef<HTMLUListElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const isMobile = useIsMobile()
   const tag = sessionTag(activeSession)
 
   // Keep the latest message in view as things stream in.
@@ -96,6 +99,18 @@ export function ChatConversation({
     if (el) el.scrollTop = el.scrollHeight
   }, [items, pending])
 
+  // The composer is a textarea (it has to hold newlines), so it must grow with its content —
+  // reset to `auto` first or scrollHeight only ever ratchets up. Capped by max-h-32 in the class,
+  // past which it scrolls. Empty drops the inline height entirely rather than measuring: rows={1}
+  // already IS the one-row height, and that keeps a measurement taken before layout settles from
+  // sticking to an empty box (and self-heals it after each send).
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = text ? `${el.scrollHeight}px` : ''
+  }, [text])
+
   function submit(value: string) {
     const t = value.trim()
     if (!t) return
@@ -103,6 +118,16 @@ export function ChatConversation({
     setText('')
   }
   function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    submit(text)
+  }
+  // Enter sends on DESKTOP only (Shift+Enter newlines there, as ever). On mobile Return is a
+  // plain newline and the paw button is the only send: the on-screen keyboard's return key sits
+  // right where you're typing, so Enter-to-send fired constantly by accident mid-thought.
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== 'Enter' || e.shiftKey || isMobile) return
+    // An IME candidate-select also arrives as Enter; committing it must not send the turn.
+    if (e.nativeEvent.isComposing) return
     e.preventDefault()
     submit(text)
   }
@@ -279,10 +304,13 @@ export function ChatConversation({
                   ))}
                 </div>
               )}
-              <form onSubmit={handleSubmit} className="flex items-center gap-2">
-                <input
+              <form onSubmit={handleSubmit} className="flex items-end gap-2">
+                <textarea
+                  ref={inputRef}
+                  rows={1}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   // While a confirmation is pending, a typed reply answers it (send routes yes/no to
                   // confirm/deny) — the buttons above stay as the one-click path.
                   placeholder={
@@ -292,8 +320,8 @@ export function ChatConversation({
                   }
                   aria-label="Message"
                   disabled={paused}
-                  enterKeyHint="send"
-                  className="min-w-0 flex-1 rounded-xl border border-border-strong bg-card px-3 py-2.5 text-sm disabled:opacity-50"
+                  enterKeyHint={isMobile ? 'enter' : 'send'}
+                  className="max-h-32 min-w-0 flex-1 resize-none rounded-xl border border-border-strong bg-card px-3 py-2.5 text-sm leading-5 disabled:opacity-50"
                 />
                 <button
                   type="submit"
