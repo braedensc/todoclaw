@@ -1,12 +1,15 @@
 import { splitReply } from './reply-status'
-import { assistantText } from './use-chat-messages'
+import { assistantText } from './assistant-text'
 import type { ChatPreview } from '../../types/chat'
 
 // Derives the one-line snippet under a chat's name in the "Your chats" list. Pure + unit-tested, and
 // deliberately mirrors rowsToChatItems (use-chat-messages.ts): the preview must show the same words
 // the transcript would, or the list lies about what a conversation said.
 //
-// Kept free of Supabase so the list can be tested without mocking the data layer.
+// Every import here must stay Supabase-free. lib/supabase THROWS on import without env vars, and CI
+// has none — so so much as reaching it transitively (e.g. importing assistantText from the hook
+// module rather than from ./assistant-text) fails this module's tests, and every test of anything
+// that renders the list, on import alone.
 
 /** Longest snippet we put in the DOM. CSS `truncate` does the visible ellipsis — this just keeps a
  *  4KB morning plan from riding along in 50 list rows to render ~40 visible characters. */
