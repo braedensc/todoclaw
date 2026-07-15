@@ -13,6 +13,7 @@ import { kindLabel, proactiveDayLabel } from '../notifications/message-format'
 import { useToast } from '../../components/use-toast'
 import { PawPrint } from '../../components/PawPrint'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
+import { BarkingClaw } from '../../components/BarkingClaw'
 
 // The unified "Your chats" list — BabyClaw's inbox AND your conversations in one warm place (the
 // inbox is retired as a separate surface; the chat drawer IS the inbox now). Two groups:
@@ -60,9 +61,13 @@ function BellGlyph() {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+// `icon` rides at the group's own scale, not the label's — the heading text is 11px caps, and a glyph
+// shrunk to match would be a smudge. Anything passed here must be decorative (aria-hidden): the text
+// is the accessible name.
+function GroupLabel({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
   return (
-    <p className="mt-3 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
+    <p className="mt-3 flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
+      {icon}
       {children}
     </p>
   )
@@ -269,7 +274,11 @@ export function ChatSessionList({
         })}
 
         {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
-        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
+        {inbox.length > 0 && (
+          <GroupLabel icon={<BarkingClaw className="-my-1 h-8 w-auto shrink-0" />}>
+            From BabyClaw
+          </GroupLabel>
+        )}
         {inbox.map((m) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
