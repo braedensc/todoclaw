@@ -6,8 +6,9 @@ import { staleness } from '../../lib/visual-urgency'
 import { daysUntil } from '../../lib/scoring'
 import { summarizeQuadrants, QUADRANT_ORDER } from '../../lib/quadrant-summary'
 import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
-import { buildDemoTasks } from './demo-board'
-import { DEMO_MORNING_INPUTS, DEMO_PLAN } from './demo-transcript'
+import { HabitSchema } from '../../types/habit'
+import { buildDemoTasks, buildDemoHabits, DEMO_HABIT_DONE } from './demo-board'
+import { DEMO_MORNING, DEMO_MORNING_INPUTS, DEMO_PLAN } from './demo-transcript'
 import { demoTour } from './tour-steps'
 
 // The demo fixtures are load-bearing showcase data: the plan must survive the same Zod gate a
@@ -83,6 +84,34 @@ describe('demo board fixture', () => {
   })
 })
 
+describe('demo habits fixture', () => {
+  it('parses as real Habit rows', () => {
+    expect(() => HabitSchema.array().parse(buildDemoHabits())).not.toThrow()
+  })
+
+  it('every habit actually renders in the strip (which shows NOTHING when none are active)', () => {
+    // RemindersInline early-returns null on an empty active list, so an empty/inactive fixture
+    // would leave the tour's habits panel spotlighting a zero-height sliver — silently.
+    const habits = buildDemoHabits()
+    expect(habits.length).toBeGreaterThan(0)
+    for (const h of habits) {
+      expect(h.active, h.text).toBe(true)
+      expect(h.deleted_at, h.text).toBeNull()
+    }
+  })
+
+  it('seeds exactly the habits the morning push lists (one coherent example day)', () => {
+    for (const h of buildDemoHabits()) expect(DEMO_MORNING.body).toContain(h.text)
+  })
+
+  it('ticks some but not all of them, so the strip shows both paw treatments', () => {
+    const habits = buildDemoHabits()
+    const ticked = habits.filter((h) => DEMO_HABIT_DONE[h.id])
+    expect(ticked.length).toBeGreaterThan(0)
+    expect(ticked.length).toBeLessThan(habits.length)
+  })
+})
+
 describe('demo tour script', () => {
   it('targets only demo-* anchors (grid/matrix also exist in the real shell underneath)', () => {
     for (const isMobile of [false, true])
@@ -98,10 +127,27 @@ describe('demo tour script', () => {
     expect(demoTour(false).some((s) => /❄️|↻/.test(stepText(s)))).toBe(true)
   })
 
+  it('sends each breakpoint to where its options actually live', () => {
+    // The closing panel is the second breakpoint-switched body, and the riskiest: both breakpoints
+    // share the `demo-options` anchor, but it wraps DIFFERENT chrome (desktop's header-nav copy at
+    // the top vs. the real bottom bar) because the real app differs (ADR-0028). Nothing else can
+    // catch copy that names the wrong end of the screen — the anchor name is identical, so the
+    // step-list test passes either way and the spotlight lands on something either way.
+    const closing = (isMobile: boolean) => demoTour(isMobile).at(-1)!
+    expect(closing(false).target).toBe('demo-options')
+    expect(closing(false).body).toMatch(/along the top/i)
+    expect(closing(false).body).not.toMatch(/bottom|“More”/i)
+
+    expect(closing(true).target).toBe('demo-options')
+    expect(closing(true).body).toMatch(/along the bottom/i)
+    expect(closing(true).body).toMatch(/“More”/)
+    expect(closing(true).body).not.toMatch(/along the top/i)
+  })
+
   it('is the full 8-panel single section, in order, on both breakpoints', () => {
-    // The whole tour lives on the one scene — including the plan button, habits, and settings, which
-    // DemoScene renders as example scenery so nothing points at the real (empty) shell. Order matters
-    // (the plan button precedes the check-ins; habits + settings close it out).
+    // The whole tour lives on the one scene — the plan button, the habits strip, and the options
+    // chrome are all mounted there, so nothing points at the real (empty) shell. Order matters (the
+    // plan button precedes the check-ins; habits then the options row close it out).
     const expected = [
       'demo-board', // welcome
       'demo-board', // sorted by what matters
@@ -110,7 +156,7 @@ describe('demo tour script', () => {
       'demo-chat-morning',
       'demo-chat-evening',
       'demo-habits',
-      'demo-settings',
+      'demo-options',
     ]
     for (const isMobile of [false, true])
       expect(demoTour(isMobile).map((s) => s.target)).toEqual(expected)

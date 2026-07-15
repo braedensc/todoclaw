@@ -1,7 +1,13 @@
 import type { Task } from '../../types/task'
+import type { Habit } from '../../types/habit'
 import { localDateInTZ } from '../../lib/dates'
+import { DEMO_MORNING_INPUTS } from './demo-transcript'
 
-// The demo tour's example board: ~9 generic tasks (the PR #220 Alex/Portland norm — no real
+// The demo tour's app-typed fixtures — the example board and the example day's habits (the plan and
+// the check-in texts live in demo-transcript.ts, which stays dependency-free so a Deno test can
+// import it).
+//
+// The board: ~9 generic tasks (the PR #220 Alex/Portland norm — no real
 // people, cities, or chores from anyone's actual list) authored RELATIVE to the real "today" so
 // the board always renders mid-story: a due-today glow, a timed task, a 2-card cluster, a
 // recurring chore on its cycle, an ongoing project, and one long-ignored ❄️ stale card. Every
@@ -136,4 +142,33 @@ export function buildDemoTasks(timeZone: string): Task[] {
       created_at: isoDaysAgo(20),
     },
   ]
+}
+
+// The example day's habits, DERIVED from the transcript fixture rather than retyped: the same two
+// habits are pinned into the morning push (demo-transcript.ts's 💪 HABITS block, drift-guarded by
+// the Deno test), so the strip the tour spotlights and the push it showed two panels earlier can
+// never disagree about what today's routines are.
+//
+// Load-bearing, not decoration: the scene mounts the REAL RemindersInline over these, and that
+// component renders NOTHING when no habit is active — an empty fixture would leave the tour's
+// habits panel spotlighting a zero-height sliver, silently.
+export function buildDemoHabits(): Habit[] {
+  return DEMO_MORNING_INPUTS.habits.map(
+    (habit, i): Habit => ({
+      ...habit, // id / text / active — the transcript is the single source for the names
+      user_id: 'demo',
+      subtasks: [],
+      created_at: isoDaysAgo(60 - i), // habits display oldest-first; keep the order stable
+      deleted_at: null,
+    }),
+  )
+}
+
+/**
+ * Today's habit checkmarks — the first ticked, the rest not, so the strip shows BOTH treatments
+ * (a checked paw + a plain one) and a partial "treats earned" tally. An all-done map would fill the
+ * tally solid and hide the un-ticked look entirely.
+ */
+export const DEMO_HABIT_DONE: Record<string, boolean> = {
+  [DEMO_MORNING_INPUTS.habits[0]!.id]: true,
 }

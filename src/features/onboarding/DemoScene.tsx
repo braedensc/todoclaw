@@ -8,12 +8,14 @@ import { EMPTY_DAILY_STATE } from '../daily-state/use-daily-state'
 import { useGrid } from '../grid/use-grid'
 import { GridSurface } from '../grid/GridSurface'
 import { MobileMatrix } from '../shell/MobileMatrix'
+import { MobileBottomNav } from '../shell/MobileBottomNav'
 import type { QuadrantFocus } from '../shell/use-quadrant-focus'
+import { RemindersInline } from '../habits/RemindersInline'
 import { PlanBox } from '../ai/PlanBox'
 import { ChatConversation } from '../ai/ChatConversation'
 import type { ChatController } from '../ai/use-chat-controller'
 import type { ChatItem } from '../ai/use-ai-chat'
-import { buildDemoTasks } from './demo-board'
+import { buildDemoTasks, buildDemoHabits, DEMO_HABIT_DONE } from './demo-board'
 import {
   DEMO_EVENING_CLOSE,
   DEMO_EVENING_REPLY,
@@ -26,9 +28,8 @@ import {
 
 // DemoScene — the tour's "example day": a full-screen overlay showing what Todoclaw looks like in
 // real use. The ENTIRE 8-panel tour plays over this one scene (no second leg over the user's own
-// empty shell), so it also carries the "chrome" the later panels point at — the Plan My Day button,
-// an example Daily-habits card, and an example Settings card. The core surfaces are the REAL
-// components rendering fake in-memory data:
+// empty shell), so it also carries the "chrome" the later panels point at — the ✦ Plan My Day
+// button and the options row. Everything else is the REAL components rendering fake in-memory data:
 //
 //   • the board — the real GridSurface (desktop) / MobileMatrix (mobile) fed by a nested,
 //     pre-seeded TanStack QueryClient, so clustering, glow, ↻ / ❄️ badges and quadrant tints are
@@ -37,8 +38,16 @@ import {
 //     example ✦ Plan My Day button (look-only) so the plan panel shows the button AND its result;
 //   • the check-ins — the real ChatConversation playing the scripted morning push and evening
 //     recap, whose texts are drift-guarded against the actual dispatch builders by a Deno test;
-//   • habits + settings — small look-only example cards (`demo-habits` / `demo-settings`) the last
-//     two panels spotlight, so the tour never has to jump to the real shell.
+//   • the habits strip — the real RemindersInline over seeded habits, sitting right above the board
+//     exactly as it does in the real shell (PlanBox → RemindersInline → WorkArea).
+//
+// The one thing the scene must FAKE is the options chrome (`demo-options`), because the real
+// controls are wired to real handlers (navigate, sign out) and live in the shell this overlay is
+// covering. It's look-only, and it's breakpoint-shaped, because the truth is: on desktop the
+// options are the header's Account nav (top right); on mobile there IS no header nav — Chat/Done
+// are bottom-bar tabs and habits/Settings live under "⋯ More" (ADR-0028). So desktop gets a copy of
+// that nav row at the top and mobile mounts the REAL MobileBottomNav at the bottom, and the closing
+// panel points each user at where their options actually are.
 //
 // ZERO backend traffic and zero AI spend by construction: the nested QueryClient seeds every key
 // the mounted surfaces read and disables fetching outright (`enabled: false` — a missed key shows
@@ -132,10 +141,13 @@ function makeDemoClient(timeZone: string): QueryClient {
   // so useTimeZone falls back to the browser zone — seed with the same date that fallback computes.
   const today = localDateInTZ(timeZone)
   client.setQueryData(['tasks'], buildDemoTasks(timeZone))
-  client.setQueryData(['daily_state', today], EMPTY_DAILY_STATE)
+  // Which habits are ticked off TODAY lives in daily_state, never on the habit row (that split is
+  // what makes the daily reset non-destructive) — so the strip needs both halves seeded to show a
+  // real, partly-done day instead of an untouched 0/2.
+  client.setQueryData(['daily_state', today], { ...EMPTY_DAILY_STATE, habit_done: DEMO_HABIT_DONE })
   client.setQueryData(['user_schedule'], null)
   client.setQueryData(['task_reminders'], new Map<string, number[]>())
-  client.setQueryData(['habits'], [])
+  client.setQueryData(['habits'], buildDemoHabits())
   client.setQueryData(['history'], [])
   return client
 }
@@ -178,6 +190,52 @@ function DemoChatCard({
   )
 }
 
+/**
+ * The desktop options row — a look-only copy of the real shell's header nav (App.tsx's
+ * `<nav aria-label="Account">`), so the closing panel points at the options without tearing the
+ * example down to reach the real shell.
+ *
+ * Plain spans, not buttons, and no nav/aria-label: the real nav sits behind this overlay carrying
+ * the IDENTICAL labels, so anything role-shaped here is a duplicate `getByRole('button', {name:
+ * 'Settings'})` waiting to break a spec. (`aria-hidden` on the scene already hides it from role
+ * queries — this is the second lock, since the scene losing that attribute shouldn't cascade into
+ * a dozen red specs.)
+ *
+ * Admin is omitted (owner-only) and so is Chat's unread badge — a first-run user has neither, and
+ * inventing them would put a lie in the "example".
+ */
+function DemoOptionsRow() {
+  return (
+    <div>
+      {/* The anchor is the shrink-wrapped row itself (`w-fit`, pushed right by `ml-auto` the way
+          the real header's justify-between puts it), NOT a full-width wrapper — the tour cuts its
+          spotlight from the anchor's bounding box, and a full-width box would highlight a stretch
+          of empty paper to the left of the options it's pointing at. */}
+      <div
+        data-tour="demo-options"
+        className="ml-auto flex w-fit flex-wrap items-center gap-4 text-xs text-muted"
+      >
+        <span>
+          <span aria-hidden>🐾</span> Chat
+        </span>
+        <span>
+          <BoneIcon className="inline h-2.5 w-auto align-[-1px]" /> Daily habits
+        </span>
+        <span>
+          <span aria-hidden>⚙</span> Settings
+        </span>
+        <span>
+          <span aria-hidden>✓</span> Done
+        </span>
+        <span>Sign out</span>
+      </div>
+      {/* The hairline that closes the real masthead — it makes the row read as a header edge
+          rather than a strip of words floating over the example. */}
+      <div aria-hidden className="mt-3 h-px bg-ink/30" />
+    </div>
+  )
+}
+
 export function DemoScene({ onReady }: { onReady: () => void }) {
   const isMobile = useIsMobile()
   // Built once per mount; the browser zone is exactly useTimeZone's fallback for a null schedule.
@@ -210,6 +268,9 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
           board starts fresh.
         </div>
 
+        {/* Desktop: the options live along the top, so the scene's header edge does too. */}
+        {!isMobile && <DemoOptionsRow />}
+
         <QueryClientProvider client={client}>
           {/* The plan step spotlights this whole block — the ✦ Plan My Day button AND the plan it
               builds — so the tour shows the button and its result together. The button is example
@@ -238,6 +299,18 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
             </div>
           </div>
 
+          {/* The habits strip — the REAL RemindersInline, fed from the sealed cache. Same bet as
+              the board: the live component means the actual home-screen treatment (paw checks, the
+              bone "treats earned" tally, the desktop inline row vs. the mobile collapsible card) is
+              what the tour shows, and a redesign lands here without anyone remembering to re-fake
+              it. It sits between the plan and the board because that is exactly the real shell's
+              order, so the panel's "right above your board" is literally true.
+              MUST stay inside the QueryClientProvider: outside it, useHabits would bind to the
+              app's real client and the "example" would fetch and display the user's OWN habits. */}
+          <div data-tour="demo-habits">
+            <RemindersInline />
+          </div>
+
           <div data-tour="demo-board">
             {isMobile ? <MobileMatrix quadrantFocus={DEMO_QUADRANT_FOCUS} /> : <DemoBoardDesktop />}
           </div>
@@ -257,44 +330,23 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
           />
         </div>
 
-        {/* The last two panels point here — example Daily habits + Settings, so the whole tour is
-            one section over this scene (no jump to the real, empty shell). Look-only scenery. */}
-        <div className="grid grid-cols-1 gap-4 wide:grid-cols-2">
-          <section
-            data-tour="demo-habits"
-            className="overflow-hidden rounded-[14px] border border-border bg-panel"
-          >
-            <p className="border-b border-border bg-card px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
-              <BoneIcon className="inline h-2.5 w-auto align-[-1px]" /> Daily habits
-            </p>
-            <ul className="flex flex-col gap-2.5 p-4 text-[13px] text-ink">
-              <li className="flex items-center gap-2.5">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] text-white">
-                  🐾
-                </span>
-                Stretch — 10 minutes
-              </li>
-              <li className="flex items-center gap-2.5 text-muted">
-                <span className="h-6 w-6 rounded-full border border-border-strong" />
-                Walk the dog
-              </li>
-            </ul>
-          </section>
-
-          <section
-            data-tour="demo-settings"
-            className="overflow-hidden rounded-[14px] border border-border bg-panel"
-          >
-            <p className="border-b border-border bg-card px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
-              <span aria-hidden>⚙</span> Settings
-            </p>
-            <ul className="flex flex-col gap-2 p-4 text-[13px] text-muted">
-              <li>Daily reset — 4:00 AM</li>
-              <li>Notifications — on</li>
-              <li>Timezone, backups, and this tour</li>
-            </ul>
-          </section>
-        </div>
+        {/* Mobile: the options are the bottom bar, so the scene grows the REAL one — look-only
+            (every handler is a noop; the scene is inert), sticky to the scroller's bottom edge the
+            way the real bar hugs the screen, and full-bleed past the column's padding. The negative
+            bottom margin cancels the column's pb-24 so the bar's resting place is flush with the
+            bottom rather than floating 96px above it at full scroll. */}
+        {isMobile && (
+          <div data-tour="demo-options" className="sticky bottom-0 z-10 -mx-4 -mb-24">
+            <MobileBottomNav
+              route="home"
+              onHome={noop}
+              onAdd={noop}
+              onChat={noop}
+              onDone={noop}
+              onMore={noop}
+            />
+          </div>
+        )}
       </div>
     </div>,
     document.body,
