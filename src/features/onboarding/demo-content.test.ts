@@ -113,9 +113,13 @@ describe('demo habits fixture', () => {
 })
 
 describe('demo tour script', () => {
-  it('targets only demo-* anchors (grid/matrix also exist in the real shell underneath)', () => {
-    for (const isMobile of [false, true])
-      for (const step of demoTour(isMobile)) expect(step.target).toMatch(/^demo-/)
+  it('targets demo-* anchors for every step but the last (grid/matrix also exist in the real shell underneath)', () => {
+    // The closing step targets 'options' — the REAL Account nav / bottom bar, not a DemoScene anchor.
+    for (const isMobile of [false, true]) {
+      const steps = demoTour(isMobile)
+      for (const step of steps.slice(0, -1)) expect(step.target).toMatch(/^demo-/)
+      expect(steps.at(-1)!.target).toBe('options')
+    }
   })
 
   it('teaches the grid decoder ring (↻/❄️) on desktop only — the mobile overview has no badges', () => {
@@ -129,25 +133,25 @@ describe('demo tour script', () => {
 
   it('sends each breakpoint to where its options actually live', () => {
     // The closing panel is the second breakpoint-switched body, and the riskiest: both breakpoints
-    // share the `demo-options` anchor, but it wraps DIFFERENT chrome (desktop's header-nav copy at
-    // the top vs. the real bottom bar) because the real app differs (ADR-0028). Nothing else can
+    // share the `options` anchor, but it wraps DIFFERENT real chrome (the desktop header's Account
+    // nav vs. the real mobile bottom bar) because the real app differs (ADR-0028). Nothing else can
     // catch copy that names the wrong end of the screen — the anchor name is identical, so the
     // step-list test passes either way and the spotlight lands on something either way.
     const closing = (isMobile: boolean) => demoTour(isMobile).at(-1)!
-    expect(closing(false).target).toBe('demo-options')
+    expect(closing(false).target).toBe('options')
     expect(closing(false).body).toMatch(/along the top/i)
     expect(closing(false).body).not.toMatch(/bottom|“More”/i)
 
-    expect(closing(true).target).toBe('demo-options')
+    expect(closing(true).target).toBe('options')
     expect(closing(true).body).toMatch(/along the bottom/i)
     expect(closing(true).body).toMatch(/“More”/)
     expect(closing(true).body).not.toMatch(/along the top/i)
   })
 
   it('is the full 9-panel single section, in order, on both breakpoints', () => {
-    // The whole tour lives on the one scene — the plan button, the habits strip, and the options
-    // chrome are all mounted there, so nothing points at the real (empty) shell. Order matters (the
-    // plan button precedes the check-ins; habits then the options row close it out).
+    // The first eight steps live on DemoScene (the plan button and the habits strip); the last one
+    // points at the real Account nav / bottom bar in the shell around it. Order matters (the plan
+    // button precedes the check-ins; habits then the real options close it out).
     const expected = [
       'demo-board', // welcome
       'demo-board', // sorted by what matters
@@ -157,7 +161,7 @@ describe('demo tour script', () => {
       'demo-chat-evening', // evenings close the loop
       'demo-chat-evening', // chat runs the whole app (same anchor — its receipts are the proof)
       'demo-habits',
-      'demo-options',
+      'options',
     ]
     for (const isMobile of [false, true])
       expect(demoTour(isMobile).map((s) => s.target)).toEqual(expected)

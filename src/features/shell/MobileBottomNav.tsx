@@ -16,6 +16,9 @@ import type { AppRoute } from '../../lib/route'
 // Labelled <nav aria-label="Account"> with a real "Done" button so the golden `openDone` helper —
 // getByRole('navigation', {name:'Account'}).getByRole('button', {name:'Done'}) — keeps working; on
 // mobile this is the ONLY Account nav (the desktop header one is not rendered).
+//
+// data-tour="options": the feature tour's closing panel spotlights this REAL bar directly (no
+// look-alike copy mounted inside DemoScene).
 
 function NavItem({
   glyph,
@@ -100,6 +103,7 @@ export function MobileBottomNav({
   return (
     <nav
       aria-label="Account"
+      data-tour="options"
       // In normal flow (flex child), full-width, never shrinking. px-3 keeps the outer tabs off the
       // screen's rounded corners; divide-x draws a hairline between tabs; the bottom padding stacks
       // a little breathing room on top of the home-indicator inset (which is 0 on non-notch devices).
