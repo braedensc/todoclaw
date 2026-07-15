@@ -23,35 +23,39 @@ shell; anchors resolve ONCE at mount and missing ones drop out silently. It also
 card height post-render, so a step whose copy runs long can't park its Next button below the fold
 (the card is `position: fixed` and never scrolls).
 
-The tour is **one section — eight panels, all on the example day**. `DemoScene` is a full-screen
-overlay showing the app in real use: the REAL board components (GridSurface / MobileMatrix) fed by a
-nested, sealed TanStack QueryClient (`enabled: false` + every key pre-seeded → zero backend traffic,
-and new card treatments show up in the demo for free), the real PlanBox with a canned plan, the real
-RemindersInline habits strip above the board, and the real ChatConversation playing the scripted
-morning push + evening check-in. The check-in texts are drift-guarded by a Deno test
-(`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the actual dispatch builders over
-the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden scenery; `demoTour(isMobile)`
-narrates it via `demo-*` anchors only. The eight panels: welcome → board → three task kinds →
-**Plan My Day (the ✦ button + the plan it builds)** → morning → evening → daily habits → the rest of
-the app. Two steps' copy differs per breakpoint: the BOARD step (the desktop grid has the
-heat/cool/↻/❄️ decoder ring, the mobile quadrant overview has none) and the closing options step
-(below).
+The tour is **one section — eight panels**. `DemoScene` mounts INLINE in the real shell — below the
+real header/masthead, in the exact spot App.tsx would otherwise render the real PlanBox /
+RemindersInline / WorkArea (which App.tsx hides while the tour is up, so nothing stacks two boards).
+It is not a portal or a fixed overlay, so the real chrome around it — the header, the mascot mark,
+the Account nav, the mobile bottom bar — is always visible and never covered. Inside DemoScene: the
+REAL board components (GridSurface / MobileMatrix) fed by a nested, sealed TanStack QueryClient
+(`enabled: false` + every key pre-seeded → zero backend traffic, and new card treatments show up in
+the demo for free), the real RemindersInline habits strip above the board, and the real
+ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
+drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the
+actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden
+scenery; `demoTour(isMobile)` narrates its first seven steps via `demo-*` anchors. The eight panels:
+welcome → board → three task kinds → **Plan My Day (the ✦ button + the plan it builds)** → morning →
+evening → daily habits → the rest of the app. Two steps' copy differs per breakpoint: the BOARD step
+(the desktop grid has the heat/cool/↻/❄️ decoder ring, the mobile quadrant overview has none) and the
+closing options step (below).
 
-Crucially, the "chrome" the tour points at is look-only scenery rendered ON the DemoScene, NOT the
-real shell's controls: the ✦ Plan My Day button, and the options chrome (`demo-options`). That's
-deliberate — pointing at the real shell would mean tearing down the example mid-tour (a visible
-surface jump), so everything the tour spotlights lives on the one scene. There is no second leg.
-The options chrome is the one piece shaped per breakpoint, because the real app is: desktop copies
-the header's Account nav across the top, while mobile mounts the real `MobileBottomNav` at the
-bottom (ADR-0028 — a phone has no header nav; Chat/Done are tabs and habits/Settings sit under
-"⋯ More"). Everything else — including the habits strip — is the real component over seeded data.
+The ONE thing that stays look-only is the plan panel (`demo-plan`: a fake ✦ Plan My Day button +
+the real PlanBox with a canned plan) — a first-run user has no real plan yet, so the tour fakes what
+one looks like rather than pointing at the real header button's honest empty state. The real header's
+own Plan My Day button (or the mobile pill) is untouched and stays visible, showing the user's actual
+plan state, for the whole tour. Everything else the tour spotlights is real: the closing step targets
+`options`, a `data-tour="options"` attribute on the REAL Account nav (desktop header,
+`App.tsx`) / the REAL `MobileBottomNav` (mobile, ADR-0028 — a phone has no header nav; Chat/Done are
+tabs and habits/Settings sit under "⋯ More") — no look-alike copy of either.
 
-⚠️ Every anchor here is `demo-`-prefixed for a reason worth keeping: the real shell's `habits` /
-`settings` / `done` anchors are still in the DOM behind the overlay, the portal appends *after*
-`#root`, and `FeatureTour` resolves anchors with `querySelector` (first match in document order). An
-unprefixed name wouldn't fail loudly — it would silently spotlight an invisible button behind the
-scene. `demo-content.test.ts` pins the `/^demo-/` rule. For the same reason, specs asserting demo
-chrome must scope to the `[data-tour="demo-*"]` anchor rather than use a bare `getByText`.
+⚠️ The first seven anchors are `demo-`-prefixed for a reason worth keeping: `grid`/`matrix`-style
+generic names also exist in the real shell, and `FeatureTour` resolves anchors with `querySelector`
+(first match in document order) — an unprefixed name wouldn't fail loudly, it would silently
+spotlight the wrong element. `demo-content.test.ts` pins that every step but the last matches
+`/^demo-/`, and that the last one is exactly `options`. Specs asserting DemoScene's own look-only
+content should still scope to its `[data-tour="demo-*"]` anchor rather than a bare `getByText` where
+the copy could plausibly collide with something else on the page.
 
 Finishing OR skipping the tour latches it done (localStorage + the `config.onboarding.tourSeen`
 account mirror) — someone who skips shouldn't be nagged by an eternal unchecked box. The empty-board

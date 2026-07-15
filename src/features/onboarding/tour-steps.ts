@@ -5,17 +5,19 @@ import type { TourStep } from './FeatureTour'
 // words (a first-run non-technical user), each step teaches ONE idea, and the app's core model —
 // tasks on an urgent × important map — leads.
 //
-// The tour is ONE section, played entirely over the DemoScene — no second leg over the user's own
-// empty shell (that only bred redundancy). Eight panels, all pointing at the one example scene:
-// welcome → board → three task kinds → Plan My Day (button + the plan it builds) → morning →
-// evening → daily habits → the rest of the app. Everything the tour highlights lives ON the scene,
-// so the walkthrough never jumps surfaces: the habits panel points at the REAL habits strip the
-// scene mounts over seeded data, and the plan button + options chrome are look-only copies of the
-// real controls (the originals are wired to real handlers in the shell this overlay covers).
+// The tour is ONE section: DemoScene mounts inline in the real shell (below the real header, in
+// place of the real board/plan/reminders it stands in for — see DemoScene's own comment), so the
+// real chrome around it is never hidden. Eight panels: welcome → board → three task kinds →
+// Plan My Day (button + the plan it builds) → morning → evening → daily habits → the rest of the
+// app. The first seven point at the example scene's own `demo-*` anchors (the board, the look-only
+// plan block, the two chat cards, the real habits strip mounted there); the LAST one points at the
+// REAL Account nav / bottom bar sitting right there in the shell — no look-alike copy.
 
 /**
- * The demo tour — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid'
- * and 'matrix' also exist in the real shell underneath, and anchors resolve first-match-in-document.
+ * The demo tour. Steps 1–7 target the DemoScene's own `demo-*` wrapper anchors: 'grid' and 'matrix'
+ * also exist in the real shell underneath, and anchors resolve first-match-in-document. The closing
+ * step targets `options`, the REAL Account nav (desktop header) / bottom bar (mobile) — DemoScene
+ * doesn't cover them, so there's nothing to fake.
  *
  * Every target exists on both breakpoints; two bodies are breakpoint-specific because the two
  * surfaces genuinely differ (ADR-0028), and `demoTour(isMobile)` swaps only the copy:
@@ -23,8 +25,8 @@ import type { TourStep } from './FeatureTour'
  *    quadrant overview (labels, counts, ⏰ badges, no grid). Teaching the grid's decoder ring to
  *    users who will never see a grid is worse than saying less.
  *  - THE REST OF THE APP — desktop's options are the header nav across the top; mobile has no
- *    header nav at all (bottom-bar tabs + "More"), and the scene mirrors that, so this step's copy
- *    must name the place the spotlight is actually sitting on.
+ *    header nav at all (bottom-bar tabs + "More"), so this step's copy must name the place the
+ *    spotlight is actually sitting on.
  */
 export function demoTour(isMobile: boolean): TourStep[] {
   return [
@@ -96,7 +98,7 @@ export function demoTour(isMobile: boolean): TourStep[] {
         'right above your board every day; tap the paw to check one off. They reset every morning.',
     },
     {
-      target: 'demo-options',
+      target: 'options',
       title: 'The rest of the app',
       // Name only what Settings actually holds: its tabs are Plan My Day / Notifications / AI /
       // Backups, plus the timezone picker and "Replay the tour". There is no reset-time control —

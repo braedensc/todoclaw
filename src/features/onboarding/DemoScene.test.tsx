@@ -7,10 +7,9 @@ import { DEMO_PLAN, DEMO_EVENING_REPLY } from './demo-transcript'
 import { demoTour } from './tour-steps'
 
 // jsdom has no matchMedia, so the real useIsMobile always reports desktop (the App.test.tsx
-// pattern). The scene's options chrome is the one thing shaped per breakpoint — a header-nav row on
-// desktop, the real bottom bar on mobile — so the mobile path needs a way in: without this, a typo
-// in that branch would drop the closing panel's anchor on phones and NOTHING would catch it (the
-// golden tour spec is desktop-only too).
+// pattern). The scene itself no longer has a breakpoint-shaped anchor (the closing "options" step
+// now targets the REAL Account nav / bottom bar in App.tsx, not a copy mounted here) — App.test.tsx
+// covers that split.
 const mockIsMobile = vi.fn<() => boolean>(() => false)
 vi.mock('../../hooks/use-is-mobile', () => ({
   useIsMobile: () => mockIsMobile(),
@@ -67,13 +66,12 @@ describe('DemoScene', () => {
     // The scene signalled readiness (App gates the FeatureTour mount on this).
     expect(onReady).toHaveBeenCalled()
 
-    // Board (jsdom has no matchMedia → desktop grid): standalone cards render; the framing ribbon
-    // makes the fakeness explicit. ('Send the invoice' appears twice by design — grid card + the
-    // plan's big rock — so the board-only spot checks use tasks the plan doesn't mention.)
+    // Board (jsdom has no matchMedia → desktop grid): standalone cards render. ('Send the invoice'
+    // appears twice by design — grid card + the plan's big rock — so the board-only spot checks use
+    // tasks the plan doesn't mention.)
     expect(screen.getAllByText('Send the invoice').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Renew the passport')).toBeInTheDocument()
     expect(screen.getByText('Clean out the garage')).toBeInTheDocument()
-    expect(screen.getByText(/none of this is your data/i)).toBeInTheDocument()
 
     // The plan card renders the canned plan through the real PlanBox, under the example ✦ Plan My
     // Day button the tour's plan panel spotlights (button + result shown together). getByText, not
@@ -88,17 +86,13 @@ describe('DemoScene', () => {
 
     // The habits strip is the REAL RemindersInline over the seeded habits — not a lookalike — so
     // the tour shows the actual home-screen treatment. Scoped to its anchor: these labels are
-    // generic, and demo chrome must never be asserted with a bare getByText (see the options row).
+    // generic and could otherwise match unrelated content.
     const habits = anchor('demo-habits')
     expect(within(habits).getByText('Stretch 10 minutes')).toBeInTheDocument()
     expect(within(habits).getByText('Walk the dog')).toBeInTheDocument()
     // The seeded habit_done map ticks exactly one → a partial "treats earned" tally. textContent,
     // not getByText: the tally is an <svg> plus three sibling text nodes.
     expect(habits.textContent).toContain('1/2')
-
-    // Desktop options: a look-only copy of the header nav, so the closing panel points at the
-    // scene instead of tearing it down to reach the real shell.
-    expect(within(anchor('demo-options')).getByText(/Settings/)).toBeInTheDocument()
 
     // Look-only: the chat composer is hidden in the demo cards.
     expect(screen.queryByLabelText('Message')).toBeNull()
@@ -107,10 +101,10 @@ describe('DemoScene', () => {
     expect(supabaseTouched).toEqual([])
   })
 
-  it('mounts an anchor for every demo tour step, on BOTH breakpoints', () => {
-    // The scripts' targets are identical across breakpoints (demo-content.test.ts pins that), but
-    // the ELEMENTS behind demo-options are not — desktop's header-nav row vs. mobile's bottom bar —
-    // so both renders have to be checked or half the coverage is imaginary.
+  it('mounts an anchor for every demo-* tour step, on BOTH breakpoints', () => {
+    // The scripts' targets are identical across breakpoints (demo-content.test.ts pins that). The
+    // closing step ('options') is deliberately excluded — it targets the REAL Account nav / bottom
+    // bar in App.tsx, not anything DemoScene mounts; App.test.tsx covers that one.
     for (const isMobile of [false, true]) {
       mockIsMobile.mockReturnValue(isMobile)
       const { unmount } = render(
@@ -120,7 +114,7 @@ describe('DemoScene', () => {
           </ToastProvider>
         </ConfirmProvider>,
       )
-      for (const step of demoTour(isMobile)) {
+      for (const step of demoTour(isMobile).filter((s) => s.target.startsWith('demo-'))) {
         expect(
           document.querySelector(`[data-tour="${step.target}"]`),
           `${step.target} @ ${isMobile ? 'mobile' : 'desktop'}`,
@@ -128,22 +122,5 @@ describe('DemoScene', () => {
       }
       unmount()
     }
-  })
-
-  it('mounts the real bottom bar as the options chrome on mobile (there is no header nav there)', () => {
-    mockIsMobile.mockReturnValue(true)
-    renderScene()
-
-    // The real MobileBottomNav, look-only: the tabs a phone user actually taps to reach the rest of
-    // the app. "More" is the one the closing panel's mobile copy sends them to for habits/Settings.
-    const options = anchor('demo-options')
-    expect(within(options).getByText('Chat')).toBeInTheDocument()
-    expect(within(options).getByText('Done')).toBeInTheDocument()
-    expect(within(options).getByText('More')).toBeInTheDocument()
-    // The desktop-only header row must NOT also be on the scene — two options anchors would make
-    // the closing panel spotlight whichever came first in the document.
-    expect(document.querySelectorAll('[data-tour="demo-options"]')).toHaveLength(1)
-
-    expect(supabaseTouched).toEqual([])
   })
 })
