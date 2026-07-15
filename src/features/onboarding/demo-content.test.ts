@@ -98,7 +98,7 @@ describe('demo tour script', () => {
     expect(demoTour(false).some((s) => /❄️|↻/.test(stepText(s)))).toBe(true)
   })
 
-  it('is the full 8-panel single section, in order, on both breakpoints', () => {
+  it('is the full 9-panel single section, in order, on both breakpoints', () => {
     // The whole tour lives on the one scene — including the plan button, habits, and settings, which
     // DemoScene renders as example scenery so nothing points at the real (empty) shell. Order matters
     // (the plan button precedes the check-ins; habits + settings close it out).
@@ -108,7 +108,8 @@ describe('demo tour script', () => {
       'demo-board', // three kinds of task
       'demo-plan', // Plan My Day button + the plan it builds
       'demo-chat-morning',
-      'demo-chat-evening',
+      'demo-chat-evening', // evenings close the loop
+      'demo-chat-evening', // chat runs the whole app (same anchor — its receipts are the proof)
       'demo-habits',
       'demo-settings',
     ]

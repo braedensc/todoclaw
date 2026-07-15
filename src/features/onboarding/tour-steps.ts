@@ -6,10 +6,11 @@ import type { TourStep } from './FeatureTour'
 // tasks on an urgent × important map — leads.
 //
 // The tour is ONE section, played entirely over the DemoScene — no second leg over the user's own
-// empty shell (that only bred redundancy). Eight panels, all pointing at the one example scene:
+// empty shell (that only bred redundancy). Nine panels, all pointing at the one example scene:
 // welcome → board → three task kinds → Plan My Day (button + the plan it builds) → morning →
-// evening → daily habits → settings. Everything the tour highlights (the plan button, the habits
-// card, the settings card) is example scenery ON the scene, so the walkthrough never jumps surfaces.
+// evening → chat-runs-it-all → daily habits → settings. Everything the tour highlights (the plan
+// button, the habits card, the settings card) is example scenery ON the scene, so the walkthrough
+// never jumps surfaces.
 
 /**
  * The demo tour — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid'
@@ -25,9 +26,9 @@ export function demoTour(isMobile: boolean): TourStep[] {
       target: 'demo-board',
       title: 'Welcome to Todoclaw',
       body:
-        'Todoclaw keeps everything you have to do in one place, sorted by how urgent and important ' +
-        'it is — then plans a realistic day for you each morning and checks in each evening. ' +
-        'Here’s a day already in motion.',
+        'Todoclaw is an AI-powered planner. Everything you have to do lands in one place, sorted ' +
+        'by how urgent and important it is — and BabyClaw, your AI pup, plans a realistic day ' +
+        'each morning and checks in each evening. Here’s a day already in motion.',
     },
     {
       target: 'demo-board',
@@ -79,7 +80,15 @@ export function demoTour(isMobile: boolean): TourStep[] {
       title: 'Evenings close the loop',
       body:
         'Each evening BabyClaw checks in. Reply in plain words — “1 and 3” — and he ticks them ' +
-        'off for you.',
+        'off for you: each green ✓ receipt is him really updating your board.',
+    },
+    {
+      target: 'demo-chat-evening',
+      title: 'Chat runs the whole app',
+      body:
+        'Check-ins are just the start: tell BabyClaw “add dentist Friday 2pm,” “push the invoice ' +
+        'to Monday,” or “what’s overdue?” — anytime, in plain words. He does it and stamps a ' +
+        'receipt, like the ones here.',
     },
     {
       target: 'demo-habits',
@@ -93,7 +102,8 @@ export function demoTour(isMobile: boolean): TourStep[] {
       title: 'Settings and the rest',
       body:
         'Your daily reset time, notifications, timezone, backups, and this tour all live in ' +
-        'Settings. And AI is always optional — everything here works by hand too.',
+        'Settings. And you hold the leash: everything BabyClaw does with AI, you can also do by ' +
+        'hand — the whole planner works without him.',
     },
   ]
 }

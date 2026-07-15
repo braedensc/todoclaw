@@ -19,7 +19,8 @@ export default defineConfig({
       manifest: {
         name: 'Todoclaw',
         short_name: 'Todoclaw',
-        description: 'Your free-canvas Eisenhower-matrix task planner.',
+        description:
+          'AI-powered day planner: an urgency × importance map, a morning plan, an evening check-in — run it all by chat.',
         theme_color: '#2e2a24',
         background_color: '#f8f2e6',
         display: 'standalone',

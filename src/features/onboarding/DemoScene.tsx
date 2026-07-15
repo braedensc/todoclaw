@@ -25,7 +25,7 @@ import {
 } from './demo-transcript'
 
 // DemoScene — the tour's "example day": a full-screen overlay showing what Todoclaw looks like in
-// real use. The ENTIRE 8-panel tour plays over this one scene (no second leg over the user's own
+// real use. The ENTIRE 9-panel tour plays over this one scene (no second leg over the user's own
 // empty shell), so it also carries the "chrome" the later panels point at — the Plan My Day button,
 // an example Daily-habits card, and an example Settings card. The core surfaces are the REAL
 // components rendering fake in-memory data:

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from '../helpers/fixtures'
 
-// The feature tour is ONE section (8 panels), played entirely over the DemoScene — a filled example
+// The feature tour is ONE section (9 panels), played entirely over the DemoScene — a filled example
 // board, the plan (+ its Plan My Day button), the scripted morning/evening check-ins, and example
 // habits + settings cards, all on the one scene. These specs guard the walkthrough, the "finishing
 // OR skipping latches the checkmark" semantics, and the empty-board "See an example board" peek.
@@ -27,8 +27,8 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
   await expect(page.getByText(/none of this is your data/i)).toBeVisible()
   await expect(page.getByText('Clean out the garage')).toBeVisible()
 
-  // Walk all eight panels: welcome → board → task kinds → plan → morning → evening → habits →
-  // settings, every one spotlighting an element on the single example scene.
+  // Walk all nine panels: welcome → board → task kinds → plan → morning → evening → chat →
+  // habits → settings, every one spotlighting an element on the single example scene.
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Sorted by what matters' })).toBeVisible()
 
@@ -53,6 +53,9 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
   await expect(page.getByText(/Which of these did you knock out today\?/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Chat runs the whole app' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Daily habits' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
@@ -62,7 +65,9 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
   expect(await tourDone(page)).toBeNull()
 
   // Finishing closes the tour, tears down the scene, and latches the guide's tour step.
-  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  // Scoped to the tour card: the real header's "✓ Done" nav tab has the same accessible name
+  // (its ✓ is aria-hidden), so an unscoped query is a strict-mode violation.
+  await page.getByRole('dialog').getByRole('button', { name: 'Done', exact: true }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(page.getByText(/none of this is your data/i)).not.toBeVisible()
   expect(await tourDone(page)).toBe('1')

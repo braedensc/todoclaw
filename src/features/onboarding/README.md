@@ -23,16 +23,16 @@ shell; anchors resolve ONCE at mount and missing ones drop out silently. It also
 card height post-render, so a step whose copy runs long can't park its Next button below the fold
 (the card is `position: fixed` and never scrolls).
 
-The tour is **one section — eight panels, all on the example day**. `DemoScene` is a full-screen
+The tour is **one section — nine panels, all on the example day**. `DemoScene` is a full-screen
 overlay showing the app in real use: the REAL board components (GridSurface / MobileMatrix) fed by a
 nested, sealed TanStack QueryClient (`enabled: false` + every key pre-seeded → zero backend traffic,
 and new card treatments show up in the demo for free), the real PlanBox with a canned plan, and the
 real ChatConversation playing the scripted morning push + evening check-in. The check-in texts are
 drift-guarded by a Deno test (`supabase/functions/_shared/demo-transcript.test.ts`) that re-runs the
 actual dispatch builders over the fixtures in `demo-transcript.ts`. The scene is inert + aria-hidden
-scenery; `demoTour(isMobile)` narrates it via `demo-*` anchors only. The eight panels: welcome →
+scenery; `demoTour(isMobile)` narrates it via `demo-*` anchors only. The nine panels: welcome →
 board → three task kinds → **Plan My Day (the ✦ button + the plan it builds)** → morning → evening →
-daily habits → settings. The BOARD step's copy differs per breakpoint — the desktop grid shows the
+chat-runs-the-whole-app → daily habits → settings. The BOARD step's copy differs per breakpoint — the desktop grid shows the
 heat/cool/↻/❄️ decoder ring, the mobile quadrant overview shows none.
 
 Crucially, the last three "chrome" targets — the Plan My Day button, an example **Daily-habits**
