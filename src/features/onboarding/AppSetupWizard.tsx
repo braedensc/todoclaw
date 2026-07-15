@@ -12,7 +12,7 @@ import {
 } from './InstallPanels'
 
 // AppSetupWizard — the install step's "Show me how" walkthrough: drawn, tap-by-tap instructions for
-// getting Todoclaw installed. Turning notifications ON is its OWN checklist step now (2026-07-09
+// getting TodoClaw installed. Turning notifications ON is its OWN checklist step now (2026-07-09
 // split-steps pass), handled inline there — this wizard is purely about the install gesture. On
 // Apple the installed app is effectively a SEPARATE app (its own sign-in, its own notification
 // permission), so a second "switch INTO the app" page hands the user off: reopen from the Home
@@ -34,10 +34,10 @@ function pagesFor(context: InstallContext): WizardPage[] {
 
 const PAGE_TITLE: Record<WizardPage, Record<InstallContext, string>> = {
   install: {
-    ios: 'Add Todoclaw to your Home Screen',
-    'macos-safari': 'Add Todoclaw to your Dock',
-    chromium: 'Install the Todoclaw app',
-    unknown: 'Install the Todoclaw app',
+    ios: 'Add TodoClaw to your Home Screen',
+    'macos-safari': 'Add TodoClaw to your Dock',
+    chromium: 'Install the TodoClaw app',
+    unknown: 'Install the TodoClaw app',
   },
   switch: {
     ios: 'Open it from your Home Screen',
@@ -97,7 +97,7 @@ function InstallPage({
             <IosShareSheet />
           </Panel>
           <StepRow n={3}>
-            Tap <span className="font-medium">Add</span> (top right) — Todoclaw gets its own icon,
+            Tap <span className="font-medium">Add</span> (top right) — TodoClaw gets its own icon,
             like any app.
           </StepRow>
         </ol>
@@ -117,7 +117,7 @@ function InstallPage({
             <SafariFileMenu />
           </Panel>
           <StepRow n={2}>
-            Click <span className="font-medium">Add</span> — Todoclaw lands in your Dock with its
+            Click <span className="font-medium">Add</span> — TodoClaw lands in your Dock with its
             own icon.
           </StepRow>
         </ol>
@@ -147,7 +147,7 @@ function InstallPage({
         </Panel>
         <StepRow n={2}>
           Click <span className="font-medium">Install</span>. No icon? Open the browser’s ⋮ menu and
-          look for <span className="font-medium">“Install Todoclaw”</span>.
+          look for <span className="font-medium">“Install TodoClaw”</span>.
         </StepRow>
       </ol>
     </div>
@@ -162,7 +162,7 @@ function SwitchPage({ context }: { context: InstallContext }) {
         <DockScene />
       </Panel>
       <p className="text-sm leading-snug text-ink">
-        From now on, open Todoclaw from your <span className="font-medium">{place}</span>. You’ll
+        From now on, open TodoClaw from your <span className="font-medium">{place}</span>. You’ll
         sign in once more the first time — then everything is there: your tasks, your daily plan,
         and <span className="font-medium">BabyClaw</span> ready to chat.
       </p>

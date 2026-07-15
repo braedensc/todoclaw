@@ -1,6 +1,6 @@
 # STYLE.md
 
-Todoclaw's code style, naming conventions, component patterns, state patterns, and UI/UX design system (color palette, typography, spacing). The visual language originated from EisenClaw but is now Todoclaw's own — the tokens below and the code that uses them are authoritative; EisenClaw is historical provenance, not a target.
+TodoClaw's code style, naming conventions, component patterns, state patterns, and UI/UX design system (color palette, typography, spacing). The visual language originated from EisenClaw but is now TodoClaw's own — the tokens below and the code that uses them are authoritative; EisenClaw is historical provenance, not a target.
 
 > Design tokens were implemented in Stage 3. Their original source hex/font values are recorded in `planning/EISENCLAW-LOGIC-TO-PORT.md` § 13 (provenance only) — the live tokens in `tailwind.config.js` are the source of truth.
 
@@ -8,7 +8,7 @@ Todoclaw's code style, naming conventions, component patterns, state patterns, a
 
 ## Design tokens
 
-The "warm paper" palette and fonts are Todoclaw's design tokens, defined in
+The "warm paper" palette and fonts are TodoClaw's design tokens, defined in
 `tailwind.config.js` (`theme.extend`). Use the token names below — never raw hex in
 components. The body base (background + text + body font) is applied in `src/index.css`
 (`@layer base { body { ... } }`). (The original source hex values live in
@@ -22,7 +22,7 @@ third party). Families are declared as Tailwind tokens.
 
 | Token | Family | Use |
 |---|---|---|
-| `font-serif` | Fraunces (variable) | Headings / headline (e.g. the "Todoclaw" wordmark) |
+| `font-serif` | Fraunces (variable) | Headings / headline (e.g. the "TodoClaw" wordmark) |
 | `font-sans` | IBM Plex Sans | Body / UI (the `body` default) |
 
 ### Colors
@@ -59,7 +59,7 @@ to **non-recurring** cards (a recurring task shows its `RC_COLOR` status badge i
 to a done card (it has already left the grid). The exact tiers/constants live in
 `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `staleness`/`staleRingStyle`) and are pinned (authoritative) by
 `src/lib/visual-urgency.test.ts`; they originated from EisenClaw (`EISENCLAW-LOGIC-TO-PORT.md` §4/§5)
-but have since been tuned on Todoclaw's own merits (e.g. the amplified glow ladder).
+but have since been tuned on TodoClaw's own merits (e.g. the amplified glow ladder).
 
 - **Urgency glow** — a `box-shadow` ring that intensifies as the due date approaches, keyed on
   `daysUntil(due)` (timezone-aware). Overdue → strongest terracotta ring **+ pulse**; due today →
@@ -121,7 +121,7 @@ tap-to-place path, but nothing mounts the grid below 720px.)
 
 Screenshots of the **original** EisenClaw UI live in
 `planning/eisenclaw-export/pics/` (gitignored — historical reference, never published, never a
-target). They record where the visual language came from; the shipped Todoclaw UI is the reference
+target). They record where the visual language came from; the shipped TodoClaw UI is the reference
 now. The table below is a historical index of what each capture showed.
 
 | File | Surface shown |

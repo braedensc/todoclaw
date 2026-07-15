@@ -8,7 +8,7 @@ on a live example day).
 
 Platform-adaptive steps, each auto-detecting completion:
 
-1. **See how Todoclaw works** — launches the feature tour (below).
+1. **See how TodoClaw works** — launches the feature tour (below).
 2. **Install as a web app** — platform-specific gesture (iOS: Share → Add to Home Screen, which is
    *required* for push there; macOS Safari: File → Add to Dock; Chromium: a native install button
    via `beforeinstallprompt`, or address-bar instructions). Hidden where no gesture exists

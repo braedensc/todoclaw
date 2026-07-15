@@ -117,7 +117,7 @@ export function InviteManager() {
     if (!link) return
     if ('share' in navigator && typeof navigator.share === 'function') {
       try {
-        await navigator.share({ title: 'Todoclaw invite', text: 'Join me on Todoclaw', url: link })
+        await navigator.share({ title: 'TodoClaw invite', text: 'Join me on TodoClaw', url: link })
       } catch {
         /* user dismissed the share sheet */
       }

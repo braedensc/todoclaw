@@ -6,7 +6,7 @@ import { useIsMobile } from '../../hooks/use-is-mobile'
 // pattern, hand-rolled: no dependency carries its weight for five steps). Each step names a
 // `data-tour="…"` anchor somewhere in the mounted shell; the overlay dims everything except a
 // breathing-room cutout around that element and floats a small parchment card with the step's
-// copy + Back/Next/Skip. Launched from the setup guide's "See how Todoclaw works" step (and,
+// copy + Back/Next/Skip. Launched from the setup guide's "See how TodoClaw works" step (and,
 // with a single step, as the "Show me where" spotlight on the Task Manager widget).
 //
 // Robustness rules:
