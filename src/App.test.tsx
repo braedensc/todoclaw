@@ -145,6 +145,36 @@ describe('App shell', () => {
     expect(screen.getByRole('region', { name: 'Setup guide' })).toBeInTheDocument()
   })
 
+  // The feature tour's closing panel spotlights `[data-tour="options"]` directly — the real Account
+  // nav on desktop, the real bottom bar on mobile (DemoScene mounts no look-alike copy of either).
+  it('tags the real Account nav as the tour\'s "options" anchor on desktop', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    render(<App />)
+    const options = document.querySelector('[data-tour="options"]')
+    expect(options).not.toBeNull()
+    expect(
+      within(options as HTMLElement).getByRole('button', { name: /Settings/ }),
+    ).toBeInTheDocument()
+    // Exactly one — a stray second anchor would make the tour spotlight whichever comes first.
+    expect(document.querySelectorAll('[data-tour="options"]')).toHaveLength(1)
+  })
+
+  it('tags the real bottom bar as the tour\'s "options" anchor on mobile', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    mockIsMobile.mockReturnValue(true)
+    try {
+      render(<App />)
+      const options = document.querySelector('[data-tour="options"]')
+      expect(options).not.toBeNull()
+      expect(
+        within(options as HTMLElement).getByRole('button', { name: 'Done' }),
+      ).toBeInTheDocument()
+      expect(document.querySelectorAll('[data-tour="options"]')).toHaveLength(1)
+    } finally {
+      mockIsMobile.mockReturnValue(false)
+    }
+  })
+
   it('renders the "Grid-only view" header pill next to Plan My Day', () => {
     mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
     render(<App />)

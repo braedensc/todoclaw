@@ -1,14 +1,14 @@
 import { test, expect } from '../helpers/fixtures'
 
 // Mobile (< 720px, ADR-0028) has no grid: the DemoScene shows the example day through the real
-// MobileMatrix quadrant overview instead, and the same one-section demoTour narrates it (scene-level
-// demo-* anchors exist on both breakpoints; only the BOARD step's copy differs per breakpoint).
+// MobileMatrix quadrant overview instead, mounted inline below the real masthead (never a covering
+// overlay), and the same one-section demoTour narrates it (scene-level demo-* anchors exist on both
+// breakpoints; only the BOARD step's copy differs per breakpoint).
 
 test('the example peek shows a lit-up quadrant overview on mobile', async ({ page }) => {
   // The empty mobile overview offers the peek under the 2×2 grid.
   await page.getByRole('button', { name: 'See an example board', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Welcome to Todoclaw' })).toBeVisible()
-  await expect(page.getByText(/none of this is your data/i)).toBeVisible()
 
   // The demo matrix is populated — quadrant previews list example tasks (top-3 per quadrant).
   await expect(page.getByText('Renew the passport')).toBeVisible()

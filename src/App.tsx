@@ -81,6 +81,11 @@ function AppShell() {
   // nothing); 'add-task' = the single-step "Show me where" spotlight on the Task Manager. Launched
   // only from the home route, so every anchor the scripts name is mounted.
   const [tour, setTour] = useState<'demo' | 'demo-solo' | 'add-task' | null>(null)
+  // DemoScene renders inline where the real PlanBox/RemindersInline/WorkArea normally sit — those
+  // real surfaces are hidden while it plays so the tour doesn't stack a second board underneath the
+  // example one. Chrome outside this (header, mascot, Account nav / bottom bar, and the real Plan My
+  // Day button itself) stays exactly as it always is — DemoScene mounts around it, not over it.
+  const demoActive = tour === 'demo' || tour === 'demo-solo'
   // The demo tour may mount only AFTER the scene's first commit (FeatureTour resolves anchors
   // once, at mount — a tour racing the scene would silently drop every demo-* step).
   const [demoReady, setDemoReady] = useState(false)
@@ -447,9 +452,12 @@ function AppShell() {
                       )}
                     </div>
 
-                    {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session. */}
+                    {/* Quiet utility links — Settings/Done/Backups open header panels; Sign out ends the session.
+                        data-tour="options": the tour's closing panel spotlights this REAL nav directly
+                        (no look-alike copy — see DemoScene's header comment). */}
                     <nav
                       aria-label="Account"
+                      data-tour="options"
                       className="flex items-center gap-4 text-xs text-muted"
                     >
                       {/* Chat comes first (where the inbox bell used to be) — it IS the inbox now,
@@ -626,47 +634,55 @@ function AppShell() {
                       </button>
                     </div>
                   )}
-                  {(planner.displayPlan ||
-                    planner.isPending ||
-                    planner.isError ||
-                    planner.paused) && (
-                    <div className="mb-3">
-                      <ErrorBoundary>
-                        <PlanBox
-                          mobile={isMobile}
-                          plan={planner.displayPlan}
-                          paused={planner.paused}
-                          isPending={planner.isPending}
-                          isError={planner.isError}
-                          onRetry={planner.generate}
-                          onDismiss={planner.clear}
-                        />
-                      </ErrorBoundary>
-                    </div>
-                  )}
+                  {/* Hidden while the demo tour plays — DemoScene's own demo-plan block stands in
+                      for this, and mounting both would show two plans/boards stacked. */}
+                  {!demoActive &&
+                    (planner.displayPlan ||
+                      planner.isPending ||
+                      planner.isError ||
+                      planner.paused) && (
+                      <div className="mb-3">
+                        <ErrorBoundary>
+                          <PlanBox
+                            mobile={isMobile}
+                            plan={planner.displayPlan}
+                            paused={planner.paused}
+                            isPending={planner.isPending}
+                            isError={planner.isError}
+                            onRetry={planner.generate}
+                            onDismiss={planner.clear}
+                          />
+                        </ErrorBoundary>
+                      </div>
+                    )}
                 </>
               )}
 
               {/* Daily reminders — the minified inline form: a compact row of active reminder names near
           the top of the work area. Each name opens that reminder's detail card; the full popup is
           the gear-area Reminders button. The old full-width habits strip is gone (B2 owns the grid
-          expansion into the freed space). Hidden in grid-only mode. */}
-              {!gridOnly && (
+          expansion into the freed space). Hidden in grid-only mode, and while the demo tour plays
+          (DemoScene mounts the real RemindersInline itself, under its own demo-habits anchor). */}
+              {!gridOnly && !demoActive && (
                 <ErrorBoundary>
                   <RemindersInline />
                 </ErrorBoundary>
               )}
 
-              <ErrorBoundary>
-                <WorkArea
-                  chat={chat}
-                  onOpenChat={() => setShowChat(true)}
-                  gridOnly={gridOnly}
-                  onExitGridOnly={() => setGridOnly(false)}
-                  quadrantFocus={quadrantFocus}
-                  onSeeExample={() => setTour('demo-solo')}
-                />
-              </ErrorBoundary>
+              {/* Hidden while the demo tour plays — DemoScene mounts the real board itself, under
+                  its own demo-board anchor; both at once would stack two boards. */}
+              {!demoActive && (
+                <ErrorBoundary>
+                  <WorkArea
+                    chat={chat}
+                    onOpenChat={() => setShowChat(true)}
+                    gridOnly={gridOnly}
+                    onExitGridOnly={() => setGridOnly(false)}
+                    quadrantFocus={quadrantFocus}
+                    onSeeExample={() => setTour('demo-solo')}
+                  />
+                </ErrorBoundary>
+              )}
             </>
           )}
 
