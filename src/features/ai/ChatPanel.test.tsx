@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { ChatItem, PendingConfirm } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
@@ -13,6 +13,12 @@ vi.mock('./ChatSessionList', () => ({
       <button onClick={onNew}>list new chat</button>
     </div>
   ),
+}))
+// jsdom has no matchMedia, so the real useIsMobile always reports desktop; this mock lets the
+// composer Enter-key tests flip the breakpoint. Default: desktop.
+const mockIsMobile = vi.fn<() => boolean>(() => false)
+vi.mock('../../hooks/use-is-mobile', () => ({
+  useIsMobile: () => mockIsMobile(),
 }))
 import { ChatPanel } from './ChatPanel'
 
@@ -40,6 +46,8 @@ function chat(over: Partial<ChatController> = {}): ChatController {
 }
 
 describe('ChatPanel', () => {
+  beforeEach(() => mockIsMobile.mockReturnValue(false))
+
   it('renders user/assistant bubbles and tool notes', () => {
     render(
       <ChatPanel
@@ -111,6 +119,48 @@ describe('ChatPanel', () => {
     fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'hello' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     expect(c.send).toHaveBeenCalledWith('hello')
+  })
+
+  describe('the composer Enter key', () => {
+    it('sends on desktop, and Shift+Enter newlines instead', () => {
+      const c = chat()
+      render(<ChatPanel chat={c} onClose={vi.fn()} />)
+      const input = screen.getByLabelText('Message')
+
+      fireEvent.change(input, { target: { value: 'hello' } })
+      fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+      expect(c.send).not.toHaveBeenCalled()
+
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(c.send).toHaveBeenCalledWith('hello')
+    })
+
+    it('never sends on desktop while an IME candidate is being committed', () => {
+      const c = chat()
+      render(<ChatPanel chat={c} onClose={vi.fn()} />)
+      const input = screen.getByLabelText('Message')
+      fireEvent.change(input, { target: { value: 'にほん' } })
+      fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+      expect(c.send).not.toHaveBeenCalled()
+    })
+
+    it('newlines on mobile — the thumb keyboard Return must never send; the paw button does', () => {
+      mockIsMobile.mockReturnValue(true)
+      const c = chat()
+      render(<ChatPanel chat={c} onClose={vi.fn()} />)
+      const input = screen.getByLabelText('Message')
+
+      fireEvent.change(input, { target: { value: 'a line' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(c.send).not.toHaveBeenCalled()
+      // The keyboard's own return key is hinted as a newline, not a send.
+      expect(input).toHaveAttribute('enterkeyhint', 'enter')
+
+      // The multi-line message still goes out whole when the paw button is tapped.
+      fireEvent.change(input, { target: { value: 'a line\nanother line' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+      expect(c.send).toHaveBeenCalledWith('a line\nanother line')
+    })
   })
 
   it('shows the paused notice and disables input when AI is paused', () => {
