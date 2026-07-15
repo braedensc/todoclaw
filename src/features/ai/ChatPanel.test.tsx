@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { useState } from 'react'
 import type { ChatItem, PendingConfirm } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
+import type { ChatView } from './ChatConversation'
 // ChatConversation now imports ChatSessionList → use-chat-sessions → lib/supabase (import-throws
 // without VITE env in CI). Stub the module, and mock the list to a marker so these shell tests need
 // no QueryClientProvider (the list's own data layer is covered in ChatSessionList.test.tsx).
@@ -43,6 +45,20 @@ function chat(over: Partial<ChatController> = {}): ChatController {
     newChat: vi.fn(),
     ...over,
   }
+}
+
+// The drawer's view is CONTROLLED by App now (the entry point picks the face — nav Chat opens the
+// list, the widget's "Open chat" opens a conversation), so exercising the in-drawer switcher means
+// holding that state the way App does.
+function ControlledPanel({
+  c,
+  initial = 'conversation',
+}: {
+  c: ChatController
+  initial?: ChatView
+}) {
+  const [view, setView] = useState<ChatView>(initial)
+  return <ChatPanel chat={c} onClose={vi.fn()} view={view} onViewChange={setView} />
 }
 
 describe('ChatPanel', () => {
@@ -171,7 +187,7 @@ describe('ChatPanel', () => {
 
   it('toggles the in-drawer history list on mobile; New chat lives in the list, not the header', () => {
     const c = chat()
-    render(<ChatPanel chat={c} onClose={vi.fn()} />)
+    render(<ControlledPanel c={c} />)
     // Conversation view first — no history list, and NO ＋ New chat button in the header.
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'New chat' })).not.toBeInTheDocument()
@@ -183,5 +199,24 @@ describe('ChatPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'list new chat' }))
     expect(c.newChat).toHaveBeenCalled()
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
+  })
+
+  it('opens straight onto the chats list when the shell asks for it', () => {
+    // What the nav Chat entry does: App sets view='history' as it opens, so the drawer must come up
+    // on the list rather than whatever conversation the controller happens to hold.
+    render(<ControlledPanel c={chat({ sessionId: 'resumed-session' })} initial="history" />)
+    expect(screen.getByText('Your chats')).toBeInTheDocument()
+    expect(screen.getByText('session list')).toBeInTheDocument()
+    // The composer belongs to the conversation face — it must not be on screen.
+    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument()
+  })
+
+  it('the view is the shell’s to own — the panel never overrides it', () => {
+    // Regression guard for the desktop rail, which stays mounted between opens: if the drawer kept
+    // its own view state, a later "open on the list" could be swallowed by a stale local value.
+    const { rerender } = render(<ChatPanel chat={chat()} onClose={vi.fn()} view="conversation" />)
+    expect(screen.queryByText('session list')).not.toBeInTheDocument()
+    rerender(<ChatPanel chat={chat()} onClose={vi.fn()} view="history" />)
+    expect(screen.getByText('session list')).toBeInTheDocument()
   })
 })
