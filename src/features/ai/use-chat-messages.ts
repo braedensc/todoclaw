@@ -11,11 +11,9 @@ import type { ChatItem } from './use-ai-chat'
 export const chatMessagesKey = (sessionId: string) => ['chat_messages', sessionId] as const
 
 async function fetchMessages(sessionId: string): Promise<ChatMessageRow[]> {
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .select('seq, role, content, meta')
-    .eq('session_id', sessionId)
-    .order('seq', { ascending: true })
+  // content + meta are encrypted at rest; chat_load_messages (DEFINER, fenced to auth.uid()) decrypts
+  // and returns rows oldest-first. null p_limit = the whole transcript (for history hydration).
+  const { data, error } = await supabase.rpc('chat_load_messages', { p_session: sessionId })
   if (error) throw error
   // Drop a malformed row rather than wedge the whole conversation (mirrors the server loader).
   const out: ChatMessageRow[] = []

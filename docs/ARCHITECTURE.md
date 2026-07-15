@@ -53,3 +53,6 @@ index.
 | [ADR-0031](adr/0031-proactive-daily-messaging-web-push.md) | 2026-07-07 | Proactive daily messaging + end-of-day chat via Web Push (opt-in) |
 | [ADR 2026-07-08](adr/2026-07-08-due-dates-wall-clock.md) | 2026-07-08 | Due dates are wall-clock: floating `date` + optional local `time` (completes #178) |
 | [ADR 2026-07-09](adr/2026-07-09-task-reminders-pg-cron-push.md) | 2026-07-09 | Per-task reminders: materialized fire times + pg_cron minute sweep → Web Push |
+| [ADR 2026-07-13](adr/2026-07-13-persistent-chats.md) | 2026-07-13 | Persistent BabyClaw chats: server-authoritative history via a service-role write path |
+| [ADR 2026-07-13](adr/2026-07-13-babyclaw-budget-invite-hardening.md) | 2026-07-13 | BabyClaw budget + invite hardening |
+| [ADR 2026-07-14](adr/2026-07-14-encrypt-content-at-rest.md) | 2026-07-14 | At-rest encryption of chat / inbox / daily-plan content (pgcrypto + Vault key) |

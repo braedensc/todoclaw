@@ -195,11 +195,10 @@ export async function loadChatContext(
       .select('id, text, active, subtasks')
       .is('deleted_at', null)
       .order('created_at', { ascending: true }),
-    client
-      .from('daily_state')
-      .select('done, habit_done, subtask_done, plan')
-      .eq('date', date)
-      .maybeSingle(),
+    // daily_state.plan is encrypted at rest, so read the row through daily_state_get (DEFINER, fenced
+    // to auth.uid()) which returns the completion maps plus the DECRYPTED plan as one jsonb object (or
+    // null when there's no row today). Runs under the caller JWT, same as the other reads here.
+    client.rpc('daily_state_get', { p_date: date }),
     // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks
     // already have one — otherwise it can't answer "do I have a reminder on X?" or reason about
     // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's

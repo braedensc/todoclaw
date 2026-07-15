@@ -32,7 +32,16 @@ function fakeClient(seed: Seed): SupabaseClient {
     }
     return api
   }
-  return { from: (table: string) => builder(table) } as unknown as SupabaseClient
+  // daily_state is now read through the decrypting daily_state_get RPC (plan is encrypted at rest).
+  // The fake returns the seeded row for the requested local day, shaped like the RPC's jsonb result.
+  const rpc = (fn: string, args: Record<string, unknown>) => {
+    if (fn === 'daily_state_get') {
+      const row = (tables['daily_state'] ?? []).find((r) => r.date === args.p_date) ?? null
+      return Promise.resolve({ data: row, error: null })
+    }
+    return Promise.resolve({ data: null, error: null })
+  }
+  return { from: (table: string) => builder(table), rpc } as unknown as SupabaseClient
 }
 
 const NOW = new Date('2026-07-04T15:00:00Z') // afternoon in America/New_York
