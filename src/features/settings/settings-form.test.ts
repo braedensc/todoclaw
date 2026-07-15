@@ -73,6 +73,25 @@ describe('settings-form', () => {
     expect(out.planNotes).toBe('mornings')
   })
 
+  it('round-trips the resolved location label alongside the location', () => {
+    const config: ScheduleConfig = {
+      location: 'Portland, OR',
+      locationResolved: 'Portland, Oregon, United States of America',
+    }
+    expect(draftToConfig(configToDraft(config))).toEqual(config)
+  })
+
+  it('never persists a resolved label without the location it describes', () => {
+    // Clearing the location must take its confirmation with it — otherwise Settings would reopen
+    // showing "✓ Portland, Oregon" under an empty field.
+    const out = draftToConfig({
+      ...EMPTY_DRAFT,
+      location: '',
+      locationResolved: 'Portland, Oregon, United States of America',
+    })
+    expect(out).toEqual({})
+  })
+
   it('round-trips a notifications block (enabled + name + hours + quiet + quietWhenEmpty)', () => {
     const config: ScheduleConfig = {
       notifications: {

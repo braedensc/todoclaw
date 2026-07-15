@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
@@ -13,6 +13,7 @@ import {
   COMMITMENTS_MAX,
 } from '../../types/user-schedule'
 import { EMPTY_DRAFT, configToDraft, draftToConfig, type SettingsDraft } from './settings-form'
+import { useResolveLocation, type ResolveResult } from './use-resolve-location'
 import { AiPrivacyNote } from '../ai/AiPrivacyNote'
 import { MemoryList } from '../ai/MemoryList'
 import { NotificationSettings } from '../notifications/NotificationSettings'
@@ -144,6 +145,94 @@ function SelectField({
         ))}
       </select>
     </label>
+  )
+}
+
+// Location — free text, but CONFIRMED. There's no picker here on purpose: wttr.in does its own
+// geocoding, so a real autocomplete would mean a second geocoding service, an API key and a bill
+// for one optional line of a plan. The cheap fix is to ask the SAME geocoder what it matched and
+// show it back — which also catches the failure a picker exists to prevent: wttr.in matches fuzzily
+// and answers HTTP 200 for a typo, so `Portlnad, OR` silently returns weather for Roberts, Oregon.
+//
+// The confirmation persists (config.locationResolved), so it's still under the field on reopen —
+// this line is the answer to "what location is actually set?", which nothing in the app told you
+// before. Resolution NEVER blocks saving: someone may live somewhere wttr.in doesn't know, and
+// weather is optional context by design (see _shared/weather.ts).
+function LocationField({
+  value,
+  resolved,
+  onChange,
+  onResolved,
+  resolve,
+}: {
+  value: string
+  resolved: string
+  onChange: (v: string) => void
+  onResolved: (label: string) => void
+  resolve: (q: string) => Promise<ResolveResult>
+}) {
+  const id = useId()
+  const hintId = useId()
+  const [pending, setPending] = useState<null | 'checking' | 'not_found' | 'unavailable'>(null)
+  // The newest string we've looked up. Type → blur → retype → blur races two lookups; without this
+  // the slower (older) one could land last and label the field with the wrong place.
+  const latest = useRef('')
+
+  async function handleBlur() {
+    const q = value.trim()
+    if (!q || resolved) return // nothing typed, or this exact string is already confirmed
+    latest.current = q
+    setPending('checking')
+    const res = await resolve(q)
+    if (latest.current !== q) return // superseded by a newer lookup
+    if (res.ok) {
+      setPending(null)
+      onResolved(res.label)
+    } else {
+      setPending(res.reason)
+    }
+  }
+
+  // One line under the field, always earning its space: the input format until there's something
+  // to confirm, then what we actually matched.
+  const state = pending ?? (resolved ? 'matched' : 'idle')
+  const [hint, tone] = {
+    idle: ['A city, postal code, or airport code.', 'text-muted-light'],
+    checking: ['Checking…', 'text-muted-light'],
+    matched: [`✓ ${resolved}`, 'text-primary'],
+    not_found: ["We couldn't find that — your daily plan will skip the weather.", 'text-danger'],
+    unavailable: [
+      "Couldn't check that just now — your location is still saved.",
+      'text-muted-light',
+    ],
+  }[state]
+
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <label htmlFor={id} className="text-muted">
+        Location
+      </label>
+      <input
+        id={id}
+        type="text"
+        value={value}
+        // Editing invalidates the confirmation immediately: the label must never describe a place
+        // other than what's currently typed.
+        onChange={(e) => {
+          setPending(null)
+          onChange(e.target.value)
+        }}
+        onBlur={handleBlur}
+        placeholder="e.g. Portland, OR"
+        maxLength={120}
+        aria-describedby={hintId}
+        className="rounded-lg border border-border-strong bg-card px-3 py-2 text-sm"
+      />
+      {/* aria-live so the confirmation is announced when it lands, not just rendered. */}
+      <span id={hintId} aria-live="polite" className={`text-xs ${tone}`}>
+        {hint}
+      </span>
+    </div>
   )
 }
 
@@ -287,6 +376,10 @@ export function SettingsPanel({
   // still null) never shows a blank select; the hydrate below overwrites it with the stored zone.
   const [timezone, setTimezone] = useState(browserZone)
   const [hydrated, setHydrated] = useState(false)
+  const resolveLocation = useResolveLocation()
+  // Save awaits a location lookup when one hasn't happened yet (see handleSave), so the footer has
+  // to count that as saving — otherwise the button sits idle-looking through a round trip.
+  const [resolvingForSave, setResolvingForSave] = useState(false)
 
   // Hydrate the form the first time the row loads, then let the user edit freely. Done as a
   // render-time state adjustment (React's sanctioned "derive state from props" pattern) rather
@@ -311,8 +404,23 @@ export function SettingsPanel({
       commitments: d.commitments.map((c, j) => (j === i ? { ...c, [key]: value } : c)),
     }))
 
-  function handleSave() {
-    save.mutate({ config: draftToConfig(draft), timezone }, { onSuccess: onClose })
+  async function handleSave() {
+    let d = draft
+    // Clicking Save blurs the location field, which kicks off a lookup — but the click lands before
+    // that lookup returns, so a straight save would persist the location with no confirmation and
+    // the user would reopen Settings to a bare field. Resolve here too; useResolveLocation dedupes
+    // on the query string, so this shares the blur's in-flight request rather than issuing a second.
+    // Only ever ADDITIVE: a failed lookup still saves the location the user typed.
+    if (d.location.trim() && !d.locationResolved) {
+      setResolvingForSave(true)
+      const res = await resolveLocation(d.location)
+      setResolvingForSave(false)
+      if (res.ok) {
+        d = { ...d, locationResolved: res.label }
+        setDraft(d) // reflect it in the field too, in case the save fails and the panel stays open
+      }
+    }
+    save.mutate({ config: draftToConfig(d), timezone }, { onSuccess: onClose })
   }
 
   const isMobile = useIsMobile()
@@ -333,12 +441,14 @@ export function SettingsPanel({
                 title="Where you are"
                 hint="Location feeds the weather line in your daily plan; the timezone anchors every time in the app."
               >
-                <TextField
-                  label="Location"
+                <LocationField
                   value={draft.location}
-                  onChange={(v) => set('location', v)}
-                  placeholder="e.g. Portland, OR"
-                  maxLength={120}
+                  resolved={draft.locationResolved}
+                  // Editing the location retires its confirmation in the same update — the label
+                  // can't be allowed to describe a place the user has already typed past.
+                  onChange={(v) => setDraft((d) => ({ ...d, location: v, locationResolved: '' }))}
+                  onResolved={(label) => set('locationResolved', label)}
+                  resolve={resolveLocation}
                 />
                 <TimezoneField value={timezone} onChange={setTimezone} />
               </Section>
@@ -597,10 +707,10 @@ export function SettingsPanel({
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={save.isPending}
+                disabled={save.isPending || resolvingForSave}
                 className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
-                {save.isPending ? 'Saving…' : 'Save settings'}
+                {save.isPending || resolvingForSave ? 'Saving…' : 'Save settings'}
               </button>
             </div>
           </div>

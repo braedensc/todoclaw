@@ -120,6 +120,16 @@ const onboardingSchema = z.object({
 
 export const ScheduleConfigSchema = z.object({
   location: shortText.optional(),
+  // The place wttr.in's geocoder actually matched for `location` (resolve-location Edge Function),
+  // stored so Settings can keep showing "✓ Portland, Oregon, …" after a save/reload instead of
+  // re-resolving on every open. Display only — the plan still fetches weather by `location`, so an
+  // absent value (every config written before this existed) costs nothing but the confirmation line.
+  //
+  // Written ONLY alongside `location` by the Settings editor, which clears it the moment the typed
+  // location changes — the two can't drift. `.catch(undefined)` because this value is SERVER-derived:
+  // the whole config parses under `.catch({})` (see UserScheduleSchema), so an over-cap or malformed
+  // label here would silently wipe the user's ENTIRE config rather than just drop a cosmetic string.
+  locationResolved: shortText.optional().catch(undefined),
   onboarding: onboardingSchema.optional(),
   weekday: weekdaySchema.optional(),
   weekend: z
