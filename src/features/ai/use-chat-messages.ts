@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { ChatMessageRowSchema, type ChatMessageRow } from '../../types/chat'
+import { assistantText } from './assistant-text'
 import type { ChatItem } from './use-ai-chat'
 
 // Load one session's persisted transcript (oldest-first) for HYDRATION — the base history shown when
@@ -34,22 +35,6 @@ export function useChatMessages(sessionId: string | null) {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   })
-}
-
-interface AssistantBlock {
-  type?: string
-  text?: string
-}
-
-// Concatenate an assistant turn's text blocks (skip tool_use/other blocks). Defensive against a
-// string content (shouldn't happen for assistant, but never throw on a stored row).
-function assistantText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return (content as AssistantBlock[])
-    .filter((b) => b?.type === 'text' && typeof b.text === 'string')
-    .map((b) => b.text as string)
-    .join('')
 }
 
 // Map persisted rows → the ChatItems the conversation renders. Pure + unit-tested.

@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useChatSessions, useDeleteChatSession } from './use-chat-sessions'
+import { useChatPreviews } from './use-chat-previews'
+import { previewText, assistantSnippet } from './chat-preview'
 import {
   useMessages,
   useMarkMessageRead,
@@ -20,6 +22,10 @@ import { SleepingPuppy } from '../../components/SleepingPuppy'
 //     represented by their message row above, so they're filtered out here to avoid duplicates).
 // Rendered only inside ChatConversation's in-drawer history view (both shells), never the look-only
 // demo — so it may freely use the messages/sessions query hooks.
+//
+// Every row carries a snippet of its last message (chat_list_previews) so you can tell which chat
+// said what without opening it, and BabyClaw's check-ins carry a message count once you've replied —
+// the tell for which of his openers you actually picked up.
 
 function relTime(iso: string): string {
   const then = Date.parse(iso)
@@ -62,6 +68,60 @@ function GroupLabel({ children }: { children: ReactNode }) {
   )
 }
 
+// How many messages one of BabyClaw's check-ins holds — shown only once you've actually said
+// something back. A check-in you've merely received sits at exactly 1 (chat_list_previews excludes
+// the server-seeded hidden framing turn), so >1 is precisely "I've used this one"; the number then
+// says how far the conversation went. Absent on your own chats — those are used by definition.
+function ReplyBadge({ count }: { count: number }) {
+  if (count <= 1) return null
+  return (
+    <span
+      aria-label={`${count} messages`}
+      className="shrink-0 rounded-full bg-puppy/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-puppy"
+    >
+      {count}
+    </span>
+  )
+}
+
+// One row's text column: name and time on the first line, last-message snippet on the second. The
+// snippet gets a line to itself (rather than sharing with the time) because it's the part that has
+// something to say; `truncate` does the ellipsis, so it adapts to the drawer's width.
+function RowText({
+  title,
+  time,
+  preview,
+  bold,
+  dot,
+}: {
+  title: string
+  time: string
+  preview: string
+  bold?: boolean
+  dot?: boolean
+}) {
+  return (
+    <span className="min-w-0 flex-1">
+      <span className="flex items-baseline gap-2">
+        <span
+          className={
+            'min-w-0 flex-1 truncate text-sm ' + (bold ? 'font-semibold text-ink' : 'text-ink')
+          }
+        >
+          {dot && <span className="mr-1 text-accent">●</span>}
+          {title}
+        </span>
+        <span className="shrink-0 text-[10px] text-muted-light">{time}</span>
+      </span>
+      {/* No snippet (a turn with nothing user-visible, or a chat with no messages yet) → the row
+          simply stays one line rather than reserving an empty one. */}
+      {preview && (
+        <span className="mt-0.5 block truncate text-[11px] text-muted-light">{preview}</span>
+      )}
+    </span>
+  )
+}
+
 export function ChatSessionList({
   currentId,
   onOpen,
@@ -73,6 +133,7 @@ export function ChatSessionList({
 }) {
   const { data: sessions, isLoading: sessionsLoading } = useChatSessions()
   const { data: messages, isLoading: messagesLoading } = useMessages()
+  const { data: previews } = useChatPreviews()
   const del = useDeleteChatSession()
   const openMsg = useOpenMessageChat()
   const markRead = useMarkMessageRead()
@@ -87,6 +148,15 @@ export function ChatSessionList({
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
   const empty = !loading && inbox.length === 0 && userSessions.length === 0
+
+  // session id → what to show under its name, and how many messages it holds. Previews load on their
+  // own (they're a second read); until they arrive, rows render as a name + time, exactly as before.
+  const previewBySession = useMemo(() => {
+    const m = new Map<string, { text: string; count: number }>()
+    for (const p of previews ?? [])
+      m.set(p.session_id, { text: previewText(p), count: p.msg_count })
+    return m
+  }, [previews])
 
   // Open an inbox message in its own conversation: mark read, then materialise/reopen its session.
   const openMessage = (m: InboxMessage) => {
@@ -142,6 +212,7 @@ export function ChatSessionList({
         {userSessions.map((s) => {
           const title = s.title?.trim() || 'Untitled chat'
           const active = s.id === currentId
+          const preview = previewBySession.get(s.id)?.text ?? ''
           return (
             <div
               key={s.id}
@@ -159,15 +230,12 @@ export function ChatSessionList({
                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                   <PawPrint className="h-3.5 w-3.5" />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-ink">
-                    {active && <span className="mr-1 text-accent">●</span>}
-                    {title}
-                  </span>
-                  <span className="block text-[11px] text-muted-light">
-                    {relTime(s.updated_at)}
-                  </span>
-                </span>
+                <RowText
+                  title={title}
+                  time={relTime(s.updated_at)}
+                  preview={preview}
+                  dot={active}
+                />
               </button>
               {confirmingId === s.id ? (
                 <span className="flex shrink-0 items-center gap-1">
@@ -209,9 +277,15 @@ export function ChatSessionList({
           // reminders keep their own task-specific title.
           const dayTitle = proactiveDayLabel(m.kind, m.local_date)
           const title = dayTitle ?? m.title
-          const subtitle = dayTitle
+          // A day-stamped title already says which check-in this is; a reminder's title is the task,
+          // so it keeps its kind label.
+          const time = dayTitle
             ? relTime(m.created_at)
             : `${kindLabel(m.kind)} · ${relTime(m.created_at)}`
+          // Once opened, preview where the conversation actually got to. Until then there is no
+          // session to read, and the check-in's own body IS its last (only) message.
+          const seen = m.session_id ? previewBySession.get(m.session_id) : undefined
+          const preview = seen?.text || assistantSnippet(m.body)
           return (
             <button
               key={m.id}
@@ -226,16 +300,8 @@ export function ChatSessionList({
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-puppy/10 text-puppy">
                 <BellGlyph />
               </span>
-              <span className="min-w-0 flex-1">
-                <span
-                  className={
-                    'block truncate text-sm ' + (unread ? 'font-semibold text-ink' : 'text-ink')
-                  }
-                >
-                  {title}
-                </span>
-                <span className="block truncate text-[11px] text-muted-light">{subtitle}</span>
-              </span>
+              <RowText title={title} time={time} preview={preview} bold={unread} />
+              <ReplyBadge count={seen?.count ?? 0} />
               {unread && (
                 <span
                   aria-label="unread"
