@@ -68,6 +68,50 @@ describe('TaskInputWidget', () => {
     expect(onOpenChat).toHaveBeenCalledOnce()
   })
 
+  it('"Open chat" from an EMPTY widget starts a new chat, not the resumed one', () => {
+    // The controller auto-resumes the newest < 24h session at mount, so sessionId is already set
+    // even though the widget itself is untouched. Opening from here must re-anchor to a fresh chat
+    // rather than surface last night's history.
+    const newChat = vi.fn()
+    const onOpenChat = renderWidget(chatStub({ sessionId: 'resumed-session', newChat }))
+    fireEvent.click(screen.getByRole('button', { name: /Open chat/ }))
+    expect(newChat).toHaveBeenCalledOnce()
+    expect(onOpenChat).toHaveBeenCalledOnce()
+  })
+
+  it('"Open chat" mid-conversation keeps the session the widget is talking to', () => {
+    const newChat = vi.fn()
+    const onOpenChat = renderWidget(
+      chatStub({
+        sessionId: 's1',
+        newChat,
+        liveItems: [
+          { id: 'u1', role: 'user', text: 'add groceries' },
+          { id: 'a1', role: 'assistant', text: 'Added it.' },
+        ],
+      }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Open chat/ }))
+    expect(newChat).not.toHaveBeenCalled()
+    expect(onOpenChat).toHaveBeenCalledOnce()
+  })
+
+  it('a restored confirmation counts as live — opening must not wipe the question', () => {
+    // A pending confirmation is rehydrated from the resumed session row and has NO liveItems of its
+    // own. Treating "no liveItems" as empty would reset the chat the strip is pointing the user at.
+    const newChat = vi.fn()
+    renderWidget(
+      chatStub({
+        sessionId: 's1',
+        newChat,
+        pending: { toolUseId: 't1', summary: 'Delete "old draft"' },
+        liveItems: [],
+      }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'open the full chat' }))
+    expect(newChat).not.toHaveBeenCalled()
+  })
+
   it('a pending confirmation shows the waiting strip with working Yes/No buttons', () => {
     const confirm = vi.fn()
     const deny = vi.fn()
