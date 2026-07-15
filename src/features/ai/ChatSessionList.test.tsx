@@ -246,6 +246,34 @@ describe('ChatSessionList (unified inbox + chats)', () => {
       expect(screen.queryByLabelText(/messages$/)).toBeNull()
     })
 
+    // The tint is the at-a-glance half of the signal (the badge only reads row by row), so it gets
+    // asserted on the row's own class — there is no other observable for a purely visual state. The
+    // bell's bg-puppy/10 is on a CHILD span, so it can't satisfy these.
+    it('tints the row of a check-in you have replied to', () => {
+      messages = [m('m1', { session_id: 'sess-1' })]
+      previews = [p('sess-1', 'Anything else?', 3)]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.getByRole('button', { name: /morning plan/i }).className).toMatch(/bg-puppy/)
+    })
+
+    it('does NOT tint a check-in you only received', () => {
+      messages = [m('m1', { session_id: 'sess-1' })]
+      previews = [p('sess-1', 'Morning! Three things today.', 1)]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.getByRole('button', { name: /morning plan/i }).className).not.toMatch(
+        /bg-puppy/,
+      )
+    })
+
+    it('the open conversation keeps its own background rather than stacking the tint', () => {
+      messages = [m('m1', { session_id: 'sess-1' })]
+      previews = [p('sess-1', 'Anything else?', 3)]
+      render(<ChatSessionList currentId="sess-1" onOpen={vi.fn()} onNew={vi.fn()} />)
+      const row = screen.getByRole('button', { name: /morning plan/i })
+      expect(row.className).toMatch(/bg-card/)
+      expect(row.className).not.toMatch(/bg-puppy/)
+    })
+
     it('leaves your own chats unbadged — those are used by definition', () => {
       previews = [p('a', 'Sure thing.', 6)]
       messages = []
