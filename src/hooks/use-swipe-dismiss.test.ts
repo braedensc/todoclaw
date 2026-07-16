@@ -171,3 +171,59 @@ describe('useSwipeDismiss — whole-panel touch path', () => {
     expect(onDismiss).not.toHaveBeenCalled()
   })
 })
+
+// The handle POINTER path (mouse/touch/pen). It's what the chat sheet wires onto its whole header
+// band — a region that also carries buttons — so a press on one of those controls must be left for
+// the control, while a drag of the handle's own surface still drives the sheet. The hook reads only
+// button/clientY/timeStamp/target and calls preventDefault(), so plain objects/Events stand in.
+describe('useSwipeDismiss — handle pointer path', () => {
+  type PointerHandler = ReturnType<typeof useSwipeDismiss>['onPointerDown']
+
+  function handleDrag(
+    onPointerDown: PointerHandler,
+    downTarget: Element,
+    from: number,
+    to: number,
+  ) {
+    const down = {
+      button: 0,
+      clientY: from,
+      target: downTarget,
+      timeStamp: (clock += 100),
+      preventDefault: () => {},
+    }
+    // The hook binds move/up on window; give them clientY + timeStamp (timeStamp is a getter on a
+    // real Event, so it must be defineProperty'd, not assigned — same as touchEvent above).
+    const winEvent = (type: string): Event => {
+      const e = new Event(type)
+      Object.defineProperty(e, 'clientY', { value: to })
+      Object.defineProperty(e, 'timeStamp', { value: (clock += 100) })
+      return e
+    }
+    act(() => {
+      onPointerDown(down as unknown as Parameters<PointerHandler>[0])
+      window.dispatchEvent(winEvent('pointermove'))
+      window.dispatchEvent(winEvent('pointerup'))
+    })
+  }
+
+  it('dragging the handle surface past the threshold dismisses', () => {
+    const surface = document.createElement('h2') // a title in the header band — not a control
+    panel.appendChild(surface)
+    const { result } = mount()
+    handleDrag(result.current.onPointerDown, surface, 520, 700) // 180px > threshold
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a press on a header control alone — the button gets its tap, no dismiss', () => {
+    const button = document.createElement('button')
+    const glyph = document.createElement('span') // a press often lands on the button's inner glyph
+    button.appendChild(glyph)
+    panel.appendChild(button)
+    const { result } = mount()
+    // Press the glyph inside the button and pull well past the threshold: the hook bails via
+    // closest('button, …'), so the control keeps its own click/focus and the sheet does not dismiss.
+    handleDrag(result.current.onPointerDown, glyph, 520, 700)
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+})

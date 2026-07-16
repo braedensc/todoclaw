@@ -59,6 +59,7 @@ export function ChatConversation({
   enableSessions = false,
   view = 'conversation',
   onViewChange,
+  onHeaderPointerDown,
 }: {
   chat: ChatController
   onClose: () => void
@@ -84,6 +85,13 @@ export function ChatConversation({
    */
   view?: ChatView
   onViewChange?: (view: ChatView) => void
+  /**
+   * Makes the whole header band the sheet's drag-to-dismiss handle (the mobile ChatPanel passes its
+   * swipe pointer handler; the desktop rail leaves it undefined, so the header stays a plain header
+   * there). The header's own buttons still work — the shared hook skips a press that lands on a
+   * control. Pairs with `touch-action: none` on the band so a touch-drag drives the pointer path.
+   */
+  onHeaderPointerDown?: (event: React.PointerEvent) => void
 }) {
   const {
     items,
@@ -147,8 +155,18 @@ export function ChatConversation({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
-      {/* Header band — a soft puppy-wash gradient with the peeking pup over its top-left edge. */}
-      <div className="relative shrink-0 border-b border-border bg-gradient-to-b from-puppy/10 to-transparent px-4 pb-3 pt-3">
+      {/* Header band — a soft puppy-wash gradient with the peeking pup over its top-left edge. On the
+          mobile sheet the whole band is the drag-to-dismiss handle (onHeaderPointerDown); its buttons
+          still work (the hook skips a press on a control). `touch-none` so a touch-drag here drives
+          the pointer path instead of being read as a scroll. */}
+      <div
+        {...(onHeaderPointerDown
+          ? { 'data-sheet-handle': '', onPointerDown: onHeaderPointerDown }
+          : {})}
+        className={`relative shrink-0 border-b border-border bg-gradient-to-b from-puppy/10 to-transparent px-4 pb-3 pt-3 ${
+          onHeaderPointerDown ? 'cursor-grab touch-none select-none' : ''
+        }`.trim()}
+      >
         {showHistory ? (
           <div className="flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
