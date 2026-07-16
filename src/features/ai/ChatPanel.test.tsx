@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
 import type { ChatItem, PendingConfirm } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
@@ -218,5 +218,62 @@ describe('ChatPanel', () => {
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
     rerender(<ChatPanel chat={chat()} onClose={vi.fn()} view="history" />)
     expect(screen.getByText('session list')).toBeInTheDocument()
+  })
+
+  // The keyboard re-fit (#263/#275) pins the sheet into the visible band, which makes it full-bleed
+  // to that band's top — and viewport-fit=cover puts that under the status bar / Dynamic Island. At
+  // 92dvh the 8% gap clears the notch on its own, so the inset belongs to the re-fitted state only.
+  // jsdom has no visualViewport; install a controllable fake, as use-keyboard-viewport.test.ts does.
+  describe('the keyboard re-fit and the safe area', () => {
+    const INNER = 800
+    let listeners: Set<() => void>
+    let vv: { height: number; offsetTop: number }
+
+    beforeEach(() => {
+      mockIsMobile.mockReturnValue(true)
+      listeners = new Set()
+      vv = { height: INNER, offsetTop: 0 }
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: {
+          get height() {
+            return vv.height
+          },
+          get offsetTop() {
+            return vv.offsetTop
+          },
+          addEventListener: (_t: string, cb: () => void) => listeners.add(cb),
+          removeEventListener: (_t: string, cb: () => void) => listeners.delete(cb),
+        },
+      })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER })
+    })
+    afterEach(() => {
+      Reflect.deleteProperty(window, 'visualViewport')
+    })
+
+    function openKeyboard(height: number): void {
+      vv.height = INNER - height
+      act(() => listeners.forEach((cb) => cb()))
+    }
+
+    it('keeps the sheet clear of the status bar while the keyboard is up', () => {
+      render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
+      const sheet = screen.getByLabelText('Chat')
+      // Keyboard down: the sheet sits at 92dvh, whose top gap already clears the notch — an inset
+      // here would just eat height for nothing.
+      expect(sheet.className).not.toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+
+      openKeyboard(336)
+      // Re-fitted into the visible band… (asserted via the style attribute: jsdom's CSS parser
+      // silently DROPS an inline `env()`, which is why the top inset below is a class, not a style.)
+      const style = sheet.getAttribute('style') ?? ''
+      expect(style).toMatch(/bottom:\s*336px/)
+      expect(style).toMatch(/height:\s*464px/)
+      // …and held below the status bar. Without this the grab handle and the BabyClaw header render
+      // behind it — invisible but still touch-live, so a finger reaching for the header grabbed the
+      // hidden handle and dragged the whole sheet down.
+      expect(sheet.className).toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+    })
   })
 })

@@ -69,14 +69,24 @@ export function ChatPanel({
         ref={panelRef}
         aria-label="Chat"
         data-dragging={swipe.dragging ? 'true' : undefined}
-        className="bottom-sheet-panel absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col rounded-t-2xl border border-border-strong bg-panel pb-[env(safe-area-inset-bottom)] shadow-xl"
+        className={`bottom-sheet-panel absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col rounded-t-2xl border border-border-strong bg-panel pb-[env(safe-area-inset-bottom)] shadow-xl ${
+          // Safe-area inset for the SAME reason BottomSheet applies one only when `fullScreen`:
+          // re-fitting to the visible band (below) makes this sheet full-bleed to that band's top,
+          // which viewport-fit=cover puts under the status bar / Dynamic Island. At 92dvh the 8% top
+          // gap already clears the notch, so this is needed only while re-fitted. Without it the grab
+          // handle and the BabyClaw header render *behind* the status bar — invisible but still
+          // touch-live, so a finger reaching for the header instead grabbed the hidden handle and
+          // dragged the whole sheet down.
+          kb.keyboardOpen ? 'pt-[env(safe-area-inset-top)]' : ''
+        }`.trim()}
         style={{
           ...(swipe.offset ? { transform: `translateY(${swipe.offset}px)` } : {}),
           // Keyboard up: the keyboard owns the bottom `inset` px of the layout viewport, so pin the
           // sheet bottom there and give it the visible `height` — this lands the whole sheet
           // (composer included) above the keys with its top on-screen, instead of a full-height
           // sheet whose top is off-screen. Overrides the class's bottom-0/h-[92dvh]; paddingBottom
-          // drops to 0 (the home indicator is behind the keyboard now).
+          // drops to 0 (the home indicator is behind the keyboard now). The matching top inset is a
+          // class above, not a value here — it's a constant, and jsdom drops inline `env()`.
           ...(kb.keyboardOpen ? { bottom: kb.inset, height: kb.height, paddingBottom: 0 } : {}),
         }}
       >
