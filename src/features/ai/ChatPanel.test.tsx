@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
 import type { ChatItem, PendingConfirm } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
@@ -218,5 +218,100 @@ describe('ChatPanel', () => {
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
     rerender(<ChatPanel chat={chat()} onClose={vi.fn()} view="history" />)
     expect(screen.getByText('session list')).toBeInTheDocument()
+  })
+
+  // Scrolling the history must never dismiss the sheet. The shared hook hands a downward pull to the
+  // sheet whenever the scroller sits at scrollTop 0 — right for the short, form-like sheets that use
+  // BottomSheet/ConfirmDialog, wrong for a panel that is almost entirely one long scroller, where
+  // the top of the history is somewhere you arrive at by scrolling up.
+  describe('the swipe gesture', () => {
+    beforeEach(() => mockIsMobile.mockReturnValue(true))
+
+    function touch(el: Element, type: string, clientY: number): void {
+      const t = { identifier: 1, target: el, clientX: 180, clientY }
+      const ev = new Event(type, { bubbles: true, cancelable: true })
+      Object.assign(ev, { touches: type === 'touchend' ? [] : [t], changedTouches: [t] })
+      el.dispatchEvent(ev)
+    }
+
+    it('never dismisses on a body swipe — that pull belongs to the message list', () => {
+      const onClose = vi.fn()
+      render(<ChatPanel chat={chat()} onClose={onClose} />)
+      const sheet = screen.getByLabelText('Chat')
+      // A long, deliberate downward pull on the sheet body — far past every dismiss threshold.
+      touch(sheet, 'touchstart', 200)
+      for (let y = 200; y <= 600; y += 40) touch(sheet, 'touchmove', y)
+      touch(sheet, 'touchend', 600)
+      expect(onClose).not.toHaveBeenCalled()
+      expect(sheet.getAttribute('style') ?? '').not.toMatch(/translateY/)
+    })
+
+    it('still dismisses on a deliberate pull of the grab handle', () => {
+      const onClose = vi.fn()
+      render(<ChatPanel chat={chat()} onClose={onClose} />)
+      // The handle is the explicit affordance and keeps working — the point is to move the gesture
+      // off the body, not to strand the sheet with no swipe out.
+      fireEvent.pointerDown(screen.getByTestId('sheet-grabber'), { clientY: 100, button: 0 })
+      fireEvent.pointerMove(window, { clientY: 200 })
+      fireEvent.pointerUp(window, { clientY: 300 })
+      expect(onClose).toHaveBeenCalled()
+    })
+  })
+
+  // The keyboard re-fit (#263/#275) pins the sheet into the visible band, which makes it full-bleed
+  // to that band's top — and viewport-fit=cover puts that under the status bar / Dynamic Island. At
+  // 92dvh the 8% gap clears the notch on its own, so the inset belongs to the re-fitted state only.
+  // jsdom has no visualViewport; install a controllable fake, as use-keyboard-viewport.test.ts does.
+  describe('the keyboard re-fit and the safe area', () => {
+    const INNER = 800
+    let listeners: Set<() => void>
+    let vv: { height: number; offsetTop: number }
+
+    beforeEach(() => {
+      mockIsMobile.mockReturnValue(true)
+      listeners = new Set()
+      vv = { height: INNER, offsetTop: 0 }
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: {
+          get height() {
+            return vv.height
+          },
+          get offsetTop() {
+            return vv.offsetTop
+          },
+          addEventListener: (_t: string, cb: () => void) => listeners.add(cb),
+          removeEventListener: (_t: string, cb: () => void) => listeners.delete(cb),
+        },
+      })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER })
+    })
+    afterEach(() => {
+      Reflect.deleteProperty(window, 'visualViewport')
+    })
+
+    function openKeyboard(height: number): void {
+      vv.height = INNER - height
+      act(() => listeners.forEach((cb) => cb()))
+    }
+
+    it('keeps the sheet clear of the status bar while the keyboard is up', () => {
+      render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
+      const sheet = screen.getByLabelText('Chat')
+      // Keyboard down: the sheet sits at 92dvh, whose top gap already clears the notch — an inset
+      // here would just eat height for nothing.
+      expect(sheet.className).not.toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+
+      openKeyboard(336)
+      // Re-fitted into the visible band… (asserted via the style attribute: jsdom's CSS parser
+      // silently DROPS an inline `env()`, which is why the top inset below is a class, not a style.)
+      const style = sheet.getAttribute('style') ?? ''
+      expect(style).toMatch(/bottom:\s*336px/)
+      expect(style).toMatch(/height:\s*464px/)
+      // …and held below the status bar. Without this the grab handle and the BabyClaw header render
+      // behind it — invisible but still touch-live, so a finger reaching for the header grabbed the
+      // hidden handle and dragged the whole sheet down.
+      expect(sheet.className).toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+    })
   })
 })
