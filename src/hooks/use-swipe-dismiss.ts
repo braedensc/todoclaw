@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // paths cover how people actually dismiss:
 //
 //  1. HANDLE (pointer events): the grab handle / header region wires `onPointerDown` and sets
-//     `touch-action: none` (CSS), so a drag starting there — mouse, touch, or pen — always drives
-//     the sheet. This was the original (#166) surface.
+//     `touch-action: none` (CSS), so a drag starting there — mouse, touch, or pen — drives the
+//     sheet. This was the original (#166) surface. A handle may wrap interactive controls (the chat
+//     header carries buttons); a press on one of those is left alone for it, so its click still fires.
 //  2. WHOLE PANEL (touch events): in practice people swipe the sheet BODY, not a 16px handle
 //     strip — the audit-feedback round found the gesture "not working" for exactly that reason.
 //     While `active`, the hook binds touch listeners on the panel itself: a downward drag ENGAGES
@@ -93,6 +94,13 @@ export function useSwipeDismiss(
     (event: React.PointerEvent) => {
       // Only the primary button/contact starts a dismiss-drag (ignore right-click / secondary touch).
       if (event.button != null && event.button !== 0) return
+      // A handle region may WRAP interactive controls — the chat header is a drag handle that also
+      // carries "See all chats", the ✕, and "Back to chat". A press landing on one of those is a tap
+      // for that control, not a drag of the sheet: bail before preventDefault so its focus/click is
+      // untouched. Dragging the handle's own surface (grab bar, title, empty header) still drags.
+      // Handles with no controls inside (BottomSheet, ConfirmDialog) never match this.
+      const target = event.target as Element | null
+      if (target?.closest('button, a, input, textarea, select, [role="button"]')) return
       event.preventDefault()
       const reduced = prefersReducedMotion()
       const startY = event.clientY

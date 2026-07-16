@@ -46,15 +46,16 @@ export function ChatPanel({
   const kb = useKeyboardViewport(isMobile)
   // Swipe-down-to-dismiss, HANDLE ONLY — the shared hook's whole-panel touch path stays off here
   // (`active: false`); the aside still carries `bottom-sheet-panel`, so the handle drag inherits the
-  // transition + spring-back.
+  // transition + spring-back. The handle is the grab pill AND the whole header band below it (the
+  // pointer handler is passed into ChatConversation) — a big target for the one gesture that closes.
   //
   // Every other caller (BottomSheet, ConfirmDialog) keeps the body path, and should: those sheets
   // are short and form-like, so "pull down anywhere" is the whole gesture. The chat sheet is the
   // outlier — it is almost entirely one long scroller. The hook hands a downward pull to the sheet
   // whenever the scroller sits at `scrollTop: 0`, which is fine for a resting form but wrong here:
   // the top of your history is a place you ARRIVE AT by scrolling up, so the reflex to keep pulling
-  // is a scroll, not a dismiss — and it was closing the panel mid-read. Scrolling must never be a
-  // dismissal. The handle, the scrim, and Back remain, and each of those is deliberate.
+  // is a scroll, not a dismiss — and it was closing the panel mid-read. A body swipe now only
+  // scrolls; the header, the grab pill, the scrim, and Back dismiss, and each of those is deliberate.
   const swipe = useSwipeDismiss(onClose, panelRef, false)
 
   // Portaled to <body> like BottomSheet, so a later-mounted portal sheet at the same z-index
@@ -118,6 +119,11 @@ export function ChatPanel({
             enableSessions
             view={view}
             onViewChange={onViewChange}
+            // The whole header band is the drag-to-dismiss handle, not just the 12px pill above it —
+            // a far bigger target for the one gesture that closes the sheet, now that a body swipe is
+            // reserved for scrolling. The header's own buttons still work (the hook skips a press on
+            // a control). Desktop's ChatRail omits this, so its header stays a plain header.
+            onHeaderPointerDown={swipe.onPointerDown}
           />
         </div>
       </aside>

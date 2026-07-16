@@ -256,6 +256,20 @@ describe('ChatPanel', () => {
       fireEvent.pointerUp(window, { clientY: 300 })
       expect(onClose).toHaveBeenCalled()
     })
+
+    it('makes the whole header band the drag handle, not just the 12px pill', () => {
+      const onClose = vi.fn()
+      render(<ChatPanel chat={chat()} onClose={onClose} />)
+      // The header band (the region carrying the BabyClaw title) is wired as a handle, distinct from
+      // the little pill. A pull that starts on its non-button surface dismisses.
+      const header = screen.getByText('BabyClaw').closest('[data-sheet-handle]')
+      expect(header).not.toBeNull()
+      expect(header).not.toBe(screen.getByTestId('sheet-grabber')) // it's the header, not the pill
+      fireEvent.pointerDown(screen.getByText('BabyClaw'), { clientY: 100, button: 0 })
+      fireEvent.pointerMove(window, { clientY: 200 })
+      fireEvent.pointerUp(window, { clientY: 300 })
+      expect(onClose).toHaveBeenCalled()
+    })
   })
 
   // The keyboard re-fit (#263/#275) pins the sheet into the visible band, which makes it full-bleed
