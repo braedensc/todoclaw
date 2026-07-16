@@ -17,9 +17,10 @@ import { useKeyboardViewport } from '../../hooks/use-keyboard-viewport'
 // home stays visible above it under the scrim, so the user stays oriented. The message history
 // scrolls INSIDE the sheet (ChatConversation's list, `overscroll-contain`); the page behind is
 // scroll-locked while the sheet is up. Slide-up/scrim animations reuse the BottomSheet keyframes
-// (src/index.css). Dismissal matches every other mobile sheet: a swipe-down on the grab handle,
-// a scrim tap, or Back (when opened via a #/chat deep link, App routes the close through
-// `navigate('home')`). No ✕ on mobile — ChatConversation gets `showClose={false}`.
+// (src/index.css). Dismissal is a swipe-down on the grab handle, a scrim tap, or Back (when opened
+// via a #/chat deep link, App routes the close through `navigate('home')`). No ✕ on mobile —
+// ChatConversation gets `showClose={false}`. Unlike the other mobile sheets, a swipe on the sheet
+// BODY does not dismiss: it belongs to the message list (see useSwipeDismiss below).
 export function ChatPanel({
   chat,
   onClose,
@@ -43,13 +44,18 @@ export function ChatPanel({
   // the visible height + keyboard overlap; while the keyboard is up we re-fit the sheet into the
   // visible region below (audit §3.3). CLOSED (all zero) when the keyboard is down or unsupported.
   const kb = useKeyboardViewport(isMobile)
-  // Swipe-down-to-dismiss — same gesture as BottomSheet (shared hook): the grab handle drives the
-  // pointer path, and on mobile the whole panel is a scroll-aware touch surface (the message list
-  // still scrolls; a downward pull with the list at top drags the sheet). The aside carries the
-  // `bottom-sheet-panel` class, so it inherits the drag transition + spring-back. The body-touch
-  // path is gated OFF while the keyboard is open: with content re-fitted above the keys, a
-  // downward pull to read scrollback must scroll — never accidentally dismiss the sheet.
-  const swipe = useSwipeDismiss(onClose, panelRef, isMobile && !kb.keyboardOpen)
+  // Swipe-down-to-dismiss, HANDLE ONLY — the shared hook's whole-panel touch path stays off here
+  // (`active: false`); the aside still carries `bottom-sheet-panel`, so the handle drag inherits the
+  // transition + spring-back.
+  //
+  // Every other caller (BottomSheet, ConfirmDialog) keeps the body path, and should: those sheets
+  // are short and form-like, so "pull down anywhere" is the whole gesture. The chat sheet is the
+  // outlier — it is almost entirely one long scroller. The hook hands a downward pull to the sheet
+  // whenever the scroller sits at `scrollTop: 0`, which is fine for a resting form but wrong here:
+  // the top of your history is a place you ARRIVE AT by scrolling up, so the reflex to keep pulling
+  // is a scroll, not a dismiss — and it was closing the panel mid-read. Scrolling must never be a
+  // dismissal. The handle, the scrim, and Back remain, and each of those is deliberate.
+  const swipe = useSwipeDismiss(onClose, panelRef, false)
 
   // Portaled to <body> like BottomSheet, so a later-mounted portal sheet at the same z-index
   // can't paint over it and no transformed/padded ancestor interferes with `fixed`.
