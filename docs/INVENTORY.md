@@ -123,7 +123,6 @@ guards). Values live only in the store named; this table is names + purpose.
 | Variable | Where | Status |
 |---|---|---|
 | `CI` | GitHub runner (auto) | toggles Playwright behavior; not user-set |
-| `EISENCLAW_SEED_DIR` | local shell | optional path for the local-only EisenClaw seed script |
 | `OPENAI_API_KEY` | `config.toml` (local Studio) | inert for the app — Supabase Studio's own assistant only |
 | `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN` | `config.toml` template | **disabled** (SMS auth off) |
 | `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `config.toml` template | **disabled** (Apple OAuth off) |
