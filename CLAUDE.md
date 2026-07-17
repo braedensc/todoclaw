@@ -6,23 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-TodoClaw is a standalone, multi-tenant-ready web app — a ground-up rebuild that *originated* from EisenClaw, an older personal Eisenhower-matrix planner. Tasks live on a free-canvas 2D grid (urgency × importance). The app is fully usable without AI; AI features are opt-in.
+TodoClaw is a standalone, multi-tenant-ready web app — a personal planner where tasks live on a free-canvas 2D grid (urgency × importance). The app is fully usable without AI; AI features are opt-in.
 
-**TodoClaw is its own product — EisenClaw is NOT the spec (parity retired 2026-07-09).** The app has fully eclipsed EisenClaw. Its own code, its `src/lib` Vitest suite, these docs, and product judgment are the **sole authority** for behavior, UX, and what "done" means. Do **not** judge a feature by "parity" or try to "match EisenClaw" — when something is wrong, fix it on TodoClaw's own merits. `planning/` survives only as **historical origin** and as provenance for constants that were already ported (scoring weights, clustering thresholds, collision step); those live in code and are pinned by `src/lib/*.test.ts`, which is the oracle — not the EisenClaw docs.
+**TodoClaw is its own product.** Its own code, its `src/lib` Vitest suite, these docs, and product judgment are the **sole authority** for behavior, UX, and what "done" means — when something is wrong, fix it on TodoClaw's own merits, not by chasing legacy "parity." The scoring/clustering/collision constants (weights, thresholds, collision step) live in code and are pinned by `src/lib/*.test.ts`, which is the **oracle** for them.
 
-**Historical reference material** (all under `planning/`, gitignored — read for origin/provenance, never commit, never treat as a target):
-- `eisenclaw-export/docs/eisenclaw.md` — the original behavior write-up (historical, not a spec)
-- `EISENCLAW-LOGIC-TO-PORT.md` — where the ported constants/formulas came from, with file:line cites (provenance; the `src/lib` tests are authoritative)
-- `eisenclaw-export/scripts/planner.html` — original client (all UI + logic, 943 lines)
-- `eisenclaw-export/scripts/planner-server.js` — original Node server (sync, backups, Plan My Day)
-- `eisenclaw-export/data/user-schedule-braeden.json` — schedule config shape (→ `user_schedule` table)
-- `eisenclaw-export/pics/Todopic{1-6}.jpeg` — screenshots of the original UI (historical; see `docs/STYLE.md`)
-
-**Run the original UI:** `npm run legacy-ui` boots the old EisenClaw app locally at
-http://localhost:3333 (`?user=fan` = empty profile) — a **historical reference** for how the original
-behaved, not a target to match. It runs the gitignored reference server via a temp `.cjs` copy
-(nothing under `planning/` is modified). "Plan My Day" is stubbed with a deterministic local **mock**
-so its UX renders without an Anthropic key. See `scripts/legacy-ui.ts` (+ `scripts/legacy-ui-mock-plan.cjs`).
+> **Maintainer note:** TodoClaw originated from an earlier planner (EisenClaw). That origin story, the gitignored `planning/` reference files, and the `npm run legacy-ui` runner are maintainer-local and documented in `CLAUDE.local.md` (gitignored) — they aren't part of a fresh clone.
 
 ---
 
