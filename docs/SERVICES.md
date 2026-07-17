@@ -88,8 +88,10 @@ are the deliberately-deferred backup least-privilege hardening (ADR-0006/ADR-002
      - **In-app invite codes (ADR-0030)** — the owner opens "Invite someone", generates a link, and
        texts it; the invitee redeems it to create their account. Keep sign-up **disabled** — redeem
        uses the service-role admin API, gated by the code. One-time setup:
-       `supabase secrets set OWNER_USER_ID=<owner's auth.users uuid>` and add `VITE_OWNER_USER_ID`
-       (same uuid) to the Vercel env so the owner sees the Invite UI.
+       `supabase secrets set OWNER_USER_ID=<owner's auth.users uuid>`. That single server secret is
+       the whole owner gate — the frontend reveals the Invite/Admin UI by asking the `admin` Edge
+       Function's `whoami` action, so there is no `VITE_OWNER_USER_ID` to set (the owner's id never
+       ships in the client bundle).
    - Apply the schema: `supabase link --project-ref <ref>` then **one-time** `supabase db push`
      (the documented bootstrap exception; CI-driven migrations come in Stage 2/6).
    - Create the backup role's password (SQL editor — not committed):

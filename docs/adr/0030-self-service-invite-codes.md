@@ -38,8 +38,9 @@ Decisions:
   burned.
 
 - **Owner gate is server-side.** `generate-invite` is owner-only via the `OWNER_USER_ID` secret
-  (unset ⇒ nobody can generate — safe default). The frontend `VITE_OWNER_USER_ID` only *reveals* the
-  "Invite someone" UI (a user id isn't secret); forcing it true still yields a 403.
+  (unset ⇒ nobody can generate — safe default). The frontend only *reveals* the "Invite someone"
+  UI; forcing that reveal still yields a 403 on every privileged call. **(Amended 2026-07-17 — see
+  the note at the end: the reveal no longer publishes the owner's id.)**
 
 - **Redeem is a pre-auth hash surface.** A texted `…/#/redeem?code=…` link lands a session-less
   visitor on a redeem form (code pre-filled); on success the client immediately signs in with the
@@ -63,9 +64,22 @@ grants/policies).
 re-adding the per-user AI consent gate (ADR-0015, still deferred); per-invite AI budget caps (the
 global kill-switch governs cost).
 
-**Owner setup.** `supabase secrets set OWNER_USER_ID=<uuid>`; Vercel env `VITE_OWNER_USER_ID=<uuid>`;
-`SUPABASE_SERVICE_ROLE_KEY` is platform-injected. `enable_signup` stays `false`.
+**Owner setup.** `supabase secrets set OWNER_USER_ID=<uuid>`; `SUPABASE_SERVICE_ROLE_KEY` is
+platform-injected. `enable_signup` stays `false`. (No `VITE_OWNER_USER_ID` — see the 2026-07-17
+amendment below.)
 
 **Verified.** Deno unit tests (code generator), frontend typecheck/lint/format, and a local
 end-to-end pass (generate → redeem deep link → signed in; reuse → used-up; bad/revoked code →
 rejected; non-owner → 403).
+
+---
+
+**Amendment (2026-07-17) — owner reveal no longer publishes the owner's id.** Originally the
+frontend read a public `VITE_OWNER_USER_ID` (baked into the client bundle) to decide whether to show
+the owner-only entry points. A user id is an identifier, not a credential, so this was never an
+access-control hole — the real gate was always the server-side `OWNER_USER_ID` check. But publishing
+it needlessly advertised *which* account is the owner. `VITE_OWNER_USER_ID` is now removed:
+`useIsOwner()` asks the `admin` Edge Function's new `whoami` action, which compares the JWT-verified
+caller against the server-only `OWNER_USER_ID` and returns a boolean about the *caller only*. The
+owner's id never reaches the client; the reveal fails closed on any error. Same gate for
+`generate-invite` and `admin`; only the reveal mechanism changed.
