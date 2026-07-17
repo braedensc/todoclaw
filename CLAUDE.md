@@ -121,7 +121,7 @@ planning/             # Reference only — gitignored, never published
 
 **PRs (all future work):** bodies must be scannable in under a minute — 2–3 plain sentences of what/why, one-line bullets for changes, one verification line. Everything deeper (rationale, edge cases, review writeups) goes in a `<details>` block, never the visible body. Target ≤ ~150 visible words.
 
-**Docs (right-sized, post-launch):** fix any doc a change makes **stale** in the same PR — but don't expand docs proactively. A new ADR is warranted only for a decision that changes architecture, a security boundary, or an external service; routine features and fixes need none. (The bootstrap-era "ADR per PR" density was deliberate scaffolding and is retired — 2026-07-03.) Co-located READMEs for system-specific notes; `docs/` for cross-cutting concerns.
+**Docs (right-sized, post-launch):** fix any doc a change makes **stale** in the same PR — but don't expand docs proactively. A new ADR is warranted only for a decision that changes architecture, a security boundary, or an external service; routine features and fixes need none. (The bootstrap-era "ADR per PR" density was deliberate scaffolding and is retired — 2026-07-03.) Co-located READMEs for system-specific notes; `docs/` for cross-cutting concerns. New ADRs are one file per decision named `docs/adr/YYYY-MM-DD-slug.md` (no sequence number — avoids parallel-session collisions) and carry a `**Status:**` field (`Accepted`, or `Superseded by …` when a later ADR replaces it); full convention in docs/ARCHITECTURE.md's "How to add an ADR".
 
 ---
 

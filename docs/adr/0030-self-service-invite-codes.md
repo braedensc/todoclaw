@@ -1,6 +1,6 @@
 # ADR-0030 — Self-service invite codes (redeem a code → account, no dashboard)
 
-**Date:** 2026-07-07 · **Stage:** post-launch
+**Date:** 2026-07-07 · **Stage:** post-launch · **Status:** Accepted
 
 Adding a user meant the owner opening the Supabase Auth dashboard and inviting them by email
 (ADR-0014, `docs/SERVICES.md`). The owner wanted to onboard someone from their phone by texting a

@@ -1,6 +1,6 @@
 # ADR-0010 — CI quality gate + branch protection (the merge-then-require ordering)
 
-**Date:** 2026-06-23 · **Stage:** 2 (PR #4)
+**Date:** 2026-06-23 · **Stage:** 2 (PR #4) · **Status:** Accepted
 
 `ci.yml` gains three jobs beside the Stage 1 secret/path gate — **Lint** (ESLint + Prettier
 check), **Typecheck** (`tsc -b`), **Test** (Vitest) — all Node 22 / `npm ci`, running in

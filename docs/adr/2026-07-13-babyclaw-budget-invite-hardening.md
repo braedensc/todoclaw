@@ -1,6 +1,6 @@
 # ADR 2026-07-13 — BabyClaw hardening: bind AI budget spend to usage; owner-only invite mint
 
-**Date:** 2026-07-13 · **Post-launch** (security audit follow-up)
+**Date:** 2026-07-13 · **Post-launch** (security audit follow-up) · **Status:** Accepted
 
 A 2026-07-13 security review of the BabyClaw AI-chat system found two authenticated-but-privileged
 holes that share one shape: an owner-only / server-only intent that was enforced **only in the Edge

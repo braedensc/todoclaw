@@ -1,6 +1,6 @@
 # ADR-0027 — Done & Daily reminders as full pages via a minimal hash router
 
-**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign adjacency)
+**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign adjacency) · **Status:** Accepted
 
 "Done" and "Daily reminders" were bottom-of-stack modal overlays (`DonePanel`, `RemindersModal` —
 `fixed inset-0 z-50`). On a phone they read as popups over the grid rather than places you go, and
