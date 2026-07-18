@@ -105,25 +105,24 @@ async function runAnonProbe(client, failures, warnings) {
       )
       return
     }
+    const leaked = (r) =>
+      r.status >= 200 && r.status < 300 && Array.isArray(r.body) && r.body.length > 0
     // The assertion: the RLS-protected table must return NOTHING to the anon key.
     const secured = await fetchRest(SECURED)
-    const leaked =
-      secured.status >= 200 &&
-      secured.status < 300 &&
-      Array.isArray(secured.body) &&
-      secured.body.length > 0
-    if (leaked) {
+    if (leaked(secured)) {
       failures.push(
         `anon probe: RLS BREACH — the anon key read ${secured.body.length} row(s) from ` +
           `RLS-protected public.${SECURED}. The anon + RLS pipeline is NOT enforcing.`,
       )
     }
-    // And with NO apikey at all, the gateway must reject the request outright.
+    // And with NO apikey at all: older gateways reject the request outright (401), newer Supabase
+    // CLI stacks forward it as anon and let RLS decide — both fine. Judge by data, not status:
+    // the only unacceptable outcome is the row coming back.
     const noKey = await fetchRest(SECURED, { noKey: true })
-    if (noKey.status >= 200 && noKey.status < 300) {
+    if (leaked(noKey)) {
       failures.push(
-        `anon probe: the REST API served public.${SECURED} with NO apikey (status ${noKey.status}) ` +
-          `— the gateway is not requiring a key.`,
+        `anon probe: RLS BREACH — a request with NO apikey read ${noKey.body.length} row(s) from ` +
+          `RLS-protected public.${SECURED}.`,
       )
     }
   } finally {
