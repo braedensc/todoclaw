@@ -33,6 +33,7 @@ function task(over: Partial<Task> = {}): Task {
     created_at: '2026-06-01T00:00:00.000Z',
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }

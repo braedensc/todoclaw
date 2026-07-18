@@ -101,6 +101,11 @@ export function GridSurface({
       patch: on ? { ongoing: true, recurring: null } : { ongoing: false },
     })
 
+  // Pause (future start date) / resume (null) — shared by a card's ⋯ menu and a cluster row. A
+  // paused card leaves the grid on the next render; the list's Paused strip is where it lives.
+  const setStartDate = (task: Task, startDate: string | null) =>
+    updateMutate({ id: task.id, patch: { start_date: startDate } })
+
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
   // clipped by the canvas's `overflow-hidden` (item 17). Applied at RENDER time (screen coords
@@ -173,6 +178,7 @@ export function GridSurface({
         }
         onClearReminders={() => reminderWrites.clear(task.id)}
         onSetOngoing={(on) => setOngoing(task, on)}
+        onSetStartDate={(startDate) => setStartDate(task, startDate)}
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,
@@ -355,6 +361,7 @@ export function GridSurface({
                       updateMutate({ id: task.id, patch: { recurring: null } })
                     }
                     onSetOngoing={setOngoing}
+                    onSetStartDate={setStartDate}
                     reminderOffsetsFor={(task) => reminders?.get(task.id) ?? []}
                     onToggleReminder={(task, minutes) =>
                       reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])

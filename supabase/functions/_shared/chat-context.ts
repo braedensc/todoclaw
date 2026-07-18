@@ -187,7 +187,7 @@ export async function loadChatContext(
       // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
       // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
       // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
-      .select('id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at')
+      .select('id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at, start_date')
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
     client
@@ -249,6 +249,13 @@ export async function loadChatContext(
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       recurringStatus: recurringStatusPhrase(rec, now),
       ongoing: (t.ongoing as boolean | null) ?? false,
+      // Dormant (paused) = future start date on the user's local calendar. BabyClaw still SEES a
+      // paused task — labeled, in its own PAUSED block — so "what's paused?" and resume work from
+      // chat, while it stays out of ACTIVE and out of generated plans.
+      pausedUntil:
+        t.start_date && (t.start_date as string).slice(0, 10) > date
+          ? (t.start_date as string).slice(0, 10)
+          : null,
       reminderOffsets: reminderByTask.get(t.id as string) ?? [],
       // A one-off is done via the daily done map; a recurring chore is done via lastDoneAt=today
       // (it never enters the map) — count either so a recurring task ticked off today leaves ACTIVE

@@ -38,6 +38,8 @@ interface ExpandedRowProps {
   onRemoveRecurring: () => void
   /** Set/clear the ongoing-project flag (setting true also clears any recurring schedule). */
   onSetOngoing: (on: boolean) => void
+  /** Set the start (pause-until) date — a future date hides the task until then; null resumes. */
+  onSetStartDate: (startDate: string | null) => void
   /** Enter the row's inline text edit — the mobile-visible Rename chip (audit §4.1): the row's
    *  other edit gestures are double-click (mouse) and F2 (keyboard), neither reachable by touch. */
   onRename: () => void
@@ -59,6 +61,7 @@ export function ExpandedRow({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
+  onSetStartDate,
   onRename,
   reminderOffsets,
   onToggleReminder,
@@ -131,6 +134,8 @@ export function ExpandedRow({
           onSetFrequency={onSetFrequency}
           onRemoveRecurring={onRemoveRecurring}
           onSetOngoing={onSetOngoing}
+          startDate={task.start_date}
+          onSetStartDate={onSetStartDate}
           reminderOffsets={reminderOffsets}
           onToggleReminder={onToggleReminder}
           onClearReminders={onClearReminders}

@@ -86,6 +86,7 @@ function makeTask(over: Partial<Task>): Task {
     created_at: new Date(Date.now() - 86_400_000).toISOString(), // ~1 day ago
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }

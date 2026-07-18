@@ -29,6 +29,9 @@ interface TaskRow {
   recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
   // ONGOING project flag (own column since 2026-07-13). Optional so an old-shaped source still fits.
   ongoing?: boolean | null
+  // Start (pause-until) wall-clock date (2026-07-17). Optional for the same deploy-skew reason —
+  // and the dispatch RPC already excludes dormant tasks in SQL, so its rows simply omit it.
+  start_date?: string | null
 }
 interface HabitRow {
   text: string
@@ -61,8 +64,16 @@ export function buildPlanRequest(
   timeZone: string,
   now: Date,
 ): PlanRequest {
+  // Dormant = paused (future start date, user's local day). Mirrors src/lib/start-date.ts
+  // isDormant and the dispatch RPC's SQL gate: a paused task never reaches a plan of either kind.
+  const today = localDateInTZ(timeZone, now)
+  const dormant = (t: TaskRow) => !!t.start_date && t.start_date.slice(0, 10) > today
+
   const planTasks = tasks
-    .filter((t) => !t.staged && !doneMap[t.id] && !t.recurring && t.x != null && t.y != null)
+    .filter(
+      (t) =>
+        !t.staged && !doneMap[t.id] && !t.recurring && !dormant(t) && t.x != null && t.y != null,
+    )
     .map((t) => ({
       text: t.text,
       importance: Math.round((t.y ?? 0.5) * 100),
@@ -76,6 +87,7 @@ export function buildPlanRequest(
 
   const recurringDue: { text: string; status: string }[] = []
   for (const t of tasks) {
+    if (dormant(t)) continue // a paused chore sits out its pause too
     const s = recurringStatus(t.recurring, now)
     if (s && s.due) recurringDue.push({ text: t.text, status: s.label })
   }

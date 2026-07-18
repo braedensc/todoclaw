@@ -71,6 +71,8 @@ export interface ClusterPopupProps {
   onRemoveRecurring: (task: Task) => void
   /** Set/clear a row's ongoing-project flag (setting true also clears any recurring schedule). */
   onSetOngoing: (task: Task, on: boolean) => void
+  /** Set the start (pause-until) date — a future date hides the task until then; null resumes. */
+  onSetStartDate: (task: Task, startDate: string | null) => void
   /** A row's selected reminder offsets (minutes before due) — from the grid's shared query. */
   reminderOffsetsFor: (task: Task) => readonly number[]
   /** Toggle one of a row's reminder lead times on/off. */
@@ -112,6 +114,7 @@ export function ClusterPopup({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
+  onSetStartDate,
   reminderOffsetsFor,
   onToggleReminder,
   onClearReminders,
@@ -220,6 +223,7 @@ export function ClusterPopup({
           onSetFrequency={(n) => onSetFrequency(task, n)}
           onRemoveRecurring={() => onRemoveRecurring(task)}
           onSetOngoing={(on) => onSetOngoing(task, on)}
+          onSetStartDate={(startDate) => onSetStartDate(task, startDate)}
           reminderOffsets={reminderOffsetsFor(task)}
           onToggleReminder={(m) => onToggleReminder(task, m)}
           onClearReminders={() => onClearReminders(task)}
@@ -244,6 +248,7 @@ interface ClusterPopupRowProps {
   onSetFrequency: (frequencyDays: number) => void
   onRemoveRecurring: () => void
   onSetOngoing: (on: boolean) => void
+  onSetStartDate: (startDate: string | null) => void
   reminderOffsets: readonly number[]
   onToggleReminder: (minutes: number) => void
   onClearReminders: () => void
@@ -276,6 +281,7 @@ function ClusterPopupRow({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
+  onSetStartDate,
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
@@ -502,6 +508,8 @@ function ClusterPopupRow({
                   onSetFrequency={onSetFrequency}
                   onRemoveRecurring={onRemoveRecurring}
                   onSetOngoing={onSetOngoing}
+                  startDate={task.start_date}
+                  onSetStartDate={onSetStartDate}
                   reminderOffsets={reminderOffsets}
                   onToggleReminder={onToggleReminder}
                   onClearReminders={onClearReminders}

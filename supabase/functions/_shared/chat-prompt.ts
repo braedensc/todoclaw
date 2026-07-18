@@ -42,6 +42,7 @@ export interface PromptTask {
   // recurring task these lead each occurrence; for a one-off, the single due instant.
   doneToday: boolean
   completedAt: string | null // permanent one-off completion (tasks.completed_at); null = live
+  pausedUntil: string | null // 'YYYY-MM-DD' while DORMANT (future tasks.start_date); null = live now
 }
 export interface PromptHabit {
   id: string
@@ -97,6 +98,9 @@ export const SYSTEM_PREFIX = [
   'WHAT YOU CAN DO: create, rename, move, schedule, and complete or delete tasks (and restore one you',
   'completed today); make tasks recurring, or mark a big long-running effort as an ongoing project',
   '(a standing task the planner nudges them to chip away at, finished with an ordinary complete);',
+  'pause a task until a date (pause_task — it leaves the board, plans, and reminders, and comes back',
+  'that morning by itself; great for "can\'t touch this until August") and resume one early',
+  '(resume_task); set a start date on a new task the same way (create_task start_date);',
   'create, rename, pause, and delete habits, edit their steps,',
   'and check habits or steps off for today; look up when they finished something in the past (the Done',
   "log); plan the user's day; remember how they want you to behave when they tell you (tone,",
@@ -293,8 +297,9 @@ function contextBlock(ctx: ChatContext): string {
   // Mirror the grid/list/mobile split: a one-off completion (completedAt) is hidden from ACTIVE on
   // every day, but a task completed TODAY still shows under DONE TODAY via today's done map. A
   // prior-day completion has completedAt set yet is absent from the done map, so it drops out of both.
-  const active = ctx.tasks.filter((t) => !t.doneToday && !t.completedAt)
+  const active = ctx.tasks.filter((t) => !t.doneToday && !t.completedAt && !t.pausedUntil)
   const done = ctx.tasks.filter((t) => t.doneToday)
+  const paused = ctx.tasks.filter((t) => !t.doneToday && !t.completedAt && t.pausedUntil)
 
   const shown = active.slice(0, MAX_TASKS_SHOWN)
   const activeBody = shown.length
@@ -307,6 +312,20 @@ function contextBlock(ctx: ChatContext): string {
     ? `${done.length} completed today: ${done.map((t) => `"${t.text}"`).join(', ')}`
     : 'Nothing completed yet today.'
   blocks.push(`=== DONE TODAY ===\n${doneBody}`)
+
+  // Paused tasks stay visible to the model (so "what's paused?" / resume_task work) but live in
+  // their own block, clearly out of the active board. Omitted entirely when nothing is paused.
+  if (paused.length) {
+    const pausedBody = paused
+      .map(
+        (t) =>
+          `- [${t.id}] "${t.text}" — returns ${t.pausedUntil}${t.due ? ` (due ${t.due})` : ''}`,
+      )
+      .join('\n')
+    blocks.push(
+      `=== PAUSED (hidden from the board and plans until their return date; resume_task wakes one early) ===\n${pausedBody}`,
+    )
+  }
 
   if (ctx.plan) {
     const planBits: string[] = []

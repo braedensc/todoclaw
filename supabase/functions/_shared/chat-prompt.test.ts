@@ -122,6 +122,7 @@ Deno.test('buildSystem renders an ongoing project as a continuous effort, not a 
           reminderOffsets: [],
           doneToday: false,
           completedAt: null,
+          pausedUntil: null,
         },
       ],
     }),
@@ -154,6 +155,7 @@ Deno.test(
             reminderOffsets: [],
             doneToday: false,
             completedAt: null,
+            pausedUntil: null,
           },
           {
             id: 't2',
@@ -170,6 +172,7 @@ Deno.test(
             reminderOffsets: [],
             doneToday: true,
             completedAt: null,
+            pausedUntil: null,
           },
           {
             id: 't3',
@@ -186,6 +189,7 @@ Deno.test(
             reminderOffsets: [],
             doneToday: false,
             completedAt: null,
+            pausedUntil: null,
           },
         ],
         habits: [
@@ -238,6 +242,7 @@ Deno.test(
             reminderOffsets: [],
             doneToday: false,
             completedAt: null,
+            pausedUntil: null,
           },
         ],
       }),
@@ -266,6 +271,7 @@ Deno.test('a task with a reminder surfaces its lead time so BabyClaw knows one e
           reminderOffsets: [60],
           doneToday: false,
           completedAt: null,
+          pausedUntil: null,
         },
       ],
     }),
@@ -311,6 +317,7 @@ Deno.test(
       reminderOffsets: [],
       doneToday: false,
       completedAt: null,
+      pausedUntil: null,
       ...over,
     })
     const sys = buildSystem(
@@ -324,6 +331,7 @@ Deno.test(
             id: 'today',
             text: 'Today errand',
             completedAt: '2026-07-04T14:00:00Z',
+            pausedUntil: null,
             doneToday: true,
           }),
         ],
@@ -470,4 +478,46 @@ Deno.test(
 
 Deno.test('no SAVED MEMORY block when there are no memories', () => {
   assert(!buildSystem(baseContext({ memories: [] })).includes('SAVED MEMORY'))
+})
+
+Deno.test(
+  'a paused task leaves ACTIVE and renders in its own PAUSED block, with its return date',
+  () => {
+    const task = (over: Partial<PromptTask>): PromptTask => ({
+      id: 'x',
+      text: 'x',
+      x: 0.5,
+      y: 0.5,
+      due: null,
+      dueInDays: null,
+      dueTime: null,
+      staged: false,
+      recurringLabel: null,
+      recurringStatus: null,
+      ongoing: false,
+      reminderOffsets: [],
+      doneToday: false,
+      completedAt: null,
+      pausedUntil: null,
+      ...over,
+    })
+    const sys = buildSystem(
+      baseContext({
+        tasks: [
+          task({ id: 'live', text: 'Live errand' }),
+          task({ id: 'p1', text: 'Paused project', pausedUntil: '2026-08-01', due: '2026-09-01' }),
+        ],
+      }),
+    )
+    const active = sys.slice(sys.indexOf('=== ACTIVE TASKS'), sys.indexOf('=== DONE TODAY'))
+    assert(active.includes('Live errand'))
+    assert(!active.includes('Paused project'))
+    const paused = sys.slice(sys.indexOf('=== PAUSED'))
+    assert(paused.includes('[p1] "Paused project" — returns 2026-08-01 (due 2026-09-01)'))
+  },
+)
+
+Deno.test('no PAUSED block when nothing is paused', () => {
+  const sys = buildSystem(baseContext())
+  assert(!sys.includes('=== PAUSED'))
 })

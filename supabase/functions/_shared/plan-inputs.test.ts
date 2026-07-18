@@ -86,3 +86,53 @@ Deno.test('an ongoing task row surfaces in the plan tasks carrying its ongoing f
     'Buy milk': false,
   })
 })
+
+Deno.test(
+  'a DORMANT task (future start_date, user zone) never reaches a plan of either kind',
+  () => {
+    // NOW is Wed Jun 24 (New York). start_date Jun 25 = tomorrow there → dormant; Jun 24 = today →
+    // live. Mirrors isDormant (client) and the dispatch RPC's SQL gate.
+    const rows = [
+      {
+        id: 'a',
+        text: 'Live',
+        x: 0.8,
+        y: 0.7,
+        due: null,
+        due_time: null,
+        staged: false,
+        recurring: null,
+        start_date: '2026-06-24',
+      },
+      {
+        id: 'b',
+        text: 'Paused',
+        x: 0.8,
+        y: 0.7,
+        due: null,
+        due_time: null,
+        staged: false,
+        recurring: null,
+        start_date: '2026-06-25',
+      },
+      // A paused CHORE sits out its pause too, even when its cadence says overdue.
+      {
+        id: 'c',
+        text: 'PausedChore',
+        x: 0.5,
+        y: 0.5,
+        due: null,
+        due_time: null,
+        staged: false,
+        start_date: '2026-07-01',
+        recurring: { frequencyDays: 1, lastDoneAt: null, doneCount: 0 },
+      },
+    ]
+    const req = buildPlanRequest(rows, [], {}, TZ, NOW)
+    assertEquals(
+      req.tasks.map((t) => t.text),
+      ['Live'],
+    )
+    assertEquals(req.recurringDue, [])
+  },
+)

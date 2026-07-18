@@ -311,18 +311,31 @@ export interface StaleInfo {
  * chore carries its own status clock) stays with the caller, as it does for the warm lane.
  */
 export function staleness(
-  task: { created_at: string | null; staged: boolean },
+  task: { created_at: string | null; staged: boolean; start_date?: string | null },
   daysUntilDue: number | null,
   now: Date = new Date(),
 ): StaleInfo | null {
   if (task.staged) return null
+  // Stale means IGNORED — and dormant time (a paused task's future start_date) isn't ignoring.
+  // Days since the start date, via the same UTC-noon projection the calendar cells use (hour-level
+  // precision is immaterial against 21/90-day floors). Negative while still dormant, so a dormant
+  // task can never read stale; small after a wake, so a fresh comeback isn't instantly ❄️.
+  const sinceStart = task.start_date
+    ? daysSince(`${task.start_date.slice(0, 10)}T12:00:00Z`, now)
+    : null
   if (daysUntilDue !== null) {
     const past = -daysUntilDue
     if (past < STALE_OVERDUE_FLOOR_DAYS) return null
+    // Recently (re)started: the user scheduled this comeback, so give it a full floor's worth of
+    // actual board time before the overdue count reads as neglect again.
+    if (sinceStart !== null && sinceStart < STALE_OVERDUE_FLOOR_DAYS) return null
     return { days: past, overdue: true, floor: STALE_OVERDUE_FLOOR_DAYS }
   }
-  const days = daysSince(task.created_at, now)
-  if (days === null || days < STALE_UNDATED_FLOOR_DAYS) return null
+  const created = daysSince(task.created_at, now)
+  if (created === null) return null
+  // Undated: board time counts from the LATER of created_at / start_date (min of the two ages).
+  const days = sinceStart !== null ? Math.min(created, sinceStart) : created
+  if (days < STALE_UNDATED_FLOOR_DAYS) return null
   return { days, overdue: false, floor: STALE_UNDATED_FLOOR_DAYS }
 }
 
@@ -372,6 +385,7 @@ export function clusterStaleness(
     staged: boolean
     due: string | null
     recurring: unknown
+    start_date?: string | null
   }>,
   opts: ScoringOpts,
   now: Date = new Date(),

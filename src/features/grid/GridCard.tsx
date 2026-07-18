@@ -68,6 +68,8 @@ export interface GridCardProps {
   onRemoveRecurring: () => void
   /** Set/clear the ongoing-project flag (setting true also clears any recurring schedule). */
   onSetOngoing: (on: boolean) => void
+  /** Set the start (pause-until) date — a future date hides the task until then; null resumes. */
+  onSetStartDate: (startDate: string | null) => void
   /** This task's selected reminder offsets (minutes before due); empty = none. Shown in the ⋯
    *  menu once the task has a due time; computed by the caller from the shared reminders query. */
   reminderOffsets: readonly number[]
@@ -122,6 +124,7 @@ export function GridCard({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
+  onSetStartDate,
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
@@ -449,6 +452,8 @@ export function GridCard({
                   onSetFrequency={onSetFrequency}
                   onRemoveRecurring={onRemoveRecurring}
                   onSetOngoing={onSetOngoing}
+                  startDate={task.start_date}
+                  onSetStartDate={onSetStartDate}
                   reminderOffsets={reminderOffsets}
                   onToggleReminder={onToggleReminder}
                   onClearReminders={onClearReminders}

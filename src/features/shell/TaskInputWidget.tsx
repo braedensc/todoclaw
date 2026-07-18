@@ -213,6 +213,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const [dueTime, setDueTime] = useState<string | null>(null)
   const [recurring, setRecurring] = useState<Recurring | null>(null)
   const [ongoing, setOngoing] = useState(false)
+  const [startDate, setStartDate] = useState<string | null>(null)
   const [reminderMinutes, setReminderMinutes] = useState<number[]>(
     reminderDefault != null ? [reminderDefault] : [],
   )
@@ -237,6 +238,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
         due_time: dt,
         recurring,
         ongoing,
+        start_date: startDate,
       },
       {
         onSuccess: (created) => {
@@ -251,6 +253,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           setReminderMinutes(reminderDefault != null ? [reminderDefault] : [])
           setRecurring(null)
           setOngoing(false)
+          setStartDate(null)
         },
       },
     )
@@ -271,9 +274,9 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           {/* One Schedule chip → the shared SchedulePanel in a popover. The chip label echoes
               the drafted schedule ("07-11 3:00 PM · weekly") once one exists. */}
           <ChipPopover
-            label={scheduleSummary(due, dueTime, recurring, ongoing) ?? 'Schedule'}
+            label={scheduleSummary(due, dueTime, recurring, ongoing, startDate) ?? 'Schedule'}
             icon="📅"
-            active={due != null || recurring != null || ongoing}
+            active={due != null || recurring != null || ongoing || startDate != null}
             open={scheduleOpen}
             onToggle={() => setScheduleOpen((o) => !o)}
             onClose={() => setScheduleOpen(false)}
@@ -307,6 +310,8 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
                     setOngoing(on)
                     if (on) setRecurring(null)
                   }}
+                  startDate={startDate}
+                  onSetStartDate={setStartDate}
                   reminderOffsets={reminderMinutes}
                   onToggleReminder={(m) =>
                     setReminderMinutes((cur) =>
@@ -382,7 +387,11 @@ function ChipPopover({
         {label}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 min-w-max rounded-xl border border-border-strong bg-card p-3 shadow-xl ring-1 ring-black/5">
+        // Height-capped + scrollable: the schedule panel outgrew short viewports (the Pause
+        // section made it ~700px tall), and an absolutely-positioned panel that runs off the
+        // bottom has no way to reach its lower controls. 70vh keeps the whole panel usable on a
+        // 13" laptop without touching the roomy-desktop layout.
+        <div className="absolute left-0 top-full z-30 mt-1.5 max-h-[70vh] min-w-max overflow-y-auto rounded-xl border border-border-strong bg-card p-3 shadow-xl ring-1 ring-black/5">
           {children(onClose)}
         </div>
       )}
