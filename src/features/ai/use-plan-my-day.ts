@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { daysUntil } from '../../lib/scoring'
 import { recurringStatus } from '../../lib/recurring'
+import { isDormant } from '../../lib/start-date'
 import { localDateInTZ } from '../../lib/dates'
 import type { DailyStateMaps } from '../daily-state/use-daily-state'
 import type { Task, TaskSize } from '../../types/task'
@@ -49,6 +50,8 @@ export function buildPlanRequest(
         !t.completed_at &&
         !doneMap[t.id] &&
         !t.recurring &&
+        // Dormant (paused / future start date): never planned — mirrors the server-side gates.
+        !isDormant(t, timeZone, now) &&
         t.x != null &&
         t.y != null,
     )
@@ -66,6 +69,7 @@ export function buildPlanRequest(
   const recurringDue: { text: string; status: string }[] = []
   for (const t of tasks) {
     if (!t.recurring) continue
+    if (isDormant(t, timeZone, now)) continue // a paused chore sits out its pause too
     const s = recurringStatus(t.recurring, { now })
     if (s && (s.code === 'overdue' || s.code === 'due' || s.code === 'soon')) {
       recurringDue.push({ text: t.text, status: s.label })

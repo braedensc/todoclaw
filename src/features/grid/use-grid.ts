@@ -6,6 +6,7 @@ import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
+import { isDormant } from '../../lib/start-date'
 import { quadrantMeta } from '../../lib/quadrants'
 import { urgencyGlowStyle } from '../../lib/visual-urgency'
 import {
@@ -48,6 +49,9 @@ function isPlaced(
   if (task.staged) return false
   if (task.x == null || task.y == null) return false
   if (task.completed_at) return false
+  // Dormant (paused / future start date): off the grid until its start date arrives, then it
+  // wakes at its stored x/y. The list view's Paused group is where it lives meanwhile.
+  if (isDormant(task, timeZone)) return false
   if (doneToday[task.id]) return false
   if (recurringDoneToday(task.recurring, timeZone)) return false
   const rc = recurringStatus(task.recurring)
@@ -235,8 +239,11 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // done (e.g. from the list) leaves the list but reappears as a "new item" card AND survives the
   // daily reset (staged never resets) — the "ghost item" bug PR #191 missed on this fifth surface.
   const pendingTasks = useMemo(
-    () => tasks.filter((t) => t.staged && !t.completed_at && !(doneToday ?? {})[t.id]),
-    [tasks, doneToday],
+    () =>
+      tasks.filter(
+        (t) => t.staged && !t.completed_at && !(doneToday ?? {})[t.id] && !isDormant(t, timeZone),
+      ),
+    [tasks, doneToday, timeZone],
   )
 
   const softDeleteMutate = softDelete.mutate

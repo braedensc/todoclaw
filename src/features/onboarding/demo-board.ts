@@ -51,6 +51,7 @@ const base = {
   size: null,
   deleted_at: null,
   completed_at: null,
+  start_date: null,
 }
 
 /** Build the example tasks for "today" in `timeZone`. Pure; a fresh array per call. */

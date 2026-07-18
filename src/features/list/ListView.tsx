@@ -8,8 +8,10 @@ import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
+import { isDormant } from '../../lib/start-date'
 import type { Task } from '../../types/task'
 import { ListRow } from './ListRow'
+import { PausedSection } from '../tasks/PausedSection'
 
 // Priority-ranked list view. Rows are the user's active tasks (soft-deleted rows are already
 // excluded by useTasks), MINUS anything marked done today, INCLUDING not-yet-placed tasks (still
@@ -79,9 +81,20 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   // Exclude completed tasks. A one-off completion is PERMANENT (task.completed_at, survives the
   // daily reset); today's daily.done map is kept as a same-day belt-and-suspenders hide before
   // the tasks query refetches with completed_at set. Missing daily state = empty day → done map
-  // excludes nothing.
+  // excludes nothing. Dormant tasks (paused / future start_date) are excluded too — they live in
+  // the collapsed Paused strip below the list, not in the ranking.
   const doneToday = daily?.done ?? {}
-  const active = tasks.filter((t) => !t.completed_at && !doneToday[t.id])
+  const live = tasks.filter((t) => !t.completed_at && !doneToday[t.id])
+  const active = live.filter((t) => !isDormant(t, timeZone))
+  // The full list (not a quadrant focus) is where paused tasks stay findable; a focus list scopes
+  // to a quadrant, and a dormant task deliberately has no quadrant presence.
+  const paused = quadrantFilter ? [] : live.filter((t) => isDormant(t, timeZone))
+  const pausedSection = (
+    <PausedSection
+      tasks={paused}
+      onResume={(id) => updateTask.mutate({ id, patch: { start_date: null } })}
+    />
+  )
 
   // Optional per-quadrant scoping (mobile focus view). Only PLACED tasks carry a real quadrant,
   // so a staged task (null x/y) is never bucketed into one — the mobile overview handles unplaced
@@ -98,16 +111,21 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const ranked = [...scoped].sort((a, b) => taskScore(b, { timeZone }) - taskScore(a, { timeZone }))
 
   if (ranked.length === 0) {
+    // The Paused strip still renders on an otherwise-empty list — a user whose ONLY tasks are
+    // paused must be able to find and resume them (hiding it here would read as data loss).
     return (
-      <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-8">
-        <p className="text-muted">
-          {quadrantFilter
-            ? 'Nothing in this quadrant yet.'
-            : isMobile
-              ? 'No tasks yet — add one with the ➕ below.'
-              : 'No tasks yet — add one from the header.'}
-        </p>
-      </section>
+      <>
+        <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-8">
+          <p className="text-muted">
+            {quadrantFilter
+              ? 'Nothing in this quadrant yet.'
+              : isMobile
+                ? 'No tasks yet — add one with the ➕ below.'
+                : 'No tasks yet — add one from the header.'}
+          </p>
+        </section>
+        {pausedSection}
+      </>
     )
   }
 
@@ -171,36 +189,45 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleSetOngoing = (id: string, on: boolean) =>
     updateTask.mutate({ id, patch: on ? { ongoing: true, recurring: null } : { ongoing: false } })
 
+  // Pause (future start date) / resume (null). A paused row leaves the ranking on the next render
+  // and reappears in the Paused strip below.
+  const handleSetStartDate = (id: string, startDate: string | null) =>
+    updateTask.mutate({ id, patch: { start_date: startDate } })
+
   return (
-    <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
-      <ul className="flex flex-col gap-2">
-        {ranked.map((task: Task, i) => (
-          <ListRow
-            now={now}
-            key={task.id}
-            task={task}
-            rank={i + 1}
-            allTasks={active}
-            timeZone={timeZone}
-            onUpdateText={handleUpdateText}
-            onUpdateCoords={handleUpdateCoords}
-            onUpdateDue={handleUpdateDue}
-            onDone={handleDone}
-            onDoneRecurring={handleDoneRecurring}
-            onSetRecurring={handleSetRecurring}
-            onSetFrequency={handleSetFrequency}
-            onRemoveRecurring={handleRemoveRecurring}
-            onSetOngoing={handleSetOngoing}
-            onDelete={handleDelete}
-            onMove={onMoveToQuadrant}
-            reminderOffsets={reminders?.get(task.id) ?? []}
-            onToggleReminder={(minutes) =>
-              reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
-            }
-            onClearReminders={() => reminderWrites.clear(task.id)}
-          />
-        ))}
-      </ul>
-    </section>
+    <>
+      <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
+        <ul className="flex flex-col gap-2">
+          {ranked.map((task: Task, i) => (
+            <ListRow
+              now={now}
+              key={task.id}
+              task={task}
+              rank={i + 1}
+              allTasks={active}
+              timeZone={timeZone}
+              onUpdateText={handleUpdateText}
+              onUpdateCoords={handleUpdateCoords}
+              onUpdateDue={handleUpdateDue}
+              onDone={handleDone}
+              onDoneRecurring={handleDoneRecurring}
+              onSetRecurring={handleSetRecurring}
+              onSetFrequency={handleSetFrequency}
+              onRemoveRecurring={handleRemoveRecurring}
+              onSetOngoing={handleSetOngoing}
+              onSetStartDate={handleSetStartDate}
+              onDelete={handleDelete}
+              onMove={onMoveToQuadrant}
+              reminderOffsets={reminders?.get(task.id) ?? []}
+              onToggleReminder={(minutes) =>
+                reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
+              }
+              onClearReminders={() => reminderWrites.clear(task.id)}
+            />
+          ))}
+        </ul>
+      </section>
+      {pausedSection}
+    </>
   )
 }

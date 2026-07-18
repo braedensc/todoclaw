@@ -28,6 +28,20 @@ function normalizeDueTime(t: string): string | null {
 const reminderPhrase = (minutes: number): string =>
   minutes === 0 ? 'at the due time' : `${formatOffset(minutes)} before`
 
+// A bare wall-clock calendar day ('YYYY-MM-DD') — the shape `due` and `start_date` store. Model
+// inputs are validated against this before they reach a `date` column so a malformed string gets a
+// friendly error, not a Postgres cast failure.
+const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// "Aug 1" for a wall-clock day — pure UTC-noon date math (the string already IS the user's day).
+function fmtDay(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(`${iso}T12:00:00Z`))
+}
+
 // Format a completion instant (ISO from history.completed_at) in the user's zone, so BabyClaw can
 // answer "when did I…" without doing timezone math on a raw UTC string itself.
 function fmtInstant(iso: string, timeZone: string): string {
@@ -48,7 +62,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'list_tasks',
     description:
-      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, an `ongoing` project flag, and a `done` flag). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. Use to refresh your view before editing.",
+      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, an `ongoing` project flag, a `done` flag, and `paused_until` when the task is paused). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. A PAUSED task (future start date) is listed with paused_until set — it is hidden from the user's board and plans until that date. Use to refresh your view before editing.",
     schema: z.object({}).strict(),
     async execute(ctx) {
       const now = ctx.now ?? new Date()
@@ -56,7 +70,9 @@ export const taskCapabilities: Capability[] = [
       const [tasksRes, dailyRes] = await Promise.all([
         ctx.client
           .from('tasks')
-          .select('id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at')
+          .select(
+            'id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at, start_date',
+          )
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
         ctx.client.from('daily_state').select('done').eq('date', date).maybeSingle(),
@@ -80,6 +96,12 @@ export const taskCapabilities: Capability[] = [
           recurring: t.recurring,
           ongoing: t.ongoing,
           done: !!t.completed_at || doneMap[t.id as string] === true,
+          // Paused = dormant until this local date (null when live). The raw start_date isn't
+          // echoed separately — a past start date is indistinguishable from none.
+          paused_until:
+            t.start_date && (t.start_date as string).slice(0, 10) > date
+              ? (t.start_date as string).slice(0, 10)
+              : null,
         }))
       // The JSON goes to the model so it can reference ids; hide it from the user (display: null) —
       // a raw row dump isn't an "action that occurred", it's the model refreshing its view.
@@ -208,6 +230,12 @@ export const taskCapabilities: Capability[] = [
           .describe(
             'Set true ONLY for an ONGOING PROJECT — a standing, open-ended effort worked on over many sessions (e.g. "redesign the site", "study for the bar"), NOT a one-off or a quick chore. It behaves like a normal task (an optional, usually far-out due date) but the planner proactively suggests chipping away at it. Mutually exclusive with recurring_frequency_days. Omit/false otherwise.',
           ),
+        start_date: z
+          .string()
+          .nullish()
+          .describe(
+            "Optional ISO date (e.g. 2026-08-01) the task should START: until then it stays hidden from the board, daily plans, and reminders, then appears by itself that morning. Use when the user says a task can't begin until some date. Omit for a normal, immediately-visible task.",
+          ),
       })
       .strict(),
     async execute(ctx, i) {
@@ -238,6 +266,14 @@ export const taskCapabilities: Capability[] = [
       // Only write a size when the model supplied one; otherwise the column stays NULL and Plan My
       // Day infers effort at plan time (the "hybrid" half of the sizing model).
       if (i.size) row.size = i.size
+      // Optional start (pause-until) date: validated here for a friendly error; a past/today date
+      // is allowed and simply means "already started" (the task is live immediately).
+      if (i.start_date) {
+        if (!ISO_DAY_RE.test(i.start_date)) {
+          return err("That start date didn't look right — use an ISO date like 2026-08-01.")
+        }
+        row.start_date = i.start_date
+      }
       // An ongoing project is a standalone flag (no recurring data); it takes precedence over a
       // plain recurring cadence, which otherwise makes an ordinary repeating chore.
       if (i.ongoing) {
@@ -251,7 +287,13 @@ export const taskCapabilities: Capability[] = [
       }
       const { data, error } = await ctx.client.from('tasks').insert(row).select('id').single()
       if (error) return systemErr(error.message)
-      const where = staged ? ' in the staging tray' : ' on the grid'
+      const dormant =
+        typeof row.start_date === 'string' && row.start_date > localDateInTZ(ctx.timeZone, now)
+      const where = dormant
+        ? ` — paused until ${fmtDay(row.start_date as string)} (it joins the board that morning)`
+        : staged
+          ? ' in the staging tray'
+          : ' on the grid'
       // The model keeps the id (to chain an edit/move next); the user just sees the plain result.
       return ok(
         `Created "${i.text}"${where} (id ${data.id}).`,
@@ -557,6 +599,88 @@ export const taskCapabilities: Capability[] = [
         { recurring: null, ongoing: false },
         'Stopped recurring',
       )
+    },
+  }),
+
+  defineCapability({
+    name: 'pause_task',
+    description:
+      'Pause a task until a future date: it disappears from the board, daily plans, the morning ' +
+      'push, and its reminders are held — then it comes back BY ITSELF that morning, exactly where ' +
+      'it was. Use when the user can\'t work on something until a known date ("pause the API ' +
+      'project until Aug 1", "I can\'t touch this until my credits reset"). This also RESCHEDULES ' +
+      'an already-paused task (the new date replaces the old). Not for finishing (complete_task) ' +
+      'or removing (delete_task) — the task stays alive, just dormant.',
+    schema: z
+      .object({
+        task_id: uuid.describe('The task id (UUID).'),
+        until: z
+          .string()
+          .describe(
+            "ISO date (e.g. 2026-08-01) the task should return on — must be after today. It wakes that morning in the user's timezone.",
+          ),
+      })
+      .strict(),
+    async execute(ctx, i) {
+      const now = ctx.now ?? new Date()
+      if (!ISO_DAY_RE.test(i.until)) {
+        return err("That date didn't look right — use an ISO date like 2026-08-01.")
+      }
+      const today = localDateInTZ(ctx.timeZone, now)
+      if (i.until <= today) {
+        return err(
+          'That date is already here — pick a date after today, or leave the task as it is.',
+        )
+      }
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      const { error } = await ctx.client
+        .from('tasks')
+        .update({ start_date: i.until })
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+      if (error) return systemErr(error.message)
+      return ok(
+        `Paused "${task.text}" until ${fmtDay(i.until)} — off the board and out of daily plans until then; it comes back that morning on its own.`,
+        ['tasks'],
+      )
+    },
+  }),
+
+  defineCapability({
+    name: 'resume_task',
+    description:
+      'Wake a PAUSED task early: clears its start date so it returns to the board right now, at ' +
+      'its old spot. Use when the user wants a paused task back before its return date. (Paused ' +
+      'tasks are the ones listed with paused_until.)',
+    schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
+    async execute(ctx, i) {
+      const now = ctx.now ?? new Date()
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text, start_date')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      const paused =
+        typeof task.start_date === 'string' &&
+        task.start_date.slice(0, 10) > localDateInTZ(ctx.timeZone, now)
+      if (!paused) return ok(`"${task.text}" isn't paused — it's already on the board.`, ['tasks'])
+      const { error } = await ctx.client
+        .from('tasks')
+        .update({ start_date: null })
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+      if (error) return systemErr(error.message)
+      return ok(`Resumed "${task.text}" — it's back on the board.`, ['tasks'])
     },
   }),
 

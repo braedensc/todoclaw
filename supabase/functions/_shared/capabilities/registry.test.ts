@@ -104,6 +104,8 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'make_recurring',
     'make_ongoing',
     'clear_recurring',
+    'pause_task',
+    'resume_task',
     'restore_task',
     'complete_task',
     'delete_task',
@@ -619,4 +621,87 @@ Deno.test('create_task tool schema exposes the text property', () => {
   assert(schema.properties && 'text' in schema.properties)
   // The zod schema is the single source of truth for both validation and this wire schema.
   assert(z.toJSONSchema)
+})
+
+// ---- pause / resume --------------------------------------------------------------------------
+Deno.test('pause_task writes the start date and confirms with the return day', async () => {
+  const updates: unknown[] = []
+  const res = await executeTool(
+    'pause_task',
+    { task_id: UUID, until: '2026-08-01' },
+    ctx({
+      onSelect: () => ({ data: { text: 'Big project' }, error: null }),
+      onUpdate: (_t, patch) => {
+        updates.push(patch)
+        return { data: null, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(updates, [{ start_date: '2026-08-01' }])
+  assertEquals(res.mutated, ['tasks'])
+  assert(res.content.includes('Paused "Big project" until Aug 1'))
+})
+
+Deno.test('pause_task refuses a past/today date and a malformed one BEFORE any write', async () => {
+  // ctx now = 2026-07-04T12:00Z (New York → local today 2026-07-04): today is not "after today".
+  const today = await executeTool('pause_task', { task_id: UUID, until: '2026-07-04' }, ctx())
+  assert(today.is_error)
+  const past = await executeTool('pause_task', { task_id: UUID, until: '2026-01-01' }, ctx())
+  assert(past.is_error)
+  const garbage = await executeTool('pause_task', { task_id: UUID, until: 'next month' }, ctx())
+  assert(garbage.is_error)
+})
+
+Deno.test('resume_task clears the start date of a paused task', async () => {
+  const updates: unknown[] = []
+  const res = await executeTool(
+    'resume_task',
+    { task_id: UUID },
+    ctx({
+      onSelect: () => ({ data: { text: 'Big project', start_date: '2026-08-01' }, error: null }),
+      onUpdate: (_t, patch) => {
+        updates.push(patch)
+        return { data: null, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(updates, [{ start_date: null }])
+  assert(res.content.includes('Resumed "Big project"'))
+})
+
+Deno.test('resume_task on a live task is an honest no-op (no write)', async () => {
+  const updates: unknown[] = []
+  const res = await executeTool(
+    'resume_task',
+    { task_id: UUID },
+    ctx({
+      onSelect: () => ({ data: { text: 'Big project', start_date: null }, error: null }),
+      onUpdate: (_t, patch) => {
+        updates.push(patch)
+        return { data: null, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(updates, [])
+  assert(res.content.includes("isn't paused"))
+})
+
+Deno.test('create_task forwards a start_date and confirms the pause', async () => {
+  let inserted: Record<string, unknown> | null = null
+  const res = await executeTool(
+    'create_task',
+    { text: 'Resume API project', urgency: 'high', importance: 'high', start_date: '2026-08-01' },
+    ctx({
+      onInsert: (_t, row) => {
+        inserted = row as Record<string, unknown>
+        return { data: { id: 'new' }, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(inserted?.start_date, '2026-08-01')
+  assert(res.content.includes('paused until Aug 1'))
 })

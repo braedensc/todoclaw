@@ -8,6 +8,7 @@ import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
 import { urgencyTier } from '../../lib/visual-urgency'
 import { recurringDoneToday } from '../../lib/recurring'
+import { isDormant } from '../../lib/start-date'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
   summarizeQuadrants,
@@ -18,6 +19,7 @@ import {
 } from '../../lib/quadrant-summary'
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import { ListView } from '../list/ListView'
+import { PausedSection } from '../tasks/PausedSection'
 import { MoveToQuadrantSheet } from './MoveToQuadrantSheet'
 import type { QuadrantFocus } from './use-quadrant-focus'
 
@@ -93,8 +95,15 @@ export function MobileMatrix({
   // "done" reads as a no-op; it returns the next day. Mirrors the grid's isPlaced.
   const doneToday = daily?.done ?? {}
   const active = tasks.filter(
-    (t) => !t.completed_at && !doneToday[t.id] && !recurringDoneToday(t.recurring, timeZone),
+    (t) =>
+      !t.completed_at &&
+      !doneToday[t.id] &&
+      !recurringDoneToday(t.recurring, timeZone) &&
+      // Dormant (paused / future start date): out of the quadrants and counts; the Paused strip
+      // below the overview is its mobile home until the start date arrives.
+      !isDormant(t, timeZone),
   )
+  const paused = tasks.filter((t) => !t.completed_at && isDormant(t, timeZone))
   const { buckets } = summarizeQuadrants(active, { timeZone })
 
   // Per-quadrant "on fire" counts for the overview badges: due today (incl. the final hours)
@@ -194,92 +203,99 @@ export function MobileMatrix({
 
   // ---- OVERVIEW: the read-only 2×2 minimap ----
   return (
-    <section aria-label="Quadrant overview" data-tour="matrix" className={shell}>
-      <div className="grid grid-cols-2 gap-2.5">
-        {QUADRANT_ORDER.map((key) => {
-          const m = meta(key)
-          const { count, top } = buckets[key]
-          const empty = count === 0
-          const due = dueCounts(key)
-          const dueBadge = [
-            due.today > 0 ? `${due.today} today` : null,
-            due.overdue > 0 ? `${due.overdue} overdue` : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => enterFocus(key)}
-              aria-label={`${m.label}, ${count} ${count === 1 ? 'task' : 'tasks'}`}
-              className={
-                'flex min-h-[128px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +
-                (empty ? 'opacity-60' : '')
-              }
-              style={{ borderLeft: `4px solid ${m.color}`, background: QUADRANT_TINT[key] }}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-serif text-[15px] font-semibold" style={{ color: m.color }}>
-                  {m.label}
-                </span>
-                <span
-                  aria-hidden
-                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
-                  style={{ background: m.color }}
-                >
-                  {count}
-                </span>
-              </div>
-              <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
-              {/* Due-urgency badge — the mobile stand-in for the grid's glow: what's on fire in
+    <>
+      <section aria-label="Quadrant overview" data-tour="matrix" className={shell}>
+        <div className="grid grid-cols-2 gap-2.5">
+          {QUADRANT_ORDER.map((key) => {
+            const m = meta(key)
+            const { count, top } = buckets[key]
+            const empty = count === 0
+            const due = dueCounts(key)
+            const dueBadge = [
+              due.today > 0 ? `${due.today} today` : null,
+              due.overdue > 0 ? `${due.overdue} overdue` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => enterFocus(key)}
+                aria-label={`${m.label}, ${count} ${count === 1 ? 'task' : 'tasks'}`}
+                className={
+                  'flex min-h-[128px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +
+                  (empty ? 'opacity-60' : '')
+                }
+                style={{ borderLeft: `4px solid ${m.color}`, background: QUADRANT_TINT[key] }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-serif text-[15px] font-semibold" style={{ color: m.color }}>
+                    {m.label}
+                  </span>
+                  <span
+                    aria-hidden
+                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
+                    style={{ background: m.color }}
+                  >
+                    {count}
+                  </span>
+                </div>
+                <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
+                {/* Due-urgency badge — the mobile stand-in for the grid's glow: what's on fire in
                   this quadrant, at a glance from the overview. */}
-              {dueBadge && (
-                <span
-                  className="inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                  style={{ color: '#c2693f', backgroundColor: 'rgba(194,105,63,0.10)' }}
-                >
-                  <span aria-hidden>⏰</span>
-                  {dueBadge}
-                </span>
-              )}
-              {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar. */}
-              {empty ? (
-                <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>
-              ) : (
-                <ul className="mt-0.5 flex flex-col gap-1">
-                  {top.map((t) => (
-                    <li
-                      key={t.id}
-                      className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink"
-                    >
-                      <span
-                        aria-hidden
-                        className="h-1 w-1 shrink-0 rounded-full"
-                        style={{ background: m.color }}
-                      />
-                      <span className="truncate">{t.text}</span>
-                    </li>
-                  ))}
-                  {count > top.length && (
-                    <li className="text-[11px] text-muted-light">+{count - top.length} more</li>
-                  )}
-                </ul>
-              )}
-            </button>
-          )
-        })}
-      </div>
-      {/* A fully-empty board: offer the example-day peek right where the new user is looking. */}
-      {active.length === 0 && onSeeExample && (
-        <button
-          type="button"
-          onClick={onSeeExample}
-          className="mt-2.5 w-full rounded-full border border-border-strong bg-card py-2.5 text-[13px] font-medium text-ink transition-colors active:scale-[0.99]"
-        >
-          <span aria-hidden>👀</span> See an example board
-        </button>
-      )}
-    </section>
+                {dueBadge && (
+                  <span
+                    className="inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{ color: '#c2693f', backgroundColor: 'rgba(194,105,63,0.10)' }}
+                  >
+                    <span aria-hidden>⏰</span>
+                    {dueBadge}
+                  </span>
+                )}
+                {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar. */}
+                {empty ? (
+                  <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>
+                ) : (
+                  <ul className="mt-0.5 flex flex-col gap-1">
+                    {top.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink"
+                      >
+                        <span
+                          aria-hidden
+                          className="h-1 w-1 shrink-0 rounded-full"
+                          style={{ background: m.color }}
+                        />
+                        <span className="truncate">{t.text}</span>
+                      </li>
+                    ))}
+                    {count > top.length && (
+                      <li className="text-[11px] text-muted-light">+{count - top.length} more</li>
+                    )}
+                  </ul>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        {/* A fully-empty board: offer the example-day peek right where the new user is looking. */}
+        {active.length === 0 && onSeeExample && (
+          <button
+            type="button"
+            onClick={onSeeExample}
+            className="mt-2.5 w-full rounded-full border border-border-strong bg-card py-2.5 text-[13px] font-medium text-ink transition-colors active:scale-[0.99]"
+          >
+            <span aria-hidden>👀</span> See an example board
+          </button>
+        )}
+      </section>
+      {/* Paused (dormant) tasks — their only mobile surface; Resume wakes one immediately. */}
+      <PausedSection
+        tasks={paused}
+        onResume={(id) => updateTask.mutate({ id, patch: { start_date: null } })}
+      />
+    </>
   )
 }

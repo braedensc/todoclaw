@@ -196,6 +196,39 @@ describe('staleness', () => {
     expect(staleness({ created_at: null, staged: false }, null, NOW)).toBeNull()
     expect(staleness({ created_at: 'not-a-date', staged: false }, null, NOW)).toBeNull()
   })
+
+  // start_date (pause) interplay: dormancy isn't neglect, so the ignored-clock restarts at the
+  // start date — a task that just woke from a pause can't be instantly ❄️.
+  describe('with a start (pause) date', () => {
+    // A wall-clock day exactly `days` before NOW (NOW sits at 12:00Z, so the arithmetic is exact).
+    const dayAgedBy = (days: number) => agedByDays(days).slice(0, 10)
+
+    it('a DATED task that recently (re)started is not stale despite a deep overdue count', () => {
+      const wokeRecently = { created_at: agedByDays(400), staged: false, start_date: dayAgedBy(10) }
+      expect(staleness(wokeRecently, -100, NOW)).toBeNull()
+    })
+
+    it('a DATED task stales again once it has a full floor of post-start board time', () => {
+      const longAwake = { created_at: agedByDays(400), staged: false, start_date: dayAgedBy(21) }
+      expect(staleness(longAwake, -100, NOW)).toEqual({ days: 100, overdue: true, floor: 21 })
+    })
+
+    it("an UNDATED task's board time counts from the start date, not created_at", () => {
+      const base = { created_at: agedByDays(200), staged: false }
+      expect(staleness({ ...base, start_date: dayAgedBy(30) }, null, NOW)).toBeNull()
+      expect(staleness({ ...base, start_date: dayAgedBy(100) }, null, NOW)).toEqual({
+        days: 100,
+        overdue: false,
+        floor: 90,
+      })
+    })
+
+    it('a still-DORMANT task (future start) is never stale in either lane', () => {
+      const dormant = { created_at: agedByDays(400), staged: false, start_date: dayAgedBy(-5) }
+      expect(staleness(dormant, -100, NOW)).toBeNull()
+      expect(staleness(dormant, null, NOW)).toBeNull()
+    })
+  })
 })
 
 describe('staleRingStyle', () => {

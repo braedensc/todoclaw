@@ -61,6 +61,12 @@ export const TaskSchema = z.object({
   // cleared by set_task_undone (Restore). It's what keeps a completed task off the grid across
   // days. Recurring tasks never set this (they reset recurring.lastDoneAt instead).
   completed_at: z.string().nullable(),
+  // Optional wall-clock START date ('YYYY-MM-DD', user timezone — same floating model as `due`).
+  // While it's in the future the task is DORMANT: hidden everywhere, out of plans, reminders
+  // suppressed (see src/lib/start-date.ts isDormant). Pausing a task = a future start_date;
+  // null = live now. `.catch(null)` keeps rows/fixtures without the column parsing during any
+  // deploy skew (client shipped before the migration), mirroring `ongoing`.
+  start_date: z.string().nullable().catch(null),
 })
 
 export type Task = z.infer<typeof TaskSchema>

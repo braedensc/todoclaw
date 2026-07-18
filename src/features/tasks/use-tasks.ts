@@ -7,9 +7,12 @@ const TASKS_KEY = ['tasks'] as const
 
 // Fields a client may patch via useUpdateTask. id/user_id/created_at are never client-set;
 // deletes go through useSoftDeleteTask. This covers every later-feature write: grid x/y,
-// text, due date + time, staged, recurring, and the ongoing-project flag.
+// text, due date + time, staged, recurring, the ongoing-project flag, and the start (pause) date.
 type TaskPatch = Partial<
-  Pick<Task, 'text' | 'x' | 'y' | 'due' | 'due_time' | 'staged' | 'recurring' | 'ongoing'>
+  Pick<
+    Task,
+    'text' | 'x' | 'y' | 'due' | 'due_time' | 'staged' | 'recurring' | 'ongoing' | 'start_date'
+  >
 >
 
 // Fetch the signed-in user's LIVE tasks. RLS restricts rows to user_id = auth.uid();
@@ -41,6 +44,8 @@ export type NewTask =
       due_time?: string | null
       recurring?: Recurring | null
       ongoing?: boolean
+      /** Optional future start date ('YYYY-MM-DD') — the task stays dormant (hidden) until then. */
+      start_date?: string | null
       x?: number
       y?: number
       staged?: boolean
@@ -68,6 +73,7 @@ export function useAddTask() {
         due_time?: string | null
         recurring?: Recurring | null
         ongoing?: boolean
+        start_date?: string | null
         x?: number
         y?: number
         staged?: boolean
@@ -78,6 +84,7 @@ export function useAddTask() {
         due_time = null,
         recurring = null,
         ongoing = false,
+        start_date = null,
         x = 0.5,
         y = 0.5,
         staged,
@@ -94,6 +101,7 @@ export function useAddTask() {
           due_time,
           recurring,
           ongoing,
+          start_date,
           ...(staged === undefined ? {} : { staged }),
         })
         // Return the created row so a caller can chain (e.g. attach a due-time reminder — PR 5).

@@ -65,6 +65,8 @@ interface ListRowProps {
   onRemoveRecurring: (id: string) => void
   /** Set/clear the ongoing-project flag (setting true also clears any recurring schedule). */
   onSetOngoing: (id: string, on: boolean) => void
+  /** Set the start (pause-until) date — a future date hides the task until then; null resumes. */
+  onSetStartDate: (id: string, startDate: string | null) => void
   /** Delete the task — the parent gates this behind a confirm before soft-deleting. */
   onDelete: (task: Task) => void
   /**
@@ -97,6 +99,7 @@ export function ListRow({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
+  onSetStartDate,
   onDelete,
   onMove,
   reminderOffsets,
@@ -380,6 +383,7 @@ export function ListRow({
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
           onSetOngoing={(on) => onSetOngoing(task.id, on)}
+          onSetStartDate={(startDate) => onSetStartDate(task.id, startDate)}
           onRename={startEdit}
           reminderOffsets={reminderOffsets}
           onToggleReminder={onToggleReminder}

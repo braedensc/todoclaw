@@ -32,6 +32,7 @@ function task(id: string, over: Partial<Task> = {}): Task {
     created_at: '2026-07-01T00:00:00Z',
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }
@@ -48,6 +49,7 @@ function renderPopup(group: Task[], onRowPointerDown: () => () => void = () => v
     onSetFrequency: vi.fn(),
     onRemoveRecurring: vi.fn(),
     onSetOngoing: vi.fn(),
+    onSetStartDate: vi.fn(),
     onToggleReminder: vi.fn(),
     onClearReminders: vi.fn(),
   }

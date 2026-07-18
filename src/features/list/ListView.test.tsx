@@ -69,6 +69,7 @@ function makeTask(over: Partial<Task>): Task {
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }
@@ -503,5 +504,58 @@ describe('ListView quadrantFilter', () => {
 
     expect(screen.getByText(/Nothing in this quadrant yet/i)).toBeInTheDocument()
     expect(screen.queryByText('do now task')).not.toBeInTheDocument()
+  })
+})
+
+describe('paused (start-later) tasks', () => {
+  // isDormant compares wall-clock dates against the real clock here (ListView passes no test
+  // seam), so the fixtures use unambiguous far-future / far-past start dates.
+
+  it('a dormant task leaves the ranking and lives in the collapsed Paused strip', () => {
+    tasksData = [
+      makeTask({ id: 'live', text: 'Live task' }),
+      makeTask({ id: 'p1', text: 'Paused project', start_date: '2999-01-01' }),
+    ]
+    renderList()
+    // Out of the ranked list, hidden behind the collapsed strip header…
+    expect(screen.queryByText('Paused project')).toBeNull()
+    const header = screen.getByRole('button', { name: /Paused · 1/ })
+    // …and revealed (with its return date) when the strip expands.
+    fireEvent.click(header)
+    expect(screen.getByText('Paused project')).toBeInTheDocument()
+    expect(screen.getByText(/returns/)).toBeInTheDocument()
+  })
+
+  it('Resume clears start_date (the task wakes at its stored spot)', () => {
+    tasksData = [makeTask({ id: 'p1', text: 'Paused project', start_date: '2999-01-01' })]
+    renderList()
+    fireEvent.click(screen.getByRole('button', { name: /Paused · 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Resume Paused project' }))
+    expect(updateMutate).toHaveBeenCalledWith({ id: 'p1', patch: { start_date: null } })
+  })
+
+  it('a past start date is just a live task — ranked normally, no strip', () => {
+    tasksData = [makeTask({ id: 't1', text: 'Started long ago', start_date: '2000-01-01' })]
+    renderList()
+    expect(screen.getByText('Started long ago')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Paused ·/ })).toBeNull()
+  })
+
+  it('the strip still renders when EVERY task is paused (else pausing reads as deletion)', () => {
+    tasksData = [makeTask({ id: 'p1', text: 'Only paused', start_date: '2999-01-01' })]
+    renderList()
+    expect(screen.getByText(/No tasks yet|Nothing in this quadrant/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Paused · 1/ })).toBeInTheDocument()
+  })
+
+  it('a quadrant focus list scopes dormant tasks out and never shows the strip', () => {
+    tasksData = [
+      makeTask({ id: 'live', text: 'Live task', x: 0.9, y: 0.9 }),
+      makeTask({ id: 'p1', text: 'Paused project', start_date: '2999-01-01', x: 0.9, y: 0.9 }),
+    ]
+    renderList({ quadrantFilter: 'do-now' })
+    expect(screen.getByText('Live task')).toBeInTheDocument()
+    expect(screen.queryByText('Paused project')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Paused ·/ })).toBeNull()
   })
 })
