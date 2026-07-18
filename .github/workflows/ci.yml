@@ -216,3 +216,60 @@ jobs:
           done
           echo "::error::This PR changes .claude/hooks/** or .claude/settings.json. Those files are the local security guard under bypassPermissions, so edits must be reviewed — not silent. Add the 'hooks-change' label to acknowledge, then this check re-runs."
           exit 1
+
+  # RLS coverage (static) — every table in the `public` schema must enable Row Level Security. RLS
+  # is the multi-tenant boundary and the public anon key ships in the client bundle, so a public
+  # table without RLS is open to anyone holding that key. Deterministic, no DB, no deps — runs on
+  # every push + PR. Scans the migrations (scripts/check-rls.mjs). Promote to a required check once
+  # it has reported on a few PRs.
+  rls-static:
+    name: RLS coverage (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Assert every public table enables RLS (migration scan)
+        run: node scripts/check-rls.mjs
+
+  # RLS coverage (live DB) — applies the migrations to a real Supabase stack and asserts, against
+  # the ACTUAL database, that every public table enforces RLS, that no policy is blanket-`true` for
+  # anon/authenticated, and (end-to-end) that the public anon key cannot read an RLS-protected table
+  # through PostgREST. Heavier (boots the local stack) so NOT required yet — promote once stable.
+  # See scripts/check-rls-live.mjs.
+  rls-live:
+    name: RLS coverage (live DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      - name: Start local Supabase (applies all migrations)
+        run: supabase start
+
+      - name: Run the live RLS check against the running stack
+        run: |
+          set -euo pipefail
+          source <(supabase status -o env)
+          SUPABASE_DB_URL="$DB_URL" \
+          SUPABASE_URL="$API_URL" \
+          SUPABASE_ANON_KEY="$ANON_KEY" \
+            node scripts/check-rls-live.mjs
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop
