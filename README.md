@@ -7,8 +7,7 @@ _urgency_, bottom-to-top is _importance_. Instead of a flat list, you get a pict
 actually matters today — the top-right corner is "do this now," the rest can wait. It's fully
 usable on its own; the AI features are additive and opt-in.
 
-> TodoClaw is a ground-up rebuild of an earlier personal planner ("EisenClaw") as a standalone,
-> multi-tenant web app.
+> TodoClaw is a standalone, multi-tenant web app.
 
 ---
 
