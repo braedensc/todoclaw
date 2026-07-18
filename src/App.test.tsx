@@ -10,6 +10,12 @@ const mockSession = vi.fn<() => { session: unknown; loading: boolean }>()
 vi.mock('./features/auth/use-session', () => ({
   useSession: () => mockSession(),
 }))
+// useIsOwner now asks the server via react-query (the `admin` whoami action); stub it so the shell
+// renders without a QueryClientProvider / network, like the data hooks below. Non-owner by default —
+// the owner-only Admin entry isn't under test here.
+vi.mock('./features/auth/use-is-owner', () => ({
+  useIsOwner: () => false,
+}))
 // jsdom has no matchMedia, so the real useIsMobile always reports desktop; this mock lets the
 // mobile-presentation tests below flip the breakpoint. Default: desktop.
 const mockIsMobile = vi.fn<() => boolean>(() => false)
