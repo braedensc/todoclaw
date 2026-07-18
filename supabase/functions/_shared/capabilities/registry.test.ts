@@ -690,7 +690,7 @@ Deno.test('resume_task on a live task is an honest no-op (no write)', async () =
 })
 
 Deno.test('create_task forwards a start_date and confirms the pause', async () => {
-  let inserted: Record<string, unknown> | null = null
+  let inserted: Record<string, unknown> | undefined
   const res = await executeTool(
     'create_task',
     { text: 'Resume API project', urgency: 'high', importance: 'high', start_date: '2026-08-01' },
