@@ -1,6 +1,6 @@
 # ADR-0029 — Per-user AI spend alert (owner webhook)
 
-**Date:** 2026-07-07 · **Stage:** post-launch (security/observability)
+**Date:** 2026-07-07 · **Stage:** post-launch (security/observability) · **Status:** Accepted
 
 ## Context
 

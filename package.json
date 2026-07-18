@@ -2,7 +2,7 @@
   "name": "todoclaw",
   "version": "0.0.0",
   "private": true,
-  "description": "Eisenhower-matrix task planner — rebuild of EisenClaw",
+  "description": "AI-powered Eisenhower-matrix task planner",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -17,8 +17,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:golden": "playwright test --config playwright.golden.config.ts",
-    "seed:eisenclaw": "tsx scripts/eisenclaw-seed/import.ts",
-    "legacy-ui": "tsx scripts/legacy-ui.ts",
+    "seed:demo": "tsx scripts/demo-seed/import.ts",
     "gen:icons": "node scripts/generate-pwa-icons.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:rls": "node scripts/check-rls.mjs",

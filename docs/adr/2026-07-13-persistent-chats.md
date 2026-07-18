@@ -1,6 +1,6 @@
 # ADR 2026-07-13 — Persistent BabyClaw chats: server-authoritative history via a service-role write path
 
-**Date:** 2026-07-13 · **Post-launch** (BabyClaw persistence, Part A of the persistence+memory epic)
+**Date:** 2026-07-13 · **Post-launch** (BabyClaw persistence, Part A of the persistence+memory epic) · **Status:** Accepted · supersedes [ADR-0017](0017-streaming-chat-manual-tool-loop-clientheld.md)
 
 BabyClaw conversations were **ephemeral and client-held**: `use-ai-chat.ts` kept the Anthropic message
 array in a React ref and resent the whole thing every turn; the server accepted it as `z.array(z.any())`

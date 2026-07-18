@@ -6,7 +6,7 @@ A sequenced set of workstreams to take TodoClaw from a handful of trusted tester
 paying audience, plus the infrastructure scaling triggers underneath them. The order is
 not arbitrary: each thread lowers the cost or unlocks the reach the next one needs.
 
-The detailed, file-level plan lives in [`ROADMAP-IMPLEMENTATION.md`](./ROADMAP-IMPLEMENTATION.md).
+The detailed, file-level implementation plan is a maintainer-local working document (kept in the gitignored `planning/` directory) — a point-in-time build plan rather than durable published reference.
 
 ---
 

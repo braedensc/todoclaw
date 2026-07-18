@@ -7,7 +7,8 @@ stats + integration status, and invite management (folded in from `settings/Invi
 ## Security
 
 - **UI reveal is cosmetic.** `useIsOwner()` (`auth/use-is-owner.ts`) only decides whether the entry
-  point and page render; it compares the session user id to `VITE_OWNER_USER_ID`.
+  point and page render; it asks the server (`admin` Edge Function, `whoami` action) whether the
+  caller is the owner, so the owner's user id is never published to the client. Fails closed.
 - **The real gate is server-side.** All privileged data comes from the `admin` Edge Function
   (`supabase/functions/admin`), which re-checks `OWNER_USER_ID` (shared `isOwner` helper) and reads
   global / per-user / `auth.users` data through `SECURITY DEFINER` RPCs granted to `service_role`

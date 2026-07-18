@@ -26,10 +26,18 @@ playwright/.cache/
 # Seeded auth session for the local golden E2E suite (never committed)
 e2e/.auth/
 
+# Maintainer-local tooling + notes tied to the gitignored planning/ reference data (not in a fresh
+# clone). The committed demo seed (scripts/demo-seed/) is the shared replacement for the seed script.
+CLAUDE.local.md
+scripts/eisenclaw-seed/
+scripts/legacy-ui.ts
+scripts/legacy-ui-mock-plan.cjs
+
 # OS
 .DS_Store
 
 # Claude Code runtime (local-only, not project config)
+CLAUDE.local.md
 .claude/audit.log
 .claude/settings.local.json
 .claude/launch.json
