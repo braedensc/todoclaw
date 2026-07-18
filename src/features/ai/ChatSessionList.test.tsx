@@ -106,8 +106,14 @@ describe('ChatSessionList (unified inbox + chats)', () => {
 
   it('caps "From BabyClaw" to the 5 most recent messages, and says so when it hides any', () => {
     // Reminders keep their own titles (no day-stamp), so they stay distinguishable for this count.
+    // Timestamps must be explicit and distinct (A newest → G oldest): the cap sorts by recency, and
+    // same-millisecond ties from a bare new Date() made survival depend on a mid-loop clock tick.
     messages = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((t, i) =>
-      m(`m${i}`, { kind: 'reminder', title: `Task ${t}` }),
+      m(`m${i}`, {
+        kind: 'reminder',
+        title: `Task ${t}`,
+        created_at: new Date(Date.now() - i * 60_000).toISOString(),
+      }),
     )
     render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
     for (const t of ['Task A', 'Task B', 'Task C', 'Task D', 'Task E']) {
