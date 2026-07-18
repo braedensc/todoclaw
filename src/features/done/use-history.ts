@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useToast } from '../../components/use-toast'
 import { localDateInTZ } from '../../lib/dates'
 import { HistorySchema, type History } from '../../types/history'
 
@@ -38,6 +39,7 @@ export function useHistory() {
 // leave the grid/list/mobile (its permanent, across-day hide).
 export function useMarkTaskDone() {
   const qc = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({
       taskId,
@@ -65,6 +67,9 @@ export function useMarkTaskDone() {
       qc.invalidateQueries({ queryKey: ['daily_state', date] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
+    // Checking a task off is the highest-frequency write; a silent failure is the "tick does
+    // nothing" symptom. Surface it so the user knows to retry instead of assuming it stuck.
+    onError: () => toast("Couldn't mark that done — try again.", 'error'),
   })
 }
 
@@ -75,6 +80,7 @@ export function useMarkTaskDone() {
 // touched by restore (delete is a separate action).
 export function useRestoreTask() {
   const qc = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async ({ taskId, timeZone }: { taskId: string; timeZone: string }) => {
       const date = localDateInTZ(timeZone)
@@ -89,6 +95,7 @@ export function useRestoreTask() {
       qc.invalidateQueries({ queryKey: ['daily_state', date] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
+    onError: () => toast("Couldn't restore that task — try again.", 'error'),
   })
 }
 
@@ -99,6 +106,7 @@ export function useRestoreTask() {
 // Invalidates only the history query.
 export function useDeleteHistoryEntry() {
   const qc = useQueryClient()
+  const toast = useToast()
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('history').delete().eq('id', id)
@@ -107,5 +115,6 @@ export function useDeleteHistoryEntry() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: HISTORY_KEY })
     },
+    onError: () => toast("Couldn't remove that entry — try again.", 'error'),
   })
 }

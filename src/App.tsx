@@ -201,8 +201,12 @@ function AppShell() {
     // Already materialised → jump straight to it; otherwise create-and-open (seeds BabyClaw's message
     // as the opening assistant turn), then switch to the returned session.
     if (msg.session_id) openSession(msg.session_id)
-    else openMsgChat(chatMsgId, { onSuccess: (sid) => openSession(sid) })
-  }, [chatMsgId, messages.data, openSession, mark, openMsgChat])
+    else
+      openMsgChat(chatMsgId, {
+        onSuccess: (sid) => openSession(sid),
+        onError: () => showToast("Couldn't open that message — try again.", 'error'),
+      })
+  }, [chatMsgId, messages.data, openSession, mark, openMsgChat, showToast])
 
   // Esc leaves grid-only mode (the overlay covers the header, so the ✕ pill + this are the exits).
   useEffect(() => {
