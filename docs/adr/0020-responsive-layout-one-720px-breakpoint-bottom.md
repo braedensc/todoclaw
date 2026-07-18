@@ -1,6 +1,6 @@
 # ADR-0020 — Responsive layout: one 720px breakpoint, bottom tab bar on mobile (Stage 5 PR2)
 
-**Date:** 2026-07-02 · **Stage:** 5 (PR2)
+**Date:** 2026-07-02 · **Stage:** 5 (PR2) · **Status:** Superseded in part by [ADR-0026](0026-mobile-chrome-slim-topbar-bottom-nav.md) / [ADR-0028](0028-mobile-list-only-no-grid-single-add-sheet.md) — the mobile shell (bottom tab bar, mobile grid, always-visible card actions) was replaced; the single 720px breakpoint still holds
 
 Makes the app mobile-first at the `< 720px` breakpoint and adds a mobile golden E2E project.
 Decisions:

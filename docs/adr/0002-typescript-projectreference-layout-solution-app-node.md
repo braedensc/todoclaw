@@ -1,6 +1,6 @@
 # ADR-0002 — TypeScript project-reference layout (solution + app + node)
 
-**Date:** 2026-06-23 · **Stage:** 1 (PR #1)
+**Date:** 2026-06-23 · **Stage:** 1 (PR #1) · **Status:** Accepted
 
 `tsconfig.json` is a solution file (`files: []`, references) pointing at `tsconfig.app.json`
 (browser/`src`, `strict` + `noUncheckedIndexedAccess` + `noUnusedLocals/Parameters`) and

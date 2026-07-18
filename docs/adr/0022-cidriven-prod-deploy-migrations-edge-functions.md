@@ -1,6 +1,6 @@
 # ADR-0022 — CI-driven prod deploy: migrations + Edge Functions on merge to main
 
-**Date:** 2026-07-02 · **Stage:** 6
+**Date:** 2026-07-02 · **Stage:** 6 · **Status:** Accepted
 
 The hand-run `supabase db push` (the ADR-0006 bootstrap exception) and `supabase functions deploy`
 (deferred here by ADR-0015) become automated. `.github/workflows/deploy.yml` deploys to the ONE

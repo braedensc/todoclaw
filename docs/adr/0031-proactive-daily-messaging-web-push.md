@@ -1,6 +1,6 @@
 # ADR-0031 — Proactive daily messaging + end-of-day chat (Web Push)
 
-**Date:** 2026-07-07 · **Stage:** post-launch (notifications)
+**Date:** 2026-07-07 · **Stage:** post-launch (notifications) · **Status:** Accepted
 
 ## Context
 

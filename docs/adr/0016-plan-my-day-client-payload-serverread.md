@@ -1,6 +1,6 @@
 # ADR-0016 — Plan My Day: client payload + server-read schedule, structured output via forced tool use
 
-**Date:** 2026-06-24 · **Stage:** 4 (PR3)
+**Date:** 2026-06-24 · **Stage:** 4 (PR3) · **Status:** Accepted
 
 Plan My Day is a `plan-my-day` Edge Function + a modal panel. Decisions:
 

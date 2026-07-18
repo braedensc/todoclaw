@@ -1,6 +1,6 @@
 # ADR-0011 — E2E: Playwright smoke in CI; full DB-backed E2E stays local
 
-**Date:** 2026-06-23 · **Stage:** 2 (PR #5)
+**Date:** 2026-06-23 · **Stage:** 2 (PR #5) · **Status:** Accepted
 
 Playwright is the E2E framework. The confirmed scope (with Braeden) is **smoke-only in CI**, not
 full Supabase-in-CI:
