@@ -43,7 +43,11 @@ export default defineConfig({
         ],
       },
       injectManifest: {
-        // Precache the built app shell (JS/CSS/HTML/fonts) so an installed PWA opens offline.
+        // injectManifest requires the SW to reference self.__WB_MANIFEST; this glob is what
+        // populates that list. NOTE: the app is NOT offline-capable — src/sw.ts is push-only, with
+        // no fetch handler / precacheAndRoute, so nothing is actually served from this precache.
+        // The list is generated only to satisfy the injection point; kept minimal until (if) real
+        // offline routing is added. See src/sw.ts.
         globPatterns: ['**/*.{js,css,html,svg,woff2}'],
       },
       devOptions: { enabled: true, type: 'module' },

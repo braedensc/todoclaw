@@ -1,6 +1,12 @@
-// admin — OWNER-ONLY. Backs the owner Admin panel. This first cut ships a read-only `get_overview`:
-// AI spend (global pool + per-user roster), system stats, integration status, and the current
-// guardrail config. The write path (set_config) lands in a follow-up.
+// admin — backs the owner Admin panel. Two actions on one Bearer-authenticated endpoint:
+//
+//   • whoami       — ANY authenticated caller. Returns { isOwner } about the CALLER ONLY, so the
+//                    frontend can decide whether to reveal the (otherwise hidden) admin entry
+//                    WITHOUT the owner's user id ever being shipped to the client. A non-owner just
+//                    gets { isOwner: false } (a plain 200) — it leaks nothing about who the owner is.
+//   • get_overview — OWNER-ONLY, read-only: AI spend (global pool + per-user roster), system stats,
+//                    integration status, and the current guardrail config. 403 for non-owners. The
+//                    write path (set_config) lands in a follow-up.
 //
 // Owner gate is the SAME server-side OWNER_USER_ID check as generate-invite (isOwner,
 // _shared/owner.ts) — the frontend useIsOwner() only hides UI, so a non-owner who forces the page
@@ -10,8 +16,8 @@
 // (service_role has no direct table DML; everything is a fenced DEFINER RPC). Integration status is
 // BOOLEANS only — no secret VALUES ever leave the server.
 //
-// Contract: POST { action: 'get_overview' } with a Bearer token → { config, globalSpend, roster,
-// systemStats, integrations }.
+// Contract: POST { action: 'whoami' } → { isOwner }; POST { action: 'get_overview' } (owner only) →
+// { config, globalSpend, roster, systemStats, integrations }. Both require a Bearer token.
 
 import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
@@ -20,7 +26,7 @@ import { isOwner } from '../_shared/owner.ts'
 import { adminClient } from '../_shared/admin.ts'
 
 const BodySchema = z.object({
-  action: z.literal('get_overview'),
+  action: z.enum(['whoami', 'get_overview']),
 })
 
 // Which server-side secrets / integrations are configured — BOOLEANS ONLY, never the values. Lets
@@ -54,8 +60,8 @@ Deno.serve(async (req) => {
   const user = await requireUser(client)
   if (!user) return json({ error: 'unauthorized' }, 401)
 
-  // The REAL gate (the UI reveal is cosmetic). Unset OWNER_USER_ID ⇒ nobody is owner ⇒ 403.
-  if (!isOwner(user.id, Deno.env.get('OWNER_USER_ID'))) return json({ error: 'forbidden' }, 403)
+  // The REAL gate (the UI reveal is cosmetic). Unset OWNER_USER_ID ⇒ nobody is owner.
+  const owner = isOwner(user.id, Deno.env.get('OWNER_USER_ID'))
 
   let body: z.infer<typeof BodySchema>
   try {
@@ -63,6 +69,14 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: 'invalid_request' }, 400)
   }
+
+  // whoami is the ONE action any authenticated caller may run: it answers only "are YOU the owner?"
+  // — a boolean about the caller, never the owner's identity — so the client can reveal the admin
+  // entry without ever learning the owner's user id. Non-owners get { isOwner: false }, not a 403.
+  if (body.action === 'whoami') return json({ isOwner: owner })
+
+  // Everything past here is strictly owner-only.
+  if (!owner) return json({ error: 'forbidden' }, 403)
 
   try {
     // Privileged reads via the service_role admin client + DEFINER RPCs — reached only past the

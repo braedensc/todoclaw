@@ -16,6 +16,12 @@ Stage 5/6 parallel build). Historical ADRs keep their `NNNN-` names — every ex
 `ADR-00XX` reference below still resolves. After adding a file, add one row to this
 index.
 
+**Every ADR carries a Status.** Each file's metadata line (beside Date/Stage) ends with a
+`**Status:**` token: `Accepted` by default, or `Superseded by …` / `Superseded in part by …`
+when a later ADR replaces it — link both ways (the old ADR's Status points forward; the new
+ADR notes what it supersedes). ADRs are immutable records: don't rewrite a past decision,
+supersede it with a new ADR and flip the old one's Status.
+
 ## Index
 
 | ADR | Date | Decision |
@@ -36,15 +42,15 @@ index.
 | [ADR-0014](adr/0014-inviteonly-access-private-mvp-on-the.md) | 2026-06-24 | Invite-only access (private MVP on the owner's key) |
 | [ADR-0015](adr/0015-ownerkey-ai-architecture-ratelimit-budget-guardrails.md) | 2026-06-24 | Owner-key AI architecture + rate-limit/budget guardrails |
 | [ADR-0016](adr/0016-plan-my-day-client-payload-serverread.md) | 2026-06-24 | Plan My Day: client payload + server-read schedule, structured output via forced tool use |
-| [ADR-0017](adr/0017-streaming-chat-manual-tool-loop-clientheld.md) | 2026-06-25 | Streaming chat: manual tool loop, client-held history, confirm-before-destructive |
+| [ADR-0017](adr/0017-streaming-chat-manual-tool-loop-clientheld.md) | 2026-06-25 | Streaming chat: manual tool loop, client-held history, confirm-before-destructive — _superseded by 2026-07-13 (persistent chats)_ |
 | [ADR-0018](adr/0018-goldenpath-e2e-harness-dbbacked-local-suite.md) | 2026-06-25 | Golden-path E2E harness: DB-backed local suite, mocked AI, CI stays smoke-only |
 | [ADR-0019](adr/0019-visual-urgency-purelib-style-tiers-global.md) | 2026-07-02 | Visual urgency: pure-lib style tiers + global keyframe (Stage 5 PR1) |
-| [ADR-0020](adr/0020-responsive-layout-one-720px-breakpoint-bottom.md) | 2026-07-02 | Responsive layout: one 720px breakpoint, bottom tab bar on mobile (Stage 5 PR2) |
+| [ADR-0020](adr/0020-responsive-layout-one-720px-breakpoint-bottom.md) | 2026-07-02 | Responsive layout: one 720px breakpoint, bottom tab bar on mobile (Stage 5 PR2) — _mobile shell superseded by ADR-0026/0028_ |
 | [ADR-0021](adr/0021-realtime-redeferred-past-stage-5.md) | 2026-07-02 | Realtime re-deferred past Stage 5 |
 | [ADR-0022](adr/0022-cidriven-prod-deploy-migrations-edge-functions.md) | 2026-07-02 | CI-driven prod deploy: migrations + Edge Functions on merge to main |
 | [ADR-0023](adr/0023-stage-6-production-cutover-verified-live.md) | 2026-07-02 | Stage 6 production cutover: verified live + external billing posture |
 | [ADR-0024](adr/0024-backup-restore-indb-snapshots-invoker-rpcs.md) | 2026-07-02 | Backup/restore: in-DB snapshots + INVOKER RPCs + JSON export (Stage 5 PR3) |
-| [ADR-0025](adr/0025-mobile-matrix-overview-focus-reinterpretation.md) | 2026-07-06 | Mobile matrix: quadrant overview → focus view reinterpretation |
+| [ADR-0025](adr/0025-mobile-matrix-overview-focus-reinterpretation.md) | 2026-07-06 | Mobile matrix: quadrant overview → focus view reinterpretation — _mobile grid superseded by ADR-0028_ |
 | [ADR-0026](adr/0026-mobile-chrome-slim-topbar-bottom-nav.md) | 2026-07-06 | Mobile chrome: slim top bar + thumb-zone bottom nav (Concept D) |
 | [ADR-0027](adr/0027-done-reminders-full-pages-hash-router.md) | 2026-07-06 | Done & Daily reminders as full pages via a minimal hash router |
 | [ADR-0028](adr/0028-mobile-list-only-no-grid-single-add-sheet.md) | 2026-07-06 | Mobile is list-only: remove the grid, single bottom-bar add sheet |
@@ -53,3 +59,5 @@ index.
 | [ADR-0031](adr/0031-proactive-daily-messaging-web-push.md) | 2026-07-07 | Proactive daily messaging + end-of-day chat via Web Push (opt-in) |
 | [ADR 2026-07-08](adr/2026-07-08-due-dates-wall-clock.md) | 2026-07-08 | Due dates are wall-clock: floating `date` + optional local `time` (completes #178) |
 | [ADR 2026-07-09](adr/2026-07-09-task-reminders-pg-cron-push.md) | 2026-07-09 | Per-task reminders: materialized fire times + pg_cron minute sweep → Web Push |
+| [ADR 2026-07-13](adr/2026-07-13-babyclaw-budget-invite-hardening.md) | 2026-07-13 | BabyClaw hardening: bind AI budget spend to a usage row; owner-only invite mint |
+| [ADR 2026-07-13](adr/2026-07-13-persistent-chats.md) | 2026-07-13 | Persistent BabyClaw chats: server-authoritative history via a service-role write path |

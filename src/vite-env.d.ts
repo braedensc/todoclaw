@@ -12,9 +12,6 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY: string
   // Optional: Sentry error reporting. When unset, Sentry is not initialized (dev-mode gate).
   readonly VITE_SENTRY_DSN?: string
-  // Optional: the owner's auth.users id (ADR-0030). Only used to SHOW the owner the "Invite
-  // someone" UI — the real gate is the server-side OWNER_USER_ID check in generate-invite. Public.
-  readonly VITE_OWNER_USER_ID?: string
   // Optional (ADR-0031): the VAPID PUBLIC key for Web Push subscriptions. Public by design (the
   // private key is a server-only Edge secret). Unset ⇒ the notifications toggle reports "not
   // configured" and no subscription is attempted.

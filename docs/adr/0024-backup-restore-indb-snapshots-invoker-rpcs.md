@@ -1,6 +1,6 @@
 # ADR-0024 — Backup/restore: in-DB snapshots + INVOKER RPCs + JSON export (Stage 5 PR3)
 
-**Date:** 2026-07-02 · **Stage:** 5 (PR3)
+**Date:** 2026-07-02 · **Stage:** 5 (PR3) · **Status:** Accepted
 
 The last Stage 5 polish item: backup & restore. Braeden chose in-DB snapshots over a
 client-file-only scheme (portability escape hatch kept as a JSON export). Decisions:

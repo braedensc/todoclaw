@@ -51,10 +51,7 @@ npm run format       # Prettier — rewrite files
 npm run format:check # Prettier — check only (what CI runs)
 npm test             # Vitest (unit + component) once
 npm run test:watch   # Vitest in watch mode
-npm run legacy-ui    # run the ORIGINAL EisenClaw app → http://localhost:3333 (Plan My Day = local mock)
 ```
-
-> `npm run legacy-ui` is a porting aid — it launches the gitignored reference app (`planning/eisenclaw-export/`) so you can view the old UI directly. Plan My Day is stubbed with a deterministic local mock (no Anthropic key needed); everything else is the real app and edits mutate the seed JSON. See `scripts/legacy-ui.ts`.
 
 ## Testing
 
@@ -99,9 +96,8 @@ specs (`*.mobile.golden.spec.ts` — tap-to-place and the bottom tab bar). Both 
 seeded session; the per-test wipe keeps them independent despite sharing the user. Run one project
 with `npm run test:e2e:golden -- --project chromium-mobile`.
 
-One golden spec (`e2e/golden/eisenclaw-seed.golden.spec.ts`) opts into realistic seeded data
-(Braeden's real EisenClaw tasks/habits) instead of the empty slate — see
-`scripts/eisenclaw-seed/README.md`.
+One golden spec (`e2e/golden/demo-seed.golden.spec.ts`) opts into realistic seeded data (the
+checked-in demo dataset) instead of the empty slate — see `scripts/demo-seed/README.md`.
 
 ## Local Supabase
 
@@ -154,7 +150,7 @@ The app is **sign-in-only** (invite-only — ADR-0014). Create a local user in S
 sign in, add a task, and it renders from Postgres through RLS.
 
 To populate that user with realistic data instead of starting blank, run
-`npm run seed:eisenclaw -- --email <that user's email>` — see `scripts/eisenclaw-seed/README.md`.
+`npm run seed:demo -- --email <that user's email>` — see `scripts/demo-seed/README.md`.
 
 ### Schema / migrations
 

@@ -1,6 +1,6 @@
 # ADR-0013 — Keep `daily_state` jsonb maps; write them via atomic `SECURITY INVOKER` merge RPCs
 
-**Date:** 2026-06-24 · **Stage:** 3 (PR6)
+**Date:** 2026-06-24 · **Stage:** 3 (PR6) · **Status:** Accepted
 
 `daily_state` keeps its four jsonb maps (`done`/`done_at`/`habit_done`/`subtask_done`) on **one
 row per (user, local day)** rather than normalizing completions into child rows. Writes go through

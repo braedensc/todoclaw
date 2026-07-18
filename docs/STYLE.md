@@ -1,8 +1,8 @@
 # STYLE.md
 
-TodoClaw's code style, naming conventions, component patterns, state patterns, and UI/UX design system (color palette, typography, spacing). The visual language originated from EisenClaw but is now TodoClaw's own — the tokens below and the code that uses them are authoritative; EisenClaw is historical provenance, not a target.
+TodoClaw's code style, naming conventions, component patterns, state patterns, and UI/UX design system (color palette, typography, spacing). The design tokens below and the code that uses them are authoritative.
 
-> Design tokens were implemented in Stage 3. Their original source hex/font values are recorded in `planning/EISENCLAW-LOGIC-TO-PORT.md` § 13 (provenance only) — the live tokens in `tailwind.config.js` are the source of truth.
+> Design tokens were implemented in Stage 3; the live tokens in `tailwind.config.js` are the source of truth.
 
 ---
 
@@ -11,8 +11,7 @@ TodoClaw's code style, naming conventions, component patterns, state patterns, a
 The "warm paper" palette and fonts are TodoClaw's design tokens, defined in
 `tailwind.config.js` (`theme.extend`). Use the token names below — never raw hex in
 components. The body base (background + text + body font) is applied in `src/index.css`
-(`@layer base { body { ... } }`). (The original source hex values live in
-`planning/EISENCLAW-LOGIC-TO-PORT.md` § 13 — provenance only; the tokens here are authoritative.)
+(`@layer base { body { ... } }`).
 
 ### Fonts
 
@@ -46,9 +45,6 @@ third party). Families are declared as Tailwind tokens.
 | `quadrant-errands` | `#7d6b1e` | "Errands" quadrant (urgent, not important) |
 | `quadrant-someday` | `#857c6e` | "Someday" quadrant (neither) |
 
-> Quadrant **background tints** (the low-alpha `rgba(...)` fills behind the grid) are deferred
-> to the grid PR that paints the canvas — see `EISENCLAW-LOGIC-TO-PORT.md` § 13.
-
 ---
 
 ## Visual urgency (glow · pulse · stale ring)
@@ -58,8 +54,7 @@ visual signals layered on top of its quadrant color. Both are **non-interactive*
 to **non-recurring** cards (a recurring task shows its `RC_COLOR` status badge instead) — and never
 to a done card (it has already left the grid). The exact tiers/constants live in
 `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `staleness`/`staleRingStyle`) and are pinned (authoritative) by
-`src/lib/visual-urgency.test.ts`; they originated from EisenClaw (`EISENCLAW-LOGIC-TO-PORT.md` §4/§5)
-but have since been tuned on TodoClaw's own merits (e.g. the amplified glow ladder).
+`src/lib/visual-urgency.test.ts` (tuned on TodoClaw's own merits — e.g. the amplified glow ladder).
 
 - **Urgency glow** — a `box-shadow` ring that intensifies as the due date approaches, keyed on
   `daysUntil(due)` (timezone-aware). Overdue → strongest terracotta ring **+ pulse**; due today →
@@ -76,8 +71,8 @@ but have since been tuned on TodoClaw's own merits (e.g. the amplified glow ladd
   deepens at 1×/2×/3× the floor (3/6/9 weeks past due, or 3/6/9 months undated), **an icy card
   tint that graduates with depth** (`#f3f8fd` → `#eaf3fc` → `#e0edfb`), a **❄️ corner flag**
   replacing the 🔥, and an azure **"Stale · Nd" chip** replacing the due chip — the hot and cool
-  dresses never co-exist on one card. This keeps the deliberate **inverse** of EisenClaw's old
-  fade: an ignored task should draw the eye, not recede. A **cluster bubble** takes the ring +
+  dresses never co-exist on one card. This keeps a deliberate **inverse** of a fade-out
+  treatment: an ignored task should draw the eye, not recede. A **cluster bubble** takes the ring +
   tint of its deepest-stale folded card (`clusterStaleness`), and stale members stop feeding the
   bubble's warm glow (`clusterNearestDue` skips them); expanded popup rows each show their own.
   Staged tray cards are exempt. "A signal, not a judgment."
@@ -114,26 +109,3 @@ JS-gates on `useIsMobile()` (ADR-0026):
 (The Stage-5-era mobile design — bottom `TabNav`, a mobile grid with tap-to-place, always-visible
 grid-card actions — was replaced by ADR-0025/0026/0028. `use-grid.ts` still carries the
 tap-to-place path, but nothing mounts the grid below 720px.)
-
----
-
-## Historical UI screenshots
-
-Screenshots of the **original** EisenClaw UI live in
-`planning/eisenclaw-export/pics/` (gitignored — historical reference, never published, never a
-target). They record where the visual language came from; the shipped TodoClaw UI is the reference
-now. The table below is a historical index of what each capture showed.
-
-| File | Surface shown |
-|---|---|
-| `Todopic1.jpeg` | **Grid view** — header + Plan my day / Backups, add-task box, Grid/List/Done tabs, urgency×importance canvas with quadrant labels (Schedule / Do Now / Someday / Errands), task cards, cluster bubbles (2/3 TASKS), recurring "overdue" badges, urgency glow rings |
-| `Todopic2.jpeg` | **Cluster popup** — "N TASKS HERE" floating panel with card-style rows (done / recurring / edit / delete), stacked-depth bubble shadows |
-| `Todopic3.jpeg` | **Daily habits** — expandable habit with steps (Wrist routine), collapsed habits, add-step / add-habit inputs, grid footer legend |
-| `Todopic4.jpeg` | **List view** — priority-ranked rows, #1 expanded with urgency/importance sliders + number inputs + date picker + quadrant badge + recurring section; colored left borders per quadrant |
-| `Todopic5.jpeg` | **Done tab** — permanent completion history; ↩ restores tasks marked done today, × removes from history only |
-| `Todopic6.jpeg` | **List view** (≈ duplicate of `Todopic4`) |
-
-Visuals: warm paper palette (bg `#f4efe6`), Fraunces serif headings + IBM Plex
-Sans body, green primary buttons (`#5b8a72`), dark header buttons, terracotta recurring/urgency
-accents (`#c2693f`). Authoritative hex values: the token table above / `tailwind.config.js`
-(EisenClaw's originals are recorded in `EISENCLAW-LOGIC-TO-PORT.md` § 13 as provenance).

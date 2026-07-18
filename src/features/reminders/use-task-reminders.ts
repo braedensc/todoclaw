@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useToast } from '../../components/use-toast'
 
 // Client access to task_reminders (ADR 2026-07-09; multi-reminder 2026-07-11; recurring unified
 // 2026-07-12). A task — one-off OR recurring — can hold SEVERAL reminders at different lead times,
@@ -48,7 +49,11 @@ export function useTaskReminders() {
 // is passed — the RPC reads user_schedule.timezone itself.
 export function useTaskReminderWrites() {
   const qc = useQueryClient()
+  const toast = useToast()
   const onSuccess = () => qc.invalidateQueries({ queryKey: REMINDERS_KEY })
+  // These writes fire imperatively from the picker (mutate, not awaited), so a failure has no return
+  // path — without this the reminder silently doesn't arm and the user believes it's set.
+  const onError = () => toast("Couldn't update that reminder — try again.", 'error')
 
   const addM = useMutation({
     mutationFn: async ({ taskId, offsetMinutes }: { taskId: string; offsetMinutes: number }) => {
@@ -59,6 +64,7 @@ export function useTaskReminderWrites() {
       if (error) throw error
     },
     onSuccess,
+    onError,
   })
   const removeM = useMutation({
     mutationFn: async ({ taskId, offsetMinutes }: { taskId: string; offsetMinutes: number }) => {
@@ -69,6 +75,7 @@ export function useTaskReminderWrites() {
       if (error) throw error
     },
     onSuccess,
+    onError,
   })
   const clearM = useMutation({
     mutationFn: async ({ taskId }: { taskId: string }) => {
@@ -76,6 +83,7 @@ export function useTaskReminderWrites() {
       if (error) throw error
     },
     onSuccess,
+    onError,
   })
 
   return {

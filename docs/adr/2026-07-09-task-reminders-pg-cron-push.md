@@ -1,6 +1,6 @@
 # ADR 2026-07-09 — Per-task reminders: materialized fire times + an in-database minute cron
 
-**Date:** 2026-07-09 · **Post-launch** (reminders roadmap, PR 4 of 6)
+**Date:** 2026-07-09 · **Post-launch** (reminders roadmap, PR 4 of 6) · **Status:** Accepted
 
 Tasks now carry wall-clock due times (ADR 2026-07-08-due-dates-wall-clock); users want "buzz me
 1 hour before" (workshop, approved 2026-07-08). The push transport, subscription store, inbox,
