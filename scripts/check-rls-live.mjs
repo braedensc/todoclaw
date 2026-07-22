@@ -189,7 +189,7 @@ async function runWeatherCacheGrantProbe(client, failures) {
   }
 }
 
-// F. ai_usage direct writes are revoked (migration 20260722100000): INSERT and UPDATE must be
+// F. ai_usage direct writes are revoked (migration 20260722170000): INSERT and UPDATE must be
 // DENIED to `authenticated` even in a fully valid own-user JWT context — the PRE-fix schema
 // allowed both in exactly this context (grant + owner-scoped policy), so an RLS-only denial can
 // never satisfy this probe by accident. Then the SECURITY DEFINER guardrail RPCs must still work
@@ -232,7 +232,7 @@ async function runAiUsageGrantProbe(client, failures) {
         failures.push(
           `ai_usage grant: ${label} as "authenticated" (own user_id, JWT set) — expected ` +
             `permission-denied (42501), got ${code ?? 'NO error, the write SUCCEEDED'}. ai_usage ` +
-            `must be writable only via the SECURITY DEFINER guardrail RPCs (20260722100000).`,
+            `must be writable only via the SECURITY DEFINER guardrail RPCs (20260722170000).`,
         )
       }
     }

@@ -160,4 +160,4 @@ comment on table public.ai_usage is
   'window per feature. token columns are observability only — the budget kill-switch uses the '
   'global ai_budget_ledger, not these. Written ONLY by the SECURITY DEFINER guardrail RPCs '
   '(ai_usage_check_and_record / ai_usage_record_tokens / ai_budget_add and the service_role '
-  '*_for_user variants); authenticated holds SELECT on own rows only (20260722100000).';
+  '*_for_user variants); authenticated holds SELECT on own rows only (20260722170000).';

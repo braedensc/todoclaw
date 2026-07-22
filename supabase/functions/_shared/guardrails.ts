@@ -1,7 +1,7 @@
 // Guardrails — what bounds the owner's Anthropic key (ADR-0015). Two layers, both enforced
 // server-side via the migration's SQL functions (20260624010000_ai_usage_and_budget.sql):
 //
-//   • Per-user RATE LIMITS (ai_usage_check_and_record — SECURITY DEFINER since 20260722100000,
+//   • Per-user RATE LIMITS (ai_usage_check_and_record — SECURITY DEFINER since 20260722170000,
 //     which also revoked ai_usage's direct INSERT/UPDATE grants: the RPCs are the only write path).
 //   • A global monthly BUDGET KILL-SWITCH in micro-dollars (ai_budget_check / ai_budget_add,
 //     SECURITY DEFINER — the only path to the no-grant ai_budget_ledger; no service-role key).
