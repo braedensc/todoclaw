@@ -7,7 +7,8 @@ import { z } from 'npm:zod@4.4.3'
 import { localDateInTZ } from '../dates.ts'
 import { formatOffset } from '../reminder-content.ts'
 import { placeByDue, urgencyToX, importanceToY } from '../placement.ts'
-import { defineCapability, type Capability } from './types.ts'
+import { loadReminderDefault } from '../reminder-default.ts'
+import { defineCapability, type Capability, type CapabilityContext } from './types.ts'
 import { ok, err, systemErr, updateTaskRow } from './helpers.ts'
 
 const uuid = z.string().uuid()
@@ -27,6 +28,40 @@ function normalizeDueTime(t: string): string | null {
 // "1 hour before" / "at the due time" — the confirmation phrase for a reminder offset.
 const reminderPhrase = (minutes: number): string =>
   minutes === 0 ? 'at the due time' : `${formatOffset(minutes)} before`
+
+// Mirror the app's add forms: a task that GAINS a due time gets the user's default reminder
+// (Settings → Notifications; built-in 1 hour, or Off) applied automatically. Best-effort — the
+// task write already landed, so a reminder hiccup must not fail (and re-run) the whole tool; it
+// just goes unmentioned. Returns the applied offset, or null when the default is off / it failed.
+async function applyDefaultReminder(
+  ctx: CapabilityContext,
+  taskId: string,
+): Promise<number | null> {
+  const def = await loadReminderDefault(ctx.client)
+  if (def === null) return null
+  const { data: fireAt, error } = await ctx.client.rpc('set_task_reminder', {
+    p_task_id: taskId,
+    p_offset_minutes: def,
+  })
+  if (error) return null
+  // A default whose fire time is already past can never usefully fire (the sweep drops anything
+  // over an hour late, and "1 hour before" a moment that already passed is a lie either way) —
+  // take the row back out and stay quiet rather than promise a reminder that won't come. The RPC
+  // returns the materialized fire_at for exactly this check.
+  const now = ctx.now ?? new Date()
+  if (typeof fireAt === 'string' && new Date(fireAt).getTime() <= now.getTime()) {
+    await ctx.client.rpc('remove_task_reminder', { p_task_id: taskId, p_offset_minutes: def })
+    return null
+  }
+  return def
+}
+
+// The model-facing note for an auto-applied default (it should know the reminder exists so it can
+// adjust when the user asked for a different lead time), and the user-facing chat line.
+const autoReminderNote = (minutes: number): string =>
+  ` The user's default reminder (${reminderPhrase(minutes)}) was added automatically — use remove_reminder/set_reminder if they wanted a different lead time or none.`
+const autoReminderDisplay = (minutes: number): string =>
+  ` Reminder ${reminderPhrase(minutes)} (your default).`
 
 // A bare wall-clock calendar day ('YYYY-MM-DD') — the shape `due` and `start_date` store. Model
 // inputs are validated against this before they reach a `date` column so a malformed string gets a
@@ -62,7 +97,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'list_tasks',
     description:
-      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, an `ongoing` project flag, a `done` flag, and `paused_until` when the task is paused). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. A PAUSED task (future start date) is listed with paused_until set — it is hidden from the user's board and plans until that date. Use to refresh your view before editing.",
+      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, an `ongoing` project flag, a `size` (S/M/L/XL or null), a `done` flag, and `paused_until` when the task is paused). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. A PAUSED task (future start date) is listed with paused_until set — it is hidden from the user's board and plans until that date. Use to refresh your view before editing.",
     schema: z.object({}).strict(),
     async execute(ctx) {
       const now = ctx.now ?? new Date()
@@ -71,7 +106,7 @@ export const taskCapabilities: Capability[] = [
         ctx.client
           .from('tasks')
           .select(
-            'id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at, start_date',
+            'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
           )
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
@@ -95,6 +130,7 @@ export const taskCapabilities: Capability[] = [
           staged: t.staged,
           recurring: t.recurring,
           ongoing: t.ongoing,
+          size: t.size ?? null,
           done: !!t.completed_at || doneMap[t.id as string] === true,
           // Paused = dormant until this local date (null when live). The raw start_date isn't
           // echoed separately — a past start date is indistinguishable from none.
@@ -186,7 +222,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'create_task',
     description:
-      "Create a new task and place it on the urgency×importance grid. YOU decide where it goes: set `urgency` and `importance` from what the task actually is. Judge importance by STAKES, not by the due date — a routine chore (dishes, vacuum, laundry) is LOW importance even when it's due today, while a consequential task (a deadline that matters, a health thing) is high. A due date, if given, only nudges URGENCY (sooner = more urgent) and never dictates importance. If you give neither urgency/importance nor a due date, the task is staged at center for the user to place. Ask about a due date first when it is unclear whether one is needed. Also estimate a rough size (S/M/L/XL) from the text when you reasonably can — it helps the daily planner gauge effort — but leave it off when unclear; never pester the user for it.",
+      "Create a new task and place it on the urgency×importance grid. YOU decide where it goes: set `urgency` and `importance` from what the task actually is. Judge importance by STAKES, not by the due date — a routine chore (dishes, vacuum, laundry) is LOW importance even when it's due today, while a consequential task (a deadline that matters, a health thing) is high. A due date, if given, only nudges URGENCY (sooner = more urgent) and never dictates importance. If you give neither urgency/importance nor a due date, the task is staged (unplaced) for the user to place. Ask about a due date first when it is unclear whether one is needed. A task created WITH a due time automatically gets the user's default reminder (their Settings choice; usually 1 hour before, possibly Off) — the confirmation tells you what was added, so adjust with set_reminder/remove_reminder if they asked for a specific lead time. Also estimate a rough size (S/M/L/XL) from the text when you reasonably can — it helps the daily planner gauge effort — but leave it off when unclear; never pester the user for it.",
     schema: z
       .object({
         text: z.string().min(1).max(2000).describe('The task text.'),
@@ -287,18 +323,21 @@ export const taskCapabilities: Capability[] = [
       }
       const { data, error } = await ctx.client.from('tasks').insert(row).select('id').single()
       if (error) return systemErr(error.message)
+      // Created WITH a due time → the user's default reminder is applied, exactly like the app's
+      // add forms (null = default off, or the write failed — then it goes unmentioned).
+      const auto = row.due_time ? await applyDefaultReminder(ctx, data.id as string) : null
       const dormant =
         typeof row.start_date === 'string' && row.start_date > localDateInTZ(ctx.timeZone, now)
       const where = dormant
         ? ` — paused until ${fmtDay(row.start_date as string)} (it joins the board that morning)`
         : staged
-          ? ' in the staging tray'
+          ? ' — staged, waiting to be placed'
           : ' on the grid'
       // The model keeps the id (to chain an edit/move next); the user just sees the plain result.
       return ok(
-        `Created "${i.text}"${where} (id ${data.id}).`,
-        ['tasks'],
-        `Created "${i.text}"${where}.`,
+        `Created "${i.text}"${where} (id ${data.id}).${auto === null ? '' : autoReminderNote(auto)}`,
+        auto === null ? ['tasks'] : ['tasks', 'reminders'],
+        `Created "${i.text}"${where}.${auto === null ? '' : autoReminderDisplay(auto)}`,
       )
     },
   }),
@@ -346,7 +385,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'set_due_date',
     description:
-      "Set or clear a task's due date, and optionally a due TIME; the grid position follows the new due date. Set a time when the user names one, or when they want a reminder (a reminder needs a due time).",
+      "Set or clear a task's due date, and optionally a due TIME. A new due date re-derives the task's URGENCY (grid x) from how soon it is — importance is never touched — and places a staged task on the board; clearing a due date leaves the card exactly where it is. When the task FIRST gains a due time (and has no reminders yet), the user's default reminder is added automatically — the confirmation tells you what was added. Clearing the due date (or just the time) also removes the task's reminders — a reminder needs both. Set a time when the user names one, or when they want a reminder (a reminder needs a due time).",
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -361,33 +400,92 @@ export const taskCapabilities: Capability[] = [
       .strict(),
     async execute(ctx, i) {
       const now = ctx.now ?? new Date()
-      const place = placeByDue(i.due, ctx.timeZone, now)
-      const patch: Record<string, unknown> = {
-        due: i.due,
-        x: place.x,
-        y: place.y,
-        staged: place.staged,
-      }
-      // due_time is three-way: clearing the date clears the time; else a provided time is
-      // validated/set (or null clears just the time); undefined leaves the existing time alone.
+      // Read the task first — the position rule and the default-reminder rule both depend on its
+      // current state (did it already have a time?).
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text, due_time')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+
+      const patch: Record<string, unknown> = { due: i.due }
       if (i.due === null) {
+        // Clearing a due date clears the time and moves NOTHING — the card keeps its spot, exactly
+        // like the app's schedule editor. (The old behavior re-staged the card at center, silently
+        // discarding a placement the user chose.)
         patch.due_time = null
-      } else if (i.due_time !== undefined) {
-        if (i.due_time === null) {
-          patch.due_time = null
-        } else {
-          const dt = normalizeDueTime(i.due_time)
-          if (!dt)
-            return err("That time didn't look right — use 24-hour HH:MM, like 15:00 for 3 PM.")
-          patch.due_time = dt
+      } else {
+        // A new due date re-derives URGENCY (x) from how soon it is. Importance (y) is NEVER
+        // touched — per the placement doctrine, a due date can't make a task matter more — and a
+        // staged task joins the board with its stored (neutral) importance. (The old behavior
+        // overwrote y to 0.75, contradicting the doctrine and the in-app schedule editor.)
+        patch.x = placeByDue(i.due, ctx.timeZone, now).x
+        patch.staged = false
+        // due_time is three-way: a provided time is validated/set (null clears just the time);
+        // undefined leaves the existing time alone.
+        if (i.due_time !== undefined) {
+          if (i.due_time === null) {
+            patch.due_time = null
+          } else {
+            const dt = normalizeDueTime(i.due_time)
+            if (!dt)
+              return err("That time didn't look right — use 24-hour HH:MM, like 15:00 for 3 PM.")
+            patch.due_time = dt
+          }
         }
       }
-      return updateTaskRow(
+
+      // Clearing the anchor (the date, or just the time off a timed task) makes the DB trigger
+      // drop every reminder row — a reminder has nothing to fire from. Pre-check whether any exist
+      // so the wipe is REPORTED (domain + note), not silently absorbed.
+      let wipesReminders = false
+      if (patch.due_time === null && task.due_time) {
+        const { data: existing } = await ctx.client
+          .from('task_reminders')
+          .select('task_id')
+          .eq('task_id', i.task_id)
+        wipesReminders = ((existing as unknown[] | null) ?? []).length > 0
+      }
+
+      const result = await updateTaskRow(
         ctx.client,
         i.task_id,
         patch,
         i.due ? 'Set the due date for' : 'Cleared the due date for',
       )
+      if (result.isError) return result
+
+      if (wipesReminders) {
+        return ok(
+          `${result.content} Its reminders were removed too — a reminder needs a due date and time.`,
+          ['tasks', 'reminders'],
+          `${result.content} Its reminders were removed too.`,
+        )
+      }
+
+      // The task just GAINED a due time (it had none) and holds no reminders → mirror the add
+      // forms and apply the user's default. An already-timed task is left alone: an empty reminder
+      // set there may mean "deliberately removed", which a date change must not undo.
+      if (typeof patch.due_time === 'string' && !task.due_time) {
+        const { data: existing, error: exErr } = await ctx.client
+          .from('task_reminders')
+          .select('task_id')
+          .eq('task_id', i.task_id)
+        if (!exErr && !(existing ?? []).length) {
+          const auto = await applyDefaultReminder(ctx, i.task_id)
+          if (auto !== null) {
+            return ok(
+              `${result.content}${autoReminderNote(auto)}`,
+              ['tasks', 'reminders'],
+              `${result.content}${autoReminderDisplay(auto)}`,
+            )
+          }
+        }
+      }
+      return result
     },
   }),
 
@@ -456,8 +554,9 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'clear_reminder',
     description:
-      'Remove ALL push reminders from a task, of either kind — one-off lead times or a recurring ' +
-      'time-of-day alarm (leaves the due date and time as they are).',
+      'Remove ALL push reminders from a task (leaves the due date and time as they are). Every ' +
+      "reminder is a lead-time offset before the task's due time; a recurring task's offsets " +
+      'simply re-arm each occurrence — there is no separate alarm kind.',
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
       const { data: task, error: selErr } = await ctx.client
@@ -687,7 +786,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'restore_task',
     description:
-      "Un-complete a task that was marked done TODAY, putting it back on the active list. (Only affects today's completion; the permanent history log is never changed.)",
+      "Un-complete a task so it returns to the active board — works for a task checked off today OR on a past day (it clears the completion marker; the permanent Done-log entry is never removed — that's delete_completion).",
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
       const now = ctx.now ?? new Date()
@@ -763,17 +862,14 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'delete_task',
     description:
-      'Move a task to the trash (soft-delete). Destructive — the user is asked to confirm before it runs.',
+      'Delete a task. There is NO trash surface in the app — the only recovery is restoring a ' +
+      'Settings → Backups snapshot that still contains it, so never call deletion easily ' +
+      'reversible. Destructive — the user is asked to confirm before it runs.',
     destructive: true,
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
       const now = ctx.now ?? new Date()
-      return updateTaskRow(
-        ctx.client,
-        i.task_id,
-        { deleted_at: now.toISOString() },
-        'Moved to the trash',
-      )
+      return updateTaskRow(ctx.client, i.task_id, { deleted_at: now.toISOString() }, 'Deleted')
     },
   }),
 ]

@@ -16,6 +16,7 @@ function baseContext(over: Partial<ChatContext> = {}): ChatContext {
     today: 'Saturday, July 4, 2026',
     timeZone: 'America/New_York',
     scheduleSummary: null,
+    reminderDefault: 60,
     tasks: [],
     habits: [],
     plan: null,
@@ -83,6 +84,102 @@ Deno.test('persona teaches the grid priority model and transparency/ask-when-uns
   assertStringIncludes(SYSTEM_PREFIX, 'x*0.45 + y*0.55')
   assertStringIncludes(SYSTEM_PREFIX, 'ASK instead of guessing')
   assertStringIncludes(SYSTEM_PREFIX, 'DUE DATE')
+})
+
+Deno.test(
+  "quadrant names match the app's real labels (Errands/Someday, never Delegate/Later)",
+  () => {
+    // The prompt doctrine AND every rendered task line must use the labels the user actually sees
+    // (src/lib/quadrants.ts) — the textbook Eisenhower names point users at quadrants that don't exist.
+    assertStringIncludes(SYSTEM_PREFIX, 'bottom-right = Errands')
+    assertStringIncludes(SYSTEM_PREFIX, 'bottom-left = Someday')
+    assert(!SYSTEM_PREFIX.includes('Delegate'))
+    assert(!SYSTEM_PREFIX.includes('bottom-left = Later'))
+
+    const line = (x: number, y: number) =>
+      buildSystem(
+        baseContext({
+          tasks: [
+            {
+              id: 'q',
+              text: 'Q',
+              x,
+              y,
+              due: null,
+              dueInDays: null,
+              dueTime: null,
+              staged: false,
+              recurringLabel: null,
+              recurringStatus: null,
+              ongoing: false,
+              reminderOffsets: [],
+              doneToday: false,
+              completedAt: null,
+              pausedUntil: null,
+            },
+          ],
+        }),
+      )
+    assertStringIncludes(line(0.9, 0.2), '(Errands)')
+    assertStringIncludes(line(0.2, 0.2), '(Someday)')
+  },
+)
+
+Deno.test(
+  'persona carries the APP GUIDE (BabyClaw answers app questions, without inventing)',
+  () => {
+    assertStringIncludes(SYSTEM_PREFIX, 'APP GUIDE')
+    assertStringIncludes(SYSTEM_PREFIX, 'Never invent a feature')
+    // The biggest historical blind spots: mobile (no grid), reminders defaults, recovery, habits.
+    assertStringIncludes(SYSTEM_PREFIX, 'Phones have NO grid')
+    assertStringIncludes(SYSTEM_PREFIX, 'Move to quadrant')
+    assertStringIncludes(SYSTEM_PREFIX, 'default reminder')
+    assertStringIncludes(SYSTEM_PREFIX, 'NO trash')
+    assertStringIncludes(SYSTEM_PREFIX, 'habit strip')
+    assertStringIncludes(SYSTEM_PREFIX, 'invite-only')
+    // Branding: the app is TodoClaw (camel C) everywhere in new copy.
+    assert(!SYSTEM_PREFIX.includes('todoclaw'))
+  },
+)
+
+Deno.test("the TODAY block carries the user's default reminder (60 / custom / off)", () => {
+  assertStringIncludes(
+    buildSystem(baseContext()),
+    'Default reminder: 1 hour before — added automatically when a task gains a due time.',
+  )
+  assertStringIncludes(
+    buildSystem(baseContext({ reminderDefault: 0 })),
+    'Default reminder: at the due time',
+  )
+  assertStringIncludes(buildSystem(baseContext({ reminderDefault: null })), 'Default reminder: OFF')
+})
+
+Deno.test('a sized task renders its S/M/L/XL so BabyClaw can answer "what size is X?"', () => {
+  const sys = buildSystem(
+    baseContext({
+      tasks: [
+        {
+          id: 's1',
+          text: 'Write the report',
+          x: 0.6,
+          y: 0.7,
+          due: null,
+          dueInDays: null,
+          dueTime: null,
+          staged: false,
+          recurringLabel: null,
+          recurringStatus: null,
+          ongoing: false,
+          size: 'L',
+          reminderOffsets: [],
+          doneToday: false,
+          completedAt: null,
+          pausedUntil: null,
+        },
+      ],
+    }),
+  )
+  assertStringIncludes(sys, 'size L')
 })
 
 Deno.test(

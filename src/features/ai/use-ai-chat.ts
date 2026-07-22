@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useChatSessions, CHAT_SESSIONS_KEY } from './use-chat-sessions'
-import { useChatMessages, rowsToChatItems } from './use-chat-messages'
+import { useChatMessages, chatMessagesKey, rowsToChatItems } from './use-chat-messages'
 
 // A mutating tool reports which data DOMAINS it changed; each maps to the TanStack Query key that
 // owns that data, so acting in chat refreshes the grid / list / habits / Done tab INSTANTLY (no
@@ -103,12 +103,36 @@ export function useAiChat() {
 
   const assistantId = useRef<string | null>(null)
   const seedRef = useRef<string | null>(null)
+  // Conversation epoch: bumped on every run() and on every openSession()/newChat(). A stream
+  // captures the epoch it started under; once the epoch moves on (the user switched conversations
+  // mid-stream), the stream is BACKGROUNDED — its remaining events must not paint bubbles, flip
+  // busy/error, or adopt a session id for a conversation the user has left. Its side effects that
+  // are true regardless (data-domain invalidations, the finished turn landing in the transcript)
+  // still run — see the epoch checks in handleEvent.
+  const epochRef = useRef(0)
   // The active session id, mirrored into a ref so stream callbacks (which close over the memoized
   // run) always see the latest id after a `session` event adopts a freshly-created session.
   const sessionIdRef = useRef<string | null>(null)
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+  // Mirrors for the backgrounded-done decision (refetch now vs mark stale — see handleEvent) and
+  // for resolving stale_confirmation without reading state in a closure.
+  const hydrateIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    hydrateIdRef.current = hydrateId
+  }, [hydrateId])
+  const liveCountRef = useRef(0)
+  useEffect(() => {
+    liveCountRef.current = liveItems.length
+  }, [liveItems])
+  const pendingRef = useRef<PendingConfirm | null>(null)
+  useEffect(() => {
+    pendingRef.current = pending
+  }, [pending])
+  // Confirmations the user already answered this visit — a stale sessions refetch must never
+  // resurrect one as a ghost confirm card (see the adoption effect below).
+  const resolvedToolIdsRef = useRef<Set<string>>(new Set())
 
   // Resume-on-open: once the session list loads, reopen the most-recent conversation if it's < 24h
   // old, else stay on a fresh chat. Adjusted DURING render (guarded to run once) rather than in an
@@ -117,24 +141,48 @@ export function useAiChat() {
   const resumedRef = useRef(false)
   if (!resumedRef.current && sessions.data) {
     resumedRef.current = true
-    // Resume only a person-started chat. Proactive sessions (materialised from an inbox message) are
-    // opened deliberately via their deep link, never auto-resumed — otherwise a fresh morning-plan
-    // session would silently become "the most recent chat" the Chat button reopens.
-    const recent = sessions.data.find((s) => s.origin === 'user')
-    if (recent && Date.now() - Date.parse(recent.updated_at) < DAY_MS) {
-      setSessionId(recent.id)
-      setHydrateId(recent.id)
-      if (recent.pending) {
-        setPending({
-          toolUseId: recent.pending.awaiting.tool_use_id,
-          summary: recent.pending.awaiting.summary,
-        })
+    // Resume only into a PRISTINE visit: if the user already started chatting before the session
+    // list first resolved (slow network, query retries), switching them to a prior conversation
+    // would blend transcripts — and the in-flight stream (whose epoch never moved) would keep
+    // painting into the wrong chat. Their engaged conversation wins; resume just doesn't happen.
+    if (sessionId === null && liveItems.length === 0 && !busy) {
+      // Resume only a person-started chat. Proactive sessions (materialised from an inbox message)
+      // are opened deliberately via their deep link, never auto-resumed — otherwise a fresh
+      // morning-plan session would silently become "the most recent chat" the Chat button reopens.
+      const recent = sessions.data.find((s) => s.origin === 'user')
+      if (recent && Date.now() - Date.parse(recent.updated_at) < DAY_MS) {
+        setSessionId(recent.id)
+        setHydrateId(recent.id)
+        if (recent.pending) {
+          setPending({
+            toolUseId: recent.pending.awaiting.tool_use_id,
+            summary: recent.pending.awaiting.summary,
+          })
+        }
       }
     }
   }
 
+  // Adopt a halted confirmation from FRESH session data when the UI lost track of it: openSession
+  // can read a sessions snapshot older than the halt, and the halt event itself may arrive on a
+  // BACKGROUNDED stream for a session no longer open. The server records `pending` on the session
+  // row either way — when the refetched row shows one the UI doesn't, restore it. Skip while a run
+  // is in flight (its own events own the state) and skip anything already answered this visit.
+  useEffect(() => {
+    if (busy || pending) return
+    const p = (activeSession?.pending ?? null) as SessionPending | null
+    if (p && !resolvedToolIdsRef.current.has(p.awaiting.tool_use_id)) {
+      setPending({ toolUseId: p.awaiting.tool_use_id, summary: p.awaiting.summary })
+    }
+  }, [busy, pending, activeSession])
+
   const run = useCallback(
     async (body: OutgoingBody) => {
+      const epoch = ++epochRef.current
+      // The stream's own session id: the target session, or — for a brand-new chat — the id the
+      // server mints on the `session` event. Tracked per-stream (not via sessionIdRef) so a
+      // BACKGROUNDED stream still knows which transcript its finished turn belongs to.
+      const stream = { sessionId: body.session_id as string | null }
       setBusy(true)
       setError(null)
       assistantId.current = null
@@ -153,16 +201,18 @@ export function useAiChat() {
         if (!res.ok || !res.body) {
           // Guardrail + input-cap rejections arrive PRE-STREAM as HTTP statuses: 503 = monthly budget
           // kill-switch, 429 = rate limit, 413 = message too large. The turn wasn't persisted.
-          setError(
-            res.status === 503
-              ? 'AI is paused for this month (budget cap reached).'
-              : res.status === 429
-                ? 'Slow down a moment — rate limit reached.'
-                : res.status === 413
-                  ? 'That message is too long — please shorten it.'
-                  : 'Chat failed.',
-          )
-          setBusy(false)
+          if (epoch === epochRef.current) {
+            setError(
+              res.status === 503
+                ? 'AI is paused for this month (budget cap reached).'
+                : res.status === 429
+                  ? 'Slow down a moment — rate limit reached.'
+                  : res.status === 413
+                    ? 'That message is too long — please shorten it.'
+                    : 'Chat failed.',
+            )
+            setBusy(false)
+          }
           return
         }
 
@@ -177,13 +227,16 @@ export function useAiChat() {
           while ((nl = buf.indexOf('\n\n')) !== -1) {
             const line = buf.slice(0, nl)
             buf = buf.slice(nl + 2)
-            if (line.startsWith('data: ')) handleEvent(JSON.parse(line.slice(6)))
+            if (line.startsWith('data: ')) handleEvent(JSON.parse(line.slice(6)), epoch, stream)
           }
         }
       } catch {
-        setError('Chat failed.')
+        // A dropped read on a conversation the user already left is not their problem — only a
+        // stream they're still watching surfaces an error.
+        if (epoch === epochRef.current) setError('Chat failed.')
       } finally {
-        setBusy(false)
+        // A backgrounded stream must not clear `busy` for a run the user has since started.
+        if (epoch === epochRef.current) setBusy(false)
       }
     },
     // handleEvent only touches stable setters + queryClient (stable) + refs — no reactive deps.
@@ -191,14 +244,24 @@ export function useAiChat() {
     [],
   )
 
-  function handleEvent(ev: Record<string, unknown>) {
+  function handleEvent(
+    ev: Record<string, unknown>,
+    epoch: number,
+    stream: { sessionId: string | null },
+  ) {
+    // Live = the user is still in the conversation this stream belongs to. A backgrounded stream
+    // (they switched away mid-turn) keeps its data-level effects but paints nothing.
+    const live = epoch === epochRef.current
     switch (ev.type) {
       case 'session':
-        // Adopt the session id (a brand-new chat learns its id here). Do NOT hydrate it as base —
-        // liveItems already holds this visit's turns; refetching would double-render them.
-        setSessionId(ev.session_id as string)
+        // Record the server-minted id for a brand-new chat; adopt it as the ACTIVE session only
+        // while live (a backgrounded stream must not yank the user back). Do NOT hydrate it as
+        // base — liveItems already holds this visit's turns; refetching would double-render them.
+        stream.sessionId = ev.session_id as string
+        if (live) setSessionId(ev.session_id as string)
         break
       case 'text-delta': {
+        if (!live) break
         const delta = ev.text as string
         if (!assistantId.current) {
           const id = nextId()
@@ -211,6 +274,16 @@ export function useAiChat() {
         break
       }
       case 'tool-result': {
+        // Live-refresh: a successful mutating tool tells us which data domains changed — invalidate
+        // the matching queries so the grid/list/habits/Done update the instant the tool runs. The
+        // data really changed whichever conversation is open, so this runs even backgrounded.
+        if (ev.ok !== false && Array.isArray(ev.mutated)) {
+          for (const domain of ev.mutated as string[]) {
+            const key = DOMAIN_QUERY_KEYS[domain]
+            if (key) void queryClient.invalidateQueries({ queryKey: key })
+          }
+        }
+        if (!live) break
         // A tool result ends the current assistant narration turn — reset so the NEXT turn's text
         // starts a fresh bubble instead of appending onto the pre-tool narration. Without this, a
         // multi-step turn ("On it." → create_task → "All set!") merged into one run-on bubble
@@ -226,31 +299,49 @@ export function useAiChat() {
             { id: nextId(), role: 'tool', text: display, ok: ev.ok as boolean },
           ])
         }
-        // Live-refresh: a successful mutating tool tells us which data domains changed — invalidate
-        // the matching queries so the grid/list/habits/Done update the instant the tool runs.
-        if (ev.ok !== false && Array.isArray(ev.mutated)) {
-          for (const domain of ev.mutated as string[]) {
-            const key = DOMAIN_QUERY_KEYS[domain]
-            if (key) void queryClient.invalidateQueries({ queryKey: key })
-          }
-        }
         break
       }
       case 'tool-pending-confirmation':
-        setPending({ toolUseId: ev.tool_use_id as string, summary: ev.summary as string })
+        // Paint while live — or when the backgrounded stream's session is the one currently OPEN
+        // (the user came back before the halt arrived; no later openSession will restore it from
+        // the row). Otherwise the server-recorded `pending` on the session row surfaces it — via
+        // openSession or the fresh-row adoption effect — when the user returns.
+        if (live || stream.sessionId === sessionIdRef.current) {
+          setPending({ toolUseId: ev.tool_use_id as string, summary: ev.summary as string })
+        }
         break
       case 'message':
         // The assistant turn committed (persisted server-side). The live bubble already holds the
         // streamed text; nothing to adopt (no client history).
-        assistantId.current = null
+        if (live) assistantId.current = null
         break
       case 'done':
         // The session's updated_at (and a brand-new session) changed — refresh the history list.
         void queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_KEY })
+        // A backgrounded turn's bubbles were wiped with liveItems when the user switched away —
+        // its only record is the persisted transcript. Refetch NOW only when that session is open
+        // with an empty live layer (the reply pops into the reopened transcript — the reported
+        // repro). If live turns exist (the user reopened AND sent again), an immediate refetch
+        // would double-render them — their user half is already persisted — so just mark stale;
+        // openSession's invalidate-and-wipe heals it on the next open.
+        if (!live && stream.sessionId) {
+          const openAndClean =
+            hydrateIdRef.current === stream.sessionId && liveCountRef.current === 0
+          void queryClient.invalidateQueries({
+            queryKey: chatMessagesKey(stream.sessionId),
+            ...(openAndClean ? {} : { refetchType: 'none' as const }),
+          })
+        }
         break
       case 'error': {
+        if (!live) break
         const code = ev.code as string
-        if (code === 'stale_confirmation') setPending(null)
+        if (code === 'stale_confirmation') {
+          // Already handled server-side — record it answered so a stale sessions refetch can't
+          // resurrect the confirm card via the adoption effect.
+          if (pendingRef.current) resolvedToolIdsRef.current.add(pendingRef.current.toolUseId)
+          setPending(null)
+        }
         setError(typeof ev.message === 'string' ? (ev.message as string) : 'Chat failed.')
         break
       }
@@ -276,6 +367,9 @@ export function useAiChat() {
       const p = pending
       const sid = sessionIdRef.current
       if (!p || !sid) return
+      // Answered — whatever the outcome, this confirmation must never be re-adopted from a stale
+      // session row (the refetched row lags the server clearing it).
+      resolvedToolIdsRef.current.add(p.toolUseId)
       if (note) setLiveItems((xs) => [...xs, { id: nextId(), role: 'user', text: note }])
       if (approve) {
         setLiveItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Confirmed.', ok: true }])
@@ -322,24 +416,44 @@ export function useAiChat() {
   // turns, and surface any mid-flight confirmation from the row.
   const openSession = useCallback(
     (id: string) => {
+      // Background any in-flight stream — its remaining events belong to the conversation the user
+      // just left, not this one (see the epoch checks in handleEvent). Busy clears with it so the
+      // opened conversation isn't silently send-blocked by a turn running elsewhere.
+      epochRef.current++
       setSessionId(id)
       setHydrateId(id)
       setLiveItems([])
+      setBusy(false)
       setError(null)
       assistantId.current = null
       seedRef.current = null
+      // The persisted base may be STALE: it hydrates once per visit (staleTime Infinity), so any
+      // turn streamed since then exists only in the liveItems the wipe above just discarded.
+      // Refetch it in the same act — without this, a message sent before leaving the chat (and its
+      // reply) simply vanishes on reopen while the session list still previews the reply. The
+      // double-render the hydration comments warn about can't happen here: liveItems is emptied in
+      // the same render batch, so the refetched base is the transcript's sole source.
+      void queryClient.invalidateQueries({ queryKey: chatMessagesKey(id) })
       const s = sessions.data?.find((x) => x.id === id)
       const p = s?.pending as SessionPending | null | undefined
-      setPending(p ? { toolUseId: p.awaiting.tool_use_id, summary: p.awaiting.summary } : null)
+      // The row can lag the server clearing an answered confirmation — never resurrect one.
+      setPending(
+        p && !resolvedToolIdsRef.current.has(p.awaiting.tool_use_id)
+          ? { toolUseId: p.awaiting.tool_use_id, summary: p.awaiting.summary }
+          : null,
+      )
     },
-    [sessions.data],
+    [sessions.data, queryClient],
   )
 
   // Start a fresh conversation (created on the first send).
   const newChat = useCallback(() => {
+    // Background any in-flight stream (same as openSession) so it can't paint into the fresh chat.
+    epochRef.current++
     setSessionId(null)
     setHydrateId(null)
     setLiveItems([])
+    setBusy(false)
     setPending(null)
     setError(null)
     assistantId.current = null
