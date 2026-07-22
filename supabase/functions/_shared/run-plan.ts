@@ -12,6 +12,7 @@ import { anthropic, MODEL, MAX_TOKENS } from './anthropic.ts'
 import { getWeather } from './weather.ts'
 import { localDateInTZ } from './dates.ts'
 import { buildPlanRequest } from './plan-inputs.ts'
+import { HABITS_FETCH_LIMIT, TASKS_FETCH_LIMIT } from './write-caps.ts'
 import {
   SYSTEM_PROMPT,
   EMIT_PLAN_TOOL,
@@ -82,8 +83,12 @@ export async function runPlanForUser(
         .is('deleted_at', null)
         // Exclude permanently completed one-off tasks (tasks.completed_at) so a task done on a prior
         // day can't reappear in a generated plan — mirrors the dispatch RPC's completed_at filter.
-        .is('completed_at', null),
-      client.from('habits').select('text, active').is('deleted_at', null),
+        .is('completed_at', null)
+        // Bounded fetch (write-caps.ts), newest first so truncation for an at-cap account drops
+        // the stalest tail, not arbitrary rows.
+        .order('created_at', { ascending: false })
+        .limit(TASKS_FETCH_LIMIT),
+      client.from('habits').select('text, active').is('deleted_at', null).limit(HABITS_FETCH_LIMIT),
       client.from('daily_state').select('done').eq('date', date).maybeSingle(),
       // Saved memories (RLS-scoped). Always fetched (≤30 rows); only USED when memory is on.
       client.from('assistant_memories').select('content').order('created_at', { ascending: true }),

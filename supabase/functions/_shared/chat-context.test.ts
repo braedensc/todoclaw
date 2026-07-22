@@ -27,7 +27,12 @@ function fakeClient(seed: Seed): SupabaseClient {
       select: () => api,
       is: (col: string, val: unknown) => (filters.push({ op: 'is', col, val }), api),
       eq: (col: string, val: unknown) => (filters.push({ op: 'eq', col, val }), api),
-      order: () => Promise.resolve({ data: rows() }),
+      // .order() must stay awaitable (the memories query ends there) AND accept a chained
+      // .limit(n) (tasks/habits/reminders end with one now) — a thenable with a limit method.
+      order: () =>
+        Object.assign(Promise.resolve({ data: rows() }), {
+          limit: (n: number) => Promise.resolve({ data: rows().slice(0, n) }),
+        }),
       maybeSingle: () => Promise.resolve({ data: rows()[0] ?? null }),
     }
     return api
