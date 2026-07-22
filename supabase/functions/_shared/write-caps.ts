@@ -4,7 +4,7 @@
 // (the "million tasks via curl" class) — on the shared free-tier database, storage exhaustion is
 // a whole-app outage, so boundedness is an availability guard, not a UX quota.
 //
-// The DB_* values MIRROR the SQL in 20260721150000_write_path_volume_caps.sql — the database is
+// The DB_* values MIRROR the SQL in 20260722100000_write_path_volume_caps.sql — the database is
 // the enforcement point; these constants exist so tests can pin both sides against the same
 // numbers (write-caps.test.ts here, src/lib/db-write-caps.test.ts over the migration text).
 

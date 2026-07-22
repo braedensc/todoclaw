@@ -6,10 +6,10 @@
 // without touching this table) fails loudly. The deno side (write-caps.test.ts) holds the
 // semantic cross-invariants.
 import { describe, expect, it } from 'vitest'
-import sql from '../../supabase/migrations/20260721150000_write_path_volume_caps.sql?raw'
+import sql from '../../supabase/migrations/20260722100000_write_path_volume_caps.sql?raw'
 import ts from '../../supabase/functions/_shared/write-caps.ts?raw'
 
-const MIGRATION = 'supabase/migrations/20260721150000_write_path_volume_caps.sql'
+const MIGRATION = 'supabase/migrations/20260722100000_write_path_volume_caps.sql'
 
 // One row per cap: the number the migration must enforce, where it appears in the SQL, and the
 // write-caps.ts constant that mirrors it.

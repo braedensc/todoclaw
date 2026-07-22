@@ -16,7 +16,7 @@ UX quota. The 2026-07-06 audit also flagged the direct `task_reminders` INSERT g
 
 ## Decision
 
-Migration `20260721150000_write_path_volume_caps.sql` bounds the entire client-writable surface,
+Migration `20260722100000_write_path_volume_caps.sql` bounds the entire client-writable surface,
 modeled on the existing cap-trigger pattern, with caps sized orders of magnitude above legit use:
 
 - **Size CHECKs** — `char_length` on every free-text column (task/habit/history text 2000, matching
