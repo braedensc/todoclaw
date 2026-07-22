@@ -6,7 +6,7 @@
 
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
-import { userClient, requireUser } from '../_shared/auth.ts'
+import { userClient, adminClient, requireUser } from '../_shared/auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from '../_shared/anthropic.ts'
 import { precheck, recordUsage } from '../_shared/guardrails.ts'
 import { getWeather } from '../_shared/weather.ts'
@@ -61,8 +61,11 @@ Deno.serve(async (req) => {
       ? ((memRes.data ?? []) as { content: string }[]).map((m) => m.content)
       : []
     // No location set → skip the weather line entirely (don't default to any city's weather).
+    // The weather_cache is server-only (service_role): pass adminClient(), NOT the user client —
+    // getWeather uses it solely for the cache RPCs (never a user table). See weather.ts / migration
+    // 20260721000000.
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
-    const weather = location ? await getWeather(client, location) : null
+    const weather = location ? await getWeather(adminClient(), location) : null
 
     const a = anthropic()
     const msg = await a.messages.create({

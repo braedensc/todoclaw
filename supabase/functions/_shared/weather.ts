@@ -2,6 +2,12 @@
 // the forecast AND `nearest_area` (the place wttr.in's geocoder actually picked). Cached ~30min in
 // weather_cache (DEFINER get/put).
 //
+// The weather_cache is SERVER-ONLY: its get/put RPCs are granted to service_role, never to
+// `authenticated` (migration 20260721000000). getWeather therefore takes a service-role client and
+// uses it SOLELY for those two cache RPCs — it never touches user tables — so an invited user can
+// no longer write arbitrary text into another user's cached weather (which the plan prompt folds in
+// verbatim). The cached value is always the summary THIS module fetched from wttr.in, or a sentinel.
+//
 // Weather is OPTIONAL context for Plan My Day: any failure (network, parse, timeout) returns null
 // and the plan is built without it. resolveLocation() is the deliberate exception — it exists to
 // TELL the user what their location matched, so it reports why it failed instead of swallowing it.
@@ -39,6 +45,8 @@ type J1Result =
 
 // Current-conditions summary for the plan prompt, or null if unavailable for ANY reason.
 // Contract: this never throws and never surfaces a failure — weather is additive context.
+// `client` MUST be a service-role client (adminClient): the weather_cache RPCs are granted to
+// service_role only, and it is used here solely for those two cache calls, nothing else.
 export async function getWeather(client: SupabaseClient, location: string): Promise<string | null> {
   const cached = await cacheGet(client, location)
   if (cached === NOT_FOUND_SENTINEL) return null // negative hit — skip the doomed fetch entirely

@@ -387,9 +387,14 @@ export function buildUserPrompt(
         memLines.map((m) => `- ${m}`).join('\n'),
     )
   }
-  if (weather) {
+  // Weather comes from a shared cache. Even though writes are now service_role-only (migration
+  // 20260721000000), treat the value as UNTRUSTED at the fold: defang+single-line it exactly like
+  // memories/notes so a stale or pre-fix-poisoned entry can't forge a section header or add prompt
+  // lines, and cap it (real summaries run ~80 chars). Non-empty after sanitizing ⇒ render.
+  const weatherLine = weather ? sanitizeForPrompt(weather, 200) : ''
+  if (weatherLine) {
     blocks.push(
-      `=== WEATHER ===\n${weather}` +
+      `=== WEATHER ===\n${weatherLine}` +
         (req.dayOfWeek === 'Saturday' || req.dayOfWeek === 'Sunday'
           ? '\nIf it is nice out, lean toward outdoor tasks or activities.'
           : ''),

@@ -131,6 +131,64 @@ async function runAnonProbe(client, failures, warnings) {
   }
 }
 
+// E. weather_cache is SERVER-ONLY. Its DEFINER get/put RPCs must be callable ONLY by service_role
+// (migration 20260721000000). That write path used to be granted to `authenticated`, letting any
+// invited user poison another user's cached weather — which plan-my-day folds verbatim into that
+// victim's LLM prompt — and storage-bomb the un-scoped table. Here we assume each non-service role
+// and confirm the call is DENIED (42501 = insufficient_privilege), then confirm service_role CAN
+// call it (positive control — otherwise a missing/renamed function would make the denials pass
+// vacuously with 42883 undefined_function). All inside one transaction that is rolled back.
+async function runWeatherCacheGrantProbe(client, failures) {
+  const PUT = `select public.weather_cache_put('_wc_grant_probe', 'x')`
+  const GET = `select public.weather_cache_get('_wc_grant_probe', 60)`
+  await client.query('begin')
+  try {
+    for (const role of ['authenticated', 'anon']) {
+      await client.query(`set local role ${role}`)
+      for (const [label, sql] of [
+        ['weather_cache_put', PUT],
+        ['weather_cache_get', GET],
+      ]) {
+        await client.query('savepoint sp')
+        let code = null
+        try {
+          await client.query(sql)
+        } catch (e) {
+          code = e.code // '42501' = permission denied for function (what we require)
+        }
+        await client.query('rollback to savepoint sp')
+        if (code !== '42501') {
+          failures.push(
+            `weather_cache grant: role "${role}" could call ${label} — expected permission-denied ` +
+              `(42501), got ${code ?? 'NO error, the call SUCCEEDED'}. The weather cache must be ` +
+              `service_role-only (migration 20260721000000); a non-service grant is the cross-tenant hole.`,
+          )
+        }
+      }
+      await client.query('reset role')
+    }
+    // Positive control: the legitimate server path (service_role) must still work.
+    await client.query('set local role service_role')
+    await client.query('savepoint sp')
+    let ctrlErr = null
+    try {
+      await client.query(PUT)
+    } catch (e) {
+      ctrlErr = `${e.code} ${e.message}`
+    }
+    await client.query('rollback to savepoint sp')
+    await client.query('reset role')
+    if (ctrlErr) {
+      failures.push(
+        `weather_cache grant: service_role could NOT call weather_cache_put (${ctrlErr}) — the ` +
+          `legitimate server write path is broken (the denials above would pass vacuously).`,
+      )
+    }
+  } finally {
+    await client.query('rollback')
+  }
+}
+
 async function main() {
   if (!DB_URL) {
     console.error(
@@ -196,6 +254,9 @@ async function main() {
         'SUPABASE_ANON_KEY not set — skipped the end-to-end anon REST probe (A–C still ran).',
       )
     }
+
+    // E. weather_cache RPCs are service_role-only (needs only the DB connection).
+    await runWeatherCacheGrantProbe(client, failures)
   } finally {
     await client.end()
   }
