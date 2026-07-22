@@ -5,8 +5,12 @@ planning/
 .env
 .env.local
 .env*.local
+.env.eval
 *.pem
 *.key
+
+# Prompt-eval harness run artifacts (may embed model transcripts — local only)
+evals/results/
 
 # Dependencies
 node_modules/
