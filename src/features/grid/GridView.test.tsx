@@ -45,23 +45,34 @@ let doneTodayFixture: Record<string, boolean> = {}
 
 vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksFixture }),
-  useUpdateTask: () => ({ mutate: updateMutate }),
+  // Due writes go through the shared setDue hook's mutateAsync; forwarding it to the same spy
+  // keeps every write-path assertion on the one updateMutate ledger.
+  useUpdateTask: () => ({
+    mutate: updateMutate,
+    mutateAsync: async (vars: unknown) => updateMutate(vars),
+  }),
   useSoftDeleteTask: () => ({ mutate: softDeleteMutate }),
 }))
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: markDoneMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
-  useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
+  useUserSchedule: () => ({ data: { timezone: 'America/New_York', config: {} } }),
 }))
 vi.mock('../daily-state/use-daily-state', () => ({
   useDailyState: () => ({
     data: { done: doneTodayFixture, done_at: {}, habit_done: {}, subtask_done: {} },
   }),
 }))
+const reminderAdd = vi.fn()
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
+  useTaskReminderWrites: () => ({
+    add: reminderAdd,
+    remove: vi.fn(),
+    clear: vi.fn(),
+    toggle: vi.fn(),
+  }),
 }))
 
 // Build a Task with sane defaults; override per test.
@@ -426,7 +437,7 @@ describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
     expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
   })
 
-  it('time presets: disabled until a date exists, write both columns; No date clears both', () => {
+  it('time presets: disabled until a date exists, write both columns; No date clears both', async () => {
     tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false })]
     const noDate = render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
@@ -443,6 +454,9 @@ describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
       id: 'm',
       patch: { due: '2026-08-01', due_time: '18:00' },
     })
+    // First due time on a reminder-less task → the user's default reminder (1 hour) is seeded
+    // after the write lands, same as the add forms and BabyClaw.
+    await waitFor(() => expect(reminderAdd).toHaveBeenCalledWith('m', 60))
 
     // Clearing the date clears the time with it (the DB CHECK forbids a dangling time).
     fireEvent.click(screen.getByRole('button', { name: 'No date' }))

@@ -6,6 +6,7 @@ import { minutesUntilDueTime } from '../../lib/dates'
 import { clusterStaleness, staleRingStyle, urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
+import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -93,6 +94,10 @@ export function GridSurface({
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
 
+  // Due writes (card ⋯ menu + cluster rows) go through the shared setDue so a task gaining its
+  // first due time picks up the user's default reminder, like every other schedule surface.
+  const setDue = useSetDueWithDefaultReminder()
+
   // Set/clear the ongoing-project flag (shared by a card's ⋯ menu and a cluster row). Setting it
   // true also clears any recurring schedule, keeping the two types exclusive in a single mutation.
   const setOngoing = (task: Task, on: boolean) =>
@@ -149,9 +154,10 @@ export function GridSurface({
   }
 
   // One placed card. Shared by the singleton-cluster render and the standalone dragged-card
-  // render so both stay byte-for-byte identical (same handlers, same node registration). All of
-  // due/recurring/rename reuse the one generic updateMutate({ id, patch }); a due write sets `due`
-  // ONLY — it never touches x/y, so setting a due date on a manually-placed card can't move it.
+  // render so both stay byte-for-byte identical (same handlers, same node registration).
+  // recurring/rename reuse the one generic updateMutate({ id, patch }); a due write goes through
+  // setDue and sets `due`/`due_time` ONLY — it never touches x/y, so setting a due date on a
+  // manually-placed card can't move it.
   const renderGridCard = (task: Task & { x: number; y: number }) => {
     // Re-clamp the stored coords to the card's bounding box at the current grid width (screen
     // position only — task.x/task.y and clustering are unchanged).
@@ -171,7 +177,7 @@ export function GridSurface({
         onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
         onDelete={() => handleDelete(task)}
         onDone={() => doneWithStamp(task)}
-        onSetDue={(due, due_time) => updateMutate({ id: task.id, patch: { due, due_time } })}
+        onSetDue={(due, due_time) => setDue(task, due, due_time)}
         reminderOffsets={reminders?.get(task.id) ?? []}
         onToggleReminder={(minutes) =>
           reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
@@ -338,9 +344,7 @@ export function GridSurface({
                     onRowPointerDown={startPopupRowDrag}
                     // Row ⋯ schedule menu — the SAME write wiring renderGridCard gives a card's
                     // ⋯ (a due write never touches x/y; Daily/Weekly preserve recurring history).
-                    onSetDue={(task, due, due_time) =>
-                      updateMutate({ id: task.id, patch: { due, due_time } })
-                    }
+                    onSetDue={(task, due, due_time) => setDue(task, due, due_time)}
                     onSetRecurring={(task, frequencyDays) =>
                       updateMutate({
                         id: task.id,
