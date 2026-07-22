@@ -39,14 +39,18 @@
 --     bounds exceed anything a legit snapshot can contain. A snapshot holding abuse-sized
 --     content fails the restore ATOMICALLY (plpgsql aborts the transaction — no partial state),
 --     which is the correct outcome for restoring abuse.
---   • task_reminders: the 2026-07-06 audit flagged the direct INSERT grant as unused — every app
---     write goes through set_task_reminder / remove_task_reminder / clear_task_reminder (verified
---     again by grep: the only direct .from('task_reminders') calls are SELECTs). But the grant
---     was load-bearing anyway: set_task_reminder was SECURITY INVOKER, so its INSERT ran with the
---     caller's table privileges. It becomes SECURITY DEFINER here with explicit auth.uid()
---     fencing (the ownership checks RLS used to provide), and the direct INSERT grant + policy
---     are then revoked/dropped for real. UPDATE/DELETE grants stay: the INVOKER recompute
---     triggers (due/tz/recurring edits) and remove/clear RPCs still run as the caller.
+--   • task_reminders goes SELECT-only for clients (the chat_sessions model). The 2026-07-06
+--     audit flagged the direct INSERT grant as unused — every app write goes through
+--     set_task_reminder / remove_task_reminder / clear_task_reminder (verified again by grep:
+--     the only direct .from('task_reminders') calls are SELECTs) — and the direct UPDATE grant
+--     was live abuse surface too: `update … set sent_at = null` re-arms an already-sent reminder
+--     to re-fire push after push. But all four grants were load-bearing: the write RPCs and the
+--     three recompute trigger functions were SECURITY INVOKER, running their DML with the
+--     CALLER's table privileges. Each becomes SECURITY DEFINER here — the RPCs with explicit
+--     auth.uid() fencing (the ownership check RLS used to provide), the trigger functions safe
+--     by construction (their DML is keyed to the row that fired them, which tasks/user_schedule
+--     RLS already confined to the caller) — and then INSERT/UPDATE/DELETE grants + policies are
+--     revoked/dropped for real.
 --   • weather_cache is deliberately NOT touched here: the parallel fix (PR #310, migration
 --     20260722000000_weather_cache_service_only.sql) revokes its RPCs from authenticated
 --     entirely — a strictly stronger cure for the same abuse vector. Re-creating the function
@@ -116,10 +120,16 @@
 --   alter table public.push_subscriptions drop constraint if exists push_subscriptions_endpoint_len,
 --     drop constraint if exists push_subscriptions_p256dh_len,
 --     drop constraint if exists push_subscriptions_auth_len;
---   -- re-create set_task_reminder (INVOKER) from 20260712000000_recurring_reminders_unify.sql, then:
---   grant insert on public.task_reminders to authenticated;
+--   -- re-create as INVOKER: set_task_reminder + the three recompute trigger fns from
+--   -- 20260712000000_recurring_reminders_unify.sql, remove_task_reminder from 20260711000000,
+--   -- clear_task_reminder from 20260709041944; then:
+--   grant insert, update, delete on public.task_reminders to authenticated;
 --   create policy "task_reminders_insert_own" on public.task_reminders
 --     for insert to authenticated with check (user_id = auth.uid());
+--   create policy "task_reminders_update_own" on public.task_reminders
+--     for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+--   create policy "task_reminders_delete_own" on public.task_reminders
+--     for delete to authenticated using (user_id = auth.uid());
 -- ----------------------------------------------------------------------------
 
 -- ============================================================================
@@ -367,7 +377,7 @@ create trigger daily_state_date_move
   execute function public.daily_state_date_check();
 
 -- ============================================================================
--- 4) set_task_reminder → SECURITY DEFINER; revoke the direct INSERT path
+-- 4) task_reminders → SELECT-only for clients; every write path becomes DEFINER
 -- ============================================================================
 
 -- Body identical to 20260712000000 except: DEFINER (RLS no longer applies inside), so the task
@@ -431,8 +441,149 @@ $$;
 revoke all on function public.set_task_reminder(uuid, int) from public;
 grant execute on function public.set_task_reminder(uuid, int) to authenticated;
 
--- With the only INSERTer now DEFINER, the direct client INSERT surface closes for real. UPDATE
--- and DELETE grants remain — the INVOKER recompute trigger functions and the remove/clear RPCs
--- run those as the caller (and RLS scopes them to own rows).
-revoke insert on public.task_reminders from authenticated;
+-- remove/clear: bodies verbatim (20260711000000 / 20260709041944) + DEFINER + the explicit
+-- user_id = auth.uid() fence RLS used to provide. A null auth.uid() matches nothing — a no-JWT
+-- call is a safe no-op, matching the RPCs' existing "not theirs ⇒ no-op" contract.
+create or replace function public.remove_task_reminder(p_task_id uuid, p_offset_minutes int)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.task_reminders
+   where task_id = p_task_id and offset_minutes = p_offset_minutes and user_id = auth.uid();
+$$;
+
+create or replace function public.clear_task_reminder(p_task_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.task_reminders where task_id = p_task_id and user_id = auth.uid();
+$$;
+
+revoke all on function public.remove_task_reminder(uuid, int) from public;
+grant execute on function public.remove_task_reminder(uuid, int) to authenticated;
+revoke all on function public.clear_task_reminder(uuid) from public;
+grant execute on function public.clear_task_reminder(uuid) to authenticated;
+
+-- The three recompute trigger functions: bodies verbatim from 20260712000000, INVOKER →
+-- DEFINER only. Their DML never ranges beyond the firing row's task/user — task_id = new.id is
+-- the tasks row the caller just wrote under tasks RLS, r.user_id = new.user_id is their own
+-- user_schedule row — so DEFINER widens nothing; it only stops the recompute depending on the
+-- caller holding table UPDATE/DELETE (which authenticated no longer does, below).
+create or replace function public.task_reminders_recompute_fn()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tz   text;
+  v_freq int;
+begin
+  if new.due is null or new.due_time is null then
+    delete from public.task_reminders where task_id = new.id;
+    return new;
+  end if;
+
+  select timezone into v_tz from public.user_schedule where user_id = new.user_id;
+  v_tz := coalesce(v_tz, 'UTC');
+
+  if new.recurring is not null then
+    v_freq := (new.recurring ->> 'frequencyDays')::int;
+    update public.task_reminders
+       set fire_at = public.next_recurring_fire_at(new.due, new.due_time, v_freq,
+                                                   offset_minutes, v_tz),
+           sent_at = null
+     where task_id = new.id;
+  else
+    update public.task_reminders
+       set fire_at = public.reminder_fire_at(new.due, new.due_time, v_tz, offset_minutes),
+           sent_at = null
+     where task_id = new.id;
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.task_reminders_tz_recompute_fn()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.task_reminders r
+     set fire_at = public.reminder_fire_at(t.due, t.due_time, new.timezone, r.offset_minutes)
+    from public.tasks t
+   where r.task_id = t.id
+     and r.user_id = new.user_id
+     and r.sent_at is null
+     and t.recurring is null
+     and t.due is not null
+     and t.due_time is not null;
+
+  update public.task_reminders r
+     set fire_at = public.next_recurring_fire_at(
+                     t.due, t.due_time,
+                     (t.recurring ->> 'frequencyDays')::int, r.offset_minutes, new.timezone)
+    from public.tasks t
+   where r.task_id = t.id
+     and r.user_id = new.user_id
+     and r.sent_at is null
+     and t.recurring is not null
+     and t.due is not null
+     and t.due_time is not null;
+
+  return new;
+end;
+$$;
+
+create or replace function public.task_reminders_recurring_change_fn()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tz   text;
+  v_freq int;
+begin
+  if new.due is null or new.due_time is null then
+    return new;
+  end if;
+
+  select timezone into v_tz from public.user_schedule where user_id = new.user_id;
+  v_tz := coalesce(v_tz, 'UTC');
+
+  if new.recurring is null then
+    update public.task_reminders
+       set fire_at = public.reminder_fire_at(new.due, new.due_time, v_tz, offset_minutes),
+           sent_at = null
+     where task_id = new.id;
+  elsif old.recurring is null
+        or (old.recurring ->> 'frequencyDays') is distinct from (new.recurring ->> 'frequencyDays')
+  then
+    v_freq := (new.recurring ->> 'frequencyDays')::int;
+    update public.task_reminders
+       set fire_at = public.next_recurring_fire_at(new.due, new.due_time, v_freq,
+                                                   offset_minutes, v_tz),
+           sent_at = null
+     where task_id = new.id;
+  end if;
+
+  return new;
+end;
+$$;
+
+-- Every write path is now DEFINER (the system sweep RPCs already were) — close the direct
+-- client DML surface entirely. SELECT stays: use-task-reminders / chat-context read directly.
+-- The UPDATE revoke also retires the live re-fire hole: `set sent_at = null` on an already-sent
+-- row re-armed it for the minute sweep to push again, endlessly.
+revoke insert, update, delete on public.task_reminders from authenticated;
 drop policy if exists "task_reminders_insert_own" on public.task_reminders;
+drop policy if exists "task_reminders_update_own" on public.task_reminders;
+drop policy if exists "task_reminders_delete_own" on public.task_reminders;

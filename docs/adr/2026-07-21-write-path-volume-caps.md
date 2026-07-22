@@ -35,10 +35,12 @@ modeled on the existing cap-trigger pattern, with caps sized orders of magnitude
 - **daily_state** — a ±14-day date **window** on insert/date-move instead of a row cap: rows are
   keyed one per (user, local day), so bounding writable dates bounds growth to ~one row per real
   day, forever.
-- **task_reminders INSERT revoked** — `set_task_reminder` becomes SECURITY DEFINER with an explicit
-  `user_id = auth.uid()` fence (the grant was load-bearing only because the RPC was INVOKER), then
-  the direct grant + insert policy are dropped. UPDATE/DELETE grants stay for the INVOKER recompute
-  triggers and remove/clear RPCs.
+- **task_reminders goes SELECT-only for clients** (the chat_sessions model). All four write grants
+  were load-bearing only because the write RPCs and the three recompute trigger functions were
+  INVOKER — and the direct UPDATE grant was live abuse surface (`set sent_at = null` re-arms a sent
+  reminder to re-fire push after push). Every writer (`set_task_reminder`, `remove_task_reminder`,
+  `clear_task_reminder`, the due/tz/recurring recompute trigger fns) becomes SECURITY DEFINER with
+  explicit fencing, then INSERT/UPDATE/DELETE grants + policies are dropped.
 - **weather_cache** — deliberately left alone: the parallel ADR 2026-07-21-weather-cache-service-only
   (PR #310) revokes its RPCs from `authenticated` entirely, a strictly stronger fix for the same
   abuse vector; touching the function here would race that migration's grants.

@@ -132,15 +132,35 @@ describe('write-path volume caps: migration SQL and write-caps.ts agree', () => 
     }
   })
 
-  it('the direct task_reminders INSERT surface is closed, with the RPC flipped to DEFINER', () => {
-    // The 2026-07-06 audit item: all app writes go through the reminder RPCs, so the direct
-    // PostgREST INSERT path is revoked — which only works because set_task_reminder no longer
-    // runs the insert as the caller (SECURITY DEFINER + an explicit ownership fence).
-    expect(sql).toMatch(/revoke insert on public\.task_reminders from authenticated;/)
-    expect(sql).toMatch(/drop policy if exists "task_reminders_insert_own"/)
+  it('task_reminders is SELECT-only: all three write grants revoked, every writer DEFINER', () => {
+    // The 2026-07-06 audit item plus the sent_at=null re-fire hole: all app writes go through
+    // the reminder RPCs, so the direct PostgREST INSERT/UPDATE/DELETE paths are revoked — which
+    // only works because every function that writes the table (the RPCs AND the recompute
+    // trigger fns) stopped running its DML as the caller (SECURITY DEFINER + explicit fences).
     expect(sql).toMatch(
-      /create or replace function public\.set_task_reminder[\s\S]*?security definer/,
+      /revoke insert, update, delete on public\.task_reminders from authenticated;/,
     )
+    for (const policy of [
+      'task_reminders_insert_own',
+      'task_reminders_update_own',
+      'task_reminders_delete_own',
+    ]) {
+      expect(sql).toMatch(new RegExp(`drop policy if exists "${policy}"`))
+    }
+    for (const fn of [
+      'set_task_reminder',
+      'remove_task_reminder',
+      'clear_task_reminder',
+      'task_reminders_recompute_fn',
+      'task_reminders_tz_recompute_fn',
+      'task_reminders_recurring_change_fn',
+    ]) {
+      expect(sql, `${fn} must be re-created SECURITY DEFINER`).toMatch(
+        new RegExp(
+          `create or replace function public\\.${fn}\\([^)]*\\)[\\s\\S]*?security definer`,
+        ),
+      )
+    }
     expect(sql).toMatch(/where id = p_task_id and user_id = auth\.uid\(\) and deleted_at is null/)
   })
 
