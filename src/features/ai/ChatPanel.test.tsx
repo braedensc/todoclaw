@@ -309,6 +309,14 @@ describe('ChatPanel', () => {
       act(() => listeners.forEach((cb) => cb()))
     }
 
+    // Installed PWA (Home Screen): iOS shrinks the LAYOUT viewport too, so innerHeight drops with
+    // vv.height and the old `innerHeight - vv.height` overlap collapses to ~0 — the reporter's bug.
+    function openKeyboardStandalone(height: number): void {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER - height })
+      vv.height = INNER - height
+      act(() => listeners.forEach((cb) => cb()))
+    }
+
     it('keeps the sheet clear of the status bar while the keyboard is up', () => {
       render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
       const sheet = screen.getByLabelText('Chat')
@@ -325,6 +333,20 @@ describe('ChatPanel', () => {
       // …and held below the status bar. Without this the grab handle and the BabyClaw header render
       // behind it — invisible but still touch-live, so a finger reaching for the header grabbed the
       // hidden handle and dragged the whole sheet down.
+      expect(sheet.className).toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+    })
+
+    // The reporter's case: in the installed PWA the keyboard shrank innerHeight too, so the old
+    // overlap read ~0 and the sheet never re-fitted — the composer stayed behind the keys. The
+    // baseline-based detection now trips, and the sheet re-fits into the visible band (bottom ~0
+    // because `fixed` is relative to the now-shrunk layout viewport).
+    it('re-fits the sheet in an installed PWA where innerHeight also shrinks', () => {
+      render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
+      const sheet = screen.getByLabelText('Chat')
+      openKeyboardStandalone(336)
+      const style = sheet.getAttribute('style') ?? ''
+      expect(style).toMatch(/bottom:\s*0px/)
+      expect(style).toMatch(/height:\s*464px/)
       expect(sheet.className).toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
     })
   })
