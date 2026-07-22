@@ -29,13 +29,19 @@ function task(id: string, over: Partial<Task> = {}): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
-    created_at: '2026-07-01T00:00:00Z',
+    created_at: new Date(Date.now() - 86_400_000).toISOString(), // yesterday — never ❄️-stale
     deleted_at: null,
     completed_at: null,
     start_date: null,
     ...over,
   }
 }
+
+// Fixture dates must be RELATIVE to the real clock (rows style from daysUntil(now)): a fixed
+// "permanently overdue" string eventually drifts ≥21d past due, where the ❄️ stale lane replaces
+// the warm 🔥 treatment this suite pins (that rot bit CI on 2026-07-21). Two days ago = always
+// overdue, never anywhere near the stale flip.
+const DUE_OVERDUE = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)
 
 const recurring: Recurring = { frequencyDays: 7, lastDoneAt: null, doneCount: 0 }
 
@@ -81,8 +87,7 @@ function renderPopup(group: Task[], onRowPointerDown: () => () => void = () => v
 
 describe('ClusterPopup row card-twin styling', () => {
   it('gives an overdue one-off row the full card treatment; an undated row stays plain', () => {
-    // '2026-07-01' is permanently in the past → always overdue relative to "now".
-    const { row } = renderPopup([task('over', { due: '2026-07-01' }), task('plain')])
+    const { row } = renderPopup([task('over', { due: DUE_OVERDUE }), task('plain')])
     const over = row('over')
     // Ring + pulse + warm tint — the same three channels a standalone grid card gets.
     expect(over?.style.background).toBeTruthy()
@@ -97,7 +102,7 @@ describe('ClusterPopup row card-twin styling', () => {
   })
 
   it('borders every row like its grid card: status top border + accent sides', () => {
-    const { row } = renderPopup([task('over', { due: '2026-07-01' })])
+    const { row } = renderPopup([task('over', { due: DUE_OVERDUE })])
     const style = row('over')?.style
     expect(style?.borderTopWidth).toBe('3px')
     expect(style?.borderTopColor).toBeTruthy() // quadrant color for a one-off
@@ -106,7 +111,7 @@ describe('ClusterPopup row card-twin styling', () => {
 
   it('keeps a recurring row on plain paper with dashed accent sides (its own status color)', () => {
     // Even overdue-on-cadence, a recurring task takes no urgency tier here.
-    const { row } = renderPopup([task('rec', { due: '2026-07-01', recurring })])
+    const { row } = renderPopup([task('rec', { due: DUE_OVERDUE, recurring })])
     const rec = row('rec')
     expect(rec?.style.background).toBe('')
     expect(rec?.style.borderRightStyle).toBe('dashed')
@@ -131,7 +136,7 @@ describe('ClusterPopup row ⋯ schedule menu', () => {
   })
 
   it('panel writes route to the row task: Recurring starts a fresh schedule, No date clears due', () => {
-    const p = renderPopup([task('a', { due: '2026-07-01' })])
+    const p = renderPopup([task('a', { due: DUE_OVERDUE })])
     fireEvent.click(screen.getByRole('button', { name: 'Due date and recurring' }))
 
     // The type switch's "Recurring" seeds a fresh weekly schedule on THIS row.
