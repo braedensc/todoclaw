@@ -10,7 +10,13 @@ import { loadChatContext, planSummary } from './chat-context.ts'
 import { buildSystem } from './chat-prompt.ts'
 
 type Row = Record<string, unknown>
-type Seed = { user_schedule?: Row[]; tasks?: Row[]; habits?: Row[]; daily_state?: Row[] }
+type Seed = {
+  user_schedule?: Row[]
+  tasks?: Row[]
+  habits?: Row[]
+  daily_state?: Row[]
+  task_activity?: Row[]
+}
 
 // A minimal query-builder fake that honors the chained filters loadChatContext uses (.is / .eq).
 // A row passes `.is(col, null)` only when the column is null/undefined and `.eq(col, v)` when equal,
@@ -23,12 +29,17 @@ function fakeClient(seed: Seed): SupabaseClient {
   const builder = (table: string) => {
     const filters: { op: 'is' | 'eq'; col: string; val: unknown }[] = []
     const rows = () => (tables[table] ?? []).filter((r) => passes(r, filters))
+    // Chainable + thenable: `.order()`/`.limit()` return the builder (so `.order().limit()` works),
+    // and awaiting the builder anywhere in the chain resolves the filtered rows (via `.then`).
     const api = {
       select: () => api,
       is: (col: string, val: unknown) => (filters.push({ op: 'is', col, val }), api),
       eq: (col: string, val: unknown) => (filters.push({ op: 'eq', col, val }), api),
-      order: () => Promise.resolve({ data: rows() }),
+      order: () => api,
+      limit: () => api,
       maybeSingle: () => Promise.resolve({ data: rows()[0] ?? null }),
+      then: (onF: (v: { data: Row[] }) => unknown, onR?: (e: unknown) => unknown) =>
+        Promise.resolve({ data: rows() }).then(onF, onR),
     }
     return api
   }
@@ -365,5 +376,39 @@ Deno.test(
       "=== TODAY'S PLAN (already generated; ✓ = that item is already done) ===",
     )
     assertStringIncludes(system, 'Big rock: ✓ Grab the groceries (morning, ~30min).')
+  },
+)
+
+Deno.test(
+  "loadChatContext: today's task_activity renders in the ACTIVITY block; a prior-day row is dropped",
+  async () => {
+    const client = fakeClient({
+      user_schedule: [SCHED],
+      tasks: [liveTask],
+      daily_state: [{ date: '2026-07-04', done: {}, habit_done: {}, subtask_done: {} }],
+      task_activity: [
+        // NOW is 2026-07-04T15:00Z = afternoon in America/New_York → local day 2026-07-04.
+        {
+          kind: 'completed',
+          task_text: 'Pay rent',
+          detail: {},
+          created_at: '2026-07-04T14:00:00Z',
+        },
+        // 2026-07-03 20:00Z = 16:00 local on the 3rd → a prior local day, must be bucketed out.
+        {
+          kind: 'created',
+          task_text: 'Yesterday thing',
+          detail: {},
+          created_at: '2026-07-03T20:00:00Z',
+        },
+      ],
+    })
+    const { context } = await loadChatContext(client, NOW)
+    assertEquals(context.activity.length, 1)
+    assertEquals(context.activity[0].taskText, 'Pay rent')
+    const sys = buildSystem(context)
+    assertStringIncludes(sys, "TODAY'S ACTIVITY")
+    assertStringIncludes(sys, 'finished "Pay rent"')
+    assert(!sys.includes('Yesterday thing'))
   },
 )
