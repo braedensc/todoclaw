@@ -43,3 +43,21 @@ Safari/OEM engine, and there is no real on-screen keyboard. Concretely:
 
 The lab catches layout/geometry regressions across the size spread before any phone sees them; a
 real device (or Safari's responsive mode) stays the final word on engine quirks.
+
+## Real-engine lane: `scripts/ios-sim-shot.sh`
+
+When the question is Safari itself — WebKit rendering, the real URL bar, safe areas — the
+companion script boots an actual iOS simulator headlessly, signs the e2e user in via a one-time
+local magic link (no credentials typed), and saves a device-pixel screenshot:
+
+```bash
+# prereqs: full Xcode + iOS runtime (once: xcodebuild -downloadPlatform iOS), supabase start,
+# and the dev server on the auth-allow-listed origin:
+npm run dev -- --port 3000 --strictPort --host 127.0.0.1
+
+scripts/ios-sim-shot.sh iPhone-16-Pro iphone-16-pro   # → device-lab-report/ios-sim/<slug>.png
+```
+
+Any device type from `xcrun simctl list devicetypes` works (iPhone 16 family, 17 family, Air…).
+The script header documents the simulator quirks it absorbs (coachmark, openurl timing,
+gotrue's escaped links).
