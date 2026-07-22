@@ -13,6 +13,12 @@ import type { AppRoute } from '../../lib/route'
 // iPhones). Lifted clear of the iPhone home indicator by a safe-area inset plus a little breathing
 // room (needs viewport-fit=cover in index.html or the inset resolves to 0).
 //
+// The on-screen keyboard never moves it either: interactive-widget=resizes-visual (index.html)
+// keeps the keyboard an OVERLAY on every platform, so the 100dvh column — and this bar with it —
+// stays put while typing (the bar simply sits behind the keys). Keyboard-aware surfaces re-fit to
+// the visible area via useKeyboardViewport instead; App's useLockedViewportGuard clears any iOS
+// focus-scroll residue that would otherwise leave the bar floating above the screen bottom.
+//
 // Labelled <nav aria-label="Account"> with a real "Done" button so the golden `openDone` helper —
 // getByRole('navigation', {name:'Account'}).getByRole('button', {name:'Done'}) — keeps working; on
 // mobile this is the ONLY Account nav (the desktop header one is not rendered).
