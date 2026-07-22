@@ -325,10 +325,14 @@ describe('ChatPanel', () => {
       expect(sheet.className).not.toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
 
       openKeyboard(336)
-      // Re-fitted into the visible band… (asserted via the style attribute: jsdom's CSS parser
-      // silently DROPS an inline `env()`, which is why the top inset below is a class, not a style.)
+      // Re-fitted onto the visible band — anchored by TOP + height straight from visualViewport
+      // (bottom released to auto; the old bottom-inset form derived from innerHeight, which the
+      // installed-PWA keyboard shrinks and iOS pans — see use-keyboard-viewport). (Asserted via
+      // the style attribute: jsdom's CSS parser silently DROPS an inline `env()`, which is why
+      // the top safe-area inset below is a class, not a style.)
       const style = sheet.getAttribute('style') ?? ''
-      expect(style).toMatch(/bottom:\s*336px/)
+      expect(style).toMatch(/top:\s*0px/)
+      expect(style).toMatch(/bottom:\s*auto/)
       expect(style).toMatch(/height:\s*464px/)
       // …and held below the status bar. Without this the grab handle and the BabyClaw header render
       // behind it — invisible but still touch-live, so a finger reaching for the header grabbed the
@@ -338,16 +342,33 @@ describe('ChatPanel', () => {
 
     // The reporter's case: in the installed PWA the keyboard shrank innerHeight too, so the old
     // overlap read ~0 and the sheet never re-fitted — the composer stayed behind the keys. The
-    // baseline-based detection now trips, and the sheet re-fits into the visible band (bottom ~0
-    // because `fixed` is relative to the now-shrunk layout viewport).
+    // baseline-based detection now trips, and the sheet overlays the visible band (top 0 +
+    // height, valid whether or not the layout viewport shrank).
     it('re-fits the sheet in an installed PWA where innerHeight also shrinks', () => {
       render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
       const sheet = screen.getByLabelText('Chat')
       openKeyboardStandalone(336)
       const style = sheet.getAttribute('style') ?? ''
-      expect(style).toMatch(/bottom:\s*0px/)
+      expect(style).toMatch(/top:\s*0px/)
+      expect(style).toMatch(/bottom:\s*auto/)
       expect(style).toMatch(/height:\s*464px/)
       expect(sheet.className).toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+    })
+
+    // Composite installed-PWA state (the "unusable composer" screenshot): keyboard shrink AND an
+    // iOS focus-scroll pan at once. The bottom anchor clamps to 0 and loses the pan; `top` is
+    // offsetTop verbatim, so the sheet still lands exactly on the visible band.
+    it('follows the iOS focus-scroll pan while re-fitted (top = offsetTop)', () => {
+      render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
+      const sheet = screen.getByLabelText('Chat')
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER - 336 })
+      vv.height = INNER - 336 - 60
+      vv.offsetTop = 60
+      act(() => listeners.forEach((cb) => cb()))
+      const style = sheet.getAttribute('style') ?? ''
+      expect(style).toMatch(/top:\s*60px/)
+      expect(style).toMatch(/bottom:\s*auto/)
+      expect(style).toMatch(/height:\s*404px/)
     })
   })
 })

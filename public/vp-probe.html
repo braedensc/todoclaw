@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- EXACT match to the app's index.html so the probe reproduces the real viewport env. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual"
+    />
+    <!-- Makes Add-to-Home-Screen launch in display-mode: standalone (the installed-PWA path). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>VP Probe</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      /* Shell mode chosen by ?h= or the buttons: dvh (app's old default), lvh (#317's standalone
+         override — the bug), app (the fix: measured --app-h). Mirrors src/index.css exactly. */
+      html,
+      body {
+        margin: 0;
+        height: 100dvh;
+        overflow: hidden;
+        background: #0b0f14;
+      }
+      html.u-lvh,
+      html.u-lvh body {
+        height: 100lvh;
+      }
+      html.u-svh,
+      html.u-svh body {
+        height: 100svh;
+      }
+      html.u-vh,
+      html.u-vh body {
+        height: 100vh;
+      }
+      html.u-app,
+      html.u-app body {
+        height: 100dvh;
+        height: var(--app-h, 100dvh);
+      }
+      body {
+        padding-top: env(safe-area-inset-top);
+      }
+      /* Fixed probes to MEASURE each CSS viewport unit in px. */
+      .u {
+        position: fixed;
+        left: -9999px;
+        top: 0;
+        width: 1px;
+      }
+      #dvh {
+        height: 100dvh;
+      }
+      #lvh {
+        height: 100lvh;
+      }
+      #svh {
+        height: 100svh;
+      }
+      #vh {
+        height: 100vh;
+      }
+      #wrap {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        font:
+          15px/1.5 ui-monospace,
+          Menlo,
+          monospace;
+        color: #d7e2ee;
+      }
+      pre {
+        margin: 0;
+        padding: 14px;
+        flex: 1;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
+      .k {
+        color: #7fb0ff;
+      }
+      .hi {
+        color: #ffd479;
+        font-weight: 700;
+      }
+      .warn {
+        color: #ff8a8a;
+      }
+      /* A visible bar pinned to the true bottom of the flex column — mirrors the app's nav.
+         If this bar is cut off / off-screen, that's the "nav too tiny" bug reproduced. */
+      #bar {
+        flex-shrink: 0;
+        height: 68px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        background: #12324a;
+        border-top: 2px solid #2f6ea3;
+        color: #bfe3ff;
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      #bar b {
+        font:
+          700 13px ui-monospace,
+          monospace;
+      }
+      input {
+        font-size: 16px;
+        padding: 10px;
+        margin: 0 14px 10px;
+        border-radius: 8px;
+        border: 1px solid #2f6ea3;
+        background: #0e1a26;
+        color: #fff;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        padding: 0 14px 10px;
+      }
+      button {
+        flex: 1;
+        font-size: 14px;
+        padding: 10px;
+        border-radius: 8px;
+        border: 0;
+        background: #2f6ea3;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="u" id="dvh"></div>
+    <div class="u" id="lvh"></div>
+    <div class="u" id="svh"></div>
+    <div class="u" id="vh"></div>
+    <div id="wrap">
+      <pre id="out">measuring…</pre>
+      <input id="inp" placeholder="tap here to raise the keyboard" />
+      <div class="row">
+        <button id="cap">Set keyboard-DOWN baseline</button>
+      </div>
+      <div class="row">
+        <button data-mode="dvh">dvh</button>
+        <button data-mode="lvh">lvh (#317)</button>
+        <button data-mode="app">app (fix)</button>
+      </div>
+      <!-- This bar sits at the true bottom of a 100%-height flex column, exactly like the app nav. -->
+      <div id="bar"><b id="barlabel">↑ nav sits here — is it fully on-screen?</b></div>
+    </div>
+    <script src="/vp-probe.js"></script>
+  </body>
+</html>

@@ -59,9 +59,11 @@ export function ChatRail({
         (open ? 'translate-x-0' : 'pointer-events-none translate-x-full')
       }
       // Keyboard up: override top-0/h-screen so the rail spans only the visible band above the keys
-      // (see kb note above). `top: auto` releases the top anchor; bottom/height do the rest.
+      // (see kb note above). Anchored by `top` + `height` straight from visualViewport — never by
+      // bottom-inset, which is derived from window.innerHeight and lands wrong wherever the
+      // keyboard shrinks or pans the layout viewport (installed PWA; see use-keyboard-viewport).
       // Horizontal (`right-0 w-[420px]`) and the AppShell `wide:pr-[420px]` push are untouched.
-      style={kb.keyboardOpen ? { top: 'auto', bottom: kb.inset, height: kb.height } : undefined}
+      style={kb.keyboardOpen ? { top: kb.top, height: kb.height } : undefined}
     >
       <ChatConversation
         chat={chat}

@@ -88,13 +88,20 @@ export function ChatPanel({
         }`.trim()}
         style={{
           ...(swipe.offset ? { transform: `translateY(${swipe.offset}px)` } : {}),
-          // Keyboard up: the keyboard owns the bottom `inset` px of the layout viewport, so pin the
-          // sheet bottom there and give it the visible `height` — this lands the whole sheet
-          // (composer included) above the keys with its top on-screen, instead of a full-height
-          // sheet whose top is off-screen. Overrides the class's bottom-0/h-[92dvh]; paddingBottom
-          // drops to 0 (the home indicator is behind the keyboard now). The matching top inset is a
-          // class above, not a value here — it's a constant, and jsdom drops inline `env()`.
-          ...(kb.keyboardOpen ? { bottom: kb.inset, height: kb.height, paddingBottom: 0 } : {}),
+          // Keyboard up: overlay the sheet exactly onto the visible band above the keys —
+          // `top` + `height` straight from visualViewport, overriding the class's
+          // bottom-0/h-[92dvh] (bottom released to auto). Anchoring by TOP, not bottom-inset:
+          // the old `bottom: inset` form was derived from window.innerHeight, which the
+          // installed-PWA keyboard SHRINKS (932→519 on the 15 Pro Max) and iOS focus-scroll
+          // pans — any stale innerHeight put the sheet's band somewhere that no longer existed
+          // (the "unusable composer" report). top/height never reference innerHeight, so the
+          // same two numbers land the sheet in a tab, the installed app, and mid-pan.
+          // paddingBottom drops to 0 (the home indicator is behind the keyboard now). The
+          // matching top safe-area inset is a class above, not a value here — it's a constant,
+          // and jsdom drops inline `env()`.
+          ...(kb.keyboardOpen
+            ? { top: kb.top, bottom: 'auto', height: kb.height, paddingBottom: 0 }
+            : {}),
         }}
       >
         {/* Grab handle — the draggable dismiss affordance (touch-action:none so scroll doesn't
