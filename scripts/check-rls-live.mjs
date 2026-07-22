@@ -189,6 +189,74 @@ async function runWeatherCacheGrantProbe(client, failures) {
   }
 }
 
+// F. ai_usage direct writes are revoked (migration 20260722100000): INSERT and UPDATE must be
+// DENIED to `authenticated` even in a fully valid own-user JWT context — the PRE-fix schema
+// allowed both in exactly this context (grant + owner-scoped policy), so an RLS-only denial can
+// never satisfy this probe by accident. Then the SECURITY DEFINER guardrail RPCs must still work
+// for that same caller (positive control — a missing/renamed function would otherwise let the
+// denials pass vacuously). All inside one transaction that is rolled back.
+async function runAiUsageGrantProbe(client, failures) {
+  await client.query('begin')
+  try {
+    // A throwaway auth user (FK target), created as superuser inside the rolled-back txn.
+    const uidRes = await client.query(
+      `insert into auth.users (id) values (gen_random_uuid()) returning id`,
+    )
+    const uid = uidRes.rows[0].id
+    // One superuser-seeded, caller-owned row for the UPDATE denial to target.
+    const seedRes = await client.query(
+      `insert into public.ai_usage (user_id, feature) values ($1, '_probe_seed') returning id`,
+      [uid],
+    )
+    const seedId = seedRes.rows[0].id
+
+    await client.query(`set local role authenticated`)
+    await client.query(`select set_config('request.jwt.claim.sub', $1, true)`, [uid])
+    for (const [label, sql, params] of [
+      [
+        'direct INSERT',
+        `insert into public.ai_usage (user_id, feature) values ($1, '_probe')`,
+        [uid],
+      ],
+      ['direct UPDATE', `update public.ai_usage set input_tokens = 1 where id = $1`, [seedId]],
+    ]) {
+      await client.query('savepoint sp')
+      let code = null
+      try {
+        await client.query(sql, params)
+      } catch (e) {
+        code = e.code // '42501' = permission denied (what we require)
+      }
+      await client.query('rollback to savepoint sp')
+      if (code !== '42501') {
+        failures.push(
+          `ai_usage grant: ${label} as "authenticated" (own user_id, JWT set) — expected ` +
+            `permission-denied (42501), got ${code ?? 'NO error, the write SUCCEEDED'}. ai_usage ` +
+            `must be writable only via the SECURITY DEFINER guardrail RPCs (20260722100000).`,
+        )
+      }
+    }
+    // Positive control: the DEFINER record + token-backfill flow works for the same caller.
+    let ctrlErr = null
+    try {
+      const rec = await client.query(
+        `select public.ai_usage_check_and_record('_probe', 5, 5) as id`,
+      )
+      await client.query(`select public.ai_usage_record_tokens($1, 1, 2)`, [rec.rows[0].id])
+    } catch (e) {
+      ctrlErr = `${e.code} ${e.message}`
+    }
+    if (ctrlErr) {
+      failures.push(
+        `ai_usage grant: the guardrail RPC flow FAILED for an authenticated caller (${ctrlErr}) — ` +
+          `the legitimate AI write path is broken (and the denials above would pass vacuously).`,
+      )
+    }
+  } finally {
+    await client.query('rollback')
+  }
+}
+
 async function main() {
   if (!DB_URL) {
     console.error(
@@ -257,6 +325,9 @@ async function main() {
 
     // E. weather_cache RPCs are service_role-only (needs only the DB connection).
     await runWeatherCacheGrantProbe(client, failures)
+
+    // F. ai_usage direct writes are revoked; the DEFINER guardrail RPCs are the only write path.
+    await runAiUsageGrantProbe(client, failures)
   } finally {
     await client.end()
   }
