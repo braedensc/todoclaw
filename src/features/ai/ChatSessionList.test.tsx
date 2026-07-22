@@ -12,6 +12,7 @@ const deleteMutate =
 const openMsgMutate =
   vi.fn<(id: string, opts?: { onSuccess?: (sid: string) => void; onError?: () => void }) => void>()
 const markReadMutate = vi.fn<(id: string) => void>()
+const markAllMutate = vi.fn<(arg: undefined, opts?: { onError?: () => void }) => void>()
 const toast = vi.fn()
 
 vi.mock('./use-chat-sessions', () => ({
@@ -21,6 +22,7 @@ vi.mock('./use-chat-sessions', () => ({
 vi.mock('../notifications/use-messages', () => ({
   useMessages: () => ({ data: messages, isLoading: false }),
   useMarkMessageRead: () => ({ mutate: markReadMutate }),
+  useMarkAllMessagesRead: () => ({ mutate: markAllMutate }),
   useOpenMessageChat: () => ({ mutate: openMsgMutate }),
 }))
 vi.mock('./use-chat-previews', () => ({ useChatPreviews: () => ({ data: previews }) }))
@@ -74,6 +76,7 @@ beforeEach(() => {
   deleteMutate.mockReset()
   openMsgMutate.mockReset()
   markReadMutate.mockReset()
+  markAllMutate.mockReset()
   toast.mockReset()
 })
 
@@ -104,15 +107,18 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     expect(mine.compareDocumentPosition(his)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
-  it('caps "From BabyClaw" to the 5 most recent messages, and says so when it hides any', () => {
+  it('caps "From BabyClaw" to the 5 most recent READ check-ins, and says so when it hides any', () => {
     // Reminders keep their own titles (no day-stamp), so they stay distinguishable for this count.
+    // All READ — the cap trims only read history; an UNREAD one would be exempt (next test).
     // Timestamps must be explicit and distinct (A newest → G oldest): the cap sorts by recency, and
     // same-millisecond ties from a bare new Date() made survival depend on a mid-loop clock tick.
+    const read = new Date().toISOString()
     messages = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((t, i) =>
       m(`m${i}`, {
         kind: 'reminder',
         title: `Task ${t}`,
         created_at: new Date(Date.now() - i * 60_000).toISOString(),
+        read_at: read,
       }),
     )
     render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
@@ -123,14 +129,66 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     expect(screen.queryByText('Task G')).toBeNull()
     // The note explains the two that are missing — and promises only what's true: they're not
     // SHOWN. Nothing deletes a check-in, so it must never claim they aren't stored.
-    expect(screen.getByText('Showing your 5 most recent check-ins.')).toBeInTheDocument()
+    expect(screen.getByText(/nothing.s deleted/i)).toBeInTheDocument()
   })
 
   it('no note when nothing is hidden — there is nothing to explain', () => {
     messages = ['A', 'B'].map((t, i) => m(`m${i}`, { kind: 'reminder', title: `Task ${t}` }))
     render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
     expect(screen.getByText('Task A')).toBeInTheDocument()
-    expect(screen.queryByText(/most recent check-ins/)).toBeNull()
+    expect(screen.queryByText(/tucked away/i)).toBeNull()
+  })
+
+  it('keeps every UNREAD check-in visible past the cap — the badge counts them all, so none may hide', () => {
+    // The nav "Chat N" badge counts every unread message; if the cap could bury an unread check-in,
+    // the badge would claim more than the list shows (the "Chat 3 but nothing new" mismatch this
+    // fixes). Five recent READ check-ins fill the cap; three OLDER UNREAD ones must still each show.
+    const read = new Date().toISOString()
+    const readMsgs = ['A', 'B', 'C', 'D', 'E'].map((t, i) =>
+      m(`r${i}`, {
+        kind: 'reminder',
+        title: `Read ${t}`,
+        created_at: new Date(Date.now() - (i + 1) * 3_600_000).toISOString(),
+        read_at: read,
+      }),
+    )
+    const unreadMsgs = ['X', 'Y', 'Z'].map((t, i) =>
+      m(`u${i}`, {
+        kind: 'reminder',
+        title: `Unread ${t}`,
+        created_at: new Date(Date.now() - (i + 10) * 3_600_000).toISOString(),
+      }),
+    )
+    messages = [...readMsgs, ...unreadMsgs]
+    render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+    for (const t of ['Unread X', 'Unread Y', 'Unread Z']) {
+      expect(screen.getByText(t)).toBeInTheDocument()
+    }
+    // One unread dot per unread message — exactly what useUnreadCount sums for the nav badge.
+    expect(screen.getAllByLabelText('unread')).toHaveLength(3)
+  })
+
+  describe('"Mark all read" — the badge/pile-up escape hatch', () => {
+    it('shows on the From BabyClaw label when anything is unread, and marks all in one tap', () => {
+      // Unread check-ins are exempt from the display cap, so ignoring them piles them up; this is
+      // the one-tap way out (vs opening each). Visible exactly when the nav badge is non-zero.
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all read' }))
+      expect(markAllMutate).toHaveBeenCalledTimes(1)
+    })
+
+    it('absent when every check-in is already read — nothing to clear', () => {
+      messages = [m('m1', { read_at: new Date().toISOString() })]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.queryByRole('button', { name: 'Mark all read' })).toBeNull()
+    })
+
+    it('toasts on failure', () => {
+      markAllMutate.mockImplementation((_arg, opts) => opts?.onError?.())
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all read' }))
+      expect(toast).toHaveBeenCalledWith(expect.stringMatching(/couldn.t mark/i), 'error')
+    })
   })
 
   describe('ranking BabyClaw check-ins by last message', () => {
@@ -144,7 +202,8 @@ describe('ChatSessionList (unified inbox + chats)', () => {
       title: string,
       created_at: string,
       session_id: string | null = null,
-    ) => m(id, { kind: 'reminder', title, created_at, session_id })
+      read_at: string | null = null,
+    ) => m(id, { kind: 'reminder', title, created_at, session_id, read_at })
 
     it('ranks a check-in by its LAST message, not when BabyClaw sent it', () => {
       // "Task Old" arrived 3 days ago but you replied to it a minute ago; "Task New" arrived this
@@ -164,11 +223,13 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     it('the cap keeps the most recently ACTIVE check-ins, not the most recently arrived', () => {
       // Sorting has to run BEFORE the cap: F arrived last of the six, but you're mid-reply in it,
       // so it must survive and push the stalest one (E) out. Six rows for a cap of five — enough
-      // that the cap actually bites, so this can't quietly stop testing it.
+      // that the cap actually bites, so this can't quietly stop testing it. All READ, so the cap
+      // governs them (unread check-ins are exempt — see the "keeps every UNREAD" test above).
+      const read = new Date().toISOString()
       messages = ['A', 'B', 'C', 'D', 'E', 'F'].map((t, i) =>
-        check(`m${i}`, `Task ${t}`, hoursAgo(i + 1)),
+        check(`m${i}`, `Task ${t}`, hoursAgo(i + 1), null, read),
       )
-      messages[5] = check('m5', 'Task F', hoursAgo(6), 'sess-f')
+      messages[5] = check('m5', 'Task F', hoursAgo(6), 'sess-f', read)
       sessions = [proactive('sess-f', hoursAgo(0))]
       render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
       expect(screen.getAllByText(/^Task /).map((e) => e.textContent)).toEqual([

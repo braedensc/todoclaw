@@ -55,6 +55,28 @@ export function useMarkMessageRead() {
 }
 
 /**
+ * Mark EVERY unread message read in one shot — the badge's bulk escape hatch. Unread check-ins stay
+ * visible past the chat list's display cap (so the "Chat N" badge always lands on a row), which
+ * means ignoring them piles them up; this clears the pile without opening each one. Same security
+ * envelope as mark_message_read: the RLS update policy scopes the write to the caller's own rows and
+ * the column grant permits only `read_at` — no RPC needed. `.is('read_at', null)` keeps it
+ * idempotent and leaves existing read stamps untouched.
+ */
+export function useMarkAllMessagesRead() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .is('read_at', null)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: MESSAGES_KEY }),
+  })
+}
+
+/**
  * Materialise (or reopen) the persistent BabyClaw chat session for an inbox message and return its
  * id. The RPC (SECURITY DEFINER, fenced to auth.uid()) creates the session + seeds the message as
  * BabyClaw's opening turn on the first open, and returns the SAME session on every reopen. Opening a

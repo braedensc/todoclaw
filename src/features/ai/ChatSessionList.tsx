@@ -6,6 +6,7 @@ import { previewText, assistantSnippet } from './chat-preview'
 import {
   useMessages,
   useMarkMessageRead,
+  useMarkAllMessagesRead,
   useOpenMessageChat,
   type InboxMessage,
 } from '../notifications/use-messages'
@@ -60,10 +61,13 @@ function BellGlyph() {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+// `action` is an optional right-aligned control on the label row (e.g. "Mark all read") — it undoes
+// the label's uppercase itself so it reads as an action, not part of the heading.
+function GroupLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <p className="mt-3 flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
       {children}
+      {action}
     </p>
   )
 }
@@ -137,18 +141,20 @@ export function ChatSessionList({
   const del = useDeleteChatSession()
   const openMsg = useOpenMessageChat()
   const markRead = useMarkMessageRead()
+  const markAll = useMarkAllMessagesRead()
   const toast = useToast()
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
-  // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't
-  // pile up forever. Your own chats are shown in full, above. This is a DISPLAY cap on rows — not a
+  // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't pile
+  // up forever — but only the READ ones (see the union in the inbox memo: every UNREAD check-in stays
+  // visible regardless of the cap, so the nav "Chat N" badge — which counts all unread — always lands
+  // on a row). Your own chats are shown in full, above. This is a DISPLAY cap on rows — not a
   // retention window: nothing is deleted (`messages` has no DELETE grant and no prune job; a row
-  // outlives the cap and dies only with the account). The note under the group says "showing", never
-  // "stored", because the difference is the user's data.
+  // outlives the cap and dies only with the account).
   const MAX_PROACTIVE = 5
   // Rank a check-in by its LAST MESSAGE, not its arrival. `messages` arrives newest-first by
   // created_at, which is when BabyClaw SENT it — so replying to Monday's plan today left it sitting
-  // three days down, and the cap below could drop the very conversation you were mid-reply in. Once
+  // three days down, and a naive cap could drop the very conversation you were mid-reply in. Once
   // a check-in is opened it has a session, whose updated_at is the last-message clock
   // (chat_append_message bumps it every turn); an unopened one has no session, so its arrival time
   // IS its last message. Sorting must happen BEFORE the cap or it keeps the wrong ones.
@@ -156,14 +162,25 @@ export function ChatSessionList({
     const byId = new Map((sessions ?? []).map((s) => [s.id, s]))
     const lastActivity = (m: InboxMessage) =>
       (m.session_id ? byId.get(m.session_id)?.updated_at : null) ?? m.created_at
-    return [...(messages ?? [])]
-      .sort((a, b) => Date.parse(lastActivity(b)) - Date.parse(lastActivity(a)))
-      .slice(0, MAX_PROACTIVE)
-      .map((m) => ({ msg: m, time: lastActivity(m) }))
+    const ranked = [...(messages ?? [])].sort(
+      (a, b) => Date.parse(lastActivity(b)) - Date.parse(lastActivity(a)),
+    )
+    // Keep the MAX_PROACTIVE most recent — plus EVERY unread one. The nav badge counts all unread, and
+    // opened check-ins get bumped up by their session's updated_at, which is exactly what buries an
+    // older never-opened one past position 5: the badge would then say "3" over a list with no unread
+    // dots (the mismatch this fixes). So the cap trims only READ history. Union keeps the recency order.
+    const keep = new Set(ranked.slice(0, MAX_PROACTIVE).map((m) => m.id))
+    for (const m of ranked) if (!m.read_at) keep.add(m.id)
+    return ranked.filter((m) => keep.has(m.id)).map((m) => ({ msg: m, time: lastActivity(m) }))
   }, [messages, sessions])
-  // The note earns its place only when the cap actually hides something — with nothing held back
-  // there's nothing to explain, and a standing footnote would just be noise.
+  // The note earns its place only when the cap actually hides an older (read) check-in — with nothing
+  // held back there's nothing to explain, and a standing footnote would just be noise.
   const proactiveHidden = (messages?.length ?? 0) - inbox.length
+  // Whether the "Mark all read" action shows — exactly when the nav badge is non-zero, because it IS
+  // that badge's bulk escape hatch: unread check-ins are exempt from the display cap (above), so
+  // ignoring them piles them up; this clears the pile without opening each one. Marking them read
+  // also returns them to the cap's custody, so the list tidies back down on the refetch — intended.
+  const anyUnread = (messages ?? []).some((mm) => !mm.read_at)
   // Proactive sessions are shown via their message row, so keep only person-started chats.
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
@@ -289,7 +306,27 @@ export function ChatSessionList({
         })}
 
         {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
-        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
+        {inbox.length > 0 && (
+          <GroupLabel
+            action={
+              anyUnread ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    markAll.mutate(undefined, {
+                      onError: () => toast("Couldn't mark those read — try again.", 'error'),
+                    })
+                  }
+                  className="ml-auto shrink-0 font-medium normal-case tracking-normal text-puppy hover:text-ink"
+                >
+                  Mark all read
+                </button>
+              ) : undefined
+            }
+          >
+            From BabyClaw
+          </GroupLabel>
+        )}
         {inbox.map(({ msg: m, time: lastAt }) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
@@ -341,10 +378,11 @@ export function ChatSessionList({
             </button>
           )
         })}
-        {/* Says "showing", not "stored" — the cap hides rows, it does not delete them. */}
+        {/* The hidden rows are older check-ins you've already opened (unread ones always show) — the
+            cap tidies them away, it does not delete them. */}
         {proactiveHidden > 0 && (
           <p className="px-2 pb-1 pt-1.5 text-[10px] leading-snug text-muted-light">
-            Showing your {MAX_PROACTIVE} most recent check-ins.
+            Older check-ins are tucked away — nothing’s deleted.
           </p>
         )}
       </div>

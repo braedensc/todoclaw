@@ -16,11 +16,14 @@ lives in `supabase/functions/` — see `supabase/functions/README.md`.
   `user_schedule.config.notifications` (`ScheduleConfigSchema`), woven into the Settings draft so a
   normal save preserves them.
 - **`use-messages.ts`** — the inbox data: `useMessages` (list), `useUnreadCount` (badge),
-  `useMarkMessageRead` (`mark_message_read` RPC). `messages` is the source of truth; push is
-  best-effort on top. Read via TanStack Query on load/focus (Realtime stays deferred, ADR-0021).
-- **`NotificationBell.tsx` / `InboxPanel.tsx`** — the bell + unread badge in the app chrome and the
-  message-list overlay. Opening a message deep-links into the chat (`#/chat/<id>`), which seeds it
-  with the message and marks it read.
+  `useMarkMessageRead` (`mark_message_read` RPC), `useMarkAllMessagesRead` (bulk — an RLS-scoped
+  `read_at` update, no RPC). `messages` is the source of truth; push is best-effort on top. Read via
+  TanStack Query on load/focus (Realtime stays deferred, ADR-0021).
+- The unread badge and message list live in the **chat drawer** now (the separate bell/inbox overlay
+  was retired): the desktop "Chat N" badge and the mobile Chat-tab dot surface `useUnreadCount`, and
+  `ChatSessionList` (`src/features/ai`) lists check-ins under "From BabyClaw" — unread rows are
+  exempt from its display cap and carry per-row dots, with a "Mark all read" bulk action on the
+  group label. Opening a message materialises/reopens its chat session and marks it read.
 
 ## Flow
 
