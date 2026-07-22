@@ -2,7 +2,7 @@
 """
 PreToolUse security hook for Todoclaw.
 Runs before every Claude Code tool call.
-Exit 0 = allow. Exit 2 = block (stdout shown as reason to Claude + user).
+Exit 0 = allow. Exit 2 = block (reason on stderr, the stream Claude Code relays).
 
 Error posture (GAP 4, 2026-07-06): Claude Code treats exit code 2 as "block" and
 ANY OTHER non-zero exit (e.g. an uncaught Python exception → exit 1) as a
@@ -22,7 +22,10 @@ import sys
 
 
 def block(reason: str) -> None:
-    print(f"[Security Hook] BLOCKED: {reason}")
+    # The reason must go to STDERR: for a blocking exit 2, Claude Code relays
+    # stderr to the model and IGNORES stdout — printed there, every deny showed
+    # up as "PreToolUse:... hook error: ... No stderr output", reason lost.
+    print(f"[Security Hook] BLOCKED: {reason}", file=sys.stderr)
     sys.exit(2)
 
 
@@ -393,8 +396,12 @@ def _dispatch(data):
         scan = _strip_prose(cmd)
 
         # Block rm -rf / rm -fr / rm --recursive --force
-        if re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*r[a-zA-Z]*f", scan) or \
-           re.search(r"\brm\b[^#\n;&|]*-[a-zA-Z]*f[a-zA-Z]*r", scan) or \
+        # The short-flag run must START an argument token (whitespace or an
+        # opening quote before the dash): unanchored, interior dashes in
+        # FILENAMES matched too and false-blocked plain `rm` — e.g.
+        # probe-future-date.ts (-futur ~ -f..r), build-for-prod.txt (-for).
+        if re.search(r"\brm\b[^#\n;&|]*(?:^|[\s'\"])-[a-zA-Z]*r[a-zA-Z]*f", scan) or \
+           re.search(r"\brm\b[^#\n;&|]*(?:^|[\s'\"])-[a-zA-Z]*f[a-zA-Z]*r", scan) or \
            re.search(r"\brm\b[^#\n;&|]*--recursive", scan):
             block(
                 "rm -rf / rm --recursive detected — use specific paths or ask Braeden to confirm."

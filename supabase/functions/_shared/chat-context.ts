@@ -12,6 +12,7 @@ import {
   DEFAULT_ASSISTANT_CONFIG,
   type AssistantConfig,
   type ChatContext,
+  type PromptActivity,
   type PromptHabit,
   type PromptMemory,
   type PromptPlan,
@@ -203,51 +204,62 @@ export async function loadChatContext(
   const assistantCfg = (config?.assistant ?? {}) as Record<string, unknown>
   const memoryEnabled = assistantCfg.memoryEnabled !== false
 
-  const [tasksRes, habitsRes, dailyRes, remindersRes, memoriesRes] = await Promise.all([
-    client
-      .from('tasks')
-      // completed_at is fetched (not SQL-filtered) so the render can mirror the grid/list split:
-      // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
-      // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
-      // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
-      .select(
-        'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
-      )
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      // Bounded fetch (write-caps.ts): the prompt renders far fewer, and an account at the DB row
-      // caps must not balloon this function's memory or the model window.
-      .limit(TASKS_FETCH_LIMIT),
-    client
-      .from('habits')
-      .select('id, text, active, subtasks')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true })
-      .limit(HABITS_FETCH_LIMIT),
-    client
-      .from('daily_state')
-      .select('done, habit_done, subtask_done, plan')
-      .eq('date', date)
-      .maybeSingle(),
-    // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks
-    // already have one — otherwise it can't answer "do I have a reminder on X?" or reason about
-    // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's
-    // reminders lead each occurrence, a one-off's lead the single due instant (same rows either way).
-    client
-      .from('task_reminders')
-      .select('task_id, offset_minutes')
-      .is('sent_at', null)
-      .order('created_at', { ascending: true })
-      .limit(REMINDERS_FETCH_LIMIT),
-    // Saved memories (oldest-first = a stable prompt order), only when memory is on. ≤30 rows by
-    // the DB trigger, so no limit needed. RLS scopes it to the caller.
-    memoryEnabled
-      ? client
-          .from('assistant_memories')
-          .select('id, content, updated_at')
-          .order('created_at', { ascending: true })
-      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-  ])
+  const [tasksRes, habitsRes, dailyRes, remindersRes, memoriesRes, activityRes] = await Promise.all(
+    [
+      client
+        .from('tasks')
+        // completed_at is fetched (not SQL-filtered) so the render can mirror the grid/list split:
+        // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
+        // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
+        // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
+        .select(
+          'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
+        )
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        // Bounded fetch (write-caps.ts): the prompt renders far fewer, and an account at the DB row
+        // caps must not balloon this function's memory or the model window.
+        .limit(TASKS_FETCH_LIMIT),
+      client
+        .from('habits')
+        .select('id, text, active, subtasks')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(HABITS_FETCH_LIMIT),
+      client
+        .from('daily_state')
+        .select('done, habit_done, subtask_done, plan')
+        .eq('date', date)
+        .maybeSingle(),
+      // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks
+      // already have one — otherwise it can't answer "do I have a reminder on X?" or reason about
+      // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's
+      // reminders lead each occurrence, a one-off's lead the single due instant (same rows either way).
+      client
+        .from('task_reminders')
+        .select('task_id, offset_minutes')
+        .is('sent_at', null)
+        .order('created_at', { ascending: true })
+        .limit(REMINDERS_FETCH_LIMIT),
+      // Saved memories (oldest-first = a stable prompt order), only when memory is on. ≤30 rows by
+      // the DB trigger, so no limit needed. RLS scopes it to the caller.
+      memoryEnabled
+        ? client
+            .from('assistant_memories')
+            .select('id, content, updated_at')
+            .order('created_at', { ascending: true })
+        : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+      // Today's task activity (create/complete/move/re-date/…), newest first — so BabyClaw can answer
+      // "what did I do today?" and reference the day's changes in conversation. RLS scopes it to the
+      // caller; we bucket to the user's local day in JS below (avoids SQL tz math). ≤50 rows is plenty
+      // for one day at the write volume of a personal planner.
+      client
+        .from('task_activity')
+        .select('kind, task_text, detail, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ],
+  )
 
   const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
   const habitDone = (dailyRes.data?.habit_done ?? {}) as Record<string, boolean>
@@ -330,6 +342,26 @@ export async function loadChatContext(
     })
   }
 
+  // Today's task activity → PromptActivity, bucketed to the user's local day (the query returns
+  // recent rows; the day boundary is a JS check, like everything else here). Oldest-first for a
+  // natural "here's how your day went" order. Malformed rows skipped.
+  const activity: PromptActivity[] = []
+  for (const r of (activityRes.data ?? []) as Record<string, unknown>[]) {
+    const createdAt = typeof r.created_at === 'string' ? r.created_at : null
+    const kind = typeof r.kind === 'string' ? r.kind : ''
+    if (!createdAt || !kind) continue
+    if (localDateInTZ(timeZone, new Date(createdAt)) !== date) continue
+    activity.push({
+      kind,
+      taskText: typeof r.task_text === 'string' ? r.task_text : '',
+      detail:
+        r.detail && typeof r.detail === 'object' && !Array.isArray(r.detail)
+          ? (r.detail as Record<string, unknown>)
+          : {},
+    })
+  }
+  activity.reverse()
+
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
   const today = fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -345,6 +377,7 @@ export async function loadChatContext(
     plan: planSummary(dailyRes.data?.plan, tasks),
     assistant: parseAssistant(config),
     memories,
+    activity,
   }
 
   return { context, timeZone, labelById, memoryEnabled }
