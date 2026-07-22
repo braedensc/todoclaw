@@ -14,6 +14,11 @@ import type { Habit } from '../../types/habit'
 export type { PlanWhen, PlanRock, DayPlan } from '../../types/plan'
 import type { DayPlan } from '../../types/plan'
 
+// Mirror of UPCOMING_WINDOW_DAYS in supabase/functions/_shared/plan-prompt.ts — the frontend build
+// tree can't import from the Deno tree, so the value is re-declared here. Keep the two in step: a
+// dormant task un-pausing within this many days is surfaced as a "coming up" heads-up.
+const UPCOMING_WINDOW_DAYS = 3
+
 export interface PlanRequest {
   today: string
   dayOfWeek: string
@@ -30,6 +35,15 @@ export interface PlanRequest {
   }[]
   recurringDue: { id: string; text: string; status: string }[]
   habits: string[]
+  // Paused / not-yet-started tasks un-pausing within UPCOMING_WINDOW_DAYS — heads-up material only,
+  // never scheduled (they stay OUT of `tasks`).
+  upcoming: {
+    id: string
+    text: string
+    startsInDays: number
+    startDate: string
+    due: string | null
+  }[]
 }
 
 // Build the request payload from the same data the grid/list use, reusing src/lib scoring +
@@ -78,6 +92,26 @@ export function buildPlanRequest(
     }
   }
 
+  // Dormant tasks that un-pause SOON (start within UPCOMING_WINDOW_DAYS): NOT scheduled — kept out
+  // of `tasks` — but collected as gentle "coming up" heads-ups. Mirrors the server twin in
+  // supabase/functions/_shared/plan-inputs.ts. isDormant ⇒ start_date is set and future, so
+  // startsInDays >= 1; completed tasks are skipped so a finished-but-paused row can't surface.
+  const upcoming: PlanRequest['upcoming'] = []
+  for (const t of tasks) {
+    if (t.completed_at) continue
+    if (!isDormant(t, timeZone, now)) continue
+    const startsInDays = daysUntil(t.start_date ?? null, { timeZone, now })
+    if (startsInDays != null && startsInDays <= UPCOMING_WINDOW_DAYS) {
+      upcoming.push({
+        id: t.id,
+        text: t.text,
+        startsInDays,
+        startDate: (t.start_date as string).slice(0, 10),
+        due: t.due,
+      })
+    }
+  }
+
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
 
@@ -87,6 +121,7 @@ export function buildPlanRequest(
     tasks: planTasks,
     recurringDue,
     habits: habits.filter((h) => h.active).map((h) => h.text),
+    upcoming,
   }
 }
 

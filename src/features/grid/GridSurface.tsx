@@ -24,6 +24,11 @@ import { ClusterPopup } from '../clustering/ClusterPopup'
 import { CLUSTER_BUBBLE_HALF } from '../clustering/cluster-constants'
 import type { GridApi } from './use-grid'
 
+// Pointer-down for a read-only (paused) card — it has no reposition drag, but GridCard's
+// onPointerDown prop is required. GridCard also drops the handler internally when `paused`, so this
+// is belt-and-suspenders.
+const noop = () => {}
+
 interface GridSurfaceProps {
   grid: GridApi
   /** The canvas surface ref the drag hooks bind to (created by WorkArea, shared with useGrid). */
@@ -64,6 +69,7 @@ export function GridSurface({
   const {
     timeZone,
     placedTasks,
+    dormantPlaced,
     clusters,
     draggedTask,
     draggingId,
@@ -153,12 +159,16 @@ export function GridSurface({
       softDeleteMutate(task.id)
   }
 
-  // One placed card. Shared by the singleton-cluster render and the standalone dragged-card
-  // render so both stay byte-for-byte identical (same handlers, same node registration).
-  // recurring/rename reuse the one generic updateMutate({ id, patch }); a due write goes through
-  // setDue and sets `due`/`due_time` ONLY — it never touches x/y, so setting a due date on a
-  // manually-placed card can't move it.
-  const renderGridCard = (task: Task & { x: number; y: number }) => {
+  // One placed card. Shared by the singleton-cluster render, the standalone dragged-card render,
+  // and the dormant "set aside" pass so all three stay byte-for-byte identical (same handlers,
+  // same schedule wiring). recurring/rename reuse the one generic updateMutate({ id, patch }); a
+  // due write goes through setDue and sets `due`/`due_time` ONLY — it never touches x/y, so setting
+  // a due date on a manually-placed card can't move it.
+  //
+  // `paused` renders the dormant lane: it drops the reposition drag (no cardRef node registration,
+  // no pointer-down handler — a paused card is read-only) and forces the paused dress inside
+  // GridCard. Every write handler stays wired so the card's ⋯ SchedulePanel can still Resume it.
+  const renderGridCard = (task: Task & { x: number; y: number }, paused = false) => {
     // Re-clamp the stored coords to the card's bounding box at the current grid width (screen
     // position only — task.x/task.y and clustering are unchanged).
     const p = clampPoint(task.x, task.y, cardBounds)
@@ -166,14 +176,15 @@ export function GridSurface({
       <GridCard
         key={task.id}
         task={task}
+        paused={paused}
         screenX={p.x}
         screenY={1 - p.y}
         timeZone={timeZone}
         daysUntilDue={daysUntil(task.due, { timeZone })}
         minutesUntilDue={minutesUntilDueTime(task.due, task.due_time, timeZone, now)}
-        dragging={draggingId === task.id}
-        cardRef={(node) => registerCardNode(task.id, node)}
-        onPointerDown={startReposition(task.id)}
+        dragging={!paused && draggingId === task.id}
+        cardRef={paused ? undefined : (node) => registerCardNode(task.id, node)}
+        onPointerDown={paused ? noop : startReposition(task.id)}
         onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
         onDelete={() => handleDelete(task)}
         onDone={() => doneWithStamp(task)}
@@ -276,7 +287,7 @@ export function GridSurface({
         />
 
         <GridCanvas surfaceRef={gridRef} onBackgroundPointerDown={handleGridPointerDown}>
-          {placedTasks.length === 0 && (
+          {placedTasks.length === 0 && dormantPlaced.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted">
               <p>No tasks placed — add one above and drag it here.</p>
               {onSeeExample && (
@@ -290,6 +301,13 @@ export function GridSurface({
               )}
             </div>
           )}
+
+          {/* Dormant (paused / future start_date) cards — their OWN read-only pass, rendered FIRST
+              so they paint BEHIND the active clustered cards (all cards are absolutely positioned;
+              DOM order is paint order). They stay out of `groups`/clustering entirely, so a paused
+              card can never fold into an active bubble or be dragged — it just shows, dimmed with
+              the ⏸ slate dress, WHERE it will land when it wakes. */}
+          {dormantPlaced.map((task) => renderGridCard(task, true))}
 
           {groups.map((group) => {
             // A singleton group renders as a normal, draggable card.

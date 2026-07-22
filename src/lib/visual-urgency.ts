@@ -37,6 +37,7 @@
 
 import { formatDueTime } from './dates'
 import { daysUntil, type ScoringOpts } from './scoring'
+import { formatStartDay } from './start-date'
 
 const MS_PER_DAY = 86_400_000
 
@@ -448,4 +449,85 @@ export function staleBadge(stale: StaleInfo | null): StaleBadge | null {
  */
 export function staleChipStyle(): DueChipStyle {
   return { backgroundColor: `rgb(${STALE_BLUE})`, color: '#fff' }
+}
+
+/**
+ * Slate rgb triplet for the PAUSED (dormant / future start_date) lane — a deliberately NEUTRAL,
+ * cool-grey hue chosen to overlap NONE of the other card lanes: not the warm urgency ladder
+ * (terracotta / gold / olive), not the cool STALE azure, and not the muted `puppy` brand blue
+ * reserved for BabyClaw / habits. A paused task is a third thing entirely: it isn't due (its
+ * deadline is intentionally deferred) and it isn't ignored (the user scheduled the wake) — it's
+ * just SET ASIDE, waiting for its start date. Reused across the ring, tint, and chip.
+ */
+const PAUSED_SLATE = '100,116,139'
+
+/**
+ * Whole-card opacity a paused card is dimmed to. The set-aside cue that reads even where the slate
+ * ring/chip can't be told apart from another lane: a paused card is visibly quieter than every
+ * active/hot/stale card, which all render at full opacity. Kept legible (not a fade-out) so the
+ * card is still readable and its ⋯ menu still usable (that's the Resume path). 0.7 (up from the
+ * first cut's 0.62) so the full-alpha slate ring below still punches through the dim.
+ */
+export const PAUSED_OPACITY = 0.7
+
+/**
+ * Ring + optional card tint for the paused lane — the same compose-into-`style` shape the warm
+ * glow (`GlowStyle`) and the cool stale ring (`StaleRingStyle`) use: a box-shadow ring appended
+ * after the base depth shadow, plus a tint replacing the plain paper fill.
+ */
+export interface PausedRingStyle {
+  boxShadow: string
+  background?: string
+}
+
+/**
+ * The slate ring + slate tint a dormant card wears — the set-aside lane's mirror of
+ * `staleRingStyle`. BINARY (no depth ladder like staleness): a task is paused or it isn't, so
+ * there's a single treatment. Pushed LOUDER on 2026-07-22 ("more noticeable" was the explicit
+ * ask): a full-alpha 3px ring + a real halo + a deeper tint, sized against the stale ladder's
+ * middle rung — because the whole card then dims to PAUSED_OPACITY, the effective on-screen
+ * weight still sits below the hot/stale rings, which render at full card opacity. Composed by
+ * the caller exactly like a glow/stale ring.
+ */
+export function pausedRingStyle(): PausedRingStyle {
+  return {
+    boxShadow: `0 0 0 3px rgba(${PAUSED_SLATE},1), 0 0 24px 8px rgba(${PAUSED_SLATE},0.45)`,
+    background: '#e7ebf2',
+  }
+}
+
+/**
+ * Inline style for the solid slate ⏸ paused chip — the set-aside-lane mirror of the terracotta
+ * due chip (`dueChipStyle('overdue')`) and the azure stale chip (`staleChipStyle`): the same
+ * `PAUSED_SLATE` hue as the ring, so the "when it comes back" badge reads as a sibling of the
+ * "how soon" / "how stale" badges without ever being mistaken for either.
+ */
+export function pausedChipStyle(): DueChipStyle {
+  return { backgroundColor: `rgb(${PAUSED_SLATE})`, color: '#fff' }
+}
+
+/**
+ * The ⏸ paused chip text — "⏸ starts Jul 30" (reuses `formatStartDay` so the day format matches
+ * the SchedulePanel calendar and the Paused strip). A missing/unparseable start date falls back to
+ * a bare "⏸ paused" (defensive — a dormant card always has a future start_date in practice).
+ */
+export function pausedChipLabel(startDate: string | null | undefined): string {
+  const day = startDate ? formatStartDay(startDate) : ''
+  return day ? `⏸ starts ${day}` : '⏸ paused'
+}
+
+/**
+ * The 💤 paused corner badge — the set-aside lane's member of the corner-flag family: 🔥 while
+ * hot, ❄️ once stale, 💤 while DORMANT (the card is literally asleep until its start date). A
+ * color-independent cue like its siblings, worn in the same top-right disc on the grid card and
+ * cluster row. `title` spells out when it wakes ("Paused — starts Jul 30") for hover/aria.
+ */
+export interface PausedBadge {
+  glyph: string
+  title: string
+}
+
+export function pausedBadge(startDate: string | null | undefined): PausedBadge {
+  const day = startDate ? formatStartDay(startDate) : ''
+  return { glyph: '💤', title: day ? `Paused — starts ${day}` : 'Paused' }
 }

@@ -76,6 +76,33 @@ describe('useKeyboardViewport', () => {
     expect(result.current).toEqual({ inset: 40, height: 760, keyboardOpen: false })
   })
 
+  // Installed PWA (display-mode: standalone): iOS shrinks the LAYOUT viewport too, so window
+  // .innerHeight drops to the visible band alongside vv.height and `innerHeight - vv.height` collapses
+  // to ~0 — the old signal would read "keyboard closed" and never re-fit the sheet (the reporter's
+  // bug). Detection keys off the captured keyboard-down baseline instead, so it survives the shrink.
+  it('detects the keyboard in a standalone PWA where innerHeight also shrinks', () => {
+    const { result } = renderHook(() => useKeyboardViewport(true))
+    // Baseline captured with the keyboard down (innerHeight 800, visible 800).
+    expect(result.current.keyboardOpen).toBe(false)
+    // Keyboard opens: the layout viewport shrinks in lockstep with the visible band.
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 464 })
+    setViewport(464)
+    // keyboardOpen trips off the 800→464 shrink vs. the baseline (not the ~0 live overlap). inset is
+    // ~0 because `fixed` is now relative to the shrunk viewport, so bottom:0 + height fills it.
+    expect(result.current).toEqual({ inset: 0, height: 464, keyboardOpen: true })
+  })
+
+  it('recovers to closed when the standalone keyboard dismisses and innerHeight restores', () => {
+    const { result } = renderHook(() => useKeyboardViewport(true))
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 464 })
+    setViewport(464)
+    expect(result.current.keyboardOpen).toBe(true)
+    // Keyboard down again: both restore to the full layout height.
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER })
+    setViewport(INNER)
+    expect(result.current).toEqual({ inset: 0, height: 800, keyboardOpen: false })
+  })
+
   it('stays CLOSED and binds nothing while disabled', () => {
     const { result } = renderHook(() => useKeyboardViewport(false))
     setViewport(500)

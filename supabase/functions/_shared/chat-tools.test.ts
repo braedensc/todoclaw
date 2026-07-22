@@ -11,14 +11,15 @@ import {
   type ToolContext,
 } from './chat-tools.ts'
 
-Deno.test('the completion/deletion tools plus the memory-confirm tools are destructive', () => {
+Deno.test('the completion/deletion tools plus delete_memory are destructive', () => {
+  // propose_memory is NOT here: a confident inference auto-saves (no confirmation gate) — see the
+  // proactive-memory-inference-autosave ADR. Only the irreversible actions still confirm.
   assertEquals([...DESTRUCTIVE].sort(), [
     'complete_task',
     'delete_completion',
     'delete_habit',
     'delete_memory',
     'delete_task',
-    'propose_memory',
   ])
 })
 

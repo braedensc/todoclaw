@@ -708,10 +708,15 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'pause_task',
     description:
-      'Pause a task until a future date: it disappears from the board, daily plans, the morning ' +
-      'push, and its reminders are held — then it comes back BY ITSELF that morning, exactly where ' +
-      'it was. Use when the user can\'t work on something until a known date ("pause the API ' +
-      'project until Aug 1", "I can\'t touch this until my credits reset"). This also RESCHEDULES ' +
+      'Pause a task until a future date: it disappears from the board, daily plans, and the morning ' +
+      'push, and its reminders are HELD, not cancelled — then it comes back BY ITSELF that morning, ' +
+      'exactly where it was, with its due date and reminders intact. Use whenever the user wants to ' +
+      'KEEP a task but stop it surfacing until a day: blocked until a date ("pause the API project ' +
+      'until Aug 1", "can\'t touch this until my credits reset"); it is handled elsewhere for now; ' +
+      '"stop reminding/promoting me about this until <date>"; or it is a task for an EVENT on a ' +
+      'fixed future day (a movie, a flight, an appointment) that should go quiet until then — e.g. ' +
+      'the user already bought the movie tickets, so pause "go to the movie" until the showing. ' +
+      'PREFER this over complete_task whenever the work is not actually done. This also RESCHEDULES ' +
       'an already-paused task (the new date replaces the old). Not for finishing (complete_task) ' +
       'or removing (delete_task) — the task stays alive, just dormant.',
     schema: z
@@ -814,7 +819,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'complete_task',
     description:
-      'Mark a task done for today. For a recurring chore this advances its cycle (it comes back next interval); for a one-off task or an ONGOING project it archives the task to the Done log. Destructive — the user is asked to confirm before it runs.',
+      'Mark a task done for today. For a recurring chore this advances its cycle (it comes back next interval); for a one-off task or an ONGOING project it archives the task to the Done log. Completing HIDES the task and STOPS its reminders — so if the user wants to KEEP it but just stop it surfacing (it is handled elsewhere, or it is an event on a fixed future day), use pause_task instead. Destructive — the user is asked to confirm before it runs.',
     destructive: true,
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {

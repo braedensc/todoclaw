@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Task } from '../types/task'
 import {
   summarizeQuadrants,
+  dormantByQuadrant,
   moveToQuadrant,
   placeInQuadrant,
   isUnplaced,
@@ -107,6 +108,29 @@ describe('summarizeQuadrants', () => {
       const c = QUADRANT_CENTER[key]
       expect(quadrantMeta(c.x, c.y).key).toBe(key)
     }
+  })
+})
+
+describe('dormantByQuadrant', () => {
+  it('buckets placed dormant tasks by quadrant, soonest-returning first, skipping unplaced', () => {
+    const groups = dormantByQuadrant([
+      makeTask({ id: 'dn-later', x: 0.9, y: 0.9, start_date: '2026-09-01' }),
+      makeTask({ id: 'dn-soon', x: 0.8, y: 0.8, start_date: '2026-08-01' }),
+      makeTask({ id: 'sc', x: 0.1, y: 0.9, start_date: '2026-08-15' }),
+      // Unplaced (staged / null coords) carries no quadrant — it must be skipped (it lives only in
+      // the Paused strip on mobile).
+      makeTask({ id: 'staged', x: null, y: null, staged: true, start_date: '2026-08-01' }),
+    ])
+
+    // Do Now holds both its tasks, ordered by start_date ascending (what returns next heads the cell).
+    expect(groups['do-now'].map((t) => t.id)).toEqual(['dn-soon', 'dn-later'])
+    expect(groups.schedule.map((t) => t.id)).toEqual(['sc'])
+    // The staged task is in no quadrant.
+    for (const key of QUADRANT_ORDER) {
+      expect(groups[key].some((t) => t.id === 'staged')).toBe(false)
+    }
+    expect(groups.errands).toEqual([])
+    expect(groups.someday).toEqual([])
   })
 })
 

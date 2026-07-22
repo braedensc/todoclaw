@@ -9,6 +9,11 @@ import {
   BASE_CARD_SHADOW,
   dueChipStyle,
   gridChipLabel,
+  PAUSED_OPACITY,
+  pausedBadge,
+  pausedChipLabel,
+  pausedChipStyle,
+  pausedRingStyle,
   staleBadge,
   staleChipStyle,
   staleness,
@@ -44,6 +49,15 @@ export interface GridCardProps {
   minutesUntilDue: number | null
   /** True while this card is the one being dragged (so we can suppress its transition). */
   dragging: boolean
+  /**
+   * DORMANT (paused / future start_date) card. Rendered as its own read-only "set aside" pass
+   * BEHIND the active board (GridSurface) so a paused task still shows where it will land without
+   * joining the clustering / drag machinery. Forces the paused lane FIRST — gating urgency to
+   * 'none' and suppressing the stale ring + the due chip (its deadline is intentionally deferred),
+   * exactly as staleness gates the warm lane — and drops the drag handle. Resume is via the card's
+   * ⋯ SchedulePanel. Default false (every normal placed card).
+   */
+  paused?: boolean
   /**
    * Registers this card's root DOM node with the caller (GridView), which mutates its
    * `left`/`top` style directly during a drag instead of going through React state —
@@ -114,6 +128,7 @@ export function GridCard({
   daysUntilDue,
   minutesUntilDue,
   dragging,
+  paused = false,
   cardRef,
   onPointerDown,
   onRename,
@@ -160,27 +175,37 @@ export function GridCard({
 
   const showBadge = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
 
-  // Staleness first — a card >= 3 weeks past due (or an undated card months old) has clearly
-  // been ignored and FLIPS lanes: gating the tier to 'none' swaps the entire hot dress (pulse,
-  // tint, 🔥, terracotta chip) for the cool one below. Same recurring gate as the warm lane.
-  const stale = rc ? null : staleness(task, daysUntilDue)
-  // Urgency tier → glow + chip, applied only to non-recurring, non-stale cards (a recurring task
-  // carries its own RC_COLOR status; done tasks never reach the grid). See lib/visual-urgency.
-  const tier = rc || stale ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
+  // Paused (dormant) gates FIRST and hardest — the set-aside lane wins over every other. A paused
+  // card is neither due nor ignored, so it wears NONE of the hot/stale dress: gating the tier to
+  // 'none' and forcing stale null suppresses the pulse/tint/🔥/❄️ and the due chip below (its
+  // deadline is intentionally deferred), the same way staleness gates the warm lane.
+  const stale = rc || paused ? null : staleness(task, daysUntilDue)
+  // Urgency tier → glow + chip, applied only to non-recurring, non-stale, non-paused cards (a
+  // recurring task carries its own RC_COLOR status; done tasks never reach the grid). See
+  // lib/visual-urgency.
+  const tier = rc || stale || paused ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const glow = urgencyGlowStyle(tier)
   const hotIcon = urgencyIcon(tier)
   // The cool stale dress: azure ring + icy tint, plus the ❄️ badge — the corner flag that
   // replaces the 🔥 and the azure "Stale · Nd" chip that replaces the terracotta overdue chip.
   const staleRing = staleRingStyle(stale)
   const iceBadge = staleBadge(stale)
+  // The slate paused dress: the slate ring + tint (+ the ⏸ chip, 💤 corner flag, and whole-card
+  // dim below). Mutually exclusive with the warm/cool lanes by the gating above, so it stands in
+  // for staleRing wherever a "cool" ring is composed.
+  const pausedRing = paused ? pausedRingStyle() : null
+  const coolRing = pausedRing ?? staleRing
+  // The 💤 corner badge — the paused lane's member of the 🔥/❄️ corner-flag family (the card is
+  // asleep until its start date). Also supplies the ⏸ chip's spelled-out hover title.
+  const sleepBadge = paused ? pausedBadge(task.start_date) : null
 
-  // Compose the card's box-shadow: the warm urgency ring (due-date driven) or the cool stale
-  // ring (never both — staleness gates the tier). Either rides on the shared base depth so the
-  // resting shadow isn't lost. Omitted entirely (undefined) when neither applies, letting the
-  // card fall back to its `shadow-sm` class.
+  // Compose the card's box-shadow: the warm urgency ring (due-date driven) or a cool ring — the
+  // stale azure or the paused slate (never more than one — the lanes are mutually gated). Either
+  // rides on the shared base depth so the resting shadow isn't lost. Omitted entirely (undefined)
+  // when none applies, letting the card fall back to its `shadow-sm` class.
   const boxShadow =
-    glow || staleRing
-      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, staleRing?.boxShadow].filter(Boolean).join(', ')
+    glow || coolRing
+      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, coolRing?.boxShadow].filter(Boolean).join(', ')
       : undefined
 
   // Recurring cards get DASHED, slightly heavier accent side/bottom borders — a distinct "this
@@ -221,9 +246,13 @@ export function GridCard({
     // same lane flip: the warm urgency tint while hot, the icy stale tint once ignored.
     ...(boxShadow ? { boxShadow } : {}),
     ...(glow?.animation ? { animation: glow.animation } : {}),
-    ...((glow?.background ?? staleRing?.background)
-      ? { background: glow?.background ?? staleRing?.background }
+    ...((glow?.background ?? coolRing?.background)
+      ? { background: glow?.background ?? coolRing?.background }
       : {}),
+    // A paused card is dimmed whole — the set-aside cue that survives even where the slate
+    // ring/chip can't be told from another lane. Read-only, so it never drags (the dragging
+    // branch below, which also sets opacity, can't fire on it).
+    ...(paused ? { opacity: PAUSED_OPACITY } : {}),
     // Lift the card above its neighbors while its ⋯ menu is open — the menu itself is portaled
     // (never occluded), so this is just a "this card is active" focus cue.
     ...(menuOpen ? { zIndex: 40 } : {}),
@@ -268,11 +297,17 @@ export function GridCard({
       data-testid="grid-card"
       data-task-id={task.id}
       data-quadrant={quadrant.key}
-      onPointerDown={editing ? undefined : onPointerDown}
+      {...(paused ? { 'data-paused': '' } : {})}
+      // A paused card is READ-ONLY: no reposition drag (the whole-card drag handle is dropped) and
+      // no grab cursor / hover lift — it's a "set aside" preview, not something to move. Its ⋯ menu
+      // still opens (that's the Resume path). Editing also suppresses the drag on a normal card.
+      onPointerDown={editing || paused ? undefined : onPointerDown}
       // hover:[--tc-lift:-2px] = the 2px hover rise (style mix): the inline transform above
       // consumes the var, so cards feel like index cards lifting off a desk. Desktop-only by
       // construction (the grid never renders on mobile).
-      className="absolute cursor-grab rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md hover:[--tc-lift:-2px] active:cursor-grabbing"
+      className={`absolute rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md ${
+        paused ? '' : 'cursor-grab hover:[--tc-lift:-2px] active:cursor-grabbing'
+      }`}
       style={{ ...style, borderTopWidth: 3, padding: '6px 8px 5px' }}
     >
       {/* Persistent recurring cue: a ↻ chip overhanging the top-right corner, decoupled from the
@@ -292,23 +327,25 @@ export function GridCard({
 
       {/* Corner flag — the color-independent cue in whichever lane the card is in: 🔥 while hot
           (overdue or due-today), ❄️ once STALE (the fire has stopped working — 3+ weeks past due,
-          or an undated card months old — so the flame literally cools into ice). Paper disc +
-          lane-colored border keeps it legible on the card tint. Decorative: the chip below carries
-          the same meaning as text for screen readers. Only non-recurring cards reach either lane,
-          so it never collides with the ↻. Mutually exclusive by construction (stale gates the
-          tier to 'none'). */}
-      {!rc && (hotIcon || iceBadge) && (
+          or an undated card months old — so the flame literally cools into ice), 💤 while PAUSED
+          (asleep until its start date). Paper disc + lane-colored border keeps it legible on the
+          card tint. Decorative: the chip below carries the same meaning as text for screen
+          readers. Only non-recurring cards reach these lanes, so it never collides with the ↻.
+          Mutually exclusive by construction (paused/stale gate the tier to 'none'). */}
+      {!rc && (hotIcon || iceBadge || sleepBadge) && (
         <span
           aria-hidden
-          title={hotIcon ? hotIcon.label : iceBadge?.title}
+          title={hotIcon ? hotIcon.label : (iceBadge ?? sleepBadge)?.title}
           className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border bg-card text-[10px] leading-none shadow-sm"
           style={{
             borderColor: hotIcon
               ? dueChipStyle(tier).backgroundColor
-              : staleChipStyle().backgroundColor,
+              : iceBadge
+                ? staleChipStyle().backgroundColor
+                : pausedChipStyle().backgroundColor,
           }}
         >
-          {hotIcon ? hotIcon.glyph : iceBadge?.glyph}
+          {hotIcon ? hotIcon.glyph : (iceBadge ?? sleepBadge)?.glyph}
         </span>
       )}
 
@@ -376,12 +413,25 @@ export function GridCard({
           WHEN ("⏰ 3:00 PM", "in 45m", "Overdue · 2h") not just how many days. Recurring cards
           show their status badge above instead; a STALE card shows the ❄️ chip below instead
           (the "Overdue · Nd" count has stopped meaning anything by then). */}
-      {!editing && !rc && !stale && daysUntilDue !== null && (
+      {!editing && !rc && !stale && !paused && daysUntilDue !== null && (
         <span
           className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
           style={dueChipStyle(tier)}
         >
           {gridChipLabel(tier, daysUntilDue, task.due_time, minutesUntilDue)}
+        </span>
+      )}
+
+      {/* ⏸ paused chip — what a dormant card wears INSTEAD of the due chip: "⏸ starts Jul 30"
+          (slate, so it can't be mistaken for the warm "how soon" or cool "how stale" chips). Its
+          real deadline is deferred until the start date, so the due chip is deliberately hidden. */}
+      {!editing && paused && (
+        <span
+          className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
+          style={pausedChipStyle()}
+          title={sleepBadge?.title}
+        >
+          {pausedChipLabel(task.start_date)}
         </span>
       )}
 
