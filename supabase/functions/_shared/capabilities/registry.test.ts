@@ -135,14 +135,15 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
   assert(!names.has('set_bucket'))
 })
 
-Deno.test('exactly the completion/deletion + memory-confirm tools are destructive', () => {
+Deno.test('exactly the completion/deletion + delete_memory tools are destructive', () => {
+  // propose_memory dropped out of this set: a confident inference now auto-saves (no confirm gate) —
+  // see docs/adr/2026-07-22-proactive-memory-inference-autosave.md. delete_memory still confirms.
   assertEquals([...DESTRUCTIVE].sort(), [
     'complete_task',
     'delete_completion',
     'delete_habit',
     'delete_memory',
     'delete_task',
-    'propose_memory',
   ])
   for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
 })

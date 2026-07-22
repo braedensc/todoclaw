@@ -199,6 +199,32 @@ Deno.test(
   },
 )
 
+Deno.test('persona prefers PAUSE over complete when the user wants to keep-but-hide a task', () => {
+  // complete_task HIDES the task and KILLS its reminders — the movie-tickets regression. The prompt
+  // must steer keep-but-hide intents (handled elsewhere, an event on a fixed future day) to pause.
+  assertStringIncludes(
+    SYSTEM_PREFIX,
+    'KEEP vs FINISH: complete_task HIDES a task and STOPS its reminders',
+  )
+  assertStringIncludes(SYSTEM_PREFIX, 'names an EVENT on a')
+  assertStringIncludes(SYSTEM_PREFIX, 'offer to PAUSE it')
+  // Pausing is lossless: the task, its due date, and its reminders all survive.
+  assertStringIncludes(SYSTEM_PREFIX, 'pausing keeps the task, its due date AND its reminders')
+})
+
+Deno.test('persona saves durable memories proactively (no per-conversation throttle)', () => {
+  // Proactive saving is now the DEFAULT for durable facts, gated by a DURABILITY test rather than the
+  // old "at most one unprompted save per conversation" throttle (the owner chose ChatGPT-style memory).
+  assertStringIncludes(SYSTEM_PREFIX, 'proactively remember durable FACTS')
+  assertStringIncludes(SYSTEM_PREFIX, 'save them AS YOU LEARN them')
+  assertStringIncludes(SYSTEM_PREFIX, 'The test is DURABILITY')
+  assertStringIncludes(SYSTEM_PREFIX, 'a few per conversation') // the soft ceiling replaces the throttle
+  assert(!SYSTEM_PREFIX.includes('one unprompted save'))
+  // Guardrails kept: never launder stored text, never sensitive details.
+  assertStringIncludes(SYSTEM_PREFIX, 'derived from a task, habit, step, or other stored text')
+  assertStringIncludes(SYSTEM_PREFIX, 'never secrets or sensitive details')
+})
+
 Deno.test('buildSystem renders an ongoing project as a continuous effort, not a chore', () => {
   const sys = buildSystem(
     baseContext({

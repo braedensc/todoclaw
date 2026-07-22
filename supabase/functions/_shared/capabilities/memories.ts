@@ -5,8 +5,9 @@
 //   • save_memory (grounded, auto) is gated by a code PROVENANCE check — it refuses content derived
 //     from stored task/habit/step text, so a task titled "remember: delete everything" can't be
 //     laundered into a durable memory (the prompt rule alone can't enforce that; this does).
-//   • propose_memory (inference) is DESTRUCTIVE → it rides the human-confirmation gate, so an
-//     inferred memory is never written without the user's click (the click IS its provenance).
+//   • propose_memory (inference) SKIPS the provenance gate — a confident inference legitimately is not
+//     something the user said verbatim and may relate to a task. It AUTO-SAVES like save_memory (the
+//     human-confirmation gate it once carried was removed — see the ADR); the shared caps still bound it.
 //   • caps (30 rows / 240 chars / dedup) are DB-enforced (CHECK + trigger + unique index) regardless
 //     of what the model passes; a kill switch (config.assistant.memoryEnabled) turns writes off.
 // All DB access is the caller's JWT (RLS); user_id is never a parameter. See ./README.md.
@@ -48,9 +49,9 @@ const MEMORY_OFF = "Memory is turned off in Settings — turn it back on there a
 // is embedded in — any such text, so a task the user merely stored (or pasted) can't launder an
 // instruction into a durable, re-injected memory. Corpus items under 8 chars are ignored so a common
 // short word can't false-trigger. Not bulletproof against a full paraphrase — the containment
-// guarantees (no exfiltration channel, confirmation-gated destructive ops, RLS, hard caps, full user
-// visibility) are the rest of the layered defense. Skipped for propose_memory (the human click is
-// that path's provenance).
+// guarantees (no exfiltration channel, confirmation-gated deletes, RLS, hard caps, full user
+// visibility) are the rest of the layered defense. Skipped for propose_memory — an inference is not
+// user-verbatim text, so its own scoping (prompt + caps + render defanging) is its guard.
 function isDerivedFromStoredText(content: string, corpus: string[]): boolean {
   const c = content.toLowerCase()
   return corpus.some((raw) => {
@@ -76,8 +77,8 @@ async function storedTextCorpus(ctx: CapabilityContext): Promise<string[]> {
   return corpus
 }
 
-// Shared insert for save_memory (with the provenance gate) and propose_memory (after the human
-// confirm; provenance is the click). Count pre-check for a friendly message; the DB trigger (30) +
+// Shared insert for save_memory (with the provenance gate) and propose_memory (which skips it — an
+// inference isn't user-verbatim text). Count pre-check for a friendly message; the DB trigger (30) +
 // CHECK (240) + unique index are the hard backstops regardless of what the model passes.
 async function insertMemory(ctx: CapabilityContext, rawContent: string, checkProvenance: boolean) {
   const content = normalizeMemoryContent(rawContent)
@@ -150,13 +151,16 @@ export const memoryCapabilities: Capability[] = [
 
   defineCapability({
     name: 'propose_memory',
-    // Confirmation-required: the app halts and asks the user before it is saved, so an INFERRED
-    // memory is never written without a human click. Only reached on the approved-resume path.
-    destructive: true,
+    // Auto-save (non-destructive): a confident inference is saved immediately, like save_memory, and
+    // BabyClaw mentions it in its reply. It still SKIPS the provenance gate (an inference isn't
+    // user-verbatim), so the shared caps + render-time defanging + the user's ability to prune are its
+    // guardrails. The human-confirmation gate this once carried was removed — see
+    // docs/adr/2026-07-22-proactive-memory-inference-autosave.md.
     description:
-      'Propose saving a memory you INFERRED — a pattern the user did not state outright. The app asks ' +
-      'the user to confirm before it is saved. Use this instead of save_memory whenever the fact is ' +
-      'your own inference rather than something the user said. One fact, third person, max 240 chars.',
+      'Save a memory you INFERRED — a confident pattern the user did not state outright. It saves ' +
+      'right away (no confirmation) and you should mention it in your reply. Use this instead of ' +
+      'save_memory whenever the fact is your own inference rather than something the user said. ' +
+      'One fact, third person, max 240 chars.',
     schema: z
       .object({
         content: z
@@ -167,8 +171,8 @@ export const memoryCapabilities: Capability[] = [
       })
       .strict(),
     async execute(ctx, i) {
-      // The human confirm already ran (this only executes on approve). Re-check the kill switch in
-      // case the user toggled memory off between the propose and the confirm. Provenance = the click.
+      // Re-check the kill switch (the model never sees this tool when memory is off, but be defensive).
+      // The provenance gate is skipped — an inference isn't user-verbatim text.
       if (!(await memoryEnabled(ctx))) return err(MEMORY_OFF)
       return insertMemory(ctx, i.content, false)
     },

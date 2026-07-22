@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useChatSessions, CHAT_SESSIONS_KEY } from './use-chat-sessions'
 import { useChatMessages, chatMessagesKey, rowsToChatItems } from './use-chat-messages'
+import { classifyPendingReply, NO_RE } from './pending-reply'
 
 // A mutating tool reports which data DOMAINS it changed; each maps to the TanStack Query key that
 // owns that data, so acting in chat refreshes the grid / list / habits / Done tab INSTANTLY (no
@@ -48,14 +49,6 @@ export interface PendingConfirm {
   toolUseId: string
   summary: string
 }
-
-// A typed reply that counts as "yes" while a confirmation is pending. Anything else declines —
-// with the user's words passed through, so "actually make it due Friday" both cancels the action
-// and tells the model what to do instead.
-const YES_RE =
-  /^(y|yes|yeah|yep|yup|sure|ok|okay|confirm|confirmed|do it|go ahead|yes please|sure thing|please do)[\s.!]*$/i
-// A bare "no" adds no words — anything richer rides along as the model's next instruction.
-const NO_RE = /^(n|no|nope|nah|cancel|stop|don't)[\s.!]*$/i
 
 let counter = 0
 const nextId = () => `c${counter++}`
@@ -363,7 +356,7 @@ export function useAiChat() {
   // action (the server executes the tool); anything else sends a deny — with the words attached (when
   // richer than a bare "no") so the model can act on "no, make it due Friday instead".
   const resolvePending = useCallback(
-    (approve: boolean, note?: string) => {
+    (approve: boolean, note?: string, followUp?: string) => {
       const p = pending
       const sid = sessionIdRef.current
       if (!p || !sid) return
@@ -373,7 +366,21 @@ export function useAiChat() {
       if (note) setLiveItems((xs) => [...xs, { id: nextId(), role: 'user', text: note }])
       if (approve) {
         setLiveItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Confirmed.', ok: true }])
-        void run({ session_id: sid, action: { type: 'confirm', tool_use_id: p.toolUseId } })
+        const confirmRun = run({
+          session_id: sid,
+          action: { type: 'confirm', tool_use_id: p.toolUseId },
+        })
+        // "yes, complete it and add milk" — approve the pending action, then (once it and its narration
+        // have landed) send the whole reply on as the next turn so the model acts on the trailing
+        // instruction. Their words already show as the user's bubble above, so this turn adds none.
+        // Guard the session so a mid-run switch can't leak the follow-up into another conversation.
+        if (followUp) {
+          void confirmRun.then(() => {
+            if (sessionIdRef.current === sid) void run({ session_id: sid, message: followUp })
+          })
+        } else {
+          void confirmRun
+        }
       } else {
         setLiveItems((xs) => [...xs, { id: nextId(), role: 'tool', text: 'Declined.', ok: false }])
         const declineNote = note && !NO_RE.test(note.trim()) ? note : undefined
@@ -395,10 +402,14 @@ export function useAiChat() {
     (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || busy) return
-      // While a confirmation is pending, a typed reply IS the answer: yes-like confirms, anything
-      // else declines (passing the words through).
+      // While a confirmation is pending, a typed reply IS the answer. A clear yes confirms; a leading
+      // yes with a trailing clause ("yes, complete it and add milk") confirms AND rides on as a
+      // follow-up turn; anything else declines (the words pass through to the model). Bias is SAFE —
+      // an unclear reply never auto-runs a destructive tool.
       if (pending) {
-        resolvePending(YES_RE.test(trimmed), trimmed)
+        const reply = classifyPendingReply(trimmed)
+        if (reply.verdict === 'confirm') resolvePending(true, trimmed, reply.followUp)
+        else resolvePending(false, trimmed)
         return
       }
       const seedText = seedRef.current ?? undefined
