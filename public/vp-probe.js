@@ -18,13 +18,23 @@ Array.prototype.forEach.call(document.querySelectorAll('[data-mode]'), function 
   })
 })
 // 'app' mode: the src/hooks/use-app-height.ts logic, verbatim semantics — measured
-// visualViewport.height into --app-h; adopt growth + small (≤80px chrome) shrinks, ignore
-// keyboard-sized shrinks, re-baseline on width change.
+// visualViewport.height into --app-h (adopt growth + small ≤80px chrome shrinks, ignore
+// keyboard-sized shrinks, re-baseline on width change), RAISED to the measured 100lvh window
+// height when iOS-standalone && env(safe-area-inset-top) > 0 (the top-anchored cold-launch
+// state, where the short viewport starts at the window top and vv.height floats the nav).
+// Re-measures with a fresh baseline on pageshow / visibilitychange→visible.
 ;(function () {
+  var probe = document.createElement('div')
+  probe.style.cssText =
+    'position:fixed;top:0;left:-9999px;width:0;box-sizing:border-box;' +
+    'height:100vh;height:100lvh;padding-top:env(safe-area-inset-top,0px);' +
+    'visibility:hidden;pointer-events:none;'
+  document.body.appendChild(probe)
   var baseW = window.innerWidth,
     h = 0,
     applied = -1
   function apply() {
+    if (document.visibilityState === 'hidden') return
     var vp = window.visualViewport
     var visible = Math.round(vp ? vp.height : window.innerHeight)
     if (window.innerWidth !== baseW) {
@@ -32,14 +42,28 @@ Array.prototype.forEach.call(document.querySelectorAll('[data-mode]'), function 
       h = 0
     }
     if (visible > h || h - visible <= 80) h = visible
-    if (h !== applied) {
-      applied = h
-      document.documentElement.style.setProperty('--app-h', h + 'px')
+    var shell = h
+    if (window.navigator.standalone === true) {
+      var envTop = parseFloat(getComputedStyle(probe).paddingTop) || 0
+      var windowH = Math.round(probe.getBoundingClientRect().height)
+      if (envTop > 0 && windowH > shell) shell = windowH
     }
+    if (shell !== applied) {
+      applied = shell
+      document.documentElement.style.setProperty('--app-h', shell + 'px')
+    }
+  }
+  function remeasure() {
+    h = 0
+    apply()
   }
   apply()
   if (window.visualViewport) window.visualViewport.addEventListener('resize', apply)
   window.addEventListener('resize', apply)
+  window.addEventListener('pageshow', remeasure)
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') remeasure()
+  })
 })()
 function px(el) {
   return Math.round(el.getBoundingClientRect().height)

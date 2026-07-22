@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Sentry from '@sentry/react'
 import { registerSW } from 'virtual:pwa-register'
+import { initAppUpdate } from './lib/app-update'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
 // Self-hosted fonts (no external Google Fonts request — privacy). Fraunces (variable)
@@ -36,6 +37,11 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 // next load. Registration is harmless without a push subscription — the SW only acts once the user
 // opts in (Settings) and a subscription exists; see src/features/notifications.
 registerSW({ immediate: true })
+
+// Installed-PWA auto-update: iOS restores a Home-Screen app's persisted document indefinitely, so
+// without this a deployed fix never reaches installed users until they delete + re-add the app.
+// Checks the served build sha on resume and reloads at a safe moment. See src/lib/app-update.ts.
+initAppUpdate()
 
 const queryClient = new QueryClient()
 

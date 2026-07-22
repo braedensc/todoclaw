@@ -60,5 +60,9 @@ Functions (`supabase/functions/`).
   notice. Moved out of the chat window (2026-07-06) so the assistant UI isn't cluttered — the
   disclosure now lives once, in Settings.
 
+The chat composer (`ChatConversation.tsx`) registers a **reload blocker** with
+`src/lib/app-update.ts` so the installed-PWA auto-update never reloads away an unsent draft —
+any future long-form composer/editor surface must register its own blocker the same way.
+
 Guardrails (rate limits + global monthly budget kill-switch) and the server-side architecture
 live in `supabase/functions/README.md` and ADR-0015.
