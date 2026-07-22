@@ -46,15 +46,21 @@
    safe-area BOTTOM inset. overscroll-behavior is global (all widths): page-level scroll chaining /
    pull-to-refresh gestures are never wanted.
 
-   STANDALONE (installed PWA) — the override below. An earlier note here claimed "in a standalone
-   PWA svh == dvh == lvh == the full screen"; that is FALSE on iOS (measured on iOS 26): in an
-   installed web app `100dvh` resolves to the screen MINUS the top safe-area inset (e.g. 793 of an
-   852pt screen), while only `lvh` equals the full screen. Because the shell is pinned to the top,
-   that ~59pt deficit becomes a dead strip at the BOTTOM that the in-flow nav floats above — the
-   "bottom bar floating in the installed app" bug, standalone-only (the browser dvh is fine).
-   `lvh` is the large viewport = full screen, and standalone has no dynamic URL bar so it never
-   fluctuates — so it's both correct and stable here. Scoped to `display-mode: standalone` so the
-   browser keeps its (correct) dvh. */
+   STANDALONE (installed PWA) — `--app-h` below. NO static CSS unit is correct there (measured
+   on the iOS 26.5 iPhone 15 Pro Max sim, fix/chat-keyboard-bottom-bar): the standalone viewport
+   itself FLIPS between screen-minus-top-inset (873 of a 932pt screen, fresh launch) and the full
+   screen (932, after the web-app chrome settles). `dvh` tracks the flip, so in the short state a
+   dvh shell leaves the nav floating 59px up (the original floating-bar bug). A previous fix pinned
+   the shell to `100lvh` — but lvh is a static full-screen 932, so in the 873 state the shell
+   OVERHANGS the physical bottom and the nav is clipped to a sliver (the iPhone-15-Pro-Max "bottom
+   bar too tiny" bug; lvh had been measured only in the full-bleed state, on an iPhone 16). The
+   oversized shell also leaves ~59px of scrollable slack that iOS pans when the chat composer
+   focuses, displacing every fixed-position sheet (the broken-chat-keyboard half of the report).
+   The fix: src/hooks/use-app-height.ts measures the REAL live viewport (visualViewport.height,
+   ignoring keyboard-sized shrinks) into `--app-h`; the shell can then never overshoot or
+   undershoot in either standalone state. In a browser tab visualViewport.height == dvh, so the
+   measured value only ever matches the (correct) dvh path — the fallback below is also the
+   pre-JS first-paint value. */
 html,
 body {
   overscroll-behavior: none;
@@ -62,7 +68,8 @@ body {
 @media (max-width: 719px) {
   html,
   body {
-    height: 100dvh;
+    height: 100dvh; /* first paint + no-JS fallback (correct in a tab; see note above) */
+    height: var(--app-h, 100dvh); /* measured live viewport once useAppHeight runs */
     overflow: hidden;
   }
   body {
@@ -71,13 +78,6 @@ body {
   #root {
     height: 100%;
     overflow: hidden;
-  }
-}
-@media (max-width: 719px) and (display-mode: standalone) {
-  html,
-  body {
-    height: 100vh; /* fallback for engines without lvh */
-    height: 100lvh; /* full screen in standalone; dvh is short by the top inset there (iOS 26) */
   }
 }
 

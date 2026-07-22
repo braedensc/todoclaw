@@ -12,11 +12,20 @@ export interface KeyboardViewport {
   inset: number
   /** Visible height (px) left above the keyboard (visualViewport.height); 0 where unsupported. */
   height: number
+  /**
+   * Top edge (px) of the visible band within the layout viewport (visualViewport.offsetTop).
+   * The robust anchor for a `fixed` sheet: `top: top; height: height` lands on the visible
+   * band using ONLY visualViewport values. Mathematically `top ≡ innerHeight − height − inset`
+   * (the old bottom-anchoring), but without referencing innerHeight — which an installed-PWA
+   * keyboard SHRINKS (932→519 measured on the 15 Pro Max sim) and iOS focus-scroll pans, so any
+   * innerHeight sampled a beat earlier positions the sheet somewhere that no longer exists.
+   */
+  top: number
   /** True while a real keyboard is overlapping — the cue to re-fit the sheet to the visible area. */
   keyboardOpen: boolean
 }
 
-const CLOSED: KeyboardViewport = { inset: 0, height: 0, keyboardOpen: false }
+const CLOSED: KeyboardViewport = { inset: 0, height: 0, top: 0, keyboardOpen: false }
 
 // Track the visual viewport so a bottom-anchored mobile sheet can re-fit itself to the area the
 // keyboard leaves visible.
@@ -82,13 +91,20 @@ export function useKeyboardViewport(enabled: boolean): KeyboardViewport {
       // case (hard-won across #263/#275/#291/#292 — do not regress).
       const inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
       const height = Math.round(vv.height)
+      // The visible band's top edge, straight from visualViewport — the innerHeight-free anchor
+      // (see the interface note). Both chat shells position with top+height; `inset` stays for
+      // callers that want the bottom-anchored form.
+      const top = Math.max(0, Math.round(vv.offsetTop))
       const keyboardOpen = overlap > KEYBOARD_MIN_PX
       // Skip the state churn (and re-render) when a scroll/resize event leaves the geometry
       // unchanged — visualViewport 'scroll' can fire rapidly while a finger drags.
       setVp((prev) =>
-        prev.inset === inset && prev.height === height && prev.keyboardOpen === keyboardOpen
+        prev.inset === inset &&
+        prev.height === height &&
+        prev.top === top &&
+        prev.keyboardOpen === keyboardOpen
           ? prev
-          : { inset, height, keyboardOpen },
+          : { inset, height, top, keyboardOpen },
       )
     }
     update()

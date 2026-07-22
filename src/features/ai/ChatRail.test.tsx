@@ -222,11 +222,13 @@ describe('ChatRail', () => {
       expect(rail.getAttribute('style') ?? '').not.toMatch(/height/)
 
       openKeyboard(336)
-      // Re-fitted above the keys: top released, bottom pinned above the keyboard, visible height taken.
+      // Re-fitted onto the visible band: top + height straight from visualViewport (never the
+      // innerHeight-derived bottom inset — the installed-PWA keyboard shrinks/pans innerHeight,
+      // see use-keyboard-viewport). The class's top-0 is overridden by the inline top.
       const style = rail.getAttribute('style') ?? ''
-      expect(style).toMatch(/top:\s*auto/)
-      expect(style).toMatch(/bottom:\s*336px/)
+      expect(style).toMatch(/top:\s*0px/)
       expect(style).toMatch(/height:\s*464px/)
+      expect(style).not.toMatch(/bottom/)
     })
 
     it('stays static (no visualViewport support) so mouse desktops are untouched', () => {

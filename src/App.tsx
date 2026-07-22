@@ -13,6 +13,7 @@ import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
 import { useIsMobile } from './hooks/use-is-mobile'
 import { useLockedViewportGuard } from './hooks/use-locked-viewport-guard'
+import { useAppHeight } from './hooks/use-app-height'
 import { BACKGROUND_DISMISS_ATTR } from './hooks/use-background-dismiss'
 import { ToastProvider, useToast } from './components/use-toast'
 import { quadrantMeta, type QuadrantKey } from './lib/quadrants'
@@ -117,6 +118,11 @@ function AppShell() {
   // window while revealing a focused input and leave that offset behind after the keyboard closes,
   // which floats the bottom nav above the true screen bottom. Snap back whenever that happens.
   useLockedViewportGuard(isMobile)
+  // Size that locked shell to the MEASURED viewport (`--app-h`): in the installed PWA the
+  // standalone viewport flips between screen-minus-top-inset and full screen, so any static CSS
+  // unit either floats the bottom nav (dvh, short state) or clips it off the physical screen
+  // (lvh, the iPhone-15-Pro-Max "too tiny" bug). See use-app-height.ts for the measured numbers.
+  useAppHeight(isMobile)
   const { markSeen: markTourSeen } = useMarkTourSeen()
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
