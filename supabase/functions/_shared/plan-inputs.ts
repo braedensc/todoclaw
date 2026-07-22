@@ -4,7 +4,7 @@
 // Faithful to src/features/ai/use-plan-my-day.ts buildPlanRequest + src/lib recurringStatus/daysUntil.
 
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
-import { SIZE_VALUES, type PlanRequest } from './plan-prompt.ts'
+import { SIZE_VALUES, UPCOMING_WINDOW_DAYS, type PlanRequest } from './plan-prompt.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -93,6 +93,25 @@ export function buildPlanRequest(
     if (s && s.due) recurringDue.push({ id: t.id, text: t.text, status: s.label })
   }
 
+  // Dormant tasks that un-pause SOON (start within UPCOMING_WINDOW_DAYS): kept OUT of `tasks`
+  // (never scheduled) but collected as gentle "coming up" heads-ups. Mirrors the client twin in
+  // src/features/ai/use-plan-my-day.ts. dormant(t) guarantees start_date is set and future, so
+  // startsInDays is >= 1; the run-plan/dispatch sources already exclude completed rows.
+  const upcoming: PlanRequest['upcoming'] = []
+  for (const t of tasks) {
+    if (!dormant(t)) continue
+    const startsInDays = daysUntilInTZ(t.start_date ?? null, timeZone, now)
+    if (startsInDays != null && startsInDays <= UPCOMING_WINDOW_DAYS) {
+      upcoming.push({
+        id: t.id,
+        text: t.text,
+        startsInDays,
+        startDate: (t.start_date as string).slice(0, 10),
+        due: t.due,
+      })
+    }
+  }
+
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
 
@@ -102,5 +121,6 @@ export function buildPlanRequest(
     tasks: planTasks,
     recurringDue,
     habits: habits.filter((h) => h.active).map((h) => h.text),
+    upcoming,
   }
 }

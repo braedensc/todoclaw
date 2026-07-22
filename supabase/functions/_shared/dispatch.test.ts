@@ -670,6 +670,62 @@ Deno.test(
   },
 )
 
+Deno.test(
+  'upcomingItems: dormant `waking` tasks fold in as "un-pauses" lines, soonest-first, window-bounded',
+  () => {
+    const up = upcomingItems(
+      inputs({
+        tasks: [],
+        waking: [
+          { id: 'w1', text: 'Trip prep', start_date: '2026-07-08', due: null }, // tomorrow
+          { id: 'w2', text: 'Q3 planning', start_date: '2026-07-09', due: null }, // in 2 days
+          { id: 'far', text: 'Someday', start_date: '2026-07-20', due: null }, // beyond window
+        ],
+      }),
+      ctx(), // localDate 2026-07-07
+    )
+    assertEquals(up, ['Trip prep — un-pauses tomorrow', 'Q3 planning — un-pauses in 2 days'])
+  },
+)
+
+Deno.test('upcomingItems: due-soon tasks and `waking` tasks interleave by soonest', () => {
+  const up = upcomingItems(
+    inputs({
+      tasks: [
+        {
+          id: 'd',
+          text: 'Report',
+          x: 0.5,
+          y: 0.5,
+          due: '2026-07-09', // in 2 days
+          due_time: null,
+          staged: false,
+          size: null,
+          recurring: null,
+        },
+      ],
+      waking: [{ id: 'w', text: 'Trip prep', start_date: '2026-07-08', due: null }], // tomorrow
+    }),
+    ctx(),
+  )
+  // The un-pausing task (tomorrow) sorts ahead of the due-in-2-days task.
+  assertEquals(up[0], 'Trip prep — un-pauses tomorrow')
+  assert(up.some((l) => l.startsWith('Report')))
+})
+
+Deno.test('buildRecapMessage: a `waking` heads-up rides the 🔭 Coming up line', () => {
+  const m = buildRecapMessage(
+    inputs({
+      tasks: [],
+      plan: { bigRock: { task: 'Alpha' }, smallRocks: [] },
+      waking: [{ id: 'w', text: 'Trip prep', start_date: '2026-07-08', due: null }],
+    }),
+    ctx(),
+    [],
+  )
+  assertStringIncludes(m.body, '🔭 Coming up: Trip prep — un-pauses tomorrow')
+})
+
 Deno.test('buildRecapMessage: no plan but activity → credits the day with a tally', () => {
   const m = buildRecapMessage(inputs({ plan: null }), ctx(), [
     act('completed'),

@@ -86,6 +86,12 @@ export interface DispatchInputs {
   done: Record<string, boolean>
   habit_done: Record<string, boolean>
   plan: DispatchPlan | null
+  // Dormant (paused) tasks whose start_date lands within the look-ahead window — provided by
+  // dispatch_inputs_for_user (migration 20260722190000) so the recap can give a gentle "un-pauses
+  // soon" heads-up. Deliberately DISJOINT from `tasks` (dormant tasks are excluded there). Optional:
+  // new edge code may run against the not-yet-migrated RPC (deploy skew), so a missing key degrades
+  // to [] at the read site — mirrors the completed_at belt-and-suspenders above.
+  waking?: { id: string; text: string; start_date: string; due: string | null }[]
 }
 
 // The user's current local hour (0–23). Pure given `now`; Intl does the DST/offset math.
@@ -419,6 +425,19 @@ export function upcomingItems(inputs: DispatchInputs, ctx: RecapContext): string
           })
         }
       }
+    }
+  }
+  // Paused tasks that un-pause within the window (disjoint from inputs.tasks, which excludes them).
+  // A gentle heads-up, folded into the same soonest-first + UPCOMING_CAP budget as the due look-ahead.
+  // `?? []` covers the deploy-skew window where the RPC predates the `waking` key.
+  for (const w of inputs.waking ?? []) {
+    const inDays = dayDelta(ctx.localDate, w.start_date)
+    if (inDays >= 1 && inDays <= LOOKAHEAD_DAYS) {
+      rows.push({
+        inDays,
+        timed: false,
+        text: `${w.text} — un-pauses ${inDays === 1 ? 'tomorrow' : `in ${inDays} days`}`,
+      })
     }
   }
   rows.sort((a, b) => a.inDays - b.inDays || (a.timed === b.timed ? 0 : a.timed ? -1 : 1))
