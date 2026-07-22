@@ -557,10 +557,10 @@ describe('paused (start-later) tasks', () => {
     // Out of the ranked list, hidden behind the collapsed strip header…
     expect(screen.queryByText('Paused project')).toBeNull()
     const header = screen.getByRole('button', { name: /Paused · 1/ })
-    // …and revealed (with its return date) when the strip expands.
+    // …and revealed (with its slate ⏸ "starts <day>" chip) when the strip expands.
     fireEvent.click(header)
     expect(screen.getByText('Paused project')).toBeInTheDocument()
-    expect(screen.getByText(/returns/)).toBeInTheDocument()
+    expect(screen.getByText(/^⏸ starts /)).toBeInTheDocument()
   })
 
   it('Resume clears start_date (the task wakes at its stored spot)', () => {

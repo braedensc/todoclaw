@@ -246,6 +246,27 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     [tasks, doneToday, timeZone],
   )
 
+  // Dormant (paused / future start_date) tasks that already have a grid spot. `isPlaced` drops
+  // them (dormancy hides a task from the active board), so they render as their OWN read-only
+  // "set aside" pass BEHIND the clustered active cards (GridSurface) — a paused card still shows
+  // WHERE it will land when it wakes, without joining clustering or the drag/merge machinery
+  // (folding a paused card into an active cluster would break placement and let it be dragged).
+  // Same completed/staged exclusions as `isPlaced`; the only difference is it KEEPS the ones
+  // `isPlaced` drops solely for being dormant. Not registered as cluster nodes.
+  const dormantPlaced = useMemo(
+    () =>
+      tasks.filter(
+        (t): t is Task & { x: number; y: number } =>
+          !t.staged &&
+          t.x != null &&
+          t.y != null &&
+          !t.completed_at &&
+          !(doneToday ?? {})[t.id] &&
+          isDormant(t, timeZone),
+      ),
+    [tasks, doneToday, timeZone],
+  )
+
   const softDeleteMutate = softDelete.mutate
   const markDoneMutate = markDone.mutate
 
@@ -389,6 +410,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     timeZone,
     placedTasks,
     pendingTasks,
+    dormantPlaced,
     clusters,
     draggedTask,
     draggingId,

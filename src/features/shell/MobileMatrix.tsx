@@ -6,16 +6,18 @@ import { useDailyState } from '../daily-state/use-daily-state'
 import { useNow } from '../../hooks/use-now'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
-import { urgencyTier } from '../../lib/visual-urgency'
+import { PAUSED_OPACITY, pausedChipStyle, urgencyTier } from '../../lib/visual-urgency'
 import { recurringDoneToday } from '../../lib/recurring'
 import { isDormant } from '../../lib/start-date'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
   summarizeQuadrants,
+  dormantByQuadrant,
   moveToQuadrant,
   isUnplaced,
   QUADRANT_ORDER,
   QUADRANT_CENTER,
+  QUADRANT_PREVIEW_COUNT,
   QUADRANT_SUBTITLE,
 } from '../../lib/quadrant-summary'
 import { QUADRANT_TINT } from '../grid/grid-constants'
@@ -114,6 +116,11 @@ export function MobileMatrix({
   // lists, so the Unplaced strip below the overview is their only mobile surface.
   const unplaced = active.filter((t) => isUnplaced(t))
   const { buckets } = summarizeQuadrants(active, { timeZone })
+  // Placed dormant tasks bucketed per quadrant — the set-aside preview that rides alongside the
+  // active summary. They stay OUT of `active` (and so out of the count badges and dueCounts), so
+  // they can't read as due or inflate a quadrant's total; they surface only as a dimmed ⏸ preview
+  // row + a slate ⏸N sub-count. Unplaced dormant tasks live in the Paused strip below.
+  const dormantBuckets = dormantByQuadrant(paused.filter((t) => !isUnplaced(t)))
 
   // Per-quadrant "on fire" counts for the overview badges: due today (incl. the final hours)
   // and overdue. Recurring tasks are excluded — their cadence badge is a different system. So are
@@ -226,7 +233,15 @@ export function MobileMatrix({
           {QUADRANT_ORDER.map((key) => {
             const m = meta(key)
             const { count, top } = buckets[key]
-            const empty = count === 0
+            const dormant = dormantBuckets[key]
+            // Dormant tasks fill only the preview slots the active top-3 leave empty, so a paused
+            // task can never displace an active one from the visible preview.
+            const dormantPreview = dormant.slice(
+              0,
+              Math.max(0, QUADRANT_PREVIEW_COUNT - top.length),
+            )
+            // Empty only when there's nothing at all — active OR paused — to show.
+            const empty = count === 0 && dormant.length === 0
             const due = dueCounts(key)
             const dueBadge = [
               due.today > 0 ? `${due.today} today` : null,
@@ -250,12 +265,27 @@ export function MobileMatrix({
                   <span className="font-serif text-[15px] font-semibold" style={{ color: m.color }}>
                     {m.label}
                   </span>
-                  <span
-                    aria-hidden
-                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
-                    style={{ background: m.color }}
-                  >
-                    {count}
+                  <span className="flex shrink-0 items-center gap-1">
+                    {/* Slate ⏸N sub-count — how many paused tasks belong to this quadrant. Kept
+                        separate from (and quieter than) the active count badge so a paused task
+                        never reads as an active or due one. */}
+                    {dormant.length > 0 && (
+                      <span
+                        aria-hidden
+                        title={`${dormant.length} paused`}
+                        className="inline-flex h-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none"
+                        style={pausedChipStyle()}
+                      >
+                        ⏸{dormant.length}
+                      </span>
+                    )}
+                    <span
+                      aria-hidden
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
+                      style={{ background: m.color }}
+                    >
+                      {count}
+                    </span>
                   </span>
                 </div>
                 <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
@@ -270,7 +300,9 @@ export function MobileMatrix({
                     {dueBadge}
                   </span>
                 )}
-                {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar. */}
+                {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar.
+                    Any paused tasks follow the active ones, DIMMED with a ⏸ marker, so they read
+                    as "set aside, coming back later" and never as part of the live workload. */}
                 {empty ? (
                   <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>
                 ) : (
@@ -291,6 +323,18 @@ export function MobileMatrix({
                     {count > top.length && (
                       <li className="text-[11px] text-muted-light">+{count - top.length} more</li>
                     )}
+                    {dormantPreview.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink"
+                        style={{ opacity: PAUSED_OPACITY }}
+                      >
+                        <span aria-hidden className="shrink-0 text-[10px] leading-none">
+                          ⏸
+                        </span>
+                        <span className="truncate">{t.text}</span>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </button>

@@ -243,6 +243,59 @@ describe('MobileMatrix', () => {
     })
   })
 
+  describe('paused (dormant) tasks', () => {
+    // A month out is firmly future in the mocked UTC zone; now-relative so it can't rot.
+    const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+
+    it('previews a placed dormant task dimmed in its quadrant, out of the active count and dueCounts', () => {
+      const today = new Date().toISOString().slice(0, 10)
+      tasksData = [
+        makeTask({ id: 'dn', text: 'ship the release', x: 0.9, y: 0.9 }),
+        // Dormant, placed in Schedule, and due TODAY — the due date must NOT light an on-fire badge.
+        makeTask({
+          id: 'pz',
+          text: 'plan offsite',
+          x: 0.1,
+          y: 0.9,
+          start_date: future,
+          due: today,
+        }),
+      ]
+      renderMatrix()
+
+      // The paused task does NOT inflate Schedule's active count badge…
+      expect(screen.getByLabelText('Schedule, 0 tasks')).toBeInTheDocument()
+      // …but still previews in the Schedule cell, dimmed (set-aside).
+      const row = screen.getByText('plan offsite').closest('li')!
+      expect(row.style.opacity).not.toBe('')
+      expect(parseFloat(row.style.opacity)).toBeLessThan(1)
+      // …with a slate ⏸1 sub-count marking the quadrant as holding one paused task.
+      expect(screen.getByTitle('1 paused')).toHaveTextContent('⏸1')
+      // …and it is excluded from the due "on fire" counts: no "N today" badge appears.
+      expect(screen.queryByText(/\d+ today/)).toBeNull()
+    })
+
+    it('ranks paused tasks AFTER active in a cell so they never displace the top-3', () => {
+      // Three active + one paused, all in Do Now. The preview caps at 3 and active win every slot,
+      // so the paused task is not previewed (but the ⏸1 sub-count still flags it).
+      tasksData = [
+        makeTask({ id: 'a', text: 'active one', x: 0.99, y: 0.99 }),
+        makeTask({ id: 'b', text: 'active two', x: 0.9, y: 0.9 }),
+        makeTask({ id: 'c', text: 'active three', x: 0.8, y: 0.8 }),
+        makeTask({ id: 'p', text: 'paused four', x: 0.7, y: 0.7, start_date: future }),
+      ]
+      renderMatrix()
+
+      expect(screen.getByLabelText('Do Now, 3 tasks')).toBeInTheDocument()
+      // All three active tasks preview; the paused one is squeezed out of the 3 slots.
+      expect(screen.getByText('active one')).toBeInTheDocument()
+      expect(screen.getByText('active three')).toBeInTheDocument()
+      expect(screen.queryByText('paused four')).toBeNull()
+      // …but the sub-count still surfaces it.
+      expect(screen.getByTitle('1 paused')).toHaveTextContent('⏸1')
+    })
+  })
+
   describe('unplaced strip', () => {
     // A task created without a position (BabyClaw create_task with no urgency/importance, or the
     // desktop widget's staged tray) — no quadrant, so before the strip it was invisible on mobile.
