@@ -10,6 +10,7 @@ import {
   dueChipStyle,
   gridChipLabel,
   PAUSED_OPACITY,
+  pausedBadge,
   pausedChipLabel,
   pausedChipStyle,
   pausedRingStyle,
@@ -21,7 +22,6 @@ import {
   urgencyIcon,
   urgencyTier,
 } from '../../lib/visual-urgency'
-import { formatStartDay } from '../../lib/start-date'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useClickOutside } from '../../hooks/use-click-outside'
 import { useAnchoredMenu } from '../../hooks/use-anchored-menu'
@@ -190,11 +190,14 @@ export function GridCard({
   // replaces the 🔥 and the azure "Stale · Nd" chip that replaces the terracotta overdue chip.
   const staleRing = staleRingStyle(stale)
   const iceBadge = staleBadge(stale)
-  // The slate paused dress: a quiet slate ring + faint tint (+ the ⏸ chip + whole-card dim below).
-  // Mutually exclusive with the warm/cool lanes by the gating above, so it stands in for staleRing
-  // wherever a "cool" ring is composed.
+  // The slate paused dress: the slate ring + tint (+ the ⏸ chip, 💤 corner flag, and whole-card
+  // dim below). Mutually exclusive with the warm/cool lanes by the gating above, so it stands in
+  // for staleRing wherever a "cool" ring is composed.
   const pausedRing = paused ? pausedRingStyle() : null
   const coolRing = pausedRing ?? staleRing
+  // The 💤 corner badge — the paused lane's member of the 🔥/❄️ corner-flag family (the card is
+  // asleep until its start date). Also supplies the ⏸ chip's spelled-out hover title.
+  const sleepBadge = paused ? pausedBadge(task.start_date) : null
 
   // Compose the card's box-shadow: the warm urgency ring (due-date driven) or a cool ring — the
   // stale azure or the paused slate (never more than one — the lanes are mutually gated). Either
@@ -324,23 +327,25 @@ export function GridCard({
 
       {/* Corner flag — the color-independent cue in whichever lane the card is in: 🔥 while hot
           (overdue or due-today), ❄️ once STALE (the fire has stopped working — 3+ weeks past due,
-          or an undated card months old — so the flame literally cools into ice). Paper disc +
-          lane-colored border keeps it legible on the card tint. Decorative: the chip below carries
-          the same meaning as text for screen readers. Only non-recurring cards reach either lane,
-          so it never collides with the ↻. Mutually exclusive by construction (stale gates the
-          tier to 'none'). */}
-      {!rc && (hotIcon || iceBadge) && (
+          or an undated card months old — so the flame literally cools into ice), 💤 while PAUSED
+          (asleep until its start date). Paper disc + lane-colored border keeps it legible on the
+          card tint. Decorative: the chip below carries the same meaning as text for screen
+          readers. Only non-recurring cards reach these lanes, so it never collides with the ↻.
+          Mutually exclusive by construction (paused/stale gate the tier to 'none'). */}
+      {!rc && (hotIcon || iceBadge || sleepBadge) && (
         <span
           aria-hidden
-          title={hotIcon ? hotIcon.label : iceBadge?.title}
+          title={hotIcon ? hotIcon.label : (iceBadge ?? sleepBadge)?.title}
           className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border bg-card text-[10px] leading-none shadow-sm"
           style={{
             borderColor: hotIcon
               ? dueChipStyle(tier).backgroundColor
-              : staleChipStyle().backgroundColor,
+              : iceBadge
+                ? staleChipStyle().backgroundColor
+                : pausedChipStyle().backgroundColor,
           }}
         >
-          {hotIcon ? hotIcon.glyph : iceBadge?.glyph}
+          {hotIcon ? hotIcon.glyph : (iceBadge ?? sleepBadge)?.glyph}
         </span>
       )}
 
@@ -424,7 +429,7 @@ export function GridCard({
         <span
           className="mt-0.5 inline-block rounded-[3px] px-[5px] py-[1.5px] text-[9px] font-bold"
           style={pausedChipStyle()}
-          title={task.start_date ? `Paused — starts ${formatStartDay(task.start_date)}` : 'Paused'}
+          title={sleepBadge?.title}
         >
           {pausedChipLabel(task.start_date)}
         </span>

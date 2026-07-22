@@ -9,6 +9,7 @@ import {
   BASE_CARD_SHADOW,
   dueChipStyle,
   PAUSED_OPACITY,
+  pausedBadge,
   pausedChipLabel,
   pausedChipStyle,
   pausedRingStyle,
@@ -322,6 +323,8 @@ function ClusterPopupRow({
   const iceBadge = staleBadge(stale)
   const pausedRing = paused ? pausedRingStyle() : null
   const coolRing = pausedRing ?? staleRing
+  // The 💤 corner badge — same corner-flag family as the grid card (🔥 hot / ❄️ stale / 💤 paused).
+  const sleepBadge = paused ? pausedBadge(task.start_date) : null
   const boxShadow =
     glow || coolRing
       ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, coolRing?.boxShadow].filter(Boolean).join(', ')
@@ -401,21 +404,23 @@ function ClusterPopupRow({
         ...(paused ? { opacity: PAUSED_OPACITY } : {}),
       }}
     >
-      {/* Corner flag — 🔥 while hot (overdue/due-today), ❄️ once stale — the color-independent cue,
-          same lane flip as the grid card's. Overhangs into the row's own margin, so it never clips
-          the popup's scroller. */}
-      {(hotIcon || iceBadge) && (
+      {/* Corner flag — 🔥 while hot (overdue/due-today), ❄️ once stale, 💤 while paused — the
+          color-independent cue, same lane flip as the grid card's. Overhangs into the row's own
+          margin, so it never clips the popup's scroller. */}
+      {(hotIcon || iceBadge || sleepBadge) && (
         <span
           aria-hidden
-          title={hotIcon ? hotIcon.label : iceBadge?.title}
+          title={hotIcon ? hotIcon.label : (iceBadge ?? sleepBadge)?.title}
           className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full border bg-card text-[10px] leading-none shadow-sm"
           style={{
             borderColor: hotIcon
               ? dueChipStyle(tier).backgroundColor
-              : staleChipStyle().backgroundColor,
+              : iceBadge
+                ? staleChipStyle().backgroundColor
+                : pausedChipStyle().backgroundColor,
           }}
         >
-          {hotIcon ? hotIcon.glyph : iceBadge?.glyph}
+          {hotIcon ? hotIcon.glyph : (iceBadge ?? sleepBadge)?.glyph}
         </span>
       )}
       {editing ? (

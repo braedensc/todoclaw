@@ -7,6 +7,7 @@ import {
   fmtOverdueAmount,
   gridChipLabel,
   PAUSED_OPACITY,
+  pausedBadge,
   pausedChipLabel,
   pausedChipStyle,
   pausedRingStyle,
@@ -369,10 +370,10 @@ describe('staleChipStyle', () => {
 // (no depth ladder): a task is paused or it isn't. Applied by the grid card / cluster row / Paused
 // strip via these shared helpers so the surfaces can't drift.
 describe('paused lane', () => {
-  it('pausedRingStyle: a quiet slate ring + faint slate tint (no depth ladder)', () => {
+  it('pausedRingStyle: a full-alpha slate ring + halo + slate tint (no depth ladder)', () => {
     expect(pausedRingStyle()).toEqual({
-      boxShadow: '0 0 0 2px rgba(100,116,139,0.55), 0 0 16px 4px rgba(100,116,139,0.20)',
-      background: '#f1f3f6',
+      boxShadow: '0 0 0 3px rgba(100,116,139,1), 0 0 24px 8px rgba(100,116,139,0.45)',
+      background: '#e7ebf2',
     })
   })
 
@@ -390,6 +391,12 @@ describe('paused lane', () => {
     expect(pausedChipLabel(null)).toBe('⏸ paused')
     expect(pausedChipLabel(undefined)).toBe('⏸ paused')
     expect(pausedChipLabel('not-a-date')).toBe('⏸ paused')
+  })
+
+  it('pausedBadge: the 💤 corner flag (the paused member of the 🔥/❄️ family) + spelled-out title', () => {
+    expect(pausedBadge('2026-07-30')).toEqual({ glyph: '💤', title: 'Paused — starts Jul 30' })
+    expect(pausedBadge(null)).toEqual({ glyph: '💤', title: 'Paused' })
+    expect(pausedBadge('not-a-date')).toEqual({ glyph: '💤', title: 'Paused' })
   })
 
   it('PAUSED_OPACITY dims the card but keeps it legible (not a fade-out)', () => {

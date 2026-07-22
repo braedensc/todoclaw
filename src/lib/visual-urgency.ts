@@ -465,9 +465,10 @@ const PAUSED_SLATE = '100,116,139'
  * Whole-card opacity a paused card is dimmed to. The set-aside cue that reads even where the slate
  * ring/chip can't be told apart from another lane: a paused card is visibly quieter than every
  * active/hot/stale card, which all render at full opacity. Kept legible (not a fade-out) so the
- * card is still readable and its ⋯ menu still usable (that's the Resume path).
+ * card is still readable and its ⋯ menu still usable (that's the Resume path). 0.7 (up from the
+ * first cut's 0.62) so the full-alpha slate ring below still punches through the dim.
  */
-export const PAUSED_OPACITY = 0.62
+export const PAUSED_OPACITY = 0.7
 
 /**
  * Ring + optional card tint for the paused lane — the same compose-into-`style` shape the warm
@@ -480,15 +481,18 @@ export interface PausedRingStyle {
 }
 
 /**
- * The slate ring + faint slate tint a dormant card wears — the set-aside lane's mirror of
+ * The slate ring + slate tint a dormant card wears — the set-aside lane's mirror of
  * `staleRingStyle`. BINARY (no depth ladder like staleness): a task is paused or it isn't, so
- * there's a single, quiet treatment. Softer than the loud hot/stale rings — a paused card should
- * recede, not shout. Composed by the caller exactly like a glow/stale ring.
+ * there's a single treatment. Pushed LOUDER on 2026-07-22 ("more noticeable" was the explicit
+ * ask): a full-alpha 3px ring + a real halo + a deeper tint, sized against the stale ladder's
+ * middle rung — because the whole card then dims to PAUSED_OPACITY, the effective on-screen
+ * weight still sits below the hot/stale rings, which render at full card opacity. Composed by
+ * the caller exactly like a glow/stale ring.
  */
 export function pausedRingStyle(): PausedRingStyle {
   return {
-    boxShadow: `0 0 0 2px rgba(${PAUSED_SLATE},0.55), 0 0 16px 4px rgba(${PAUSED_SLATE},0.20)`,
-    background: '#f1f3f6',
+    boxShadow: `0 0 0 3px rgba(${PAUSED_SLATE},1), 0 0 24px 8px rgba(${PAUSED_SLATE},0.45)`,
+    background: '#e7ebf2',
   }
 }
 
@@ -510,4 +514,20 @@ export function pausedChipStyle(): DueChipStyle {
 export function pausedChipLabel(startDate: string | null | undefined): string {
   const day = startDate ? formatStartDay(startDate) : ''
   return day ? `⏸ starts ${day}` : '⏸ paused'
+}
+
+/**
+ * The 💤 paused corner badge — the set-aside lane's member of the corner-flag family: 🔥 while
+ * hot, ❄️ once stale, 💤 while DORMANT (the card is literally asleep until its start date). A
+ * color-independent cue like its siblings, worn in the same top-right disc on the grid card and
+ * cluster row. `title` spells out when it wakes ("Paused — starts Jul 30") for hover/aria.
+ */
+export interface PausedBadge {
+  glyph: string
+  title: string
+}
+
+export function pausedBadge(startDate: string | null | undefined): PausedBadge {
+  const day = startDate ? formatStartDay(startDate) : ''
+  return { glyph: '💤', title: day ? `Paused — starts ${day}` : 'Paused' }
 }

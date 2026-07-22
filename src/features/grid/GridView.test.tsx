@@ -377,6 +377,13 @@ describe('GridView paused (dormant) cards', () => {
     expect(within(card).getByText('Book the venue')).toBeInTheDocument()
     // The ⏸ slate chip says when it comes back (formatStartDay day), not a due date.
     expect(within(card).getByText(/^⏸ starts /)).toBeInTheDocument()
+    // The 💤 corner flag — the paused member of the 🔥/❄️ family. It shares its spelled-out title
+    // with the chip, so query for the flag as the 💤-only element among them (stale-test pattern).
+    const sleepBits = within(card).getAllByTitle(/^Paused — starts /)
+    expect(sleepBits.some((el) => el.textContent === '💤')).toBe(true)
+    // The slate dress threads onto the node: full-alpha slate ring + slate tint (#e7ebf2).
+    expect(card.style.boxShadow).toContain('rgba(100,116,139,1)')
+    expect(card.style.background).toBe('rgb(231, 235, 242)')
     // Read-only: flagged for E2E/style hooks, and NO grab cursor (can't be dragged).
     expect(card).toHaveAttribute('data-paused')
     expect(card.className).not.toContain('cursor-grab')
@@ -385,6 +392,10 @@ describe('GridView paused (dormant) cards', () => {
     expect(parseFloat(card.style.opacity)).toBeLessThan(1)
     // The empty-state is gated on BOTH lists: a board with only a paused card is not "empty".
     expect(screen.queryByText('No tasks placed — add one above and drag it here.')).toBeNull()
+    // …and the legend below the grid decodes the lane (slate swatch + the 💤 note).
+    const legend = screen.getByTestId('urgency-legend')
+    expect(within(legend).getByText('paused (dimmed)')).toBeInTheDocument()
+    expect(within(legend).getByText(/asleep until its start date/)).toBeInTheDocument()
   })
 
   it('suppresses the due chip on a paused card — its deadline is intentionally deferred', () => {
