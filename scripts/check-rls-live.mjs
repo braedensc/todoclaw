@@ -257,6 +257,51 @@ async function runAiUsageGrantProbe(client, failures) {
   }
 }
 
+// G. No RLS-immune table privilege for the client roles. Supabase's postgres default ACL hands
+// anon/authenticated TRUNCATE, REFERENCES, and TRIGGER on every public table a migration creates.
+// None are reachable through PostgREST (it exposes only row DML + RPC), but none are gated by RLS
+// either — TRUNCATE empties a table wholesale, REFERENCES/TRIGGER are DDL-time — so they are
+// exactly the privileges that would matter if a client role ever gained a SQL path. Migration
+// 20260722180000 revokes them on existing tables AND from the default ACL; both are pinned here
+// (a table minted under un-fixed defaults, or a re-granted default, fails the build).
+async function runLatentPrivsCheck(client, failures) {
+  const LATENT = ['TRUNCATE', 'REFERENCES', 'TRIGGER']
+  const held = await client.query(
+    `select grantee, table_name, privilege_type
+       from information_schema.role_table_grants
+      where table_schema = 'public'
+        and grantee in ('anon', 'authenticated')
+        and privilege_type = any($1::text[])
+      order by 1, 2, 3`,
+    [LATENT],
+  )
+  for (const g of held.rows) {
+    failures.push(
+      `latent privs: role "${g.grantee}" holds ${g.privilege_type} on public.${g.table_name} — ` +
+        `unreachable via PostgREST but NOT gated by RLS; client roles must not hold it ` +
+        `(migration 20260722180000).`,
+    )
+  }
+  const promised = await client.query(
+    `select a.grantee::regrole::text as grantee, a.privilege_type
+       from pg_default_acl d, aclexplode(d.defaclacl) a
+      where d.defaclrole = 'postgres'::regrole
+        and d.defaclnamespace = 'public'::regnamespace
+        and d.defaclobjtype = 'r'
+        and a.grantee::regrole::text in ('anon', 'authenticated')
+        and a.privilege_type = any($1::text[])
+      order by 1, 2`,
+    [LATENT],
+  )
+  for (const p of promised.rows) {
+    failures.push(
+      `latent privs: the postgres default ACL still promises ${p.privilege_type} to ` +
+        `"${p.grantee}" on FUTURE public tables — the next migration's table would mint it ` +
+        `(migration 20260722180000 revokes the default).`,
+    )
+  }
+}
+
 async function main() {
   if (!DB_URL) {
     console.error(
@@ -328,6 +373,10 @@ async function main() {
 
     // F. ai_usage direct writes are revoked; the DEFINER guardrail RPCs are the only write path.
     await runAiUsageGrantProbe(client, failures)
+
+    // G. Client roles hold no RLS-immune table privilege (TRUNCATE/REFERENCES/TRIGGER),
+    // on existing tables or in the default ACL for future ones.
+    await runLatentPrivsCheck(client, failures)
   } finally {
     await client.end()
   }
