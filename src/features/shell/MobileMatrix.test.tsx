@@ -242,4 +242,70 @@ describe('MobileMatrix', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
   })
+
+  describe('unplaced strip', () => {
+    // A task created without a position (BabyClaw create_task with no urgency/importance, or the
+    // desktop widget's staged tray) — no quadrant, so before the strip it was invisible on mobile.
+    const stagedTask = (over: Partial<Task> = {}) =>
+      makeTask({ id: 'st1', text: 'sort the garage', x: null, y: null, staged: true, ...over })
+
+    it('surfaces a staged task in the strip without counting it in any quadrant', () => {
+      tasksData = [...onerPerQuadrant(), stagedTask()]
+      renderMatrix()
+
+      const strip = screen.getByRole('region', { name: 'Unplaced tasks' })
+      expect(within(strip).getByText('Unplaced · 1')).toBeInTheDocument()
+      expect(within(strip).getByText('sort the garage')).toBeInTheDocument()
+      // Quadrant counts are unchanged — the staged task is in none of them.
+      expect(screen.getByLabelText('Do Now, 2 tasks')).toBeInTheDocument()
+      expect(screen.getByLabelText('Someday, 1 task')).toBeInTheDocument()
+    })
+
+    it('renders no strip when every task is placed', () => {
+      tasksData = onerPerQuadrant()
+      renderMatrix()
+      expect(screen.queryByRole('region', { name: 'Unplaced tasks' })).not.toBeInTheDocument()
+    })
+
+    it('a staged task’s due date does not feed a quadrant due badge', () => {
+      // Pre-fix, dueCounts bucketed null coords at (0.5, 0.5) — a staged task due today lit up a
+      // quadrant it isn't in. Now-relative fixture: due "today" in the mocked UTC zone.
+      const today = new Date().toISOString().slice(0, 10)
+      tasksData = [makeTask({ id: 'dn', x: 0.9, y: 0.9 }), stagedTask({ due: today })]
+      renderMatrix()
+      expect(screen.queryByText(/1 today/)).not.toBeInTheDocument()
+    })
+
+    it('Place opens the picker with every quadrant selectable and titled "Place"', () => {
+      tasksData = [...onerPerQuadrant(), stagedTask()]
+      renderMatrix()
+
+      fireEvent.click(screen.getByLabelText('Place sort the garage'))
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAccessibleName(/Place .*sort the garage/)
+      // No current quadrant → nothing is disabled (unlike a placed task's move).
+      for (const label of ['Do Now', 'Schedule', 'Errands', 'Someday']) {
+        expect(within(dialog).getByRole('button', { name: `Move to ${label}` })).toBeEnabled()
+      }
+    })
+
+    it('picking a quadrant materializes the task: coords inside it + staged:false', () => {
+      tasksData = [...onerPerQuadrant(), stagedTask()]
+      renderMatrix()
+
+      fireEvent.click(screen.getByLabelText('Place sort the garage'))
+      const dialog = screen.getByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Move to Schedule' }))
+
+      expect(updateMutate).toHaveBeenCalledTimes(1)
+      const arg = updateMutate.mock.calls[0]![0] as {
+        id: string
+        patch: { x: number; y: number; staged: boolean }
+      }
+      expect(arg.id).toBe('st1')
+      expect(arg.patch.staged).toBe(false)
+      expect(quadrantMeta(arg.patch.x, arg.patch.y).key).toBe('schedule')
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
 })

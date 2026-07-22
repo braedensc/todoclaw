@@ -1,6 +1,11 @@
 import type { Task } from '../../types/task'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
-import { QUADRANT_ORDER, QUADRANT_CENTER, QUADRANT_SUBTITLE } from '../../lib/quadrant-summary'
+import {
+  QUADRANT_ORDER,
+  QUADRANT_CENTER,
+  QUADRANT_SUBTITLE,
+  isUnplaced,
+} from '../../lib/quadrant-summary'
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import { BottomSheet } from '../../components/BottomSheet'
 
@@ -8,6 +13,8 @@ import { BottomSheet } from '../../components/BottomSheet'
 // pixel-dragging: the user picks one of four large quadrant targets and the task snaps to that
 // quadrant (band center → collision spiral, in the caller). Inherently accessible in a way free
 // dragging never is. Presentational — the caller (MobileMatrix) owns the coordinate math + write.
+// Doubles as the Unplaced strip's "Place" flow: for a still-staged task the copy flips to
+// "Place" and no quadrant is marked Current (the caller passes currentKey null).
 
 // Label + color for a quadrant, from quadrantMeta at its band center.
 function display(key: QuadrantKey) {
@@ -28,13 +35,16 @@ export function MoveToQuadrantSheet({
   onPick: (dest: QuadrantKey) => void
   onClose: () => void
 }) {
+  const placing = task != null && isUnplaced(task)
   return (
     <BottomSheet
       open={task != null}
       onClose={onClose}
-      title={task ? `Move “${task.text}”` : 'Move task'}
+      title={task ? `${placing ? 'Place' : 'Move'} “${task.text}”` : 'Move task'}
     >
-      <p className="mb-3 text-xs text-muted">Pick a quadrant to move this task to.</p>
+      <p className="mb-3 text-xs text-muted">
+        Pick a quadrant to {placing ? 'place this task in' : 'move this task to'}.
+      </p>
       <div className="grid grid-cols-2 gap-2.5">
         {QUADRANT_ORDER.map((key) => {
           const m = display(key)
