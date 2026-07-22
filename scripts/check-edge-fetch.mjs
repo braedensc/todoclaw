@@ -155,6 +155,13 @@ function fetchCalleeNames(src) {
   return names
 }
 
+// Escape EVERY regex metacharacter (backslash included) so an identifier interpolated into a dynamic
+// RegExp can never alter its meaning. `s` is already constrained to an identifier below, but a full
+// escape is the correct, injection-proof form regardless.
+function escapeRegExp(t) {
+  return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 // Classify a URL argument expression. `src` is the whole (stripped) file for env back-references.
 function classifyUrl(urlExpr, src) {
   const s = urlExpr.trim()
@@ -163,10 +170,9 @@ function classifyUrl(urlExpr, src) {
   if (lit && !lit[1].includes('${')) return 'constant-host'
   // env-derived, directly or via a local binding.
   if (/\bDeno\.env\.get\s*\(/.test(s)) return 'env'
-  const idMatch = /^[A-Za-z_$][\w$]*$/.exec(s)
-  if (idMatch) {
+  if (/^[A-Za-z_$][\w$]*$/.test(s)) {
     const bind = new RegExp(
-      `(?:const|let|var)\\s+${s.replace(/[$]/g, '\\$')}\\s*=\\s*[^\\n;]*Deno\\.env\\.get\\s*\\(`,
+      `(?:const|let|var)\\s+${escapeRegExp(s)}\\s*=\\s*[^\\n;]*Deno\\.env\\.get\\s*\\(`,
     )
     if (bind.test(src)) return 'env'
   }
