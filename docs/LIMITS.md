@@ -5,9 +5,9 @@ and access boundary in TodoClaw — what each one is, its scope (**per‑user vs
 per‑IP vs per‑request**), the layer that enforces it, and whether it's a fixed constant or
 owner‑tunable.
 
-> **Scope of truth.** This reflects `main`. A handful of edge‑abuse‑hardening items are
-> tagged **⏳ PR #311** — they're merged-pending and not on `main` yet. Values are cited by
-> **file + constant/column name** (not line numbers, which rot); grep the name to find it.
+> **Scope of truth.** This reflects `main`. Values are cited by **file + constant/column
+> name** (not line numbers, which rot); grep the name to find it. The per-IP throttles and the
+> web-push timeout / SSRF allowlist landed in #311 (2026‑07‑22) and are live.
 >
 > **Keeping this current.** When you add or change a limit, update the matching row here in
 > the same PR. This is a reference, not a spec — code + the `src/lib/*.test.ts` oracle are
@@ -59,7 +59,7 @@ CORS preflight reaches it; auth is verified **in-function** and RLS isolates dat
 Coarse ceilings checked **before** auth. Limits are **hardcoded constants** at each call site
 (not owner-tunable). Backed by DEFINER RPCs over no-grant tables (`edge_ip_events`,
 `invite_attempts`). IP source: `cf-connecting-ip` → `x-real-ip` → **rightmost** X-Forwarded-For
-(never the spoofable leftmost). ⏳ PR #311 (except `redeem-invite`, which predates it).
+(never the spoofable leftmost).
 
 | Function / bucket | Limit | Window | On limiter error |
 |---|---|---|---|
@@ -72,7 +72,7 @@ Coarse ceilings checked **before** auth. Limits are **hardcoded constants** at e
 | `resolve-location` | *(none)* | — | — |
 | `dispatch-*` | *(none — secret-gated, single infra IP)* | — | — |
 
-Files: `ip-throttle.ts` (⏳), `client-ip.ts` (⏳), migration `*_edge_ip_throttle.sql` (⏳);
+Files: `ip-throttle.ts`, `client-ip.ts`, migration `*_edge_ip_throttle.sql`;
 `redeem-invite/index.ts` (`THROTTLE_LIMIT`/`THROTTLE_WINDOW_SECONDS`), `invites.sql` (`invite_throttle`).
 
 ---
@@ -181,10 +181,10 @@ grid x/y 0–1 · commitments array 12 · recurring cadence 1–365 (client UI).
 
 | Bound | Value | Note |
 |---|---|---|
-| web-push fetch timeout (`DEFAULT_PUSH_TIMEOUT_MS`) | **10s** | ⏳ AbortController per POST |
-| SSRF host allowlist (`ALLOWED_PUSH_HOSTS`) | 4 push services | ⏳ runtime + DB CHECK |
-| reminder sweep batch (`BATCH_LIMIT` / SQL clamp) | **500/run** (clamped ≤2000) | ⏳ |
-| reminder run deadline (`RUN_DEADLINE_MS`) | **50s** | ⏳ then defers the rest |
+| web-push fetch timeout (`DEFAULT_PUSH_TIMEOUT_MS`) | **10s** | AbortController per POST |
+| SSRF host allowlist (`ALLOWED_PUSH_HOSTS`) | 4 push services | runtime + DB CHECK |
+| reminder sweep batch (`BATCH_LIMIT` / SQL clamp) | **500/run** (clamped ≤2000) | oldest-first |
+| reminder run deadline (`RUN_DEADLINE_MS`) | **50s** | then defers the rest |
 | reminder freshness window | 60 min | older = retired / advanced |
 | push payload max (`MAX_PAYLOAD_BYTES`) | 3951 bytes (`RECORD_SIZE` 4096) | throws if exceeded |
 | digest push body truncation (`PUSH_BODY_MAX`) | 1800 chars | reminders have no body cap |
@@ -220,7 +220,7 @@ grid x/y 0–1 · commitments array 12 · recurring cadence 1–365 (client UI).
   chat = delete-own.
 - **Tables with RLS on and *zero* grants/policies** — reachable only via SECURITY DEFINER RPCs:
   `ai_budget_ledger`, `ai_user_budget_ledger`, `weather_cache`, `invite_attempts`, `app_config`,
-  and `edge_ip_events` (⏳).
+  and `edge_ip_events`.
 - **DEFINER RPCs fenced to `service_role` only** (system/cron path, un-callable by the anon key):
   invite lifecycle, dispatch RPCs, reminder sweep, chat transcript writes, admin roster reads,
   per-user guardrail-system RPCs, `memories_for_user`.
