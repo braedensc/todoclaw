@@ -8,6 +8,7 @@
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { precheck, recordUsage } from './guardrails.ts'
+import { adminClient } from './auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from './anthropic.ts'
 import { getWeather } from './weather.ts'
 import { localDateInTZ } from './dates.ts'
@@ -102,8 +103,11 @@ export async function runPlanForUser(
       : []
     const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
     // No location set → skip the weather line entirely (don't default to any city's weather).
+    // The weather_cache is server-only (service_role): pass adminClient(), NOT the caller's client —
+    // getWeather uses it solely for the cache RPCs (never a user table). See weather.ts / migration
+    // 20260722000000.
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
-    const weather = location ? await getWeather(client, location) : null
+    const weather = location ? await getWeather(adminClient(), location) : null
 
     const req = buildPlanRequest(tasksRes.data ?? [], habitsRes.data ?? [], doneMap, timeZone, now)
 

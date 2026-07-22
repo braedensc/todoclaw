@@ -22,7 +22,11 @@ Plan My Day is a `plan-my-day` Edge Function + a modal panel. Decisions:
   `_shared/plan-prompt.ts`, unit-tested (weekday/Saturday/Sunday branches, empty grid).
 - **Weather cache** (`weather_cache`, migration `20260624020000`): a shared ~30min cache so repeated
   clicks don't hammer wttr.in. Global state, so the same pattern as `ai_budget_ledger` — RLS on with
-  no grants/policies, reached only via DEFINER `weather_cache_get/put` (no service-role key).
+  no grants/policies, reached only via DEFINER `weather_cache_get/put`.
+  _Update (2026-07-21): those RPCs were originally granted to `authenticated` and reached under the
+  caller's JWT — a cross-tenant hole (any invited user could poison another user's cached weather,
+  which this prompt folds in). They are now **service_role-only**, written by the edge functions via
+  `adminClient` after fetching wttr.in themselves. See ADR `2026-07-21-weather-cache-service-only`._
 - **Guardrails reused:** `precheck('plan_my_day')` (10/day) + the global budget kill-switch; the
   panel reads `useAiStatus().paused` to show an "AI paused this month" notice up front. (Known minor:
   a failed attempt still counts one rate-limit unit, since precheck records before the model call —
