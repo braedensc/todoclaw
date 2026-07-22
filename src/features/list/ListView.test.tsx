@@ -128,10 +128,10 @@ describe('ListView', () => {
   })
 
   it('expanded-row due editors write BOTH due columns; clearing the date clears the time', () => {
-    // The native "Due date" input only renders for a due date OFF the 14-day calendar, so the
-    // fixture must stay well beyond the fortnight relative to the RUN date — a hardcoded date rots
-    // into the calendar window and the input (and this spec) silently disappears.
-    const farDue = new Date(Date.now() + 45 * 86_400_000).toISOString().slice(0, 10)
+    // Computed ~6 weeks out so the due always sits OFF the SchedulePanel's two-week grid — that
+    // (dueOffGrid) is what auto-reveals the raw "Due date" input this test drives. A hardcoded
+    // date rotted INTO the grid as real time passed, hiding the input behind the More… toggle.
+    const farDue = new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10)
     tasksData = [makeTask({ id: 'x', text: 'timed task', due: farDue, due_time: '15:00:00' })]
     renderList()
     fireEvent.click(screen.getByText('timed task'))
