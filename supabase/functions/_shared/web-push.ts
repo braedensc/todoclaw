@@ -333,7 +333,7 @@ const DEFAULT_PUSH_TIMEOUT_MS = 10_000
 // at 169.254.169.254 (cloud metadata), localhost, or an internal service. Constrain it to the four
 // real push services (FCM / Apple / WNS / Mozilla) before any fetch. Apple (web.push.apple.com) and
 // WNS (wns2-*.notify.windows.com) use per-datacenter subdomains, so those two allow a leading label.
-// Kept in sync with the CHECK constraint in 20260722000000_push_endpoint_ssrf_allowlist.sql.
+// Kept in sync with the CHECK constraint in 20260722160000_push_endpoint_ssrf_allowlist.sql.
 const ALLOWED_PUSH_HOSTS: readonly (string | RegExp)[] = [
   'fcm.googleapis.com',
   'updates.push.services.mozilla.com',
