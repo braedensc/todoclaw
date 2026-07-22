@@ -98,18 +98,11 @@ const CAPS: { name: string; expected: number; sqlRe: RegExp }[] = [
     expected: 20,
     sqlRe: /public\.push_subscriptions where user_id = new\.user_id\) > (\d+)/,
   },
-  // -- daily_state window + weather bounds
+  // -- daily_state window (weather_cache is PR #310's, not pinned here)
   {
     name: 'DB_DAILY_STATE_DATE_WINDOW_DAYS',
     expected: 14,
     sqlRe: /new\.date < current_date - (\d+)/,
-  },
-  { name: 'DB_WEATHER_LOCATION_MAX', expected: 200, sqlRe: /char_length\(p_location\) > (\d+)/ },
-  { name: 'DB_WEATHER_DATA_MAX', expected: 65536, sqlRe: /char_length\(p_data\) > (\d+)/ },
-  {
-    name: 'DB_WEATHER_CACHE_ROWS_MAX',
-    expected: 500,
-    sqlRe: /\(select count\(\*\) from public\.weather_cache\) >= (\d+)/,
   },
 ]
 

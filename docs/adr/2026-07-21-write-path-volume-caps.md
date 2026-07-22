@@ -39,8 +39,9 @@ modeled on the existing cap-trigger pattern, with caps sized orders of magnitude
   `user_id = auth.uid()` fence (the grant was load-bearing only because the RPC was INVOKER), then
   the direct grant + insert policy are dropped. UPDATE/DELETE grants stay for the INVOKER recompute
   triggers and remove/clear RPCs.
-- **weather_cache_put** — key/payload length caps + a 500-row global cap with stale-first eviction
-  (the DEFINER pair is that table's only write path).
+- **weather_cache** — deliberately left alone: the parallel ADR 2026-07-21-weather-cache-service-only
+  (PR #310) revokes its RPCs from `authenticated` entirely, a strictly stronger fix for the same
+  abuse vector; touching the function here would race that migration's grants.
 - **Edge-function fetch bounds** — chat-context, `list_tasks`, and run-plan now `.limit()` their
   per-user selects (500 tasks / 250 habits / 1000 reminders, newest first — comfortably above the
   60/40 prompt render caps), so even an at-cap account can't balloon function memory or the model

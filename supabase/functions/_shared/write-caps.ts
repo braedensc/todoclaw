@@ -25,8 +25,8 @@ export const DB_BACKUP_LABEL_MAX = 200
 export const DB_BACKUP_DATA_MAX_BYTES = 4194304 // 4 MB ≫ a full legit snapshot
 export const DB_PUSH_ENDPOINT_MAX = 1024 // push-service URLs run ~150–300 chars
 export const DB_PUSH_KEY_MAX = 512 // p256dh ≈ 87 chars, auth ≈ 22 chars (base64url)
-export const DB_WEATHER_LOCATION_MAX = 200
-export const DB_WEATHER_DATA_MAX = 65536 // wttr.in JSON is a few KB
+// weather_cache is bounded by PR #310 instead (RPCs become service_role-only) — see the migration
+// header for why this file leaves it alone.
 
 // ---- per-user row caps (AFTER INSERT triggers) ----------------------------------------------
 // Two tiers where rows soft-delete (tasks/habits): the LIVE cap is the user-meaningful bound
@@ -40,7 +40,6 @@ export const DB_REMINDERS_PER_TASK_MAX = 8
 export const DB_REMINDERS_PER_USER_MAX = 2000
 export const DB_BACKUPS_MAX = 15 // > create_backup's keep-10 + its pre-prune insert
 export const DB_PUSH_SUBSCRIPTIONS_MAX = 20 // one per browser/device is the real shape
-export const DB_WEATHER_CACHE_ROWS_MAX = 500 // global (table is shared, RPC-only)
 // daily_state has no row cap: inserts are bounded to ±window days of the server day, so rows can
 // only accrue at ~one per real day.
 export const DB_DAILY_STATE_DATE_WINDOW_DAYS = 14

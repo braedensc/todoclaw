@@ -47,14 +47,15 @@
 --     fencing (the ownership checks RLS used to provide), and the direct INSERT grant + policy
 --     are then revoked/dropped for real. UPDATE/DELETE grants stay: the INVOKER recompute
 --     triggers (due/tz/recurring edits) and remove/clear RPCs still run as the caller.
---   • weather_cache_put (DEFINER, the table's only write path) gains bounds in-function: key and
---     payload length caps plus a global row cap with stale-first eviction, so a curl loop can't
---     fill the shared cache with junk keys forever.
+--   • weather_cache is deliberately NOT touched here: the parallel fix (PR #310, migration
+--     20260722000000_weather_cache_service_only.sql) revokes its RPCs from authenticated
+--     entirely — a strictly stronger cure for the same abuse vector. Re-creating the function
+--     here would race that migration's grants, so this one stays off the table.
 --
 -- Error names (all errcode P0001, the existing cap-trigger convention): task_cap_reached,
 -- task_storage_cap_reached, habit_cap_reached, habit_storage_cap_reached, history_cap_reached,
 -- reminder_per_task_cap_reached, reminder_cap_reached, backup_cap_reached,
--- push_subscription_cap_reached, daily_state_date_out_of_range, weather_cache_full.
+-- push_subscription_cap_reached, daily_state_date_out_of_range.
 --
 -- Owner follow-up (SQL editor, optional): confirm no legacy jsonb exceeds the NOT VALID bounds,
 -- then promote them — a validated constraint documents that ALL rows comply:
@@ -115,7 +116,6 @@
 --   alter table public.push_subscriptions drop constraint if exists push_subscriptions_endpoint_len,
 --     drop constraint if exists push_subscriptions_p256dh_len,
 --     drop constraint if exists push_subscriptions_auth_len;
---   -- re-create weather_cache_put from 20260624020000_weather_cache.sql
 --   -- re-create set_task_reminder (INVOKER) from 20260712000000_recurring_reminders_unify.sql, then:
 --   grant insert on public.task_reminders to authenticated;
 --   create policy "task_reminders_insert_own" on public.task_reminders
@@ -367,49 +367,7 @@ create trigger daily_state_date_move
   execute function public.daily_state_date_check();
 
 -- ============================================================================
--- 4) weather_cache_put — bounded (body otherwise 20260624020000)
--- ============================================================================
-
--- The DEFINER pair is the table's ONLY access path (no grants/policies), so in-function bounds
--- fully cover it: cap the key and payload, and cap the table at 500 locations with stale-first
--- eviction (entries are ~30-min cache lines; anything older than 2 days is dead weight), so a
--- junk-key loop can't brick the shared cache for everyone.
-create or replace function public.weather_cache_put(p_location text, p_data text)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if auth.uid() is null then
-    raise exception 'not_authenticated';
-  end if;
-  if p_location is null or char_length(p_location) > 200 then
-    raise exception 'weather_location_too_long' using errcode = 'P0001';
-  end if;
-  if p_data is null or char_length(p_data) > 65536 then
-    raise exception 'weather_data_too_large' using errcode = 'P0001';
-  end if;
-  if not exists (select 1 from public.weather_cache where location = p_location) then
-    if (select count(*) from public.weather_cache) >= 500 then
-      delete from public.weather_cache where fetched_at < now() - interval '2 days';
-    end if;
-    if (select count(*) from public.weather_cache) >= 500 then
-      raise exception 'weather_cache_full' using errcode = 'P0001';
-    end if;
-  end if;
-  insert into public.weather_cache (location, data)
-  values (p_location, p_data)
-  on conflict (location) do update
-    set data = excluded.data, fetched_at = now();
-end;
-$$;
-
-revoke all on function public.weather_cache_put(text, text) from public;
-grant execute on function public.weather_cache_put(text, text) to authenticated;
-
--- ============================================================================
--- 5) set_task_reminder → SECURITY DEFINER; revoke the direct INSERT path
+-- 4) set_task_reminder → SECURITY DEFINER; revoke the direct INSERT path
 -- ============================================================================
 
 -- Body identical to 20260712000000 except: DEFINER (RLS no longer applies inside), so the task
