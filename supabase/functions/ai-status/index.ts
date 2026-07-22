@@ -7,6 +7,7 @@
 import { corsHeaders, preflight } from '../_shared/cors.ts'
 import { userClient, requireUser } from '../_shared/auth.ts'
 import { getStatus } from '../_shared/guardrails.ts'
+import { ipThrottleOk } from '../_shared/ip-throttle.ts'
 
 Deno.serve(async (req) => {
   const pre = preflight(req)
@@ -18,6 +19,10 @@ Deno.serve(async (req) => {
       status,
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
+
+  // Coarse per-IP flood guard, before auth (verify_jwt is off for this function).
+  if (!(await ipThrottleOk(req, 'ai-status', 300, 60)))
+    return json({ error: 'too_many_requests' }, 429)
 
   const client = userClient(req)
   const user = await requireUser(client)

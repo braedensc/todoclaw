@@ -25,6 +25,16 @@ import { resolveLocation } from '../_shared/weather.ts'
 // Mirrors the `location` cap in src/types/user-schedule.ts (SHORT_MAX = 120).
 const ResolveSchema = z.object({ location: z.string().trim().min(1).max(120) })
 
+// Per-user rate limit. Every call makes an UNCACHED outbound wttr.in fetch (resolveLocation, unlike
+// getWeather, doesn't read the cache), so an authenticated user could hammer wttr.in through us.
+// Reuse the AI endpoints' rate limiter (ai_usage_check_and_record) with its own feature bucket — but
+// NOT the budget kill-switch (this makes no model call, so a paused AI month must not block a Settings
+// save-confirmation). A location field is edited rarely, so these are generous for a human and still
+// bound a script. The RPC RAISES when over limit; any error → 429 (fail closed for an abuse guard).
+const RATE_FEATURE = 'resolve_location'
+const RATE_LIMIT_HOUR = 20
+const RATE_LIMIT_DAY = 60
+
 Deno.serve(async (req) => {
   const pre = preflight(req)
   if (pre) return pre
@@ -46,6 +56,15 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: 'invalid_request' }, 400)
   }
+
+  // Rate-limit the outbound wttr.in fetch (records this call as the caller under RLS). Over limit —
+  // or any limiter error — fails closed with 429 rather than issuing the fetch.
+  const { error: rateErr } = await client.rpc('ai_usage_check_and_record', {
+    p_feature: RATE_FEATURE,
+    p_hour_limit: RATE_LIMIT_HOUR,
+    p_day_limit: RATE_LIMIT_DAY,
+  })
+  if (rateErr) return json({ error: 'rate_limited' }, 429)
 
   return json(await resolveLocation(body.location))
 })
