@@ -5,9 +5,11 @@ import { assistantText } from './assistant-text'
 import type { ChatItem } from './use-ai-chat'
 
 // Load one session's persisted transcript (oldest-first) for HYDRATION — the base history shown when
-// a saved chat is opened/resumed. It is frozen for the visit (staleTime Infinity, no window-focus
-// refetch): live streaming this visit is appended as `liveItems` in use-ai-chat, so refetching the
-// base mid-visit would double-render turns already streamed. A full reload remounts → fresh fetch.
+// a saved chat is opened/resumed. It never refetches ON ITS OWN (staleTime Infinity, no window-focus
+// refetch): live streaming this visit is appended as `liveItems` in use-ai-chat, so a background
+// refetch would double-render turns already streamed. It refetches only when use-ai-chat explicitly
+// invalidates it — openSession does so in the same act that wipes liveItems (so turns streamed since
+// the last hydration aren't lost on reopen), and a backgrounded stream does so when its turn lands.
 export const chatMessagesKey = (sessionId: string) => ['chat_messages', sessionId] as const
 
 async function fetchMessages(sessionId: string): Promise<ChatMessageRow[]> {

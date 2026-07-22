@@ -254,3 +254,25 @@ Deno.test('loadChatContext: no location renders no Location line', async () => {
   const { context } = await loadChatContext(withConfig({ planNotes: 'Mornings only.' }), NOW)
   assert(!buildSystem(context).includes('Location:'), 'rendered a Location line with no location')
 })
+
+Deno.test('loadChatContext: the default reminder flows from config into the prompt', async () => {
+  // Never set → the built-in 1 hour; an explicit choice → that offset; null → Off. The rendered
+  // line is what lets BabyClaw explain reminder behavior from the user's REAL setting.
+  const unset = await loadChatContext(withConfig({}), NOW)
+  assertEquals(unset.context.reminderDefault, 60)
+  assertStringIncludes(buildSystem(unset.context), 'Default reminder: 1 hour before')
+
+  const chosen = await loadChatContext(
+    withConfig({ notifications: { reminderDefaultMinutes: 30 } }),
+    NOW,
+  )
+  assertEquals(chosen.context.reminderDefault, 30)
+  assertStringIncludes(buildSystem(chosen.context), 'Default reminder: 30 minutes before')
+
+  const off = await loadChatContext(
+    withConfig({ notifications: { reminderDefaultMinutes: null } }),
+    NOW,
+  )
+  assertEquals(off.context.reminderDefault, null)
+  assertStringIncludes(buildSystem(off.context), 'Default reminder: OFF')
+})

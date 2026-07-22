@@ -35,9 +35,10 @@ Deno.test('every advertised tool has an object input_schema and a description', 
 })
 
 Deno.test('confirmation summary prefers the label, falls back to the id (tasks + habits)', () => {
+  // "Delete", not "move to the trash" — the app has no trash surface for the summary to promise.
   assertEquals(
     destructiveSummary('delete_task', { task_id: 'abc' }, 'Call dentist'),
-    'Move "Call dentist" to the trash',
+    'Delete "Call dentist"',
   )
   assert(destructiveSummary('complete_task', { task_id: 'abc' }).includes('abc'))
   assertEquals(
