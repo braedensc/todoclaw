@@ -12,6 +12,7 @@ const deleteMutate =
 const openMsgMutate =
   vi.fn<(id: string, opts?: { onSuccess?: (sid: string) => void; onError?: () => void }) => void>()
 const markReadMutate = vi.fn<(id: string) => void>()
+const markAllMutate = vi.fn<(arg: undefined, opts?: { onError?: () => void }) => void>()
 const toast = vi.fn()
 
 vi.mock('./use-chat-sessions', () => ({
@@ -21,6 +22,7 @@ vi.mock('./use-chat-sessions', () => ({
 vi.mock('../notifications/use-messages', () => ({
   useMessages: () => ({ data: messages, isLoading: false }),
   useMarkMessageRead: () => ({ mutate: markReadMutate }),
+  useMarkAllMessagesRead: () => ({ mutate: markAllMutate }),
   useOpenMessageChat: () => ({ mutate: openMsgMutate }),
 }))
 vi.mock('./use-chat-previews', () => ({ useChatPreviews: () => ({ data: previews }) }))
@@ -74,6 +76,7 @@ beforeEach(() => {
   deleteMutate.mockReset()
   openMsgMutate.mockReset()
   markReadMutate.mockReset()
+  markAllMutate.mockReset()
   toast.mockReset()
 })
 
@@ -163,6 +166,29 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     }
     // One unread dot per unread message — exactly what useUnreadCount sums for the nav badge.
     expect(screen.getAllByLabelText('unread')).toHaveLength(3)
+  })
+
+  describe('"Mark all read" — the badge/pile-up escape hatch', () => {
+    it('shows on the From BabyClaw label when anything is unread, and marks all in one tap', () => {
+      // Unread check-ins are exempt from the display cap, so ignoring them piles them up; this is
+      // the one-tap way out (vs opening each). Visible exactly when the nav badge is non-zero.
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all read' }))
+      expect(markAllMutate).toHaveBeenCalledTimes(1)
+    })
+
+    it('absent when every check-in is already read — nothing to clear', () => {
+      messages = [m('m1', { read_at: new Date().toISOString() })]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.queryByRole('button', { name: 'Mark all read' })).toBeNull()
+    })
+
+    it('toasts on failure', () => {
+      markAllMutate.mockImplementation((_arg, opts) => opts?.onError?.())
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all read' }))
+      expect(toast).toHaveBeenCalledWith(expect.stringMatching(/couldn.t mark/i), 'error')
+    })
   })
 
   describe('ranking BabyClaw check-ins by last message', () => {

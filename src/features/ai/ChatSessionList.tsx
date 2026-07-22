@@ -6,6 +6,7 @@ import { previewText, assistantSnippet } from './chat-preview'
 import {
   useMessages,
   useMarkMessageRead,
+  useMarkAllMessagesRead,
   useOpenMessageChat,
   type InboxMessage,
 } from '../notifications/use-messages'
@@ -60,10 +61,13 @@ function BellGlyph() {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+// `action` is an optional right-aligned control on the label row (e.g. "Mark all read") — it undoes
+// the label's uppercase itself so it reads as an action, not part of the heading.
+function GroupLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <p className="mt-3 flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
       {children}
+      {action}
     </p>
   )
 }
@@ -137,6 +141,7 @@ export function ChatSessionList({
   const del = useDeleteChatSession()
   const openMsg = useOpenMessageChat()
   const markRead = useMarkMessageRead()
+  const markAll = useMarkAllMessagesRead()
   const toast = useToast()
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
@@ -171,6 +176,11 @@ export function ChatSessionList({
   // The note earns its place only when the cap actually hides an older (read) check-in — with nothing
   // held back there's nothing to explain, and a standing footnote would just be noise.
   const proactiveHidden = (messages?.length ?? 0) - inbox.length
+  // Whether the "Mark all read" action shows — exactly when the nav badge is non-zero, because it IS
+  // that badge's bulk escape hatch: unread check-ins are exempt from the display cap (above), so
+  // ignoring them piles them up; this clears the pile without opening each one. Marking them read
+  // also returns them to the cap's custody, so the list tidies back down on the refetch — intended.
+  const anyUnread = (messages ?? []).some((mm) => !mm.read_at)
   // Proactive sessions are shown via their message row, so keep only person-started chats.
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
@@ -296,7 +306,27 @@ export function ChatSessionList({
         })}
 
         {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
-        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
+        {inbox.length > 0 && (
+          <GroupLabel
+            action={
+              anyUnread ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    markAll.mutate(undefined, {
+                      onError: () => toast("Couldn't mark those read — try again.", 'error'),
+                    })
+                  }
+                  className="ml-auto shrink-0 font-medium normal-case tracking-normal text-puppy hover:text-ink"
+                >
+                  Mark all read
+                </button>
+              ) : undefined
+            }
+          >
+            From BabyClaw
+          </GroupLabel>
+        )}
         {inbox.map(({ msg: m, time: lastAt }) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
