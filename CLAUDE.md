@@ -164,6 +164,11 @@ These apply every session without exception:
 
 At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw SQL — Supabase query builder only. Input validated with Zod at every boundary.
 
+Two hard rules that RLS does **not** cover — each has a deterministic CI guard so a violation cannot merge unnoticed:
+
+- **RLS is a *who* check, not a *how much* check.** Every user-writable table needs a **per-user row cap** (a `before insert` trigger that counts the caller's own rows and raises over a limit) **and a size `CHECK`** on any unbounded text/jsonb column. Without them, one user can storage-bomb a table or fold an unbounded blob into an LLM prompt. Enforced by the **volume-bound guard** (`scripts/check-write-caps.mjs`, CI job "Volume-bound coverage (static)"); a genuinely-bounded-by-other-means table goes in that script's reviewed allowlist with a one-line reason.
+- **An invariant enforced only inside an RPC is bypassable.** If a cap or scoping rule lives only in a `SECURITY DEFINER` function, the underlying table still needs a **backstop** (a trigger/`CHECK`) or the **direct write grant must be revoked** so the RPC is the only path. And any `SECURITY DEFINER` function granted to `authenticated` **must scope its writes to `auth.uid()`** — a DEFINER function bypasses the RLS of the tables it writes (the weather_cache_put hole, #310). Enforced by the **DEFINER-scope guard** (`scripts/check-definer-grants.mjs`, CI job "DEFINER-scope coverage (static)"), which forces a human to classify every such function's scoping before it can merge.
+
 ---
 
 ## Key Design Decisions
