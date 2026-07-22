@@ -13,6 +13,7 @@ import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
   summarizeQuadrants,
   moveToQuadrant,
+  isUnplaced,
   QUADRANT_ORDER,
   QUADRANT_CENTER,
   QUADRANT_SUBTITLE,
@@ -20,6 +21,7 @@ import {
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import { ListView } from '../list/ListView'
 import { PausedSection } from '../tasks/PausedSection'
+import { UnplacedSection } from '../tasks/UnplacedSection'
 import { MoveToQuadrantSheet } from './MoveToQuadrantSheet'
 import type { QuadrantFocus } from './use-quadrant-focus'
 
@@ -33,6 +35,10 @@ import type { QuadrantFocus } from './use-quadrant-focus'
 // tap-based "Move to quadrant" picker (MoveToQuadrantSheet) — the no-drag reposition path. ADDING
 // is owned by the bottom nav's "+" (MobileAddSheet at the app level), not here. Desktop never mounts
 // this — WorkArea renders it only below the breakpoint (useIsMobile).
+//
+// Staged (unplaced) tasks carry no quadrant, so the buckets and focus lists skip them; the
+// Unplaced strip below the overview is their mobile surface (desktop has the tray drag instead).
+// Its "Place" opens the same picker, which materializes the task (x/y + staged:false).
 
 // Label + color for a quadrant, read from the canonical quadrantMeta at its band center.
 function meta(key: QuadrantKey) {
@@ -104,15 +110,19 @@ export function MobileMatrix({
       !isDormant(t, timeZone),
   )
   const paused = tasks.filter((t) => !t.completed_at && isDormant(t, timeZone))
+  // Active but not on the grid yet (staged / null coords) — invisible to the buckets and focus
+  // lists, so the Unplaced strip below the overview is their only mobile surface.
+  const unplaced = active.filter((t) => isUnplaced(t))
   const { buckets } = summarizeQuadrants(active, { timeZone })
 
   // Per-quadrant "on fire" counts for the overview badges: due today (incl. the final hours)
-  // and overdue. Recurring tasks are excluded — their cadence badge is a different system.
+  // and overdue. Recurring tasks are excluded — their cadence badge is a different system. So are
+  // unplaced tasks: they're in no cell, so they can't feed a cell's badge.
   const dueCounts = (key: QuadrantKey): { today: number; overdue: number } => {
     let today = 0
     let overdue = 0
     for (const t of active) {
-      if (t.recurring || quadrantMeta(t.x ?? 0.5, t.y ?? 0.5).key !== key) continue
+      if (t.recurring || isUnplaced(t) || quadrantMeta(t.x ?? 0.5, t.y ?? 0.5).key !== key) continue
       const tier = urgencyTier(
         daysUntil(t.due, { timeZone }),
         minutesUntilDueTime(t.due, t.due_time, timeZone, now),
@@ -125,18 +135,25 @@ export function MobileMatrix({
 
   // Commit a tap-picker move: snap to the chosen quadrant's center, collision-resolve against all
   // active tasks, write the coords, and close the sheet. Same coord path as a list-slider commit.
+  // staged:false materializes a still-staged task (the Unplaced strip's Place path) — the mobile
+  // equivalent of the desktop tray drag; it's a no-op value for an already-placed row.
   const handleMove = (dest: QuadrantKey) => {
     if (!moveTask) return
     const { x, y } = moveToQuadrant(moveTask, dest, active)
-    updateTask.mutate({ id: moveTask.id, patch: { x, y } })
+    updateTask.mutate({ id: moveTask.id, patch: { x, y, staged: false } })
     setMoveTask(null)
   }
 
-  // The move picker — shared across overview/focus; open while a task is selected.
+  // The move picker — shared across overview (Unplaced strip) and focus rows; open while a task
+  // is selected. An unplaced task has no current quadrant, so every target stays selectable.
   const moveSheet = (
     <MoveToQuadrantSheet
       task={moveTask}
-      currentKey={moveTask ? quadrantMeta(moveTask.x ?? 0.5, moveTask.y ?? 0.5).key : null}
+      currentKey={
+        moveTask && !isUnplaced(moveTask)
+          ? quadrantMeta(moveTask.x ?? 0.5, moveTask.y ?? 0.5).key
+          : null
+      }
       onPick={handleMove}
       onClose={() => setMoveTask(null)}
     />
@@ -291,11 +308,14 @@ export function MobileMatrix({
           </button>
         )}
       </section>
+      {/* Staged tasks — their only mobile surface; Place opens the quadrant picker. */}
+      <UnplacedSection tasks={unplaced} onPlace={setMoveTask} />
       {/* Paused (dormant) tasks — their only mobile surface; Resume wakes one immediately. */}
       <PausedSection
         tasks={paused}
         onResume={(id) => updateTask.mutate({ id, patch: { start_date: null } })}
       />
+      {moveSheet}
     </>
   )
 }

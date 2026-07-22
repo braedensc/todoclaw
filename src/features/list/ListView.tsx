@@ -99,8 +99,9 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   )
 
   // Optional per-quadrant scoping (mobile focus view). Only PLACED tasks carry a real quadrant,
-  // so a staged task (null x/y) is never bucketed into one — the mobile overview handles unplaced
-  // tasks on its own. Unset → `active` unchanged, so the default list is exactly as before.
+  // so a staged task (null x/y) is never in a focus list — on mobile it surfaces in the
+  // overview's Unplaced strip (UnplacedSection), whose Place picker materializes it. Unset →
+  // `active` unchanged, so the default (desktop) list still ranks staged tasks like any other.
   const scoped = quadrantFilter
     ? active.filter(
         (t) =>
