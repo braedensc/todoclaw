@@ -6,6 +6,7 @@
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
+import { reminderDefaultFromConfig } from './reminder-default.ts'
 import {
   DEFAULT_ASSISTANT_CONFIG,
   type AssistantConfig,
@@ -187,7 +188,9 @@ export async function loadChatContext(
       // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
       // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
       // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
-      .select('id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at, start_date')
+      .select(
+        'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
+      )
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
     client
@@ -249,6 +252,7 @@ export async function loadChatContext(
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       recurringStatus: recurringStatusPhrase(rec, now),
       ongoing: (t.ongoing as boolean | null) ?? false,
+      size: (t.size as string | null) ?? null,
       // Dormant (paused) = future start date on the user's local calendar. BabyClaw still SEES a
       // paused task — labeled, in its own PAUSED block — so "what's paused?" and resume work from
       // chat, while it stays out of ACTIVE and out of generated plans.
@@ -304,6 +308,7 @@ export async function loadChatContext(
     today,
     timeZone,
     scheduleSummary: scheduleSummary(config, dayOfWeek),
+    reminderDefault: reminderDefaultFromConfig(config),
     tasks,
     habits,
     plan: planSummary(dailyRes.data?.plan),

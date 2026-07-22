@@ -56,11 +56,11 @@ export const habitCapabilities: Capability[] = [
   defineCapability({
     name: 'set_habit_active',
     description:
-      'Activate a habit (show it in the daily list) or deactivate it (move it to the queued/paused list). Does not delete it.',
+      'Activate a habit (show it in the daily list) or deactivate it (move it to the "Queued" group on the Daily habits page — the app never calls habits "paused"; only tasks pause). Does not delete it.',
     schema: z
       .object({
         habit_id: uuid.describe('The habit id (UUID).'),
-        active: z.boolean().describe('true = active, false = paused/queued.'),
+        active: z.boolean().describe('true = active, false = queued (inactive).'),
       })
       .strict(),
     async execute(ctx, i) {

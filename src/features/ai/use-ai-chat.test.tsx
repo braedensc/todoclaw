@@ -46,6 +46,23 @@ function sseResponse(events: object[], status = 200) {
   return { ok: status < 400, status, body } as unknown as Response
 }
 
+// An SSE response held open by the test — events are emitted on demand, so a "switch conversations
+// while BabyClaw is still thinking" moment can be frozen mid-stream and inspected.
+function controlledSse() {
+  const enc = new TextEncoder()
+  let ctrl!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      ctrl = c
+    },
+  })
+  return {
+    response: { ok: true, status: 200, body } as unknown as Response,
+    emit: (e: object) => ctrl.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`)),
+    close: () => ctrl.close(),
+  }
+}
+
 const fetchMock = vi.fn()
 const sentBody = (call: number) =>
   JSON.parse(fetchMock.mock.calls[call]![1].body) as {
@@ -452,6 +469,119 @@ describe('useAiChat', () => {
     const tool = result.current.items.find((i) => i.role === 'tool')
     expect(tool?.text).toBe('Created "SCP" on the grid.')
     expect(result.current.items.some((i) => i.text.includes('07bc0a9b'))).toBe(false)
+  })
+
+  it('reopening a session mid-stream keeps the turn: live bubbles are wiped but the transcript refetches, again when the backgrounded turn lands', async () => {
+    // THE vanishing-message repro: send, leave the chat while BabyClaw is thinking, come back via
+    // the session list. Before the fix the reopened transcript served a stale cached base (missing
+    // the new turns) after wiping the live bubbles — the message looked like it never happened.
+    const stream = controlledSse()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('is my car task set?'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      stream.emit(session('sess_bg'))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.sessionId).toBe('sess_bg'))
+
+    // Leave + reopen the same conversation (mobile: bottom-nav Chat → tap the session card).
+    act(() => result.current.openSession('sess_bg'))
+    expect(result.current.busy).toBe(false)
+    expect(result.current.items.filter((i) => i.role === 'user')).toHaveLength(0) // live wipe…
+    const keys = () =>
+      invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] })?.queryKey)
+    expect(keys()).toContainEqual(['chat_messages', 'sess_bg']) // …but the base refetches with it
+
+    // The backgrounded stream finishes: nothing paints and no error surfaces, but the transcript is
+    // marked stale again so the finished reply appears in the (re)opened conversation.
+    invalidateSpy.mockClear()
+    await act(async () => {
+      stream.emit({ type: 'text-delta', text: 'ghost delta' })
+      stream.emit({ type: 'message', role: 'assistant', content: [] })
+      stream.emit({ type: 'done', stop_reason: 'end_turn' })
+      stream.close()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(keys()).toContainEqual(['chat_messages', 'sess_bg']))
+    expect(result.current.items.some((i) => i.text === 'ghost delta')).toBe(false)
+    expect(result.current.error).toBeNull()
+  })
+
+  it('switching to ANOTHER conversation mid-stream backgrounds the old one: busy clears, nothing paints, errors are silenced, data refreshes still run', async () => {
+    const stream = controlledSse()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('slow question'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      stream.emit(session('sess_a'))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.sessionId).toBe('sess_a'))
+
+    const other = '44444444-4444-4444-8444-444444444444'
+    act(() => result.current.openSession(other))
+    // The opened conversation isn't send-blocked by the turn still running elsewhere.
+    expect(result.current.busy).toBe(false)
+
+    await act(async () => {
+      stream.emit({ type: 'text-delta', text: 'too late' })
+      stream.emit({
+        type: 'tool-result',
+        tool_use_id: 't1',
+        name: 'create_task',
+        ok: true,
+        summary: 'Created "x".',
+        mutated: ['tasks'],
+      })
+      stream.emit({ type: 'error', code: 'tool-loop-cap' })
+      stream.close()
+      await Promise.resolve()
+    })
+    // `keys` re-reads the spy inside waitFor — a one-shot snapshot can never observe a call that
+    // lands a tick later, turning the wait into a coin flip.
+    const keys = () =>
+      invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] })?.queryKey)
+    await waitFor(() => expect(keys()).toContainEqual(['tasks'])) // the task really was created
+    expect(result.current.sessionId).toBe(other) // the backgrounded session event didn't yank us back
+    expect(result.current.items.some((i) => i.text === 'too late')).toBe(false)
+    expect(result.current.items.some((i) => i.role === 'tool')).toBe(false)
+    expect(result.current.error).toBeNull()
+  })
+
+  it('a confirmation that halts AFTER the user reopened the session still paints', async () => {
+    // The halt event arrives on a "backgrounded" stream whose session the user has ALREADY come
+    // back to — no later openSession will restore it from the session row, so the event itself
+    // must paint the confirm card (or the destructive action silently stalls).
+    const stream = controlledSse()
+    fetchMock.mockResolvedValueOnce(stream.response)
+    const { result } = renderHook(() => useAiChat(), { wrapper })
+    act(() => result.current.send('delete my dentist task'))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      stream.emit(session('sess_p'))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.sessionId).toBe('sess_p'))
+
+    // Leave and come back before the halt arrives (the row snapshot knows nothing yet).
+    act(() => result.current.openSession('sess_p'))
+    expect(result.current.pending).toBeNull()
+
+    await act(async () => {
+      stream.emit({
+        type: 'tool-pending-confirmation',
+        tool_use_id: 'toolu_x',
+        name: 'delete_task',
+        summary: 'Delete "Dentist"',
+      })
+      stream.emit({ type: 'done', stop_reason: 'awaiting-confirmation' })
+      stream.close()
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(result.current.pending?.summary).toBe('Delete "Dentist"'))
   })
 
   it('hides internal read-only lookups (display: null) from the chat', async () => {
