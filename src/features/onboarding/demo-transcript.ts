@@ -135,8 +135,8 @@ export const DEMO_MORNING_INPUTS = {
   plan: DEMO_PLAN,
 }
 
-// The evening snapshot: by check-in time the big rock got done during the day, so the recap lists
-// the three remaining plan items.
+// The evening snapshot: by check-in time the big rock got done during the day, so the recap
+// acknowledges it (already crossed off) and lists the three remaining plan items.
 export const DEMO_EVENING_INPUTS = {
   ...DEMO_MORNING_INPUTS,
   done: { 'demo-invoice': true } as Record<string, boolean>,
@@ -164,6 +164,7 @@ export const DEMO_MORNING = {
 export const DEMO_RECAP = {
   title: 'Wrapping up Monday 👋',
   body:
+    'Nice — already crossed off "Send the invoice".\n\n' +
     'Which of these did you knock out today?\n\n' +
     '1. Book the dentist\n2. Water the plants\n3. Book the campsite\n\n' +
     "Reply with the numbers or names and I'll mark them done. No worries if today was a rest day 🙂\n\n" +

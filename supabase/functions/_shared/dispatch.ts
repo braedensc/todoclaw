@@ -10,6 +10,7 @@
 import { dayNameInTZ, localDateInTZ } from './dates.ts'
 import { formatClockTime } from './reminder-content.ts'
 import type { PlanResult, Rock } from './plan-prompt.ts'
+import { activityTally, type ActivityRow } from './activity.ts'
 
 // Notifications prefs, as the client writes them into user_schedule.config.notifications (PR8) and
 // notification_candidates() returns them. All optional — a missing/false `enabled` means never due.
@@ -147,7 +148,7 @@ function plural(n: number, one: string, many: string): string {
 }
 
 // The optional greeting name (config.notifications.name), normalized: trimmed, or null.
-function greetName(inputs: DispatchInputs): string | null {
+export function greetName(inputs: DispatchInputs): string | null {
   const name = asString(inputs.config?.notifications?.name)?.trim()
   return name ? name : null
 }
@@ -229,15 +230,22 @@ export function isEmptyMorning(inputs: DispatchInputs, localDate: string): boole
   )
 }
 
-// Would tonight's check-in be empty — no plan to ask about AND nothing on the board to nudge?
-export function isEmptyEvening(inputs: DispatchInputs): boolean {
-  return !planHasRocks(inputs) && openPlacedTasks(inputs).length === 0
+// Would tonight's check-in be empty — no plan to ask about, nothing on the board to nudge, AND
+// nothing logged today? A day with any activity is worth a recap (there's something to celebrate),
+// so it is never "empty" once actions exist.
+export function isEmptyEvening(inputs: DispatchInputs, activity: ActivityRow[] = []): boolean {
+  return activity.length === 0 && !planHasRocks(inputs) && openPlacedTasks(inputs).length === 0
 }
 
 // The dispatcher's opt-in "quiet when empty" gate (config.notifications.quietWhenEmpty): true ⇒ skip
 // this due digest entirely — no claim, no AI generation, no push.
-export function isEmptyDigest(kind: DueKind, inputs: DispatchInputs, localDate: string): boolean {
-  return kind === 'plan' ? isEmptyMorning(inputs, localDate) : isEmptyEvening(inputs)
+export function isEmptyDigest(
+  kind: DueKind,
+  inputs: DispatchInputs,
+  localDate: string,
+  activity: ActivityRow[] = [],
+): boolean {
+  return kind === 'plan' ? isEmptyMorning(inputs, localDate) : isEmptyEvening(inputs, activity)
 }
 
 /**
@@ -325,60 +333,146 @@ function recurringDoneToday(task: DispatchInputs['tasks'][number], ctx: RecapCon
 }
 
 /**
- * The evening push — a check-in, not a stats dump. Built from that morning's plan: list its still-
- * unfinished items numbered and ask which got knocked out (the reply lands in chat, where BabyClaw
- * marks them done). Done-ness is matched by task text against today's done map (plus lastDoneAt for
- * recurring chores); an item we can't match stays on the list (better to ask than to silently drop).
- * No plan on file → a gentle generic check-in; everything finished → celebrate and stop. Rest days
- * are always a fine answer.
+ * The morning plan's items split into what got done today vs. what's still open — the shared source
+ * of truth for both the deterministic recap body and the AI recap prompt (so they never disagree).
+ * Done-ness is matched by exact task text against today's done map (plus lastDoneAt for recurring
+ * chores); an unmatched item stays "open" (better to ask than to silently drop). hasPlan=false when
+ * there was no plan today.
  */
-export function buildRecapMessage(inputs: DispatchInputs, ctx: RecapContext): MessageContent {
-  const name = greetName(inputs)
-  const greet = name ? `Hey ${name}! ` : ''
-
+export function recapPlanItems(
+  inputs: DispatchInputs,
+  ctx: RecapContext,
+): { done: string[]; open: string[]; hasPlan: boolean } {
   const plan = normalizePlan(inputs.plan)
   const rocks: DispatchPlanRock[] = plan
     ? [...(plan.bigRock ? [plan.bigRock] : []), ...(plan.smallRocks ?? [])]
     : []
   const items = rocks.map((r) => r.task?.trim()).filter((t): t is string => Boolean(t))
+  if (items.length === 0) return { done: [], open: [], hasPlan: false }
+  const doneTexts = new Set(
+    inputs.tasks.filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx)).map((t) => t.text),
+  )
+  return {
+    done: items.filter((t) => doneTexts.has(t)),
+    open: items.filter((t) => !doneTexts.has(t)),
+    hasPlan: true,
+  }
+}
 
-  if (items.length === 0) {
-    // No plan today (or an empty one): check in generally instead of pretending there was a list.
-    const open = openPlacedTasks(inputs)
-    const board =
-      open.length > 0
-        ? ` There ${open.length === 1 ? 'is' : 'are'} ${plural(open.length, 'task', 'tasks')} on the board whenever you're ready.`
+// Whole-day count between two 'YYYY-MM-DD' floating dates (both wall-clock — parse as UTC midnights
+// so the diff is an exact day count regardless of the reader's zone).
+function dayDelta(fromDate: string, toDate: string): number {
+  return Math.round(
+    (Date.parse(`${toDate.slice(0, 10)}T00:00:00Z`) -
+      Date.parse(`${fromDate.slice(0, 10)}T00:00:00Z`)) /
+      86_400_000,
+  )
+}
+
+const LOOKAHEAD_DAYS = 3
+const UPCOMING_CAP = 5
+
+/**
+ * The look-ahead bundle — the "anything coming up" material. Tasks due in the next few days (timed
+ * ones carry their clock time) plus recurring chores whose next cycle lands tomorrow / the day after,
+ * excluding anything already done today. Human strings, soonest first — fed to the AI recap and
+ * summarized in the deterministic fallback.
+ */
+export function upcomingItems(inputs: DispatchInputs, ctx: RecapContext): string[] {
+  const rows: { inDays: number; timed: boolean; text: string }[] = []
+  for (const t of inputs.tasks) {
+    if (inputs.done[t.id]) continue
+    if (t.due) {
+      const inDays = dayDelta(ctx.localDate, t.due)
+      if (inDays >= 1 && inDays <= LOOKAHEAD_DAYS) {
+        const when = inDays === 1 ? 'tomorrow' : `in ${inDays} days`
+        const time = t.due_time ? ` at ${formatClockTime(t.due_time)}` : ''
+        rows.push({ inDays, timed: !!t.due_time, text: `${t.text}${time} — due ${when}` })
+        continue
+      }
+    }
+    const rec = t.recurring
+    if (rec?.frequencyDays && rec.lastDoneAt && !recurringDoneToday(t, ctx)) {
+      const at = Date.parse(rec.lastDoneAt)
+      if (!Number.isNaN(at)) {
+        const next = localDateInTZ(ctx.timeZone, new Date(at + rec.frequencyDays * 86_400_000))
+        const inDays = dayDelta(ctx.localDate, next)
+        if (inDays >= 1 && inDays <= 2) {
+          rows.push({
+            inDays,
+            timed: false,
+            text: `${t.text} — recurring, due ${inDays === 1 ? 'tomorrow' : `in ${inDays} days`}`,
+          })
+        }
+      }
+    }
+  }
+  rows.sort((a, b) => a.inDays - b.inDays || (a.timed === b.timed ? 0 : a.timed ? -1 : 1))
+  return rows.slice(0, UPCOMING_CAP).map((r) => r.text)
+}
+
+/**
+ * The evening push — a check-in, not a stats dump. This is the DETERMINISTIC fallback (used when AI
+ * is paused or generation fails; the AI path — run-recap.ts — is primary). Built from that morning's
+ * plan (recapPlanItems): acknowledge what got done, list still-open items and ask, and weave in a
+ * one-line activity tally + a short look-ahead so even the fallback reflects the day and what's next.
+ * No plan on file → a gentle generic check-in that still credits a productive day; everything
+ * finished → celebrate. A rest day is always a fine answer.
+ */
+export function buildRecapMessage(
+  inputs: DispatchInputs,
+  ctx: RecapContext,
+  activity: ActivityRow[] = [],
+): MessageContent {
+  const name = greetName(inputs)
+  const greet = name ? `Hey ${name}! ` : ''
+  const { done, open, hasPlan } = recapPlanItems(inputs, ctx)
+  const tally = activityTally(activity)
+  // Drop look-ahead items already named as plan items above — no double-listing "the dentist" as
+  // both a still-open item and a heads-up (the AI path keeps them raw and dedupes in prose instead).
+  const planTexts = [...done, ...open]
+  const upcoming = upcomingItems(inputs, ctx).filter(
+    (line) => !planTexts.some((p) => line.startsWith(p)),
+  )
+  const upcomingLine = upcoming.length
+    ? `\n\n🔭 Coming up: ${upcoming.slice(0, 2).join('; ')}.`
+    : ''
+
+  // No plan today: check in generally — but credit a productive day if there was any activity.
+  if (!hasPlan) {
+    const board = openPlacedTasks(inputs)
+    const boardLine =
+      board.length > 0
+        ? ` There ${board.length === 1 ? 'is' : 'are'} ${plural(board.length, 'task', 'tasks')} on the board whenever you're ready.`
         : ''
+    const opener = tally
+      ? `Nice work today — ${tally}. How did the rest of the day go?`
+      : `No morning plan on file today, so just checking in — how did the day go? Anything get crossed off?`
     return {
       title: 'Evening check-in 👋',
       body:
-        `${greet}No morning plan on file today, so just checking in — how did the day go? ` +
-        `Anything get crossed off?${board}\n\n` +
+        `${greet}${opener}${boardLine}${upcomingLine}\n\n` +
         `Reply with anything you finished and I'll mark it done. No pressure either way 🙂\n\n${SIGNOFF}`,
     }
   }
 
-  // Which plan items still look open? Match by exact task text; unmatched items stay listed.
-  const doneTexts = new Set(
-    inputs.tasks.filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx)).map((t) => t.text),
-  )
-  const unfinished = items.filter((t) => !doneTexts.has(t))
-
-  if (unfinished.length === 0) {
+  if (open.length === 0) {
     return {
       title: `Wrapping up ${ctx.dayName} 🎉`,
-      body: `${greet}You cleared the whole plan today — nicely done. Take the evening 🙂\n\n${SIGNOFF}`,
+      body: `${greet}You cleared the whole plan today — nicely done. Take the evening 🙂${upcomingLine}\n\n${SIGNOFF}`,
     }
   }
 
-  const shown = unfinished.slice(0, CHECKIN_ITEMS_CAP)
+  const shown = open.slice(0, CHECKIN_ITEMS_CAP)
   const list = shown.map((t, i) => `${i + 1}. ${t}`).join('\n')
-  const more =
-    unfinished.length > shown.length ? `\n…and ${unfinished.length - shown.length} more` : ''
+  const more = open.length > shown.length ? `\n…and ${open.length - shown.length} more` : ''
+  const doneLine = done.length
+    ? `Nice — already crossed off ${done.length === 1 ? `"${done[0]}"` : `${done.length} plan items`}.\n\n`
+    : ''
   return {
     title: `Wrapping up ${ctx.dayName} 👋`,
     body:
-      `${greet}Which of these did you knock out today?\n\n${list}${more}\n\n` +
+      `${greet}${doneLine}Which of these did you knock out today?\n\n${list}${more}${upcomingLine}\n\n` +
       `Reply with the numbers or names and I'll mark them done. No worries if today was a rest day 🙂\n\n${SIGNOFF}`,
   }
 }
