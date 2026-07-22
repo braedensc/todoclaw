@@ -273,3 +273,50 @@ jobs:
       - name: Stop local Supabase
         if: always()
         run: supabase stop
+
+  # Volume-bound coverage (static) — RLS answers WHOSE rows a user touches; it says nothing about HOW
+  # MANY / HOW BIG. Every table with a direct `insert` grant to a user role must have a per-user
+  # row-cap trigger + a size CHECK on unbounded text/jsonb (or a reviewed allowlist entry), so no
+  # storage-bomb / prompt-injection surface merges unnoticed. Deterministic, no DB, no deps.
+  # See scripts/check-write-caps.mjs and CLAUDE.md "Security Model" rule (i).
+  write-caps:
+    name: Volume-bound coverage (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Assert every user-writable table is volume-bounded (migration scan)
+        run: node scripts/check-write-caps.mjs
+
+  # DEFINER-scope coverage (static) — a SECURITY DEFINER function bypasses the RLS of the tables it
+  # writes, so RLS is not protecting them. Every DEFINER function granted to a user role must carry a
+  # reviewed scoping entry (writes fenced to auth.uid(), or a justified exception) — the review step
+  # that weather_cache_put (#310) never got. A new such grant with no entry fails here.
+  # See scripts/check-definer-grants.mjs and CLAUDE.md "Security Model" rule (ii).
+  definer-grants:
+    name: DEFINER-scope coverage (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Assert every DEFINER function granted to users is scope-reviewed (migration scan)
+        run: node scripts/check-definer-grants.mjs
+
+  # Edge-fetch lint (static) — every outbound fetch in supabase/functions must pass an
+  # AbortSignal/timeout (or one dead endpoint hangs the dispatch cron), and a URL sourced from
+  # user-stored DB data must be a constant/env host or host-allowlisted (SSRF). Deterministic, no
+  # DB, no deps. See scripts/check-edge-fetch.mjs.
+  edge-fetch:
+    name: Edge-fetch lint (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Assert every edge fetch is timeout-bounded + host-safe
+        run: node scripts/check-edge-fetch.mjs

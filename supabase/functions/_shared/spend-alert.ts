@@ -64,6 +64,9 @@ export async function sendSpendAlert(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(buildAlertPayload(alert)),
+    // Bound the webhook POST: a hanging alerting endpoint must never stall the caller (the alert is
+    // best-effort and already swallowed on failure). 8s is generous for a Slack/Discord webhook.
+    signal: AbortSignal.timeout(8_000),
   })
   return res.ok
 }

@@ -23,6 +23,9 @@
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:rls": "node scripts/check-rls.mjs",
     "check:rls:live": "node scripts/check-rls-live.mjs",
+    "check:write-caps": "node scripts/check-write-caps.mjs",
+    "check:definer-grants": "node scripts/check-definer-grants.mjs",
+    "check:edge-fetch": "node scripts/check-edge-fetch.mjs",
     "prepare": "husky"
   },
   "lint-staged": {

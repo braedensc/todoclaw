@@ -326,6 +326,9 @@ export interface SendOptions {
   urgency?: 'very-low' | 'low' | 'normal' | 'high'
   now?: Date
   fetchImpl?: typeof fetch
+  // Per-request timeout. The dispatch crons POST to each subscriber's endpoint in turn, so a single
+  // endpoint that accepts the connection but never replies would otherwise wedge the whole run.
+  timeoutMs?: number
 }
 
 /**
@@ -372,6 +375,9 @@ export async function sendWebPush(
     },
     // Deno types fetch's body as BufferSource; a Uint8Array<ArrayBufferLike> needs a widening cast.
     body: body as BodyInit,
+    // Bound every push POST so one unresponsive endpoint can't hang the dispatch cron. A timed-out
+    // fetch aborts and throws, which the per-user try/catch in the dispatchers already handles.
+    signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
   })
   return { ok: res.ok, status: res.status, gone: res.status === 404 || res.status === 410 }
 }
