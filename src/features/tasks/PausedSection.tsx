@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Task } from '../../types/task'
-import { formatStartDay } from '../../lib/start-date'
+import { PAUSED_OPACITY, pausedChipLabel, pausedChipStyle } from '../../lib/visual-urgency'
 import { ONGOING_GLYPH } from '../../lib/task-type'
 
 // PausedSection — the ONE place a dormant task (future start_date) is visible in the app: a
@@ -52,19 +52,30 @@ export function PausedSection({
               key={t.id}
               className="flex items-center gap-2 border-t border-border py-2 first:border-t-0"
             >
-              <span className="min-w-0 flex-1 truncate text-sm text-ink">
-                {t.ongoing && (
-                  <span aria-hidden className="mr-1">
-                    {ONGOING_GLYPH}
+              {/* The set-aside content is DIMMED to the same PAUSED_OPACITY the grid's paused cards
+                  use, so a task reads as "waiting" across every surface. The Resume button stays at
+                  full opacity — it's the one live action here. */}
+              <span
+                className="flex min-w-0 flex-1 items-center gap-2"
+                style={{ opacity: PAUSED_OPACITY }}
+              >
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                  {t.ongoing && (
+                    <span aria-hidden className="mr-1">
+                      {ONGOING_GLYPH}
+                    </span>
+                  )}
+                  {t.text}
+                </span>
+                {t.start_date && (
+                  <span
+                    className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                    style={pausedChipStyle()}
+                  >
+                    {pausedChipLabel(t.start_date)}
                   </span>
                 )}
-                {t.text}
               </span>
-              {t.start_date && (
-                <span className="shrink-0 rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-muted">
-                  returns {formatStartDay(t.start_date)}
-                </span>
-              )}
               <button
                 type="button"
                 onClick={() => onResume(t.id)}

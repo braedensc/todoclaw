@@ -6,6 +6,10 @@ import {
   fmtCountdown,
   fmtOverdueAmount,
   gridChipLabel,
+  PAUSED_OPACITY,
+  pausedChipLabel,
+  pausedChipStyle,
+  pausedRingStyle,
   staleBadge,
   staleChipStyle,
   staleness,
@@ -357,5 +361,39 @@ describe('staleBadge', () => {
 describe('staleChipStyle', () => {
   it('solid azure fill (the cold-lane mirror of the terracotta overdue chip)', () => {
     expect(staleChipStyle()).toEqual({ backgroundColor: 'rgb(50,118,205)', color: '#fff' })
+  })
+})
+
+// The PAUSED (dormant / future start_date) lane — a third, neutral SLATE dress a set-aside card
+// wears, distinct from the warm urgency ladder, the cool stale azure, and the BabyClaw blue. Binary
+// (no depth ladder): a task is paused or it isn't. Applied by the grid card / cluster row / Paused
+// strip via these shared helpers so the surfaces can't drift.
+describe('paused lane', () => {
+  it('pausedRingStyle: a quiet slate ring + faint slate tint (no depth ladder)', () => {
+    expect(pausedRingStyle()).toEqual({
+      boxShadow: '0 0 0 2px rgba(100,116,139,0.55), 0 0 16px 4px rgba(100,116,139,0.20)',
+      background: '#f1f3f6',
+    })
+  })
+
+  it('pausedChipStyle: solid slate fill (the set-aside mirror of the due / stale chips)', () => {
+    expect(pausedChipStyle()).toEqual({ backgroundColor: 'rgb(100,116,139)', color: '#fff' })
+  })
+
+  it('pausedChipLabel: "⏸ starts <day>", reusing formatStartDay', () => {
+    expect(pausedChipLabel('2026-07-30')).toBe('⏸ starts Jul 30')
+    // A full ISO timestamp is sliced to its wall-clock day, same as formatStartDay.
+    expect(pausedChipLabel('2026-08-01T09:30:00Z')).toBe('⏸ starts Aug 1')
+  })
+
+  it('pausedChipLabel: falls back to a bare "⏸ paused" for a missing/unparseable date', () => {
+    expect(pausedChipLabel(null)).toBe('⏸ paused')
+    expect(pausedChipLabel(undefined)).toBe('⏸ paused')
+    expect(pausedChipLabel('not-a-date')).toBe('⏸ paused')
+  })
+
+  it('PAUSED_OPACITY dims the card but keeps it legible (not a fade-out)', () => {
+    expect(PAUSED_OPACITY).toBeGreaterThan(0.5)
+    expect(PAUSED_OPACITY).toBeLessThan(1)
   })
 })

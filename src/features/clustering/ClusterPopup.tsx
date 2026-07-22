@@ -8,6 +8,10 @@ import { daysUntil } from '../../lib/scoring'
 import {
   BASE_CARD_SHADOW,
   dueChipStyle,
+  PAUSED_OPACITY,
+  pausedChipLabel,
+  pausedChipStyle,
+  pausedRingStyle,
   staleBadge,
   staleChipStyle,
   staleness,
@@ -16,6 +20,7 @@ import {
   urgencyIcon,
   urgencyTier,
 } from '../../lib/visual-urgency'
+import { isDormant } from '../../lib/start-date'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useAnchoredMenu } from '../../hooks/use-anchored-menu'
 import { useClickOutside } from '../../hooks/use-click-outside'
@@ -296,23 +301,30 @@ function ClusterPopupRow({
   // consistently with the grid/list surfaces. A recurring row carries its own status color, so it
   // takes no urgency tier (mirrors the grid card gating glow on non-recurring tasks).
   const d = daysUntil(task.due, { timeZone })
-  // Staleness first — a folded task >= 3 weeks past due (or undated + months old) flips lanes
+  // Paused (dormant) gates first — same lane order as the grid card. A dormant task never actually
+  // reaches a cluster (clusters compute over placedTasks, which excludes dormant), so this is a
+  // consistency backstop so the folded row can't drift from its standalone card if it ever did.
+  const paused = isDormant(task, timeZone)
+  // Staleness next — a folded task >= 3 weeks past due (or undated + months old) flips lanes
   // exactly like its standalone card: gating the tier to 'none' swaps the whole hot dress for
   // the cool one below.
-  const stale = rc ? null : staleness(task, d)
-  const tier = rc || stale ? 'none' : urgencyTier(d, null)
+  const stale = rc || paused ? null : staleness(task, d)
+  const tier = rc || stale || paused ? 'none' : urgencyTier(d, null)
   // The card's FULL urgency dress — glow ring + pulse + warm tint (+ the 🔥 corner flag below) —
   // so a folded overdue/near-due task reads identically to its standalone card on the map
   // (owner feedback 2026-07-09: not just the tint).
   const glow = urgencyGlowStyle(tier)
   const hotIcon = rc ? null : urgencyIcon(tier)
   // The cool stale dress, per-row, same as the grid card: azure ring + icy tint + the ❄️ badge
-  // (corner flag replacing the 🔥, azure chip replacing the due chip).
+  // (corner flag replacing the 🔥, azure chip replacing the due chip). The slate paused ring
+  // (below) stands in for it on a dormant row — mutually exclusive by the gating above.
   const staleRing = staleRingStyle(stale)
   const iceBadge = staleBadge(stale)
+  const pausedRing = paused ? pausedRingStyle() : null
+  const coolRing = pausedRing ?? staleRing
   const boxShadow =
-    glow || staleRing
-      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, staleRing?.boxShadow].filter(Boolean).join(', ')
+    glow || coolRing
+      ? [glow ? glow.boxShadow : BASE_CARD_SHADOW, coolRing?.boxShadow].filter(Boolean).join(', ')
       : undefined
 
   // Dashed, slightly heavier accent sides for a recurring row — same treatment as GridCard.
@@ -377,14 +389,16 @@ function ClusterPopupRow({
         borderLeftColor: sideColor,
         ...recurringBorder,
         touchAction: 'none',
-        // Composed warm-glow OR cool stale-ring shadow overrides the resting `shadow-sm`; the tint
-        // follows the same lane flip (warm while hot, icy once stale) — exactly the spread GridCard
-        // does.
+        // Composed warm-glow OR cool ring (stale azure / paused slate) shadow overrides the resting
+        // `shadow-sm`; the tint follows the same lane flip (warm while hot, icy once stale, slate
+        // once paused) — exactly the spread GridCard does.
         ...(boxShadow ? { boxShadow } : {}),
         ...(glow?.animation ? { animation: glow.animation } : {}),
-        ...((glow?.background ?? staleRing?.background)
-          ? { background: glow?.background ?? staleRing?.background }
+        ...((glow?.background ?? coolRing?.background)
+          ? { background: glow?.background ?? coolRing?.background }
           : {}),
+        // A paused row dims whole, like the grid's paused card.
+        ...(paused ? { opacity: PAUSED_OPACITY } : {}),
       }}
     >
       {/* Corner flag — 🔥 while hot (overdue/due-today), ❄️ once stale — the color-independent cue,
@@ -437,6 +451,14 @@ function ClusterPopupRow({
               title={rc.label}
             >
               ↻
+            </span>
+          ) : paused ? (
+            <span
+              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold"
+              style={pausedChipStyle()}
+              title="Paused"
+            >
+              {pausedChipLabel(task.start_date)}
             </span>
           ) : iceBadge ? (
             <span

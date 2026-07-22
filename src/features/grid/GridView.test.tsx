@@ -360,6 +360,70 @@ describe('GridView card visuals', () => {
   })
 })
 
+// A dormant task (future start_date) is hidden from the ACTIVE board but still rendered as its own
+// read-only "set aside" pass: a paused card at its stored x/y, dimmed with the ⏸ slate chip, out of
+// the clustering / drag machinery. (isPlaced excludes dormant; useGrid.dormantPlaced re-adds them.)
+describe('GridView paused (dormant) cards', () => {
+  // Now-relative so the fixture can't rot across the daily boundary — a month out is firmly future.
+  const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+
+  it('renders a dormant placed task as a read-only, dimmed card with the ⏸ paused chip', () => {
+    tasksFixture = [
+      makeTask({ id: 'zzz', text: 'Book the venue', x: 0.3, y: 0.7, start_date: future }),
+    ]
+    render(<GridHarness />)
+
+    const card = screen.getByTestId('grid-card')
+    expect(within(card).getByText('Book the venue')).toBeInTheDocument()
+    // The ⏸ slate chip says when it comes back (formatStartDay day), not a due date.
+    expect(within(card).getByText(/^⏸ starts /)).toBeInTheDocument()
+    // Read-only: flagged for E2E/style hooks, and NO grab cursor (can't be dragged).
+    expect(card).toHaveAttribute('data-paused')
+    expect(card.className).not.toContain('cursor-grab')
+    // Dimmed whole (set-aside cue), but still legible.
+    expect(card.style.opacity).not.toBe('')
+    expect(parseFloat(card.style.opacity)).toBeLessThan(1)
+    // The empty-state is gated on BOTH lists: a board with only a paused card is not "empty".
+    expect(screen.queryByText('No tasks placed — add one above and drag it here.')).toBeNull()
+  })
+
+  it('suppresses the due chip on a paused card — its deadline is intentionally deferred', () => {
+    // Even an overdue due date shows NO warm chip while paused (the paused lane gates it, like a
+    // recurring card suppresses its due chip).
+    tasksFixture = [
+      makeTask({ id: 'zzz', text: 'Renew passport', due: '2000-01-01', start_date: future }),
+    ]
+    render(<GridHarness />)
+
+    const card = screen.getByTestId('grid-card')
+    expect(within(card).queryByText(/Overdue/)).toBeNull()
+    expect(within(card).queryByText(/Stale/)).toBeNull()
+    expect(card.style.animation).toBe('') // no urgency pulse
+    // The ⏸ chip is the only status chip on the card.
+    expect(within(card).getByText(/^⏸ starts /)).toBeInTheDocument()
+  })
+
+  it('keeps a dormant card OUT of clustering — it never folds into an active bubble', () => {
+    // A paused card sharing an active card's coords must NOT merge into a cluster bubble: both
+    // render as standalone cards (the active one draggable, the paused one read-only).
+    tasksFixture = [
+      makeTask({ id: 'active', text: 'Live task', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'zzz', text: 'Paused task', x: 0.5, y: 0.5, start_date: future }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.queryByTestId('cluster-bubble')).toBeNull()
+    const cards = screen.getAllByTestId('grid-card')
+    expect(cards).toHaveLength(2)
+    // The paused one is the read-only card; the active one is draggable.
+    const pausedCard = cards.find((c) => c.hasAttribute('data-paused'))!
+    const activeCard = cards.find((c) => !c.hasAttribute('data-paused'))!
+    expect(within(pausedCard).getByText('Paused task')).toBeInTheDocument()
+    expect(within(activeCard).getByText('Live task')).toBeInTheDocument()
+    expect(activeCard.className).toContain('cursor-grab')
+  })
+})
+
 describe('GridView card action bar', () => {
   it('shows a persistent OUTLINED "Done" pill (label + green border/text, not filled) plus ⋯/× on every card', () => {
     tasksFixture = [makeTask({ id: 'x', text: 'Do a thing', staged: false })]

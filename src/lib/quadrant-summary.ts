@@ -84,6 +84,35 @@ export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): Q
 }
 
 /**
+ * Bucket PLACED DORMANT (paused / future start_date) tasks into their Eisenhower quadrants — the
+ * set-aside preview that rides ALONGSIDE {@link summarizeQuadrants} in the mobile overview. Ordered
+ * soonest-returning-first (by start_date, string-comparable wall-clock dates), matching the Paused
+ * strip, so "what comes back next" heads each cell. Unplaced dormant tasks (null coords) carry no
+ * quadrant and are skipped — they live only in the strip. Kept here beside summarizeQuadrants so the
+ * two bucketing rules can't drift; the caller passes the already-dormant, already-placed set.
+ *
+ * Deliberately SEPARATE from the active summary: dormant tasks are excluded from the active count
+ * badges and the due ("on fire") counts, so they can never read as due/overdue or inflate a
+ * quadrant's total — they only surface as a dimmed ⏸ preview + a paused sub-count.
+ */
+export function dormantByQuadrant(tasks: Task[]): Record<QuadrantKey, Task[]> {
+  const groups: Record<QuadrantKey, Task[]> = {
+    'do-now': [],
+    schedule: [],
+    errands: [],
+    someday: [],
+  }
+  for (const t of tasks) {
+    if (isUnplaced(t) || t.x == null || t.y == null) continue
+    groups[quadrantMeta(t.x, t.y).key].push(t)
+  }
+  for (const key of QUADRANT_ORDER) {
+    groups[key].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''))
+  }
+  return groups
+}
+
+/**
  * Coordinates for moving a task to a quadrant via the mobile tap picker (Concept C) — the no-drag
  * reposition path. Snaps to the destination quadrant's band center, then runs the existing
  * collision spiral (step 0.016, clamped) against all active tasks so it never lands on top of
