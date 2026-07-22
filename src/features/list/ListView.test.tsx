@@ -128,19 +128,23 @@ describe('ListView', () => {
   })
 
   it('expanded-row due editors write BOTH due columns; clearing the date clears the time', () => {
-    tasksData = [makeTask({ id: 'x', text: 'timed task', due: '2026-08-01', due_time: '15:00:00' })]
+    // The native "Due date" input only renders for a due date OFF the 14-day calendar, so the
+    // fixture must stay well beyond the fortnight relative to the RUN date — a hardcoded date rots
+    // into the calendar window and the input (and this spec) silently disappears.
+    const farDue = new Date(Date.now() + 45 * 86_400_000).toISOString().slice(0, 10)
+    tasksData = [makeTask({ id: 'x', text: 'timed task', due: farDue, due_time: '15:00:00' })]
     renderList()
     fireEvent.click(screen.getByText('timed task'))
 
     // Badge surfaces the time for near dates via dueLabel — here just assert the inputs hydrate
     // from the wire formats ('YYYY-MM-DD' / 'HH:MM:SS' → 'HH:MM').
-    expect(screen.getByLabelText('Due date')).toHaveValue('2026-08-01')
+    expect(screen.getByLabelText('Due date')).toHaveValue(farDue)
     expect(screen.getByLabelText('Due time')).toHaveValue('15:00')
 
     fireEvent.change(screen.getByLabelText('Due time'), { target: { value: '09:30' } })
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'x',
-      patch: { due: '2026-08-01', due_time: '09:30' },
+      patch: { due: farDue, due_time: '09:30' },
     })
 
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } })
