@@ -93,12 +93,9 @@ export function destructiveSummary(name: string, input: unknown, label?: string)
   if (name === 'delete_task') return `Delete ${label ? `"${label}"` : `task ${id}`}`
   if (name === 'delete_habit') return `Delete the habit ${label ? `"${label}"` : id}`
   if (name === 'delete_completion') return 'Remove a completion from your Done log'
-  // propose_memory carries the fact itself (no id yet); delete_memory carries a memory_id whose text
-  // the caller resolves into `label`. Both show the user exactly what will be saved / forgotten.
-  if (name === 'propose_memory') {
-    const content = String((input as { content?: string })?.content ?? '').slice(0, 240)
-    return `Remember: "${content}"`
-  }
+  // delete_memory carries a memory_id whose text the caller resolves into `label` — it shows the user
+  // exactly what will be forgotten. (propose_memory is no longer destructive: a confident inference
+  // auto-saves, so it never reaches this confirm-summary path.)
   if (name === 'delete_memory') return `Forget the note ${label ? `"${label}"` : id}`
   return `Run ${name}`
 }

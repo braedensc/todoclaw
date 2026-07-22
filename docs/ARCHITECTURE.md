@@ -62,3 +62,4 @@ supersede it with a new ADR and flip the old one's Status.
 | [ADR 2026-07-13](adr/2026-07-13-babyclaw-budget-invite-hardening.md) | 2026-07-13 | BabyClaw hardening: bind AI budget spend to a usage row; owner-only invite mint |
 | [ADR 2026-07-13](adr/2026-07-13-persistent-chats.md) | 2026-07-13 | Persistent BabyClaw chats: server-authoritative history via a service-role write path |
 | [ADR 2026-07-21](adr/2026-07-21-task-activity-log-evening-recap.md) | 2026-07-21 | Task activity log (DEFINER trigger on `tasks`) + AI-written evening recap |
+| [ADR 2026-07-22](adr/2026-07-22-proactive-memory-inference-autosave.md) | 2026-07-22 | Proactive memory: confident inferences auto-save (drop `propose_memory`'s confirmation gate) |
