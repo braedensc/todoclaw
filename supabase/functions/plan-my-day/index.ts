@@ -9,6 +9,7 @@ import { corsHeaders, preflight } from '../_shared/cors.ts'
 import { userClient, requireUser } from '../_shared/auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from '../_shared/anthropic.ts'
 import { precheck, recordUsage } from '../_shared/guardrails.ts'
+import { ipThrottleOk } from '../_shared/ip-throttle.ts'
 import { getWeather } from '../_shared/weather.ts'
 import {
   PlanRequestSchema,
@@ -30,6 +31,10 @@ Deno.serve(async (req) => {
       status,
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
+
+  // Coarse per-IP flood guard, before auth (verify_jwt is off for this function).
+  if (!(await ipThrottleOk(req, 'plan-my-day', 120, 60)))
+    return json({ error: 'too_many_requests' }, 429)
 
   const client = userClient(req)
   const user = await requireUser(client)

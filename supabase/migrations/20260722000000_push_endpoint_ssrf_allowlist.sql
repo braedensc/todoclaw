@@ -36,5 +36,5 @@ alter table public.push_subscriptions
   ) not valid;
 
 comment on constraint push_subscriptions_endpoint_allowed on public.push_subscriptions is
-  'SSRF guard (2026-07-21): endpoint must be one of the four real Web Push services (FCM / Apple / '
+  'SSRF guard (2026-07-22): endpoint must be one of the four real Web Push services (FCM / Apple / '
   'WNS / Mozilla). Mirrors isAllowedPushEndpoint in _shared/web-push.ts — keep the host list in sync.';
