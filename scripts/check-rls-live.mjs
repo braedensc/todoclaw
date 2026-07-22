@@ -132,7 +132,7 @@ async function runAnonProbe(client, failures, warnings) {
 }
 
 // E. weather_cache is SERVER-ONLY. Its DEFINER get/put RPCs must be callable ONLY by service_role
-// (migration 20260721000000). That write path used to be granted to `authenticated`, letting any
+// (migration 20260722000000). That write path used to be granted to `authenticated`, letting any
 // invited user poison another user's cached weather — which plan-my-day folds verbatim into that
 // victim's LLM prompt — and storage-bomb the un-scoped table. Here we assume each non-service role
 // and confirm the call is DENIED (42501 = insufficient_privilege), then confirm service_role CAN
@@ -161,7 +161,7 @@ async function runWeatherCacheGrantProbe(client, failures) {
           failures.push(
             `weather_cache grant: role "${role}" could call ${label} — expected permission-denied ` +
               `(42501), got ${code ?? 'NO error, the call SUCCEEDED'}. The weather cache must be ` +
-              `service_role-only (migration 20260721000000); a non-service grant is the cross-tenant hole.`,
+              `service_role-only (migration 20260722000000); a non-service grant is the cross-tenant hole.`,
           )
         }
       }

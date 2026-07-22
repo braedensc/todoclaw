@@ -21,7 +21,7 @@ Invite-only doesn't neutralize it — the boundary crossed is *between tenants*,
 
 ## Decision — the weather cache is server-only
 
-Migration `20260721000000_weather_cache_service_only`:
+Migration `20260722000000_weather_cache_service_only`:
 
 - **Revoke `weather_cache_get/put` from `public`/`authenticated`; grant to `service_role` only.** The
   edge functions (`plan-my-day`, `run-plan`) now call them with `adminClient()` — the same

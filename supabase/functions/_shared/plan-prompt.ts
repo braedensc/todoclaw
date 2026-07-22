@@ -388,7 +388,7 @@ export function buildUserPrompt(
     )
   }
   // Weather comes from a shared cache. Even though writes are now service_role-only (migration
-  // 20260721000000), treat the value as UNTRUSTED at the fold: defang+single-line it exactly like
+  // 20260722000000), treat the value as UNTRUSTED at the fold: defang+single-line it exactly like
   // memories/notes so a stale or pre-fix-poisoned entry can't forge a section header or add prompt
   // lines, and cap it (real summaries run ~80 chars). Non-empty after sanitizing ⇒ render.
   const weatherLine = weather ? sanitizeForPrompt(weather, 200) : ''

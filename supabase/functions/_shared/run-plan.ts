@@ -100,7 +100,7 @@ export async function runPlanForUser(
     // No location set → skip the weather line entirely (don't default to any city's weather).
     // The weather_cache is server-only (service_role): pass adminClient(), NOT the caller's client —
     // getWeather uses it solely for the cache RPCs (never a user table). See weather.ts / migration
-    // 20260721000000.
+    // 20260722000000.
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
     const weather = location ? await getWeather(adminClient(), location) : null
 

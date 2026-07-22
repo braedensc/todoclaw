@@ -3,7 +3,7 @@
 // weather_cache (DEFINER get/put).
 //
 // The weather_cache is SERVER-ONLY: its get/put RPCs are granted to service_role, never to
-// `authenticated` (migration 20260721000000). getWeather therefore takes a service-role client and
+// `authenticated` (migration 20260722000000). getWeather therefore takes a service-role client and
 // uses it SOLELY for those two cache RPCs — it never touches user tables — so an invited user can
 // no longer write arbitrary text into another user's cached weather (which the plan prompt folds in
 // verbatim). The cached value is always the summary THIS module fetched from wttr.in, or a sentinel.
