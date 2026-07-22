@@ -1,8 +1,16 @@
 # admin — owner-only control room
 
-A single owner-only page (`/#/admin`, `AdminPage.tsx`) that consolidates the things only the app
-owner should see: AI spend (global pool + per-user roster), the guardrail-config reference, system
-stats + integration status, and invite management (folded in from `settings/InviteManager`).
+A **tabbed** owner-only page (`/#/admin`, `AdminPage.tsx`) that consolidates the things only the app
+owner should see. Tabs: **Overview** (AI spend meter + per-user roster), **Guardrails** (the live,
+owner-tunable AI cost/rate caps), **Limits** (a read-only reference of every cap/quota/guardrail in
+the app — see `limits-reference.ts`), **Invites** (`settings/InviteManager`), and **System** (stats +
+integration status + dashboard links + build).
+
+The Overview / Guardrails / System tabs share the one `useAdminOverview()` fetch; **Limits** and
+**Invites** are self-sufficient, so the Limits reference still renders if that fetch fails.
+
+The **Limits** tab is static, non-secret reference content sourced from `limits-reference.ts` — kept
+in sync with `docs/LIMITS.md` (the source of truth, which cites the exact file + constant per row).
 
 ## Security
 
