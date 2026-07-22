@@ -22,6 +22,7 @@ export function PlanBox({
   onRetry,
   onDismiss,
   mobile = false,
+  rockDone,
 }: {
   plan: DayPlan | null
   paused: boolean
@@ -32,6 +33,10 @@ export function PlanBox({
   // Mobile swaps the tiny corner ✕ (a fiddly touch target) for a full-width footer "Dismiss"
   // button beneath the plan. Desktop keeps the corner ✕.
   mobile?: boolean
+  // Is this rock's task already completed? A matching rock renders scratched off (✓ + struck,
+  // dimmed text) so the card tracks the day's progress live. Optional: the onboarding DemoScene
+  // shows its canned morning plan untouched.
+  rockDone?: (rock: PlanRock) => boolean
 }) {
   // Idle with no plan → render nothing at all. App gates the wrapper on the same condition so no
   // empty margin is left behind.
@@ -55,7 +60,7 @@ export function PlanBox({
               .
             </p>
           )}
-          <PlanContent plan={plan} />
+          <PlanContent plan={plan} rockDone={rockDone} />
         </div>
       ) : isPending ? (
         <p className="text-[14px] text-muted">Planning your day…</p>
@@ -104,8 +109,16 @@ export function PlanBox({
   )
 }
 
-// The rendered plan: headline, available time, big rock, small rocks, habit note.
-function PlanContent({ plan }: { plan: DayPlan }) {
+// The rendered plan: headline, available time, big rock, small rocks, habit note. Rocks whose
+// task is already completed (rockDone) render scratched off.
+function PlanContent({
+  plan,
+  rockDone,
+}: {
+  plan: DayPlan
+  rockDone?: (rock: PlanRock) => boolean
+}) {
+  const done = (r: PlanRock) => rockDone?.(r) ?? false
   return (
     <div className="flex flex-col">
       <p className="font-serif text-[19px] font-medium leading-snug text-ink">{plan.headline}</p>
@@ -118,7 +131,7 @@ function PlanContent({ plan }: { plan: DayPlan }) {
           <span className="mt-0.5 shrink-0 rounded-md bg-accent px-[7px] py-1 text-[10px] font-bold uppercase tracking-wider text-white">
             Big rock
           </span>
-          <RockBody rock={plan.bigRock} emphasis />
+          <RockBody rock={plan.bigRock} emphasis done={done(plan.bigRock)} />
         </div>
       )}
 
@@ -128,7 +141,7 @@ function PlanContent({ plan }: { plan: DayPlan }) {
           <span className="mt-[3px] w-[34px] shrink-0 text-[12px] font-semibold text-muted-light">
             {plan.bigRock ? (i === 0 ? 'then' : 'also') : '•'}
           </span>
-          <RockBody rock={r} />
+          <RockBody rock={r} done={done(r)} />
         </div>
       ))}
 
@@ -137,17 +150,32 @@ function PlanContent({ plan }: { plan: DayPlan }) {
   )
 }
 
-function RockBody({ rock, emphasis }: { rock: PlanRock; emphasis?: boolean }) {
+function RockBody({
+  rock,
+  emphasis,
+  done,
+}: {
+  rock: PlanRock
+  emphasis?: boolean
+  done?: boolean
+}) {
+  const size = emphasis
+    ? 'text-[15.5px] font-semibold leading-snug'
+    : 'text-[14px] font-medium leading-snug'
   return (
-    <div className="flex-1">
-      <div
-        className={
-          emphasis
-            ? 'text-[15.5px] font-semibold leading-snug text-ink'
-            : 'text-[14px] font-medium leading-snug text-ink'
-        }
-      >
-        {rock.task}
+    // Scratched-off = the whole rock dims, the task text strikes through, a green ✓ leads it
+    // (with a screen-reader "Done:" — line-through alone is invisible to a11y tech).
+    <div className={done ? 'flex-1 opacity-75' : 'flex-1'}>
+      <div className={`${size} ${done ? 'text-muted' : 'text-ink'}`}>
+        {done && (
+          <>
+            <span aria-hidden className="mr-1.5 text-primary">
+              ✓
+            </span>
+            <span className="sr-only">Done: </span>
+          </>
+        )}
+        <span className={done ? 'line-through' : undefined}>{rock.task}</span>
       </div>
       {rock.why && <div className="mt-0.5 text-[12.5px] text-muted">{rock.why}</div>}
       <div className="mt-[5px] flex flex-wrap gap-[5px]">

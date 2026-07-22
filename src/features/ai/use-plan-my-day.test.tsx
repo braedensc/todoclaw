@@ -76,6 +76,7 @@ describe('buildPlanRequest', () => {
 
     expect(req.tasks).toHaveLength(1)
     expect(req.tasks[0]).toMatchObject({
+      id: 'keep', // rides along so the server can tie emitted rocks back to tasks (taskId)
       text: 'Keep',
       importance: 60, // round(0.6 * 100)
       urgency: 90, // round(0.9 * 100)
@@ -118,7 +119,7 @@ describe('buildPlanRequest', () => {
     const habits = [habit({ text: 'Stretch' }), habit({ text: 'Inactive', active: false })]
     const req = buildPlanRequest(tasks, habits, {}, TZ, NOW)
 
-    expect(req.recurringDue).toEqual([{ text: 'Water', status: 'never done' }])
+    expect(req.recurringDue).toEqual([{ id: 'overdue', text: 'Water', status: 'never done' }])
     expect(req.habits).toEqual(['Stretch'])
     expect(req.dayOfWeek).toBe('Wednesday')
     expect(req.today).toBe('Wednesday, June 24, 2026')

@@ -420,7 +420,9 @@ function contextBlock(ctx: ChatContext): string {
     if (ctx.plan.headline) planBits.push(ctx.plan.headline)
     if (ctx.plan.bigRock) planBits.push(`Big rock: ${ctx.plan.bigRock}.`)
     if (ctx.plan.smallRocks.length) planBits.push(`Then: ${ctx.plan.smallRocks.join(', ')}.`)
-    blocks.push(`=== TODAY'S PLAN (already generated) ===\n${planBits.join(' ')}`)
+    blocks.push(
+      `=== TODAY'S PLAN (already generated; ✓ = that item is already done) ===\n${planBits.join(' ')}`,
+    )
   }
 
   const habitsShown = ctx.habits.slice(0, MAX_HABITS_SHOWN)

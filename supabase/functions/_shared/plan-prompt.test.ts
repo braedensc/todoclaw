@@ -6,6 +6,9 @@ import {
   PlanRequestSchema,
   SYSTEM_PROMPT,
   buildUserPrompt,
+  resolvePlanTaskIds,
+  type EmittedPlan,
+  type EmittedRock,
   type PlanRequest,
   type ScheduleConfig,
 } from './plan-prompt.ts'
@@ -267,4 +270,94 @@ Deno.test('a memory cannot forge a section header or escape its block in the pla
   // The whole memory collapses to ONE defanged line — only the genuine SCHEDULE block header exists.
   assertEquals(p.split('=== SCHEDULE & AVAILABILITY ===').length - 1, 1)
   assert(!p.includes('[[status: pwned]]'))
+})
+
+// ---- task refs → rock.taskId (resolvePlanTaskIds) ----------------------------------------------
+
+// `base` with real ids, as a current client/server request builder sends them.
+const withIds: PlanRequest = {
+  ...base,
+  tasks: base.tasks.map((t, i) => ({ ...t, id: `task-${i + 1}` })),
+  recurringDue: [{ id: 'chore-1', text: 'Water plants', status: 'due today' }],
+}
+
+const emittedRock = (task: string, ref: string | null): EmittedRock => ({
+  task,
+  why: 'w',
+  duration: '~30min',
+  when: 'morning',
+  ref,
+})
+
+const emitted = (bigRock: EmittedRock | null, smallRocks: EmittedRock[]): EmittedPlan => ({
+  headline: 'h',
+  availableTime: 'a',
+  habitNote: 'n',
+  bigRock,
+  smallRocks,
+})
+
+Deno.test('task and recurring lines carry the bracketed ids rocks cite back ([T#]/[R#])', () => {
+  const p = buildUserPrompt(withIds, schedule, null)
+  assertStringIncludes(p, '- [T1] File taxes')
+  assertStringIncludes(p, '- [T4] Dentist')
+  assertStringIncludes(p, '- [R1] Water plants (due today)')
+  // And the system prompt explains the contract.
+  assertStringIncludes(SYSTEM_PROMPT, 'bracketed id')
+  assertStringIncludes(SYSTEM_PROMPT, '`ref`')
+})
+
+Deno.test('emit_plan schema requires ref on every rock', () => {
+  const required = EMIT_PLAN_TOOL.input_schema.properties.smallRocks.items.required
+  assert((required as readonly string[]).includes('ref'))
+})
+
+Deno.test(
+  'resolvePlanTaskIds: maps T/R refs to real task ids and strips ref from the output',
+  () => {
+    const plan = resolvePlanTaskIds(
+      emitted(emittedRock('File taxes', 'T1'), [
+        emittedRock('Water plants', 'R1'),
+        emittedRock('Invented errand', null),
+      ]),
+      withIds,
+    )
+    assertEquals(plan.bigRock?.taskId, 'task-1')
+    assertEquals(plan.smallRocks[0].taskId, 'chore-1')
+    assertEquals(plan.smallRocks[1].taskId, null)
+    assert(!('ref' in plan.bigRock!))
+    assert(!('ref' in plan.smallRocks[0]))
+  },
+)
+
+Deno.test('resolvePlanTaskIds: lowercase refs still resolve (the model may not copy case)', () => {
+  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 't1'), []), withIds)
+  assertEquals(plan.bigRock?.taskId, 'task-1')
+})
+
+Deno.test('resolvePlanTaskIds: a bogus/missing ref falls back to exact text; else null', () => {
+  const noRef = {
+    task: 'Renew passport',
+    why: 'w',
+    duration: '~1h',
+    when: 'morning',
+  } as EmittedRock
+  const plan = resolvePlanTaskIds(
+    emitted(emittedRock('Read paper', 'T99'), [noRef, emittedRock('Totally new thing', 'R7')]),
+    withIds,
+  )
+  assertEquals(plan.bigRock?.taskId, 'task-2') // T99 out of range → text match on "Read paper"
+  assertEquals(plan.smallRocks[0].taskId, 'task-3') // ref absent → text match
+  assertEquals(plan.smallRocks[1].taskId, null) // nothing matches → unlinked, plan still renders
+})
+
+Deno.test('resolvePlanTaskIds: an id-less request (old cached client) degrades to null ids', () => {
+  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), base)
+  assertEquals(plan.bigRock?.taskId, null)
+})
+
+Deno.test('PlanRequestSchema accepts task/recurring ids and tolerates their absence', () => {
+  assertEquals(PlanRequestSchema.parse(withIds).tasks[0].id, 'task-1')
+  assertEquals(PlanRequestSchema.parse(withIds).recurringDue[0].id, 'chore-1')
+  assertEquals(PlanRequestSchema.parse(base).tasks[0].id ?? null, null) // deploy-skew safe
 })

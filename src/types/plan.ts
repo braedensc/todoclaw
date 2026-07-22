@@ -16,6 +16,11 @@ export const PlanRockSchema = z.object({
   why: z.string(),
   duration: z.string(),
   when: PlanWhenSchema,
+  // The tasks.id this rock came from (stamped server-side from the model's line ref), so the plan
+  // card can strike a rock through once its task is done. Optional: plans persisted before the
+  // field existed simply lack it, and `.catch(null)` keeps a malformed value (the column is
+  // client-writable jsonb) from nuking the whole plan via DailyStateSchema's plan-level catch.
+  taskId: z.string().nullish().catch(null),
 })
 
 export const DayPlanSchema = z.object({

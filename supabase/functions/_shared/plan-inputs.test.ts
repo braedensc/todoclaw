@@ -51,6 +51,30 @@ Deno.test('carries task size through, narrowing a missing or invalid value to nu
     NoSize: null,
     Bad: null,
   })
+  // Ids ride along so emitted rocks can be tied back to their tasks (resolvePlanTaskIds).
+  assertEquals(
+    req.tasks.map((t) => t.id),
+    ['a', 'b', 'c'],
+  )
+})
+
+Deno.test('a due recurring chore carries its task id into recurringDue', () => {
+  const rows = [
+    {
+      id: 'chore',
+      text: 'Water plants',
+      x: 0.5,
+      y: 0.5,
+      due: null,
+      due_time: null,
+      size: null,
+      staged: false,
+      recurring: { frequencyDays: 3, lastDoneAt: '2026-06-20T12:00:00.000Z', doneCount: 4 },
+    },
+  ]
+  const req = buildPlanRequest(rows, [], {}, TZ, NOW)
+  assertEquals(req.recurringDue.length, 1)
+  assertEquals(req.recurringDue[0].id, 'chore')
 })
 
 Deno.test('an ongoing task row surfaces in the plan tasks carrying its ongoing flag', () => {

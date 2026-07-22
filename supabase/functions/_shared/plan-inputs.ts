@@ -75,6 +75,7 @@ export function buildPlanRequest(
         !t.staged && !doneMap[t.id] && !t.recurring && !dormant(t) && t.x != null && t.y != null,
     )
     .map((t) => ({
+      id: t.id, // ties emitted rocks back to the task (resolvePlanTaskIds)
       text: t.text,
       importance: Math.round((t.y ?? 0.5) * 100),
       urgency: Math.round((t.x ?? 0.5) * 100),
@@ -85,11 +86,11 @@ export function buildPlanRequest(
       ongoing: t.ongoing ?? false,
     }))
 
-  const recurringDue: { text: string; status: string }[] = []
+  const recurringDue: { id: string; text: string; status: string }[] = []
   for (const t of tasks) {
     if (dormant(t)) continue // a paused chore sits out its pause too
     const s = recurringStatus(t.recurring, now)
-    if (s && s.due) recurringDue.push({ text: t.text, status: s.label })
+    if (s && s.due) recurringDue.push({ id: t.id, text: t.text, status: s.label })
   }
 
   const fmt = (opts: Intl.DateTimeFormatOptions) =>

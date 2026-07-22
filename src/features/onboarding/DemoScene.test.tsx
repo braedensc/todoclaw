@@ -79,9 +79,11 @@ describe('DemoScene', () => {
     expect(screen.getByText(/Plan My Day/)).toBeInTheDocument()
     expect(screen.getByText(DEMO_PLAN.headline)).toBeInTheDocument()
 
-    // Both check-in moments play through the real chat surface.
+    // Both check-in moments play through the real chat surface. The evening recap acknowledges
+    // the already-done big rock (✓) and lists what's still open.
     expect(screen.getByText(/Good morning!/)).toBeInTheDocument()
-    expect(screen.getByText(/Which of these did you knock out today\?/)).toBeInTheDocument()
+    expect(screen.getByText(/already crossed off:/)).toBeInTheDocument()
+    expect(screen.getByText(/Still open from this morning's plan:/)).toBeInTheDocument()
     expect(screen.getByText(DEMO_EVENING_REPLY)).toBeInTheDocument()
 
     // The habits strip is the REAL RemindersInline over the seeded habits — not a lookalike — so

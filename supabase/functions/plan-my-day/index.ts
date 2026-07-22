@@ -15,8 +15,9 @@ import {
   SYSTEM_PROMPT,
   EMIT_PLAN_TOOL,
   buildUserPrompt,
+  resolvePlanTaskIds,
+  type EmittedPlan,
   type ScheduleConfig,
-  type PlanResult,
 } from '../_shared/plan-prompt.ts'
 
 Deno.serve(async (req) => {
@@ -84,7 +85,9 @@ Deno.serve(async (req) => {
 
     const toolUse = msg.content.find((b) => b.type === 'tool_use')
     if (!toolUse || toolUse.type !== 'tool_use') return json({ error: 'no_plan' }, 502)
-    return json({ plan: toolUse.input as PlanResult })
+    // Resolve emitted refs → real task ids before the client sees (and persists) the plan, so
+    // each rock can be crossed off when its task is completed. See resolvePlanTaskIds.
+    return json({ plan: resolvePlanTaskIds(toolUse.input as EmittedPlan, payload) })
   } catch (e) {
     // Log the real error server-side; return a generic code so no internal detail reaches the client.
     console.error('plan-my-day failed:', e)

@@ -697,6 +697,7 @@ function AppShell() {
                             isError={planner.isError}
                             onRetry={planner.generate}
                             onDismiss={planner.clear}
+                            rockDone={planner.rockDone}
                           />
                         </ErrorBoundary>
                       </div>

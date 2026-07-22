@@ -386,7 +386,10 @@ Deno.test("today's saved plan renders in its own block so BabyClaw can reference
       },
     }),
   )
-  assertStringIncludes(sys, "=== TODAY'S PLAN (already generated) ===")
+  assertStringIncludes(
+    sys,
+    "=== TODAY'S PLAN (already generated; ✓ = that item is already done) ===",
+  )
   assertStringIncludes(sys, 'Big rock: Draft the deck (this morning, ~2h).')
   assertStringIncludes(sys, 'Then: Reply to Sam, Book flights.')
 })
