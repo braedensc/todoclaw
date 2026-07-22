@@ -321,7 +321,6 @@ export const scenarios: PlanScenario[] = [
     rubric:
       'The kiln task wakes in 2 days (Thursday) and is high-stakes: the ideal plan drops a ' +
       'one-line heads-up in the headline/availableTime prose WITHOUT scheduling it today.',
-    expectFailUntil: 'upcoming-mentions PR (#319)',
   },
   {
     kind: 'plan',

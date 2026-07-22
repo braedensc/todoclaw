@@ -84,7 +84,6 @@ export const scenarios: ChatScenario[] = [
       'save_memory (it was user-stated, so no proposal round-trip is needed), mentioning the save ' +
       'in one short line. Creating the task but letting the fact evaporate is the pre-PR behavior ' +
       'this scenario encodes.',
-    expectFailUntil: 'proactive-memory PR (S1)',
   },
   {
     kind: 'chat',

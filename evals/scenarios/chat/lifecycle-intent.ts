@@ -67,7 +67,6 @@ export const scenarios: ChatScenario[] = [
       'hiding it from plans until then. Proposing to mark it done or delete it is a fail ' +
       '(completing hides the task and stops its reminders — the opposite of the stated intent). ' +
       'Asking a short clarifying question that includes pause as an option is acceptable.',
-    expectFailUntil: 'pause-guidance prompt PR (S1)',
   },
   {
     kind: 'chat',
