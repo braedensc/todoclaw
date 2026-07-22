@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 // accessory strip, sub-pixel rounding) rather than a real software keyboard. Every real on-screen
 // keyboard — even a landscape one with the predictive bar — is far taller than this, so the sheet
 // only re-anchors for an actual keyboard and not for incidental visual-viewport jitter.
-const KEYBOARD_MIN_PX = 80
+// Exported: use-locked-viewport-guard.ts shares the same "is a keyboard up" floor.
+export const KEYBOARD_MIN_PX = 80
 
 export interface KeyboardViewport {
   /** Height (px) of the software keyboard overlapping the layout viewport; 0 when closed. */

@@ -4,11 +4,16 @@
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover lets the app extend under the iOS notch/home-indicator so env(safe-area-inset-*)
          resolves (0 otherwise): full-screen surfaces avoid letterbox bars and the bottom nav pads clear
-         of the home indicator. interactive-widget makes Android Chrome resize the layout viewport for
-         the on-screen keyboard (iOS ignores it; use-keyboard-inset.ts covers iOS via visualViewport). -->
+         of the home indicator. interactive-widget=resizes-visual keeps the on-screen keyboard an
+         OVERLAY on Android (iOS already overlays; the key is ignored there): the LAYOUT viewport —
+         and with it the 100dvh mobile shell (src/index.css) — never shrinks for the keyboard, so the
+         bottom nav stays anchored to the true screen bottom instead of riding up on top of the keys
+         (which the previous resizes-content did on Android phones). Keyboard-aware surfaces (chat
+         composer, sheets) re-fit to the visible area via src/hooks/use-keyboard-viewport.ts — the
+         same visualViewport code path on both platforms. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual"
     />
     <!-- iOS add-to-home-screen: black-translucent makes the standalone status bar transparent so
          the warm-paper atmosphere bleeds up through the camera island. Standalone mode itself

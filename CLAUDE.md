@@ -50,6 +50,7 @@ npm run typecheck      # tsc -b (no emit)
 npm test               # Vitest (unit + component, jsdom)
 npm run test:e2e       # Playwright (added in Stage 2 PR #5)
 npm run test:watch     # Vitest watch mode
+npm run device-lab     # Phone-matrix layout lab (local, needs `supabase start`) → device-lab-report/index.html
 
 # DB
 supabase migration new <name>    # New migration

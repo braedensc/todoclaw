@@ -386,19 +386,25 @@ Deno.test('delete_completion reports not-found when no entry matches the id', as
   assert(res.is_error)
 })
 
-// ---- create_task / set_due_date: due_time (so set_reminder isn't a dead-end) -----------------
-// A write-capturing fake: insert() and update() stash the payload; .single() (create) and
-// .maybeSingle() (updateTaskRow) resolve to a matched row so the capability reports success.
-function makeWriteCtx() {
+// ---- create_task / set_due_date: due_time + the auto default reminder ------------------------
+// A write-capturing fake with per-table behavior: tasks insert()/update() stash the payload (a
+// plain select on tasks returns the seeded row — set_due_date's pre-read); task_reminders resolves
+// the seeded reminder rows (awaited directly); user_schedule.maybeSingle() returns the seeded
+// config; rpc() calls are recorded (set_task_reminder = the auto default write).
+function makeWriteCtx(
+  seed: { task?: Row | null; reminders?: Row[]; config?: unknown; rpcResults?: Row } = {},
+) {
   let inserted: Row | undefined
   let updated: Row | undefined
+  const rpcCalls: { name: string; args: Record<string, unknown> }[] = []
   const client = {
-    from(_table: string) {
+    from(table: string) {
       let payload: Row | undefined
+      let isWrite = false
       // deno-lint-ignore no-explicit-any
       const q: any = {
-        insert: (row: Row) => ((payload = row), q),
-        update: (p: Row) => ((payload = p), q),
+        insert: (row: Row) => ((payload = row), (isWrite = true), q),
+        update: (p: Row) => ((payload = p), (isWrite = true), q),
         select: () => q,
         eq: () => q,
         is: () => q,
@@ -406,12 +412,34 @@ function makeWriteCtx() {
           (inserted = payload),
           Promise.resolve({ data: { id: 'new-id' }, error: null })
         ),
-        maybeSingle: () => (
-          (updated = payload),
-          Promise.resolve({ data: { text: 'Task' }, error: null })
-        ),
+        maybeSingle: () => {
+          if (table === 'user_schedule') {
+            return Promise.resolve({
+              data: seed.config === undefined ? null : { config: seed.config },
+              error: null,
+            })
+          }
+          if (isWrite) {
+            updated = payload
+            return Promise.resolve({ data: { text: 'Task' }, error: null })
+          }
+          // set_due_date's pre-read of the task row (default: an undated, untimed task).
+          return Promise.resolve({
+            data: seed.task === undefined ? { text: 'Task', due_time: null } : seed.task,
+            error: null,
+          })
+        },
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+          Promise.resolve({
+            data: table === 'task_reminders' ? (seed.reminders ?? []) : [],
+            error: null,
+          }).then(res, rej),
       }
       return q
+    },
+    rpc: (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args })
+      return Promise.resolve({ data: seed.rpcResults?.[name] ?? null, error: null })
     },
   } as unknown as ToolContext['client']
   const ctx: ToolContext = {
@@ -419,7 +447,7 @@ function makeWriteCtx() {
     timeZone: 'America/New_York',
     now: new Date('2026-07-04T15:00:00Z'),
   }
-  return { ctx, getInserted: () => inserted, getUpdated: () => updated }
+  return { ctx, rpcCalls, getInserted: () => inserted, getUpdated: () => updated }
 }
 
 Deno.test(
@@ -455,6 +483,59 @@ Deno.test('create_task rejects a malformed due time', async () => {
   assertEquals(getInserted(), undefined)
 })
 
+Deno.test(
+  'create_task with a due time auto-applies the default reminder (1h built-in)',
+  async () => {
+    const { ctx, rpcCalls } = makeWriteCtx() // no user_schedule row → built-in 60
+    const res = await executeTool(
+      'create_task',
+      { text: 'Emissions test', due: '2026-07-06', due_time: '14:00' },
+      ctx,
+    )
+    assert(!res.is_error)
+    assertEquals(rpcCalls, [
+      { name: 'set_task_reminder', args: { p_task_id: 'new-id', p_offset_minutes: 60 } },
+    ])
+    assertEquals(res.mutated, ['tasks', 'reminders'])
+    assert(String(res.display).includes('1 hour before (your default)'))
+    assert(String(res.content).includes('remove_reminder')) // the model is told how to adjust it
+  },
+)
+
+Deno.test('create_task honors a custom default offset from Settings', async () => {
+  const { ctx, rpcCalls } = makeWriteCtx({
+    config: { notifications: { reminderDefaultMinutes: 120 } },
+  })
+  const res = await executeTool(
+    'create_task',
+    { text: 'Call bank', due: '2026-07-06', due_time: '10:00' },
+    ctx,
+  )
+  assert(!res.is_error)
+  assertEquals(rpcCalls[0]?.args.p_offset_minutes, 120)
+})
+
+Deno.test(
+  'create_task adds NO reminder when the default is Off, or when there is no time',
+  async () => {
+    const off = makeWriteCtx({ config: { notifications: { reminderDefaultMinutes: null } } })
+    const r1 = await executeTool(
+      'create_task',
+      { text: 'Quiet task', due: '2026-07-06', due_time: '10:00' },
+      off.ctx,
+    )
+    assert(!r1.is_error)
+    assertEquals(off.rpcCalls.length, 0)
+    assertEquals(r1.mutated, ['tasks'])
+    assert(!String(r1.display).includes('Reminder'))
+
+    const untimed = makeWriteCtx()
+    const r2 = await executeTool('create_task', { text: 'All-day', due: '2026-07-06' }, untimed.ctx)
+    assert(!r2.is_error)
+    assertEquals(untimed.rpcCalls.length, 0) // a date without a time can't anchor a reminder
+  },
+)
+
 Deno.test('set_due_date sets the time, and clearing the date clears the time', async () => {
   const withTime = makeWriteCtx()
   const r1 = await executeTool(
@@ -471,4 +552,117 @@ Deno.test('set_due_date sets the time, and clearing the date clears the time', a
   assert(!r2.is_error)
   assertEquals(cleared.getUpdated()?.due, null)
   assertEquals(cleared.getUpdated()?.due_time, null) // clearing the date clears the time
+})
+
+Deno.test(
+  'set_due_date re-derives urgency only: y is never written, clearing moves nothing',
+  async () => {
+    const dated = makeWriteCtx()
+    const r1 = await executeTool('set_due_date', { task_id: TASK_ID, due: '2026-07-06' }, dated.ctx)
+    assert(!r1.is_error)
+    const patch = dated.getUpdated()!
+    assertEquals(typeof patch.x, 'number') // urgency follows the new date…
+    assert(!('y' in patch), 'a due date must never rewrite importance')
+    assertEquals(patch.staged, false) // …and a staged task joins the board
+
+    const cleared = makeWriteCtx()
+    await executeTool('set_due_date', { task_id: TASK_ID, due: null }, cleared.ctx)
+    const clearPatch = cleared.getUpdated()!
+    assertEquals(Object.keys(clearPatch).sort(), ['due', 'due_time']) // position untouched
+  },
+)
+
+Deno.test('set_due_date auto-applies the default when the task FIRST gains a time', async () => {
+  const { ctx, rpcCalls } = makeWriteCtx({ task: { text: 'Task', due_time: null } })
+  const res = await executeTool(
+    'set_due_date',
+    { task_id: TASK_ID, due: '2026-07-27', due_time: '14:00' },
+    ctx,
+  )
+  assert(!res.is_error)
+  assertEquals(rpcCalls, [
+    { name: 'set_task_reminder', args: { p_task_id: TASK_ID, p_offset_minutes: 60 } },
+  ])
+  assertEquals(res.mutated, ['tasks', 'reminders'])
+  assert(String(res.display).includes('your default'))
+})
+
+Deno.test('set_due_date does NOT re-apply the default to an already-timed task', async () => {
+  // The task already had a time: an empty reminder set may mean "deliberately removed" — moving
+  // the date (even with a new time) must not sneak the default back in.
+  const { ctx, rpcCalls } = makeWriteCtx({ task: { text: 'Task', due_time: '09:00:00' } })
+  const res = await executeTool(
+    'set_due_date',
+    { task_id: TASK_ID, due: '2026-07-27', due_time: '15:00' },
+    ctx,
+  )
+  assert(!res.is_error)
+  assertEquals(rpcCalls.length, 0)
+  assertEquals(res.mutated, ['tasks'])
+})
+
+Deno.test(
+  'a default whose fire time already passed is taken back out and never claimed',
+  async () => {
+    // "Due earlier today" at creation time: the 1-hour default would fire in the PAST, which the
+    // sweep can only drop. The row is removed again and the confirmation stays quiet — promising a
+    // reminder that cannot arrive is worse than none. (now = 2026-07-04T15:00:00Z; the RPC's
+    // materialized fire_at of 14:00Z is an hour gone.)
+    const past = makeWriteCtx({ rpcResults: { set_task_reminder: '2026-07-04T14:00:00Z' } })
+    const res = await executeTool(
+      'create_task',
+      { text: 'Pick up prescription', due: '2026-07-04', due_time: '10:00' },
+      past.ctx,
+    )
+    assert(!res.is_error)
+    assertEquals(
+      past.rpcCalls.map((c) => c.name),
+      ['set_task_reminder', 'remove_task_reminder'],
+    )
+    assertEquals(res.mutated, ['tasks']) // no reminder domain — nothing survives
+    assert(
+      !String(res.display).includes('Reminder'),
+      'must not promise a reminder that cannot fire',
+    )
+
+    // Sanity: a FUTURE fire_at keeps the row and the claim.
+    const future = makeWriteCtx({ rpcResults: { set_task_reminder: '2026-07-04T22:00:00Z' } })
+    const res2 = await executeTool(
+      'create_task',
+      { text: 'Evening task', due: '2026-07-04', due_time: '20:00' },
+      future.ctx,
+    )
+    assert(String(res2.display).includes('your default'))
+    assertEquals(
+      future.rpcCalls.map((c) => c.name),
+      ['set_task_reminder'],
+    )
+  },
+)
+
+Deno.test('set_due_date clearing the date reports the reminder wipe', async () => {
+  // The DB trigger drops every reminder row when the anchor goes away — the tool must surface
+  // that (reminders domain + a note), not absorb it silently.
+  const { ctx } = makeWriteCtx({
+    task: { text: 'Task', due_time: '09:00:00' },
+    reminders: [{ task_id: TASK_ID, offset_minutes: 60 }],
+  })
+  const res = await executeTool('set_due_date', { task_id: TASK_ID, due: null }, ctx)
+  assert(!res.is_error)
+  assertEquals(res.mutated, ['tasks', 'reminders'])
+  assert(String(res.content).includes('reminders were removed'))
+})
+
+Deno.test('set_due_date leaves existing reminders alone when a time is gained', async () => {
+  const { ctx, rpcCalls } = makeWriteCtx({
+    task: { text: 'Task', due_time: null },
+    reminders: [{ task_id: TASK_ID, offset_minutes: 30 }],
+  })
+  const res = await executeTool(
+    'set_due_date',
+    { task_id: TASK_ID, due: '2026-07-27', due_time: '14:00' },
+    ctx,
+  )
+  assert(!res.is_error)
+  assertEquals(rpcCalls.length, 0) // the 30-min reminder the user already has stands
 })

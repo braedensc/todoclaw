@@ -90,7 +90,7 @@ export function destructiveSummary(name: string, input: unknown, label?: string)
     (input as { memory_id?: string })?.memory_id ??
     ''
   if (name === 'complete_task') return `Mark ${label ? `"${label}"` : `task ${id}`} done for today`
-  if (name === 'delete_task') return `Move ${label ? `"${label}"` : `task ${id}`} to the trash`
+  if (name === 'delete_task') return `Delete ${label ? `"${label}"` : `task ${id}`}`
   if (name === 'delete_habit') return `Delete the habit ${label ? `"${label}"` : id}`
   if (name === 'delete_completion') return 'Remove a completion from your Done log'
   // propose_memory carries the fact itself (no id yet); delete_memory carries a memory_id whose text

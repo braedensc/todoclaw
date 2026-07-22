@@ -66,18 +66,13 @@ function makeTask(over: Partial<Task>): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
-    created_at: new Date(Date.now() - 86_400_000).toISOString(), // yesterday — never ❄️-stale
+    created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
     start_date: null,
     ...over,
   }
 }
-
-// Always beyond the SchedulePanel's rolling fortnight calendar, whatever the real "today" — the
-// native "Due date" input only reveals for an off-grid due, and a fixed date eventually drifts
-// INTO the fortnight and hides it (that rot bit CI on 2026-07-21).
-const FAR_DUE = new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10)
 
 beforeEach(() => {
   updateMutate.mockClear()
@@ -133,19 +128,23 @@ describe('ListView', () => {
   })
 
   it('expanded-row due editors write BOTH due columns; clearing the date clears the time', () => {
-    tasksData = [makeTask({ id: 'x', text: 'timed task', due: FAR_DUE, due_time: '15:00:00' })]
+    // Computed ~6 weeks out so the due always sits OFF the SchedulePanel's two-week grid — that
+    // (dueOffGrid) is what auto-reveals the raw "Due date" input this test drives. A hardcoded
+    // date rotted INTO the grid as real time passed, hiding the input behind the More… toggle.
+    const farDue = new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10)
+    tasksData = [makeTask({ id: 'x', text: 'timed task', due: farDue, due_time: '15:00:00' })]
     renderList()
     fireEvent.click(screen.getByText('timed task'))
 
     // Badge surfaces the time for near dates via dueLabel — here just assert the inputs hydrate
     // from the wire formats ('YYYY-MM-DD' / 'HH:MM:SS' → 'HH:MM').
-    expect(screen.getByLabelText('Due date')).toHaveValue(FAR_DUE)
+    expect(screen.getByLabelText('Due date')).toHaveValue(farDue)
     expect(screen.getByLabelText('Due time')).toHaveValue('15:00')
 
     fireEvent.change(screen.getByLabelText('Due time'), { target: { value: '09:30' } })
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'x',
-      patch: { due: FAR_DUE, due_time: '09:30' },
+      patch: { due: farDue, due_time: '09:30' },
     })
 
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } })

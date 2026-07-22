@@ -14,7 +14,7 @@ export const planCapabilities: Capability[] = [
   defineCapability({
     name: 'generate_plan',
     description:
-      "Generate today's focused plan (Plan My Day) from the user's grid, recurring chores, habits, schedule and weather, and show it in the plan card above the grid. Use when the user asks to plan their day.",
+      "Generate today's focused plan (Plan My Day) from the user's board, recurring chores, habits, schedule and weather, and show it in the plan panel on the home screen (above the grid on desktop; on the mobile home view). Use when the user asks to plan their day.",
     schema: z.object({}).strict(),
     async execute(ctx) {
       if (!ctx.services?.generatePlan) return err('Planning is not available right now.')
@@ -29,7 +29,7 @@ export const planCapabilities: Capability[] = [
   defineCapability({
     name: 'dismiss_plan',
     description:
-      "Clear today's plan card (the same as the × on the plan above the grid). Use when the user wants the day's plan dismissed or cleared. Does not touch tasks or habits.",
+      "Clear today's plan (the same as the × on the plan panel). Use when the user wants the day's plan dismissed or cleared. Does not touch tasks or habits.",
     schema: z.object({}).strict(),
     async execute(ctx) {
       // save_daily_plan(date, null) blanks today's daily_state.plan (SECURITY INVOKER, RLS-scoped) —

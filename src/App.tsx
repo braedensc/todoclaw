@@ -12,6 +12,7 @@ import { MoreSheet } from './features/shell/MoreSheet'
 import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
 import { useIsMobile } from './hooks/use-is-mobile'
+import { useLockedViewportGuard } from './hooks/use-locked-viewport-guard'
 import { BACKGROUND_DISMISS_ATTR } from './hooks/use-background-dismiss'
 import { ToastProvider, useToast } from './components/use-toast'
 import { quadrantMeta, type QuadrantKey } from './lib/quadrants'
@@ -112,6 +113,10 @@ function AppShell() {
   // ADR-0026). JS-gated (not just CSS) so exactly one Account nav renders per environment — keeping
   // the golden `openDone` selector unambiguous and desktop untouched.
   const isMobile = useIsMobile()
+  // The mobile shell is a locked, never-scrolling viewport (index.css) — but iOS can still pan the
+  // window while revealing a focused input and leave that offset behind after the keyboard closes,
+  // which floats the bottom nav above the true screen bottom. Snap back whenever that happens.
+  useLockedViewportGuard(isMobile)
   const { markSeen: markTourSeen } = useMarkTourSeen()
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
