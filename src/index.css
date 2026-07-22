@@ -39,13 +39,22 @@
    shorter than what's on screen and the nav floats up above the true bottom. dvh is by definition
    the height visible right now, so the column bottom == the screen bottom; and because the page
    can't scroll (overflow:hidden) the bar never retracts/expands from scrolling, so dvh doesn't
-   fluctuate — it's stable AND correct. (In a standalone PWA svh == dvh == lvh == the full screen, so
-   this only differs in the browser.) body (which
+   fluctuate — it's stable AND correct IN THE BROWSER. body (which
    never scrolls) carries the safe-area TOP padding: with viewport-fit=cover the layout spans the
    whole screen, so this keeps content clear of the camera island while the body's atmosphere
    background — propagated to the canvas — still paints the strip above it. The nav manages its own
    safe-area BOTTOM inset. overscroll-behavior is global (all widths): page-level scroll chaining /
-   pull-to-refresh gestures are never wanted. */
+   pull-to-refresh gestures are never wanted.
+
+   STANDALONE (installed PWA) — the override below. An earlier note here claimed "in a standalone
+   PWA svh == dvh == lvh == the full screen"; that is FALSE on iOS (measured on iOS 26): in an
+   installed web app `100dvh` resolves to the screen MINUS the top safe-area inset (e.g. 793 of an
+   852pt screen), while only `lvh` equals the full screen. Because the shell is pinned to the top,
+   that ~59pt deficit becomes a dead strip at the BOTTOM that the in-flow nav floats above — the
+   "bottom bar floating in the installed app" bug, standalone-only (the browser dvh is fine).
+   `lvh` is the large viewport = full screen, and standalone has no dynamic URL bar so it never
+   fluctuates — so it's both correct and stable here. Scoped to `display-mode: standalone` so the
+   browser keeps its (correct) dvh. */
 html,
 body {
   overscroll-behavior: none;
@@ -62,6 +71,13 @@ body {
   #root {
     height: 100%;
     overflow: hidden;
+  }
+}
+@media (max-width: 719px) and (display-mode: standalone) {
+  html,
+  body {
+    height: 100vh; /* fallback for engines without lvh */
+    height: 100lvh; /* full screen in standalone; dvh is short by the top inset there (iOS 26) */
   }
 }
 
