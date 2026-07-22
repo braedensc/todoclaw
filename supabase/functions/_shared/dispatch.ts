@@ -29,7 +29,9 @@ export type DueKind = 'plan' | 'recap'
 // daily_state.plan as this module consumes it — the emit_plan output shape (plan-prompt.ts), but
 // all-optional because the column is client-validated jsonb and opaque to the DB. Derived from the
 // canonical Rock/PlanResult types so a schema change there surfaces here as a type error.
-export type DispatchPlanRock = Partial<Pick<Rock, 'task' | 'duration'>>
+// taskId (stamped by resolvePlanTaskIds at generation) is what lets the recap recognize a finished
+// item by id instead of by text.
+export type DispatchPlanRock = Partial<Pick<Rock, 'task' | 'duration' | 'taskId'>>
 export type DispatchPlan = Partial<Pick<PlanResult, 'headline'>> & {
   bigRock?: DispatchPlanRock | null
   smallRocks?: DispatchPlanRock[]
@@ -48,7 +50,7 @@ export function normalizePlan(raw: unknown): DispatchPlan | null {
   const rock = (v: unknown): DispatchPlanRock | null => {
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return null
     const r = v as Record<string, unknown>
-    return { task: asString(r.task), duration: asString(r.duration) }
+    return { task: asString(r.task), duration: asString(r.duration), taskId: asString(r.taskId) }
   }
   return {
     headline: asString(p.headline),
@@ -335,9 +337,10 @@ function recurringDoneToday(task: DispatchInputs['tasks'][number], ctx: RecapCon
 /**
  * The morning plan's items split into what got done today vs. what's still open — the shared source
  * of truth for both the deterministic recap body and the AI recap prompt (so they never disagree).
- * Done-ness is matched by exact task text against today's done map (plus lastDoneAt for recurring
- * chores); an unmatched item stays "open" (better to ask than to silently drop). hasPlan=false when
- * there was no plan today.
+ * Done-ness is matched by the rock's taskId first (the done map is keyed by id and survives
+ * completed_at hiding the task row from inputs.tasks, so a one-off finished at noon is recognized
+ * tonight), with exact task text as the fallback for legacy plans; an unmatched item stays "open"
+ * (better to ask than to silently drop). hasPlan=false when there was no plan today.
  */
 export function recapPlanItems(
   inputs: DispatchInputs,
@@ -347,14 +350,25 @@ export function recapPlanItems(
   const rocks: DispatchPlanRock[] = plan
     ? [...(plan.bigRock ? [plan.bigRock] : []), ...(plan.smallRocks ?? [])]
     : []
-  const items = rocks.map((r) => r.task?.trim()).filter((t): t is string => Boolean(t))
-  if (items.length === 0) return { done: [], open: [], hasPlan: false }
   const doneTexts = new Set(
     inputs.tasks.filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx)).map((t) => t.text),
   )
+  const taskById = new Map(inputs.tasks.map((t) => [t.id, t]))
+  const rockDone = (r: DispatchPlanRock): boolean => {
+    if (r.taskId) {
+      if (inputs.done[r.taskId] === true) return true
+      const t = taskById.get(r.taskId)
+      if (t && (!!t.completed_at || recurringDoneToday(t, ctx))) return true
+    }
+    return r.task != null && doneTexts.has(r.task.trim())
+  }
+  const items = rocks
+    .map((r) => ({ text: r.task?.trim() ?? '', done: rockDone(r) }))
+    .filter((i) => i.text.length > 0)
+  if (items.length === 0) return { done: [], open: [], hasPlan: false }
   return {
-    done: items.filter((t) => doneTexts.has(t)),
-    open: items.filter((t) => !doneTexts.has(t)),
+    done: items.filter((i) => i.done).map((i) => i.text),
+    open: items.filter((i) => !i.done).map((i) => i.text),
     hasPlan: true,
   }
 }
@@ -466,13 +480,27 @@ export function buildRecapMessage(
   const shown = open.slice(0, CHECKIN_ITEMS_CAP)
   const list = shown.map((t, i) => `${i + 1}. ${t}`).join('\n')
   const more = open.length > shown.length ? `\n…and ${open.length - shown.length} more` : ''
-  const doneLine = done.length
-    ? `Nice — already crossed off ${done.length === 1 ? `"${done[0]}"` : `${done.length} plan items`}.\n\n`
-    : ''
+
+  if (done.length === 0) {
+    return {
+      title: `Wrapping up ${ctx.dayName} 👋`,
+      body:
+        `${greet}Which of these did you knock out today?\n\n${list}${more}${upcomingLine}\n\n` +
+        `Reply with the numbers or names and I'll mark them done. No worries if today was a rest day 🙂\n\n${SIGNOFF}`,
+    }
+  }
+
+  // Partial progress: lead with what's already crossed off (never re-ask about a finished item),
+  // then the open remainder + what's coming up. The closer drops "rest day" — this wasn't one.
+  const doneShown = done.slice(0, CHECKIN_ITEMS_CAP)
+  const doneList = doneShown.map((t) => `✓ ${t}`).join('\n')
+  const doneMore =
+    done.length > doneShown.length ? `\n…and ${done.length - doneShown.length} more` : ''
   return {
     title: `Wrapping up ${ctx.dayName} 👋`,
     body:
-      `${greet}${doneLine}Which of these did you knock out today?\n\n${list}${more}${upcomingLine}\n\n` +
-      `Reply with the numbers or names and I'll mark them done. No worries if today was a rest day 🙂\n\n${SIGNOFF}`,
+      `${greet}Nice work today — already crossed off:\n${doneList}${doneMore}\n\n` +
+      `Still open from this morning's plan:\n${list}${more}${upcomingLine}\n\n` +
+      `Reply with the numbers or names and I'll mark them done. No worries if that's where today ends 🙂\n\n${SIGNOFF}`,
   }
 }

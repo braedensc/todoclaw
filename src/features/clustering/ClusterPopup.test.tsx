@@ -16,6 +16,12 @@ vi.mock('../schedule/use-user-schedule', () => ({
 // no due date — or a recurring one (which owns its status color + dashed accent borders) — stays on
 // the plain paper fill. The panel behind the rows is white so each card's color reads as its own.
 
+// Created "yesterday", computed at run time: an UNDATED task flips to the ❄️ stale lane (icy
+// tint + azure ring, lib/visual-urgency staleness) once it has sat 90 days on the board, and the
+// popup reads the REAL clock. A hardcoded created_at ages across that flip and quietly re-tints
+// the undated 'plain' row this suite asserts stays plain.
+const FRESH_CREATED_AT = new Date(Date.now() - 86_400_000).toISOString()
+
 function task(id: string, over: Partial<Task> = {}): Task {
   return {
     id,
@@ -29,7 +35,7 @@ function task(id: string, over: Partial<Task> = {}): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
-    created_at: '2026-07-01T00:00:00Z',
+    created_at: FRESH_CREATED_AT,
     deleted_at: null,
     completed_at: null,
     start_date: null,

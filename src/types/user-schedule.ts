@@ -102,9 +102,10 @@ const notificationsSchema = z.object({
   // "clear slate" morning or a no-plan-nothing-on-the-board evening (see dispatch.ts). Absent =
   // send always (current behavior); the dispatcher reads it off config.notifications.
   quietWhenEmpty: z.boolean().optional(),
-  // Per-task reminder default (ADR 2026-07-09): minutes before a timed task is due to pre-select
-  // in the add flow. `null` = off (no auto reminder); ABSENT = the app default (1 hour) — so an
-  // untouched config never has to store it. Bounded to 28 days, like task_reminders.offset_minutes.
+  // Per-task reminder default (ADR 2026-07-09): minutes-before applied when a task gains a due
+  // time (pre-selected in the add flow, seeded by the schedule editor and BabyClaw). `null` = off
+  // (no auto reminder); ABSENT = the app default (1 hour) — so an untouched config never has to
+  // store it. Bounded to 28 days, like task_reminders.offset_minutes.
   reminderDefaultMinutes: z.number().int().min(0).max(40320).nullable().optional(),
 })
 

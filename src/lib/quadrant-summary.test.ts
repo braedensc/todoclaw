@@ -4,6 +4,7 @@ import {
   summarizeQuadrants,
   moveToQuadrant,
   placeInQuadrant,
+  isUnplaced,
   QUADRANT_ORDER,
   QUADRANT_CENTER,
 } from './quadrant-summary'
@@ -32,6 +33,16 @@ function makeTask(over: Partial<Task>): Task {
 }
 
 const TZ = { timeZone: 'UTC' }
+
+describe('isUnplaced', () => {
+  it('flags staged or coord-less tasks; a placed task is not unplaced', () => {
+    expect(isUnplaced(makeTask({ staged: true, x: null, y: null }))).toBe(true)
+    // Belt-and-suspenders: either signal alone counts (staged with coords, or coords missing).
+    expect(isUnplaced(makeTask({ staged: true }))).toBe(true)
+    expect(isUnplaced(makeTask({ x: null, y: null }))).toBe(true)
+    expect(isUnplaced(makeTask({}))).toBe(false)
+  })
+})
 
 describe('summarizeQuadrants', () => {
   it('buckets placed tasks into their quadrants with counts', () => {

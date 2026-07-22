@@ -33,23 +33,34 @@ let doneToday: Record<string, true> = {}
 
 vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksData, isLoading: false, isError: false }),
-  useUpdateTask: () => ({ mutate: updateMutate }),
+  // Due writes go through the shared setDue hook's mutateAsync; forwarding it to the same spy
+  // keeps every write-path assertion on the one updateMutate ledger.
+  useUpdateTask: () => ({
+    mutate: updateMutate,
+    mutateAsync: async (vars: unknown) => updateMutate(vars),
+  }),
   useSoftDeleteTask: () => ({ mutate: deleteMutate }),
 }))
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: markDoneMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
-  useUserSchedule: () => ({ data: { timezone: 'UTC' } }),
+  useUserSchedule: () => ({ data: { timezone: 'UTC', config: {} } }),
 }))
 vi.mock('../daily-state/use-daily-state', () => ({
   useDailyState: () => ({
     data: { done: doneToday, done_at: {}, habit_done: {}, subtask_done: {} },
   }),
 }))
+const reminderAdd = vi.fn()
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
+  useTaskReminderWrites: () => ({
+    add: reminderAdd,
+    remove: vi.fn(),
+    clear: vi.fn(),
+    toggle: vi.fn(),
+  }),
 }))
 
 // A complete Task row with sensible defaults; override per test.
@@ -78,6 +89,7 @@ beforeEach(() => {
   updateMutate.mockClear()
   deleteMutate.mockClear()
   markDoneMutate.mockClear()
+  reminderAdd.mockClear()
   tasksData = []
   doneToday = {}
 })
@@ -85,6 +97,11 @@ beforeEach(() => {
 // A recent ISO timestamp (yesterday) so a recurring task with a real frequency reads as a
 // live cycle rather than "never done". Used by the recurring-section tests.
 const RECENT = new Date(Date.now() - 86_400_000).toISOString()
+
+// A wall-clock day N days out (UTC slice — matches the mocked 'UTC' timezone). Small N keeps it
+// inside the schedule panel's two-week calendar whatever day the suite runs.
+const daysFromNowISO = (n: number) =>
+  new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
 
 describe('ListView', () => {
   it('renders rows in descending score order', () => {
@@ -149,6 +166,22 @@ describe('ListView', () => {
 
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } })
     expect(updateMutate).toHaveBeenCalledWith({ id: 'x', patch: { due: null, due_time: null } })
+  })
+
+  it('a first due time on a reminder-less task seeds the default reminder', async () => {
+    tasksData = [makeTask({ id: 'seed-me', text: 'dated, no time', due: daysFromNowISO(3) })]
+    renderList()
+    fireEvent.click(screen.getByText('dated, no time'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Noon' }))
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'seed-me',
+      patch: { due: daysFromNowISO(3), due_time: '12:00' },
+    })
+    // The user's default (1 hour, config untouched) arms AFTER the due write lands — the same
+    // behavior as the add forms and BabyClaw's set_due_date.
+    await waitFor(() => expect(reminderAdd).toHaveBeenCalledWith('seed-me', 60))
   })
 
   it('single-clicking the row body toggles the expanded detail panel', () => {

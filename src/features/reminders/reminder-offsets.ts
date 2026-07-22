@@ -21,9 +21,10 @@ export const REMINDER_OFFSETS: readonly ReminderOffset[] = [
 export const REMINDER_DEFAULT_MINUTES = 60
 
 /**
- * The user's effective add-flow default, resolving the config's three-state field: `undefined`
- * (never set) → the built-in 1-hour default; `null` → off (no auto reminder); a number → that
- * offset. Mirrors settings-form's configToDraft mapping so the picker and the selector agree.
+ * The user's effective default (pre-selected in the add flow, seeded by the schedule editor when
+ * a task first gains a due time), resolving the config's three-state field: `undefined` (never
+ * set) → the built-in 1-hour default; `null` → off (no auto reminder); a number → that offset.
+ * Mirrors settings-form's configToDraft mapping so the picker and the selector agree.
  */
 export function effectiveReminderDefault(
   reminderDefaultMinutes: number | null | undefined,

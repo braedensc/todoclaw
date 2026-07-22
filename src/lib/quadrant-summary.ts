@@ -45,10 +45,21 @@ export interface QuadrantsOverview {
 }
 
 /**
+ * Whether a task has no real grid position yet (still staged, or missing coords) — it carries no
+ * quadrant. The one shared predicate for every surface that must treat unplaced tasks specially:
+ * the bucketing skip below, the mobile Unplaced strip (UnplacedSection), and the move-picker's
+ * "no current quadrant" case.
+ */
+export function isUnplaced(t: Task): boolean {
+  return t.staged || t.x == null || t.y == null
+}
+
+/**
  * Bucket PLACED tasks into their Eisenhower quadrants: a total count plus the top-scored few for
  * the mobile overview's preview cards. Staged/unplaced tasks (null x/y) carry no real quadrant and
- * are skipped — the mobile overview surfaces those separately. Callers pass the already-active set
- * (done-today removed).
+ * are skipped — on mobile they surface in the overview's Unplaced strip (UnplacedSection); on
+ * desktop, in the "Drag new item to grid" tray. Callers pass the already-active set (done-today
+ * removed).
  */
 export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): QuadrantsOverview {
   const groups: Record<QuadrantKey, Task[]> = {
@@ -59,7 +70,8 @@ export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): Q
   }
 
   for (const t of tasks) {
-    if (t.staged || t.x == null || t.y == null) continue
+    // isUnplaced is the semantic gate; the null re-checks only narrow x/y for the compiler.
+    if (isUnplaced(t) || t.x == null || t.y == null) continue
     groups[quadrantMeta(t.x, t.y).key].push(t)
   }
 

@@ -6,6 +6,7 @@ import { useConfirm } from '../../components/use-confirm'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
+import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import { isDormant } from '../../lib/start-date'
@@ -57,6 +58,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   // recurring row's reminders lead each occurrence — same offsets, same picker as a one-off.
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
+  const setDue = useSetDueWithDefaultReminder()
   const confirm = useConfirm()
   // Only for the empty-state copy: the add affordance is the header widget on desktop but the
   // bottom-nav ➕ on a phone — pointing a phone user at a header that isn't there is a dead end.
@@ -97,8 +99,9 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   )
 
   // Optional per-quadrant scoping (mobile focus view). Only PLACED tasks carry a real quadrant,
-  // so a staged task (null x/y) is never bucketed into one — the mobile overview handles unplaced
-  // tasks on its own. Unset → `active` unchanged, so the default list is exactly as before.
+  // so a staged task (null x/y) is never in a focus list — on mobile it surfaces in the
+  // overview's Unplaced strip (UnplacedSection), whose Place picker materializes it. Unset →
+  // `active` unchanged, so the default (desktop) list still ranks staged tasks like any other.
   const scoped = quadrantFilter
     ? active.filter(
         (t) =>
@@ -132,8 +135,13 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleUpdateText = (id: string, text: string) => updateTask.mutate({ id, patch: { text } })
   const handleUpdateCoords = (id: string, x: number, y: number) =>
     updateTask.mutate({ id, patch: { x, y } })
-  const handleUpdateDue = (id: string, due: string | null, dueTime: string | null) =>
-    updateTask.mutate({ id, patch: { due, due_time: dueTime } })
+  // Due writes go through the shared setDue so a task gaining its FIRST due time picks up the
+  // user's default reminder (Settings → Task reminders), like every other schedule surface.
+  const handleUpdateDue = (id: string, due: string | null, dueTime: string | null) => {
+    const task = tasks?.find((t) => t.id === id)
+    if (task) setDue(task, due, dueTime)
+    else updateTask.mutate({ id, patch: { due, due_time: dueTime } })
+  }
   // Delete now confirms first (was a silent soft-delete). The app-themed useConfirm gate names
   // the task so an accidental click can't quietly remove it; only "Delete" soft-deletes.
   const handleDelete = async (task: Task) => {

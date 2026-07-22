@@ -6,7 +6,7 @@
 // Run: deno test --no-check supabase/functions/_shared/chat-context.test.ts
 import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@1'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
-import { loadChatContext } from './chat-context.ts'
+import { loadChatContext, planSummary } from './chat-context.ts'
 import { buildSystem } from './chat-prompt.ts'
 
 type Row = Record<string, unknown>
@@ -287,6 +287,97 @@ Deno.test('loadChatContext: the default reminder flows from config into the prom
   assertEquals(off.context.reminderDefault, null)
   assertStringIncludes(buildSystem(off.context), 'Default reminder: OFF')
 })
+
+// ---- planSummary: done rocks get the ✓ mark ------------------------------------------------------
+
+Deno.test(
+  'planSummary: done rocks get ✓ — by taskId first (paraphrase-proof), text fallback',
+  () => {
+    const tasks = [
+      { id: 'a', text: 'Alpha', doneToday: true, completedAt: null },
+      { id: 'b', text: 'Beta', doneToday: false, completedAt: null },
+      { id: 'c', text: 'Gamma', doneToday: true, completedAt: '2026-07-04T14:00:00Z' },
+    ]
+    const s = planSummary(
+      {
+        headline: 'h',
+        // The model re-worded the task — only the id can tie them together.
+        bigRock: { task: 'Knock out Alpha', duration: '~1h', when: 'morning', taskId: 'a' },
+        smallRocks: [
+          { task: 'Beta', taskId: 'b' }, // linked, not done → unmarked
+          { task: 'Gamma', taskId: 'c' }, // done (id)
+          { task: 'Alpha' }, // legacy rock without taskId → exact-text fallback
+        ],
+      },
+      tasks,
+    )
+    assertEquals(s?.bigRock, '✓ Knock out Alpha (morning, ~1h)')
+    assertEquals(s?.smallRocks, ['Beta', '✓ Gamma', '✓ Alpha'])
+  },
+)
+
+Deno.test('planSummary: text fallback ignores a prior-day completion of a same-named task', () => {
+  // completedAt without doneToday = finished on an EARLIER day. Without an id link, that must not
+  // strike a same-named plan item (the id path may use it — it is precise).
+  const tasks = [{ id: 'x', text: 'Gamma', doneToday: false, completedAt: '2026-07-01T12:00:00Z' }]
+  const s = planSummary({ headline: 'h', bigRock: null, smallRocks: [{ task: 'Gamma' }] }, tasks)
+  assertEquals(s?.smallRocks, ['Gamma'])
+})
+
+Deno.test('planSummary: with no task info the labels render unchanged (back-compat)', () => {
+  const s = planSummary({ headline: 'h', bigRock: { task: 'X' }, smallRocks: [{ task: 'Y' }] })
+  assertEquals(s?.bigRock, 'X')
+  assertEquals(s?.smallRocks, ['Y'])
+})
+
+Deno.test(
+  "loadChatContext: today's PLAN block marks a completed rock with ✓ (end-to-end wiring)",
+  async () => {
+    const client = fakeClient({
+      user_schedule: [SCHED],
+      tasks: [
+        liveTask,
+        {
+          id: 'today',
+          text: 'Groceries',
+          x: 0.5,
+          y: 0.5,
+          due: null,
+          staged: false,
+          recurring: null,
+          completed_at: '2026-07-04T14:00:00Z',
+        },
+      ],
+      daily_state: [
+        {
+          date: '2026-07-04',
+          done: { today: true },
+          habit_done: {},
+          subtask_done: {},
+          plan: {
+            headline: 'Focus.',
+            bigRock: {
+              task: 'Grab the groceries',
+              duration: '~30min',
+              when: 'morning',
+              taskId: 'today',
+            },
+            smallRocks: [{ task: 'Live errand', taskId: 'live' }],
+          },
+        },
+      ],
+    })
+    const { context } = await loadChatContext(client, NOW)
+    assertEquals(context.plan?.bigRock, '✓ Grab the groceries (morning, ~30min)')
+    assertEquals(context.plan?.smallRocks, ['Live errand'])
+    const system = buildSystem(context)
+    assertStringIncludes(
+      system,
+      "=== TODAY'S PLAN (already generated; ✓ = that item is already done) ===",
+    )
+    assertStringIncludes(system, 'Big rock: ✓ Grab the groceries (morning, ~30min).')
+  },
+)
 
 Deno.test(
   "loadChatContext: today's task_activity renders in the ACTIVITY block; a prior-day row is dropped",

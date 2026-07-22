@@ -396,11 +396,13 @@ Deno.test('buildRecapMessage: numbers the still-unfinished plan items and asks',
   assertStringIncludes(m.body, 'rest day')
 })
 
-Deno.test('buildRecapMessage: done items move to the crossed-off ack, not the open list', () => {
+Deno.test('buildRecapMessage: done items move to the crossed-off section (text match)', () => {
   const m = buildRecapMessage(inputs({ plan: planWithTasks, done: { a: true } }), ctx())
-  assertStringIncludes(m.body, 'already crossed off "Alpha"') // acknowledged…
-  assertNotMatch(m.body, /\d+\. Alpha/) // …never re-asked as a numbered item
+  assertStringIncludes(m.body, 'already crossed off:\n✓ Alpha') // acknowledged…
+  assertNotMatch(m.body, /\d+\. Alpha/) // …never re-asked as an open item
+  assertStringIncludes(m.body, "Still open from this morning's plan:")
   assertStringIncludes(m.body, '1. Beta\n2. Gamma (not on board)') // unmatched Gamma stays listed
+  assertNotMatch(m.body, /rest day/) // things got done — the rest-day closer would ring false
 })
 
 Deno.test(
@@ -438,7 +440,7 @@ Deno.test(
       }),
       ctx(), // UTC, localDate 2026-07-07 → lastDoneAt is "today"
     )
-    assertStringIncludes(m.body, 'already crossed off "Alpha"') // acknowledged, not re-asked
+    assertStringIncludes(m.body, '✓ Alpha') // acknowledged in the crossed-off section
     assertNotMatch(m.body, /\d+\. Alpha/)
     assertStringIncludes(m.body, '1. Beta')
   },
@@ -466,6 +468,82 @@ Deno.test('buildRecapMessage: a recurring chore done YESTERDAY stays on the list
   )
   assertStringIncludes(m.body, '1. Alpha')
 })
+
+Deno.test(
+  'buildRecapMessage: a completed one-off is recognized by rock taskId even when completed_at ' +
+    'hid its task row (the RPC filters completed tasks out, so text matching never sees it)',
+  () => {
+    const planned: DispatchPlan = {
+      headline: 'x',
+      bigRock: { task: 'Finish taxes', duration: '~1h', taskId: 'gone' },
+      smallRocks: [{ task: 'Beta', taskId: 'b' }],
+    }
+    // 'gone' has no row in inputs.tasks — only today's done map (keyed by id) remembers it.
+    const m = buildRecapMessage(inputs({ plan: planned, done: { gone: true } }), ctx())
+    assertStringIncludes(m.body, '✓ Finish taxes')
+    assertNotMatch(m.body, /\d+\. Finish taxes/)
+    assertStringIncludes(m.body, '1. Beta')
+  },
+)
+
+Deno.test(
+  'buildRecapMessage: taskId links a paraphrased rock to its task row (completed_at / lastDoneAt)',
+  () => {
+    // The model may re-word a task ("Alpha" → "Knock out Alpha") — only the id can tie them.
+    const m = buildRecapMessage(
+      inputs({
+        plan: {
+          bigRock: { task: 'Knock out Alpha', taskId: 'a' },
+          smallRocks: [
+            { task: 'Chip at Rho', taskId: 'r' },
+            { task: 'Beta', taskId: 'b' },
+          ],
+        },
+        tasks: [
+          {
+            id: 'a',
+            text: 'Alpha',
+            x: 0.5,
+            y: 0.5,
+            due: null,
+            due_time: null,
+            staged: false,
+            size: null,
+            recurring: null,
+            completed_at: '2026-07-07T15:00:00Z',
+          },
+          {
+            id: 'r',
+            text: 'Rho',
+            x: 0.5,
+            y: 0.5,
+            due: null,
+            due_time: null,
+            staged: false,
+            size: null,
+            recurring: { frequencyDays: 7, lastDoneAt: '2026-07-07T14:00:00Z', doneCount: 2 },
+          },
+          {
+            id: 'b',
+            text: 'Beta',
+            x: 0.2,
+            y: 0.3,
+            due: null,
+            due_time: null,
+            staged: false,
+            size: null,
+            recurring: null,
+          },
+        ],
+      }),
+      ctx(), // UTC, localDate 2026-07-07 → both completion stamps land "today"
+    )
+    assertStringIncludes(m.body, '✓ Knock out Alpha')
+    assertStringIncludes(m.body, '✓ Chip at Rho')
+    assertStringIncludes(m.body, '1. Beta')
+    assertNotMatch(m.body, /\d+\. Knock out Alpha/)
+  },
+)
 
 Deno.test('buildRecapMessage: whole plan finished → celebrate, no list', () => {
   const m = buildRecapMessage(
@@ -645,6 +723,15 @@ Deno.test('normalizePlan: rejects non-object shapes and coerces mis-typed fields
   assertEquals(normalizePlan([1, 2]), null)
   const p = normalizePlan({ headline: 42, bigRock: 'nope', smallRocks: 'also nope' })
   assertEquals(p, { headline: undefined, bigRock: null, smallRocks: [] })
+})
+
+Deno.test('normalizePlan: carries rock taskId through, degrading a mis-typed one to absent', () => {
+  const p = normalizePlan({
+    bigRock: { task: 'X', taskId: 'id-1' },
+    smallRocks: [{ task: 'Y', taskId: 42 }],
+  })
+  assertEquals(p?.bigRock?.taskId, 'id-1')
+  assertEquals(p?.smallRocks?.[0]?.taskId, undefined)
 })
 
 Deno.test(

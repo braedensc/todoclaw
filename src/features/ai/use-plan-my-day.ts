@@ -18,6 +18,7 @@ export interface PlanRequest {
   today: string
   dayOfWeek: string
   tasks: {
+    id: string // tasks.id — lets the server tie each emitted rock back to its task (taskId)
     text: string
     importance: number
     urgency: number
@@ -27,7 +28,7 @@ export interface PlanRequest {
     size: TaskSize | null // coarse effort (S/M/L/XL), or null to let the planner infer it
     ongoing: boolean // a standing project — chip away at it, never must-finish-today
   }[]
-  recurringDue: { text: string; status: string }[]
+  recurringDue: { id: string; text: string; status: string }[]
   habits: string[]
 }
 
@@ -56,6 +57,7 @@ export function buildPlanRequest(
         t.y != null,
     )
     .map((t) => ({
+      id: t.id,
       text: t.text,
       importance: Math.round((t.y ?? 0.5) * 100),
       urgency: Math.round((t.x ?? 0.5) * 100),
@@ -66,13 +68,13 @@ export function buildPlanRequest(
       ongoing: t.ongoing,
     }))
 
-  const recurringDue: { text: string; status: string }[] = []
+  const recurringDue: { id: string; text: string; status: string }[] = []
   for (const t of tasks) {
     if (!t.recurring) continue
     if (isDormant(t, timeZone, now)) continue // a paused chore sits out its pause too
     const s = recurringStatus(t.recurring, { now })
     if (s && (s.code === 'overdue' || s.code === 'due' || s.code === 'soon')) {
-      recurringDue.push({ text: t.text, status: s.label })
+      recurringDue.push({ id: t.id, text: t.text, status: s.label })
     }
   }
 

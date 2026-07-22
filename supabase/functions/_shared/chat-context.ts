@@ -73,28 +73,49 @@ function recurringDoneToday(rec: Recurring | null, timeZone: string, now: Date):
 // Compact summary of today's saved Plan My Day (daily_state.plan jsonb, DayPlan shape — see
 // src/types/plan.ts), read defensively so a malformed/partial plan never breaks the chat. Null when
 // there's no plan today, so BabyClaw can answer "what's my big rock?" instead of being blind to it.
+// Rocks whose task is already completed are prefixed "✓ " (the PLAN block header explains the mark)
+// so an evening conversation never nudges the user toward something they already finished. Matched
+// by the rock's taskId (stamped at generation) first, exact task text as the legacy fallback.
 interface RawRock {
   task?: unknown
   duration?: unknown
   when?: unknown
+  taskId?: unknown
 }
-export function planSummary(raw: unknown): PromptPlan | null {
+export function planSummary(
+  raw: unknown,
+  tasks: { id: string; text: string; doneToday: boolean; completedAt: string | null }[] = [],
+): PromptPlan | null {
   if (!raw || typeof raw !== 'object') return null
   const p = raw as { headline?: unknown; bigRock?: RawRock | null; smallRocks?: unknown }
+  const doneIds = new Set<string>()
+  const doneTexts = new Set<string>()
+  for (const t of tasks) {
+    // Id match takes completed_at too (precise); text fallback sticks to done-TODAY so an old
+    // completion of a same-named task can't strike a live plan item.
+    if (t.doneToday || t.completedAt) doneIds.add(t.id)
+    if (t.doneToday) doneTexts.add(t.text.trim())
+  }
+  const rockDone = (r: RawRock | null | undefined): boolean =>
+    !!r &&
+    ((typeof r.taskId === 'string' && doneIds.has(r.taskId)) ||
+      (typeof r.task === 'string' && doneTexts.has(r.task.trim())))
   const rockLabel = (r: RawRock | null | undefined): string | null => {
     if (!r || typeof r.task !== 'string' || !r.task.trim()) return null
     const extra = [r.when, r.duration].filter(
       (x): x is string => typeof x === 'string' && !!x.trim(),
     )
-    return extra.length ? `${r.task.trim()} (${extra.join(', ')})` : r.task.trim()
+    const base = extra.length ? `${r.task.trim()} (${extra.join(', ')})` : r.task.trim()
+    return rockDone(r) ? `✓ ${base}` : base
   }
   const headline = typeof p.headline === 'string' && p.headline.trim() ? p.headline.trim() : null
   const bigRock = rockLabel(p.bigRock)
   const smallRocks = (Array.isArray(p.smallRocks) ? p.smallRocks : [])
-    .map((r) =>
-      r && typeof (r as RawRock).task === 'string' ? ((r as RawRock).task as string) : '',
-    )
-    .map((t) => t.trim())
+    .map((r) => {
+      const rock = r as RawRock | null
+      if (!rock || typeof rock.task !== 'string' || !rock.task.trim()) return ''
+      return rockDone(rock) ? `✓ ${rock.task.trim()}` : rock.task.trim()
+    })
     .filter((t) => t.length > 0)
   if (!headline && !bigRock && smallRocks.length === 0) return null
   return { headline, bigRock, smallRocks }
@@ -343,7 +364,7 @@ export async function loadChatContext(
     reminderDefault: reminderDefaultFromConfig(config),
     tasks,
     habits,
-    plan: planSummary(dailyRes.data?.plan),
+    plan: planSummary(dailyRes.data?.plan, tasks),
     assistant: parseAssistant(config),
     memories,
     activity,

@@ -16,6 +16,8 @@ import {
   SYSTEM_PROMPT,
   EMIT_PLAN_TOOL,
   buildUserPrompt,
+  resolvePlanTaskIds,
+  type EmittedPlan,
   type PlanRequest,
   type ScheduleConfig,
   type PlanResult,
@@ -46,7 +48,9 @@ export async function generatePlan(
     throw new Error('The planner did not return a plan.')
   }
   return {
-    plan: toolUse.input as PlanResult,
+    // Resolve each rock's emitted `ref` to a real tasks.id before anything stores or returns the
+    // plan — daily_state.plan only ever holds the resolved shape (taskId, never ref).
+    plan: resolvePlanTaskIds(toolUse.input as EmittedPlan, req),
     usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens },
   }
 }
