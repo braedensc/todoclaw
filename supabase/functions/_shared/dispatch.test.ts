@@ -1,7 +1,7 @@
 // Tests for the pure dispatcher logic (dispatch.ts): local-hour math, quiet-hours suppression, the
 // due-kind decision, and the message content (plan-rich morning, plan-based evening check-in, and
 // the deterministic fallbacks).
-import { assertEquals, assertStringIncludes, assertNotMatch } from 'jsr:@std/assert@1'
+import { assert, assertEquals, assertStringIncludes, assertNotMatch } from 'jsr:@std/assert@1'
 import { dayNameInTZ } from './dates.ts'
 import {
   buildMorningFromPlan,
@@ -14,11 +14,14 @@ import {
   isQuietHour,
   localHourInTZ,
   normalizePlan,
+  recapPlanItems,
+  upcomingItems,
   type DispatchInputs,
   type DispatchPlan,
   type NotificationPrefs,
   type RecapContext,
 } from './dispatch.ts'
+import type { ActivityRow } from './activity.ts'
 
 const noon_utc = new Date('2026-07-07T12:00:00Z')
 
@@ -582,6 +585,134 @@ Deno.test('buildRecapMessage: an oversized plan list is capped with an "…and N
   assertStringIncludes(m.body, '10. Item 10')
   assertNotMatch(m.body, /11\. Item 11/)
   assertStringIncludes(m.body, '…and 4 more')
+})
+
+// ---- recapPlanItems / upcomingItems / activity-aware recap ---------------------------------------
+
+const act = (kind: string, taskText = 'x'): ActivityRow => ({ kind, taskText, detail: {} })
+
+Deno.test('recapPlanItems: splits the plan into done / open; hasPlan flags a real plan', () => {
+  const r = recapPlanItems(inputs({ plan: planWithTasks, done: { a: true } }), ctx())
+  assertEquals(r.hasPlan, true)
+  assertEquals(r.done, ['Alpha'])
+  assertEquals(r.open, ['Beta', 'Gamma (not on board)'])
+  assertEquals(recapPlanItems(inputs(), ctx()).hasPlan, false)
+})
+
+Deno.test(
+  'upcomingItems: due-soon (timed first) + recurring next-cycle, excludes done, drops far',
+  () => {
+    const tasks = [
+      {
+        id: 'd1',
+        text: 'Dentist',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-08',
+        due_time: '16:30:00',
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'd2',
+        text: 'Report',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-09',
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'far',
+        text: 'Faraway',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-20',
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'done',
+        text: 'DoneOne',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-08',
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'rec',
+        text: 'Water',
+        x: 0.5,
+        y: 0.5,
+        due: null,
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: { frequencyDays: 3, lastDoneAt: '2026-07-06T12:00:00Z', doneCount: 1 },
+      },
+    ]
+    const up = upcomingItems(inputs({ tasks, done: { done: true } }), ctx())
+    assertStringIncludes(up[0], 'Dentist') // timed → sorts first within tomorrow
+    assertStringIncludes(up[0], '4:30 PM')
+    assertStringIncludes(up[0], 'due tomorrow')
+    assert(up.some((l) => l.startsWith('Report')))
+    assert(up.some((l) => l.includes('Water') && l.includes('recurring'))) // next cycle 07-09
+    assert(!up.some((l) => l.startsWith('Faraway'))) // beyond the window
+    assert(!up.some((l) => l.startsWith('DoneOne'))) // done today → excluded
+  },
+)
+
+Deno.test('buildRecapMessage: no plan but activity → credits the day with a tally', () => {
+  const m = buildRecapMessage(inputs({ plan: null }), ctx(), [
+    act('completed'),
+    act('completed'),
+    act('created'),
+  ])
+  assertStringIncludes(m.body, 'Nice work today — 2 done · 1 created')
+})
+
+Deno.test('buildRecapMessage: look-ahead line appears, but never double-lists a plan item', () => {
+  const tasks = [
+    {
+      id: 'd1',
+      text: 'Dentist',
+      x: 0.5,
+      y: 0.5,
+      due: '2026-07-08',
+      due_time: null,
+      staged: false,
+      size: null,
+      recurring: null,
+    },
+  ]
+  // Dentist is NOT a plan item → it belongs in the look-ahead.
+  const m = buildRecapMessage(
+    inputs({ tasks, plan: { bigRock: { task: 'Alpha' }, smallRocks: [] } }),
+    ctx(),
+    [],
+  )
+  assertStringIncludes(m.body, '🔭 Coming up: Dentist — due tomorrow')
+  // Dentist IS the open plan item → listed once, not repeated in the look-ahead.
+  const m2 = buildRecapMessage(
+    inputs({ tasks, plan: { bigRock: { task: 'Dentist' }, smallRocks: [] } }),
+    ctx(),
+    [],
+  )
+  assertNotMatch(m2.body, /Coming up/)
+  assertStringIncludes(m2.body, '1. Dentist')
+})
+
+Deno.test('isEmptyEvening: any activity makes the evening non-empty', () => {
+  assertEquals(isEmptyEvening(inputs({ tasks: [], plan: null })), true)
+  assertEquals(isEmptyEvening(inputs({ tasks: [], plan: null }), [act('completed')]), false)
 })
 
 // ---- Malformed plan hardening (the column is opaque jsonb — any shape can arrive) ----------------
