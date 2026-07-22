@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
 import type { ChatItem, PendingConfirm } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
@@ -176,6 +176,64 @@ describe('ChatRail', () => {
       )
       press(screen.getByTestId('canvas'))
       expect(onClose).not.toHaveBeenCalled()
+    })
+  })
+
+  // This full-height rail also serves iPhone-landscape / small iPads, where the software keyboard eats
+  // the bottom of the screen and would bury the bottom-anchored composer. Like ChatPanel it must clamp
+  // into the visible band while the keyboard is up. jsdom has no visualViewport; install a
+  // controllable fake, as use-keyboard-viewport.test.ts does.
+  describe('the keyboard re-fit', () => {
+    const INNER = 800
+    let listeners: Set<() => void>
+    let vv: { height: number; offsetTop: number }
+
+    beforeEach(() => {
+      listeners = new Set()
+      vv = { height: INNER, offsetTop: 0 }
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: {
+          get height() {
+            return vv.height
+          },
+          get offsetTop() {
+            return vv.offsetTop
+          },
+          addEventListener: (_t: string, cb: () => void) => listeners.add(cb),
+          removeEventListener: (_t: string, cb: () => void) => listeners.delete(cb),
+        },
+      })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER })
+    })
+    afterEach(() => {
+      Reflect.deleteProperty(window, 'visualViewport')
+    })
+
+    function openKeyboard(height: number): void {
+      vv.height = INNER - height
+      act(() => listeners.forEach((cb) => cb()))
+    }
+
+    it('clamps the rail into the visible band while the keyboard is up', () => {
+      render(<ControlledRail onClose={onClose} />)
+      const rail = screen.getByLabelText('Chat')
+      // Keyboard down: static full-height layout, no inline sizing.
+      expect(rail.getAttribute('style') ?? '').not.toMatch(/height/)
+
+      openKeyboard(336)
+      // Re-fitted above the keys: top released, bottom pinned above the keyboard, visible height taken.
+      const style = rail.getAttribute('style') ?? ''
+      expect(style).toMatch(/top:\s*auto/)
+      expect(style).toMatch(/bottom:\s*336px/)
+      expect(style).toMatch(/height:\s*464px/)
+    })
+
+    it('stays static (no visualViewport support) so mouse desktops are untouched', () => {
+      Reflect.deleteProperty(window, 'visualViewport')
+      render(<ControlledRail onClose={onClose} />)
+      const rail = screen.getByLabelText('Chat')
+      expect(rail.getAttribute('style')).toBeNull()
     })
   })
 })
