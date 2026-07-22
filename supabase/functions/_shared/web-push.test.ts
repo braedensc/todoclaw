@@ -7,7 +7,7 @@
 //   RFC 8291 §5    — the full Web Push stack: ECDH → key-combining → content encryption → body.
 //
 // Vectors copied verbatim from https://www.rfc-editor.org/rfc/rfc8188 and rfc8291.
-import { assert, assertEquals } from 'jsr:@std/assert@1'
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1'
 import { decodeBase64Url, encodeBase64Url } from 'jsr:@std/encoding@1/base64url'
 import {
   buildVapidAuth,
@@ -18,6 +18,8 @@ import {
   encryptRecord,
   generateVapidKeys,
   importEcdhPrivateKey,
+  isAllowedPushEndpoint,
+  sendWebPush,
 } from './web-push.ts'
 
 const utf8 = (s: string) => new TextEncoder().encode(s)
@@ -126,4 +128,83 @@ Deno.test('VAPID — Authorization header carries a verifiable ES256 JWT', async
   assertEquals(claims.sub, 'mailto:owner@todoclaw.app', 'sub is the contact')
   assert(claims.exp > nowSeconds, 'exp is in the future')
   assert(claims.exp - nowSeconds <= 24 * 60 * 60, 'exp within the 24h RFC 8292 ceiling')
+})
+
+// --- SSRF guard: only real push-service hosts are sendable (mirrors the DB CHECK) ------------------
+Deno.test('isAllowedPushEndpoint — accepts the four push services, rejects everything else', () => {
+  // Legit endpoints (FCM exact host; Apple/WNS per-datacenter subdomains; Mozilla exact host).
+  for (const ok of [
+    'https://fcm.googleapis.com/fcm/send/abc123',
+    'https://web.push.apple.com/QABC/xyz',
+    'https://wns2-par02p.notify.windows.com/w/?token=AwYAAAB',
+    'https://updates.push.services.mozilla.com/wpush/v2/gAAAAA',
+  ]) {
+    assert(isAllowedPushEndpoint(ok), `should allow ${ok}`)
+  }
+
+  // SSRF targets + host-spoofing tricks + non-https must all be refused.
+  for (const bad of [
+    'http://fcm.googleapis.com/fcm/send/abc', // not https
+    'https://169.254.169.254/latest/meta-data/', // cloud metadata
+    'https://localhost/push',
+    'https://127.0.0.1:8080/push',
+    'https://fcm.googleapis.com.evil.com/fcm/send/abc', // suffix trick
+    'https://fcm.googleapis.com@evil.com/fcm/send/abc', // userinfo trick → host is evil.com
+    'https://evil.com/https://fcm.googleapis.com', // host is evil.com
+    'https://push.apple.com/x', // bare apex, no service subdomain
+    'not a url',
+  ]) {
+    assert(!isAllowedPushEndpoint(bad), `should reject ${bad}`)
+  }
+})
+
+Deno.test('sendWebPush — refuses a non-allowlisted endpoint before any fetch', async () => {
+  const vapid = await generateVapidKeys('mailto:owner@todoclaw.app')
+  let fetched = false
+  const spyFetch = (() => {
+    fetched = true
+    return Promise.resolve(new Response(null, { status: 201 }))
+  }) as unknown as typeof fetch
+  await assertRejects(
+    () =>
+      sendWebPush(
+        {
+          endpoint: 'https://169.254.169.254/push',
+          keys: { p256dh: UA_PUBLIC, auth: AUTH_SECRET },
+        },
+        'hi',
+        vapid,
+        { fetchImpl: spyFetch },
+      ),
+    Error,
+    'not allowlisted',
+  )
+  assert(!fetched, 'must not open a connection to a rejected endpoint')
+})
+
+// --- Timeout: a stalling endpoint aborts instead of wedging the sweep -------------------------------
+Deno.test('sendWebPush — aborts a stalled endpoint via the AbortController timeout', async () => {
+  const vapid = await generateVapidKeys('mailto:owner@todoclaw.app')
+  // Respect the abort signal; otherwise never resolve — a slowloris endpoint.
+  const stallingFetch = ((_url: string, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('The signal has been aborted', 'AbortError')),
+      )
+    })) as unknown as typeof fetch
+
+  await assertRejects(
+    () =>
+      sendWebPush(
+        {
+          endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+          keys: { p256dh: UA_PUBLIC, auth: AUTH_SECRET },
+        },
+        'hi',
+        vapid,
+        { fetchImpl: stallingFetch, timeoutMs: 50 },
+      ),
+    DOMException,
+    'aborted',
+  )
 })
