@@ -91,8 +91,9 @@ export interface ChatContext {
   activity: PromptActivity[] // today's task actions (oldest-first); empty when nothing changed today
 }
 
-const MAX_TASKS_SHOWN = 60
-const MAX_HABITS_SHOWN = 40
+// Exported so write-caps.test.ts can assert the fetch bounds sit above these render caps.
+export const MAX_TASKS_SHOWN = 60
+export const MAX_HABITS_SHOWN = 40
 // Cap the steps rendered PER habit. A habit's steps are unbounded user free text (no cap on the
 // column or the boundary schema), and the whole system prompt is billed to the owner's key on every
 // tool iteration — so without this a habit stuffed with thousands of steps inflates every turn's

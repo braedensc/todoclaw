@@ -7,6 +7,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
 import { reminderDefaultFromConfig } from './reminder-default.ts'
+import { HABITS_FETCH_LIMIT, REMINDERS_FETCH_LIMIT, TASKS_FETCH_LIMIT } from './write-caps.ts'
 import {
   DEFAULT_ASSISTANT_CONFIG,
   type AssistantConfig,
@@ -215,12 +216,16 @@ export async function loadChatContext(
           'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
         )
         .is('deleted_at', null)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        // Bounded fetch (write-caps.ts): the prompt renders far fewer, and an account at the DB row
+        // caps must not balloon this function's memory or the model window.
+        .limit(TASKS_FETCH_LIMIT),
       client
         .from('habits')
         .select('id, text, active, subtasks')
         .is('deleted_at', null)
-        .order('created_at', { ascending: true }),
+        .order('created_at', { ascending: true })
+        .limit(HABITS_FETCH_LIMIT),
       client
         .from('daily_state')
         .select('done, habit_done, subtask_done, plan')
@@ -230,7 +235,12 @@ export async function loadChatContext(
       // already have one — otherwise it can't answer "do I have a reminder on X?" or reason about
       // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's
       // reminders lead each occurrence, a one-off's lead the single due instant (same rows either way).
-      client.from('task_reminders').select('task_id, offset_minutes').is('sent_at', null),
+      client
+        .from('task_reminders')
+        .select('task_id, offset_minutes')
+        .is('sent_at', null)
+        .order('created_at', { ascending: true })
+        .limit(REMINDERS_FETCH_LIMIT),
       // Saved memories (oldest-first = a stable prompt order), only when memory is on. ≤30 rows by
       // the DB trigger, so no limit needed. RLS scopes it to the caller.
       memoryEnabled

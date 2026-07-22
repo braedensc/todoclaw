@@ -55,6 +55,9 @@ class Q {
   order() {
     return this
   }
+  limit() {
+    return this
+  }
   private result(): Result {
     if (this.mode === 'insert') {
       return this.h.onInsert?.(this.table, this.row) ?? { data: { id: 'new' }, error: null }
