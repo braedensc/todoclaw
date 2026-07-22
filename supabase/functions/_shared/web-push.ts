@@ -321,13 +321,50 @@ export async function buildVapidAuth(
 // generous guard, not a real limit.
 const MAX_PAYLOAD_BYTES = RECORD_SIZE - 16 - 1 - 128
 
+// Per-request deadline for the POST to the push service. `subscription.endpoint` is user-supplied
+// (whatever the browser's PushManager handed us), and the dispatch crons POST to it serially every
+// minute — so an endpoint that ACCEPTS the connection then stalls (slowloris) would wedge the whole
+// sweep for its entire lifetime, run after run, degrading reminders for every user. An AbortController
+// bounds each fetch so one bad endpoint costs at most this long, not the whole run.
+const DEFAULT_PUSH_TIMEOUT_MS = 10_000
+
+// The only legitimate Web Push service hosts. Because the endpoint is untrusted input and we sign +
+// POST to it from inside our infra, an unconstrained endpoint is a blind-SSRF gadget: it could point
+// at 169.254.169.254 (cloud metadata), localhost, or an internal service. Constrain it to the four
+// real push services (FCM / Apple / WNS / Mozilla) before any fetch. Apple (web.push.apple.com) and
+// WNS (wns2-*.notify.windows.com) use per-datacenter subdomains, so those two allow a leading label.
+// Kept in sync with the CHECK constraint in 20260722160000_push_endpoint_ssrf_allowlist.sql.
+const ALLOWED_PUSH_HOSTS: readonly (string | RegExp)[] = [
+  'fcm.googleapis.com',
+  'updates.push.services.mozilla.com',
+  /^(?:[a-z0-9-]+\.)+push\.apple\.com$/,
+  /^(?:[a-z0-9-]+\.)+notify\.windows\.com$/,
+]
+
+/**
+ * True iff `endpoint` is an https:// URL whose host is a known Web Push service. Parsing via `URL`
+ * (not a raw regex) makes it robust to host-spoofing tricks — `https://fcm.googleapis.com@evil.com/`
+ * parses to host `evil.com` and is rejected. Used both as the send-time guard and (mirrored) by the
+ * DB CHECK on insert.
+ */
+export function isAllowedPushEndpoint(endpoint: string): boolean {
+  let url: URL
+  try {
+    url = new URL(endpoint)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:') return false
+  const host = url.hostname.toLowerCase()
+  return ALLOWED_PUSH_HOSTS.some((h) => (typeof h === 'string' ? h === host : h.test(host)))
+}
+
 export interface SendOptions {
   ttlSeconds?: number
   urgency?: 'very-low' | 'low' | 'normal' | 'high'
   now?: Date
   fetchImpl?: typeof fetch
-  // Per-request timeout. The dispatch crons POST to each subscriber's endpoint in turn, so a single
-  // endpoint that accepts the connection but never replies would otherwise wedge the whole run.
+  /** Abort the POST after this many ms (default 10s). Guards the sweep against a stalling endpoint. */
   timeoutMs?: number
 }
 
@@ -342,6 +379,12 @@ export async function sendWebPush(
   vapid: VapidKeys,
   opts: SendOptions = {},
 ): Promise<PushResult> {
+  // Refuse a non-push-service endpoint before doing any work or opening a connection (SSRF guard).
+  // New rows can't reach the DB (CHECK constraint); this covers any pre-existing/edge-case row.
+  if (!isAllowedPushEndpoint(subscription.endpoint)) {
+    throw new Error(`web-push endpoint not allowlisted: ${subscription.endpoint}`)
+  }
+
   const payloadBytes = typeof payload === 'string' ? utf8(payload) : payload
   if (payloadBytes.length > MAX_PAYLOAD_BYTES) {
     throw new Error(`web-push payload too large: ${payloadBytes.length} > ${MAX_PAYLOAD_BYTES}`)
@@ -364,20 +407,28 @@ export async function sendWebPush(
   const auth = await buildVapidAuth(subscription.endpoint, vapid, nowSeconds)
   const doFetch = opts.fetchImpl ?? fetch
 
-  const res = await doFetch(subscription.endpoint, {
-    method: 'POST',
-    headers: {
-      ...auth,
-      'Content-Encoding': 'aes128gcm',
-      'Content-Type': 'application/octet-stream',
-      TTL: String(opts.ttlSeconds ?? 28 * 24 * 60 * 60), // 28 days
-      Urgency: opts.urgency ?? 'normal',
-    },
-    // Deno types fetch's body as BufferSource; a Uint8Array<ArrayBufferLike> needs a widening cast.
-    body: body as BodyInit,
-    // Bound every push POST so one unresponsive endpoint can't hang the dispatch cron. A timed-out
-    // fetch aborts and throws, which the per-user try/catch in the dispatchers already handles.
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
-  })
+  // Bound the POST: a stalled endpoint aborts after timeoutMs instead of hanging the whole sweep.
+  // An abort surfaces as a rejected fetch — the same "network error throws" contract callers already
+  // wrap in try/catch. clearTimeout in finally so a fast response never leaves a dangling timer.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? DEFAULT_PUSH_TIMEOUT_MS)
+  let res: Response
+  try {
+    res = await doFetch(subscription.endpoint, {
+      method: 'POST',
+      headers: {
+        ...auth,
+        'Content-Encoding': 'aes128gcm',
+        'Content-Type': 'application/octet-stream',
+        TTL: String(opts.ttlSeconds ?? 28 * 24 * 60 * 60), // 28 days
+        Urgency: opts.urgency ?? 'normal',
+      },
+      // Deno types fetch's body as BufferSource; a Uint8Array<ArrayBufferLike> needs a widening cast.
+      body: body as BodyInit,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
   return { ok: res.ok, status: res.status, gone: res.status === 404 || res.status === 410 }
 }

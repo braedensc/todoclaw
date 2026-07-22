@@ -8,6 +8,7 @@ import { localDateInTZ } from '../dates.ts'
 import { formatOffset } from '../reminder-content.ts'
 import { placeByDue, urgencyToX, importanceToY } from '../placement.ts'
 import { loadReminderDefault } from '../reminder-default.ts'
+import { TASKS_FETCH_LIMIT } from '../write-caps.ts'
 import { defineCapability, type Capability, type CapabilityContext } from './types.ts'
 import { ok, err, systemErr, updateTaskRow } from './helpers.ts'
 
@@ -109,7 +110,10 @@ export const taskCapabilities: Capability[] = [
             'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
           )
           .is('deleted_at', null)
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          // Bounded fetch (write-caps.ts): this JSON goes straight into the model window, so an
+          // at-cap account must not blow it up — newest rows win.
+          .limit(TASKS_FETCH_LIMIT),
         ctx.client.from('daily_state').select('done').eq('date', date).maybeSingle(),
       ])
       if (tasksRes.error) return systemErr(tasksRes.error.message)

@@ -24,6 +24,7 @@ import { corsHeaders, preflight } from '../_shared/cors.ts'
 import { userClient, requireUser } from '../_shared/auth.ts'
 import { isOwner } from '../_shared/owner.ts'
 import { adminClient } from '../_shared/admin.ts'
+import { ipThrottleOk } from '../_shared/ip-throttle.ts'
 
 const BodySchema = z.object({
   action: z.enum(['whoami', 'get_overview']),
@@ -55,6 +56,9 @@ Deno.serve(async (req) => {
       status,
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
+
+  // Coarse per-IP flood guard, before auth (verify_jwt is off for this function).
+  if (!(await ipThrottleOk(req, 'admin', 120, 60))) return json({ error: 'too_many_requests' }, 429)
 
   const client = userClient(req)
   const user = await requireUser(client)

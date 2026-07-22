@@ -72,6 +72,34 @@ export const DEFINER_GRANT_ALLOWLIST = {
     writesScopedToAuthUid: 'yes',
     note: 'Inserts chat_sessions/chat_messages with user_id=auth.uid() and updates only the caller’s own messages row (fenced `where … and user_id = v_uid`).',
   },
+  // Flipped INVOKER→DEFINER in #314 (ai_usage direct grants revoked; writes now go through these RPCs).
+  ai_usage_check_and_record: {
+    writesScopedToAuthUid: 'yes',
+    note: 'Inserts ai_usage with user_id=v_uid (=auth.uid()); the rate-limit COUNT windows it reads are all fenced `where user_id = v_uid`. #314.',
+  },
+  ai_usage_record_tokens: {
+    writesScopedToAuthUid: 'yes',
+    note: 'Updates only the caller’s own usage row (`update ai_usage … where id = p_id and user_id = auth.uid()`). #314.',
+  },
+  // Flipped INVOKER→DEFINER alongside the reminder pipeline hardening (#311/#312).
+  set_task_reminder: {
+    writesScopedToAuthUid: 'yes',
+    note: 'Inserts task_reminders with user_id=auth.uid(); the target task is fenced `where id = p_task_id and user_id = auth.uid()`.',
+  },
+  clear_task_reminder: {
+    writesScopedToAuthUid: 'yes',
+    note: 'Deletes only the caller’s reminders (`delete … where task_id = p_task_id and user_id = auth.uid()`).',
+  },
+  remove_task_reminder: {
+    writesScopedToAuthUid: 'yes',
+    note: 'Deletes only the caller’s reminders (`delete … where … and user_id = auth.uid()`).',
+  },
+  // NOT user-scoped, and that is correct: a pre-auth IP rate-limiter (#311). Granted to anon too
+  // because the edge functions it guards run with verify_jwt=false.
+  edge_ip_throttle: {
+    writesScopedToAuthUid: 'no',
+    note: 'Writes edge_ip_events — an IP-keyed rate-limit bucket (no user_id), reachable ONLY via this DEFINER fn (table has RLS on, no grants). Runs pre-auth so there is no auth.uid() to scope by; it bounds abuse and fails open. Non-sensitive throttle state. Reviewed (#311).',
+  },
 }
 
 // ─── scan ───────────────────────────────────────────────────────────────────────────────────────

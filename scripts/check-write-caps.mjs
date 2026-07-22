@@ -45,41 +45,26 @@ const DIR = 'supabase/migrations'
 const EXPOSED_ROLES = ['anon', 'authenticated', 'public']
 
 // ─── ALLOWLIST ──────────────────────────────────────────────────────────────────────────────────
-// Tables with a direct write grant that are consciously exempt from the (a) row-cap + size-CHECK
-// requirement. EACH entry is a reviewed decision with a one-line reason. Two kinds live here:
-//   • IN-FLIGHT — a per-user cap is being added in a parallel PR; the entry keeps CI green until it
-//     lands, then SHOULD be deleted (the table then passes via rule (a) on its own).
-//   • BY-DESIGN / KNOWN-GAP — bounded by other means (rate limit, one-row-per-user key, owner-only
-//     insert), or an accepted risk we choose to track rather than fix right now.
-// Deleting an entry that has since gained a real bound is safe — the guard warns about stale entries
-// but never fails on them, so trimming this list can never turn an unrelated PR red.
+// Tables with a direct write grant that are consciously exempt from the (a) row-cap-trigger +
+// size-CHECK requirement because their row growth is bounded STRUCTURALLY (not by a counting trigger
+// the scan can recognize). EACH entry is a reviewed decision with a one-line reason. The guard warns
+// about — but never fails on — a stale entry, so trimming this list can never turn an unrelated PR
+// red. (tasks/habits/history/task_reminders/backups/push_subscriptions passed through here while
+// #312's per-user caps were in flight; #312 landed real `<table>_cap` triggers + size CHECKs, so they
+// now satisfy rule (a) on their own and their entries were removed. ai_usage's direct INSERT grant was
+// revoked in #314 — writes go through DEFINER RPCs — so it is no longer write-granted; invites the
+// same via 20260713020000_invites_owner_only_mint.)
 export const WRITE_CAP_ALLOWLIST = {
-  // IN-FLIGHT — DB-caps PR adds per-user row caps + size CHECKs to these. Remove when it merges.
-  tasks: 'IN-FLIGHT (DB-caps PR): per-user row cap + title/notes size CHECK being added.',
-  habits: 'IN-FLIGHT (DB-caps PR): per-user row cap + text/subtasks size CHECK being added.',
-  history: 'IN-FLIGHT (DB-caps PR): per-user row cap being added (append-only completion log).',
-  task_reminders: 'IN-FLIGHT (DB-caps PR): per-user/per-task reminder-row cap being added.',
+  // BY-DESIGN — one row per (user, date) via the PK, and the date is confined to a ±14-day window by
+  // the daily_state_date_ins/move trigger (#312), so a user's row count is bounded (~29) WITHOUT a
+  // count cap; every jsonb column is size-checked (#312). A counting row-cap trigger would be
+  // redundant with the PK + date-window, hence the allowlist rather than rule (a).
   daily_state:
-    'IN-FLIGHT (DB-caps PR): pg_column_size CHECK on the done/done_at/habit_done/subtask_done jsonb being added (rows already 1/user/day via PK).',
-  // IN-FLIGHT — cron/push PR adds a per-user subscription cap.
-  push_subscriptions:
-    'IN-FLIGHT (cron/push PR): per-user subscription-row cap being added (endpoint already unique).',
-  // BY-DESIGN — inserts are rate-limited, not row-capped: ai_usage_check_and_record gates writes on
-  // trailing hourly/daily COUNT windows, and the only text column (`feature`) is a short fixed enum.
-  ai_usage:
-    'BY-DESIGN: inserts rate-limited by ai_usage_check_and_record (hourly/daily COUNT windows); no unbounded free-text column (`feature` is a short enum).',
-  // BY-DESIGN — one row per user (unique/PK on user_id, upsert). KNOWN GAP: the `config` jsonb has no
-  // size CHECK yet — tracked; low risk (owner-only, small settings blob).
+    'BY-DESIGN: 1 row per (user, date) via PK; date confined to a ±14-day window (daily_state_date_* trigger, #312) so row count is bounded; jsonb columns size-checked (#312). No count trigger needed.',
+  // BY-DESIGN — one row per user via the PK/unique user_id (upsert), so row growth is bounded without
+  // a count cap; timezone + config are size-checked (user_schedule_*_size, #312).
   user_schedule:
-    'BY-DESIGN: one row per user (PK/unique user_id, upsert). KNOWN GAP: config jsonb has no size CHECK yet — tracked.',
-  // (invites is intentionally ABSENT: its direct authenticated INSERT grant was revoked in
-  // 20260713020000_invites_owner_only_mint — minting is owner-only now — so it has no write grant to
-  // bound. The guard's stale-entry warning flagged an earlier over-seeded entry here.)
-  //
-  // KNOWN GAP — a backup is a full snapshot jsonb with no per-user cap and no size CHECK. Accepted and
-  // TRACKED (a follow-up will cap backups/user + bound the snapshot); listed so it is never silent.
-  backups:
-    'KNOWN GAP (tracked): full-snapshot jsonb, no per-user cap or size CHECK yet — a follow-up will bound both.',
+    'BY-DESIGN: 1 row per user (PK/unique user_id, upsert) bounds row growth; timezone + config size-checked (#312). No count trigger needed.',
 }
 
 // ─── column + size-check detection ──────────────────────────────────────────────────────────────
@@ -187,12 +172,16 @@ export function scanWriteCaps(dir = DIR) {
     else targeted.forEach((r) => set.delete(r))
   }
 
-  // Trigger-function bodies (last definition wins) and per-user row-cap tables.
+  // Trigger-function bodies (last definition wins) and per-user row-cap tables. A row cap is a
+  // BEFORE or AFTER insert trigger whose function counts the caller's own rows and raises over a
+  // limit. AFTER is just as valid as BEFORE — a raise in an AFTER-insert trigger rolls the insert
+  // back, so the row never persists (the `tasks_cap`/#312 pattern: count including the new row, so
+  // the threshold uses `>` rather than `>=`).
   const fnBody = new Map()
   for (const f of parseFunctions(all)) if (f.returnsTrigger) fnBody.set(f.name, f.body)
   const rowCapTables = new Set()
   for (const t of parseTriggers(all)) {
-    if (t.timing !== 'before' || !/\binsert\b/.test(t.events)) continue
+    if ((t.timing !== 'before' && t.timing !== 'after') || !/\binsert\b/.test(t.events)) continue
     const body = fnBody.get(t.fn)
     if (body && /\bcount\s*\(/.test(body) && /\braise\b/.test(body) && /user_id/.test(body)) {
       rowCapTables.add(t.table)
@@ -205,18 +194,18 @@ export function scanWriteCaps(dir = DIR) {
     const roles = [...(writeRoles.get(table) ?? [])]
     const body = createTableBody(all, table) ?? ''
     const unbounded = unboundedColumns(body)
-    // Size CHECK either inline in the create-table body or in an `alter table <table> … check(...)`.
-    const alterChecks = [
+    // Size CHECK either inline in the create-table body or added later via `alter table <table> …`.
+    // Capture the WHOLE alter statement up to its `;` (not a truncated `check(...)`) so a nested-paren
+    // check like `check (char_length(text) <= 2000)` — the standard shape #312 uses — stays intact
+    // for SIZE_CHECK_RE to see the `<=`.
+    const alterStmts = [
       ...all.matchAll(
-        new RegExp(
-          `alter\\s+table\\s+(?:only\\s+)?(?:"?public"?\\.)?"?${table}"?[^;]*?check\\s*\\([^;]*?\\)`,
-          'gi',
-        ),
+        new RegExp(`alter\\s+table\\s+(?:only\\s+)?(?:"?public"?\\.)?"?${table}"?\\b[^;]*`, 'gi'),
       ),
     ]
       .map((x) => x[0])
       .join(' ')
-    const hasSizeCheck = SIZE_CHECK_RE.test(body) || SIZE_CHECK_RE.test(alterChecks)
+    const hasSizeCheck = SIZE_CHECK_RE.test(body) || SIZE_CHECK_RE.test(alterStmts)
     info.set(table, {
       table,
       file,

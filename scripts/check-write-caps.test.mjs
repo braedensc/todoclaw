@@ -170,4 +170,31 @@ describe('volume-bound guard', () => {
     const { staleAllowlist } = findWriteCapOffenders(dir, { c: 'no longer needed' })
     expect(staleAllowlist).toContain('c')
   })
+
+  it('accepts an AFTER INSERT row-cap trigger (the #312 shape), not just BEFORE', () => {
+    // A raise in an AFTER-insert trigger rolls the insert back, so it's a valid cap. Also exercises a
+    // size CHECK added later via `alter table … add constraint … check(...)` with nested parens.
+    const dir = migrations({
+      '20260101000000_af.sql': `
+        create table public.af (
+          id uuid primary key, user_id uuid not null default auth.uid(), text text not null
+        );
+        ${RLS('af')}
+        grant insert on public.af to authenticated;
+        create function public.af_cap() returns trigger language plpgsql as $$
+        begin
+          if (select count(*) from public.af where user_id = new.user_id) > 100 then
+            raise exception 'af_cap_reached';
+          end if;
+          return null;
+        end; $$;
+        create trigger af_cap after insert on public.af for each row execute function public.af_cap();
+        alter table public.af add constraint af_text_len check (char_length(text) <= 2000);`,
+    })
+    const rec = scanWriteCaps(dir).get('af')
+    expect(rec.hasRowCap).toBe(true) // AFTER-insert cap counted
+    expect(rec.hasSizeCheck).toBe(true) // ALTER ADD CONSTRAINT check(char_length(text) <= 2000) counted
+    expect(rec.bounded).toBe(true)
+    expect(findWriteCapOffenders(dir, {}).offenders).toEqual([])
+  })
 })
