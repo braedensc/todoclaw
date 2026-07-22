@@ -112,10 +112,11 @@ Deno.test('an ongoing task row surfaces in the plan tasks carrying its ongoing f
 })
 
 Deno.test(
-  'a DORMANT task (future start_date, user zone) never reaches a plan of either kind',
+  'a DORMANT task never becomes a rock, but a within-window one surfaces in `upcoming`',
   () => {
     // NOW is Wed Jun 24 (New York). start_date Jun 25 = tomorrow there → dormant; Jun 24 = today →
-    // live. Mirrors isDormant (client) and the dispatch RPC's SQL gate.
+    // live. Mirrors isDormant (client) and the dispatch RPC's SQL gate. A dormant task un-pausing
+    // within UPCOMING_WINDOW_DAYS (3) is a "coming up" heads-up — kept OUT of tasks/recurringDue.
     const rows = [
       {
         id: 'a',
@@ -133,13 +134,14 @@ Deno.test(
         text: 'Paused',
         x: 0.8,
         y: 0.7,
-        due: null,
+        due: '2026-07-01',
         due_time: null,
         staged: false,
         recurring: null,
-        start_date: '2026-06-25',
+        start_date: '2026-06-25', // tomorrow → within the 3-day window
       },
-      // A paused CHORE sits out its pause too, even when its cadence says overdue.
+      // A paused CHORE sits out its pause too, even when its cadence says overdue. Its start is 7
+      // days out → beyond the window, so it does NOT surface in `upcoming` either.
       {
         id: 'c',
         text: 'PausedChore',
@@ -158,5 +160,17 @@ Deno.test(
       ['Live'],
     )
     assertEquals(req.recurringDue, [])
+    // Only the within-window dormant task appears in `upcoming`, carrying its start offset + due.
+    assertEquals(
+      req.upcoming.map((u) => u.text),
+      ['Paused'],
+    )
+    assertEquals(req.upcoming[0], {
+      id: 'b',
+      text: 'Paused',
+      startsInDays: 1,
+      startDate: '2026-06-25',
+      due: '2026-07-01',
+    })
   },
 )

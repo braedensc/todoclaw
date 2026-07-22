@@ -32,6 +32,7 @@ const base: PlanRequest = {
   ],
   recurringDue: [{ text: 'Water plants', status: 'due today' }],
   habits: ['Stretch', 'Read 10 pages'],
+  upcoming: [],
 }
 
 const schedule: ScheduleConfig = {
@@ -186,6 +187,56 @@ Deno.test('an ongoing task renders with the ongoing-project tag in its grid line
   // A normal task carries no ongoing tag.
   assert(p.includes('File taxes (importance 80, urgency 90, due in 1d)'))
   assert(!p.includes('File taxes (importance 80, urgency 90, due in 1d, ongoing project)'))
+})
+
+// ---- COMING UP (paused / not-yet-started tasks) ----------------------------------------------
+Deno.test(
+  'COMING UP block lists upcoming items with their start offset + due, or is omitted',
+  () => {
+    const withUpcoming: PlanRequest = {
+      ...base,
+      upcoming: [
+        {
+          id: 'u1',
+          text: 'Trip prep',
+          startsInDays: 1,
+          startDate: '2026-06-25',
+          due: '2026-07-01',
+        },
+        { id: 'u2', text: 'Q3 planning', startsInDays: 3, startDate: '2026-06-27', due: null },
+      ],
+    }
+    const p = buildUserPrompt(withUpcoming, schedule, null)
+    assert(
+      p.includes(
+        '=== COMING UP (paused / not started yet — mention gently if soon, NEVER schedule) ===',
+      ),
+    )
+    assert(p.includes('- Trip prep — starts in 1d, due 2026-07-01'))
+    assert(p.includes('- Q3 planning — starts in 3d')) // no due → no ", due" suffix
+    assert(!p.includes('Q3 planning — starts in 3d, due'))
+    // No upcoming items → the block is absent entirely.
+    assert(!buildUserPrompt(base, schedule, null).includes('=== COMING UP'))
+  },
+)
+
+Deno.test('SYSTEM_PROMPT frames COMING UP items as mention-only, never scheduled', () => {
+  assert(SYSTEM_PROMPT.includes('COMING UP'))
+  assert(SYSTEM_PROMPT.includes('NEVER schedule one as a bigRock or smallRock'))
+})
+
+Deno.test('PlanRequestSchema defaults a missing upcoming to [] (deploy-skew safe)', () => {
+  // An old client that predates the field omits it — the payload validates and upcoming is [].
+  const legacy = { ...base } as { upcoming?: unknown }
+  delete legacy.upcoming
+  assertEquals(PlanRequestSchema.parse(legacy).upcoming, [])
+  // A provided upcoming round-trips, id tolerated absent.
+  const parsed = PlanRequestSchema.parse({
+    ...base,
+    upcoming: [{ text: 'X', startsInDays: 2, startDate: '2026-06-26', due: null }],
+  })
+  assertEquals(parsed.upcoming[0].id ?? null, null)
+  assertEquals(parsed.upcoming[0].startsInDays, 2)
 })
 
 Deno.test('weather block appears only when weather is provided', () => {

@@ -108,6 +108,21 @@ describe('buildPlanRequest', () => {
     expect(byText).toEqual({ Big: 'L', Small: null })
   })
 
+  it('collects dormant tasks un-pausing within the window into `upcoming`, keeping them out of tasks', () => {
+    const tasks = [
+      task({ id: 'live', text: 'Live', start_date: '2026-06-24' }), // today → live, in tasks
+      task({ id: 'soon', text: 'Soon', start_date: '2026-06-25', due: '2026-07-01' }), // +1d → upcoming
+      task({ id: 'far', text: 'Far', start_date: '2026-06-30' }), // +6d → dormant but out of window
+    ]
+    const req = buildPlanRequest(tasks, [], {}, TZ, NOW)
+    // Dormant tasks never appear as plannable tasks.
+    expect(req.tasks.map((t) => t.text)).toEqual(['Live'])
+    // Only the within-window dormant task is a heads-up, carrying its offset + due.
+    expect(req.upcoming).toEqual([
+      { id: 'soon', text: 'Soon', startsInDays: 1, startDate: '2026-06-25', due: '2026-07-01' },
+    ])
+  })
+
   it('surfaces overdue/due/soon recurring chores and active habits, and the local date', () => {
     const tasks = [
       task({
