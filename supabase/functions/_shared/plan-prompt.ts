@@ -29,6 +29,10 @@ export const PlanRequestSchema = z.object({
   tasks: z
     .array(
       z.object({
+        // tasks.id (uuid), so emitted rocks can be tied back to real tasks (resolvePlanTaskIds).
+        // Lenient (.nullish()) at this wire boundary: an old cached client that predates the field
+        // still validates during a deploy — its rocks simply store taskId null.
+        id: z.string().nullish(),
         text: z.string(),
         importance: z.number(), // 0–100 (y*100)
         urgency: z.number(), // 0–100 (x*100)
@@ -43,18 +47,26 @@ export const PlanRequestSchema = z.object({
       }),
     )
     .max(200),
-  recurringDue: z.array(z.object({ text: z.string(), status: z.string() })).max(100), // overdue/due/soon recurring chores
+  recurringDue: z
+    .array(z.object({ id: z.string().nullish(), text: z.string(), status: z.string() }))
+    .max(100), // overdue/due/soon recurring chores (id lenient for the same deploy-skew reason)
   habits: z.array(z.string()).max(100), // active habit names
 })
 export type PlanRequest = z.infer<typeof PlanRequestSchema>
 
 // ---- Output shape (the emit_plan tool input) -------------------------------------------------
 export const WHEN_VALUES = ['morning', 'lunch', 'afternoon', 'evening'] as const
+// The STORED rock shape (daily_state.plan): `taskId` is the real tasks.id the rock came from, or
+// null when it couldn't be tied to one listed item. The model never emits taskId — it emits a
+// short `ref` ("T3"/"R1") that resolvePlanTaskIds maps back through the request. taskId is what
+// lets the plan card strike a rock through when its task is completed, and the evening recap
+// recognize a finished item even after completed_at hides the task row.
 export interface Rock {
   task: string
   why: string
   duration: string
   when: (typeof WHEN_VALUES)[number]
+  taskId: string | null
 }
 export interface PlanResult {
   headline: string
@@ -62,6 +74,14 @@ export interface PlanResult {
   bigRock: Rock | null
   smallRocks: Rock[]
   habitNote: string
+}
+
+// The rock as emit_plan actually returns it: a `ref` line id instead of a resolved taskId. `ref`
+// is schema-required, but the tool input arrives as an unchecked cast, so treat it as optional.
+export type EmittedRock = Omit<Rock, 'taskId'> & { ref?: string | null }
+export type EmittedPlan = Omit<PlanResult, 'bigRock' | 'smallRocks'> & {
+  bigRock: EmittedRock | null
+  smallRocks: EmittedRock[]
 }
 
 const rockSchema = {
@@ -72,8 +92,14 @@ const rockSchema = {
     why: { type: 'string', description: 'One short sentence on why it earns time today.' },
     duration: { type: 'string', description: 'Rough estimate, e.g. "~30min", "~1.5h".' },
     when: { type: 'string', enum: WHEN_VALUES, description: 'Which time slot to do it in.' },
+    ref: {
+      type: ['string', 'null'],
+      description:
+        'The bracketed id of the task/chore line this rock came from — copy it exactly, e.g. ' +
+        '"T3" or "R1". null ONLY if the rock is not one of the listed items.',
+    },
   },
-  required: ['task', 'why', 'duration', 'when'],
+  required: ['task', 'why', 'duration', 'when', 'ref'],
 }
 
 // Forced-tool-use is how we get guaranteed-parseable structured output (no fence stripping).
@@ -182,6 +208,10 @@ export const SYSTEM_PROMPT = [
   '',
   'A task line may carry a rough size — S (~15m), M (~45m), L (~2h), XL (~half-day). When a task has',
   'no size, estimate its effort yourself from the text before weighing the day (rule 4).',
+  'Every task line starts with a bracketed id — [T3] for grid tasks, [R1] for recurring chores. Set',
+  "each rock's `ref` to the id of the exact line it came from, copied verbatim (it links the plan",
+  'back to the real task, so the app can cross the rock off when that task is completed). Use null',
+  'only for a rock that is not one of the listed items.',
   'Be concrete and honest. Durations are rough (~30min, ~1.5h). Return your answer ONLY by calling',
   'the emit_plan tool.',
 ].join('\n')
@@ -254,7 +284,7 @@ function scheduleContext(dayOfWeek: string, schedule: ScheduleConfig | null): st
 function taskLines(req: PlanRequest): string {
   if (req.tasks.length === 0) return '(no tasks placed on the grid)'
   return req.tasks
-    .map((t) => {
+    .map((t, i) => {
       const dayPart =
         t.due == null
           ? 'no due date'
@@ -271,11 +301,54 @@ function taskLines(req: PlanRequest): string {
       const size = t.size ? `, size ${t.size} (${SIZE_HINTS[t.size]})` : ''
       // Ongoing projects are flagged so the planner can pace them (chip away, never must-finish).
       const ongoing = t.ongoing ? ', ongoing project' : ''
-      return `- ${t.text} (importance ${Math.round(t.importance)}, urgency ${Math.round(
+      // [T#] is the line id emit_plan rocks cite back via `ref` (see resolvePlanTaskIds). It is
+      // positional (1-based array index), NOT the task uuid — short ids are cheap to copy exactly.
+      return `- [T${i + 1}] ${t.text} (importance ${Math.round(t.importance)}, urgency ${Math.round(
         t.urgency,
       )}, ${due}${size}${ongoing})`
     })
     .join('\n')
+}
+
+// ---- Ref resolution --------------------------------------------------------------------------
+
+// Map one emitted rock's `ref` ("T3" → req.tasks[2], "R1" → req.recurringDue[0]) to the real task
+// id, falling back to an exact-text match when the ref is missing or out of range (the schema
+// requires `ref`, but the tool input is an unchecked cast — never trust it blindly). Returns the
+// stored rock shape: taskId in, ref out.
+function resolveRock(rock: EmittedRock, req: PlanRequest): Rock {
+  const { ref, ...rest } = rock
+  let taskId: string | null = null
+  const m = typeof ref === 'string' ? ref.trim().match(/^([TR])(\d+)$/i) : null
+  if (m) {
+    const idx = Number(m[2]) - 1
+    const src = m[1].toUpperCase() === 'T' ? req.tasks[idx] : req.recurringDue[idx]
+    taskId = src?.id ?? null
+  }
+  if (!taskId && typeof rock.task === 'string') {
+    const text = rock.task.trim()
+    const hit =
+      req.tasks.find((t) => t.text.trim() === text) ??
+      req.recurringDue.find((r) => r.text.trim() === text)
+    taskId = hit?.id ?? null
+  }
+  return { ...rest, taskId }
+}
+
+/**
+ * Resolve every rock's `ref` in an emitted plan to a real tasks.id, producing the STORED plan
+ * shape (rocks carry `taskId`, never `ref`). A rock that can't be tied to a listed item — model
+ * said null, cited a bogus ref against an id-less request, or paraphrased the text — degrades to
+ * taskId null: the plan still renders, it just can't be crossed off automatically.
+ */
+export function resolvePlanTaskIds(plan: EmittedPlan, req: PlanRequest): PlanResult {
+  return {
+    ...plan,
+    bigRock: plan.bigRock ? resolveRock(plan.bigRock, req) : null,
+    smallRocks: Array.isArray(plan.smallRocks)
+      ? plan.smallRocks.map((r) => resolveRock(r, req))
+      : [],
+  }
 }
 
 // The day's data as the user message. The persona + rules live in SYSTEM_PROMPT.
@@ -328,9 +401,10 @@ export function buildUserPrompt(
     }`,
   )
   if (req.recurringDue.length) {
+    // [R#] line ids, same contract as [T#] in taskLines (emit_plan rocks cite them via `ref`).
     blocks.push(
       `=== RECURRING CHORES DUE ===\n${req.recurringDue
-        .map((r) => `- ${r.text} (${r.status})`)
+        .map((r, i) => `- [R${i + 1}] ${r.text} (${r.status})`)
         .join('\n')}`,
     )
   }

@@ -3,7 +3,8 @@ import { useHabits } from '../habits/use-habits'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useAiStatus } from './use-ai-status'
 import { usePlanMyDay, useClearPlan, buildPlanRequest } from './use-plan-my-day'
-import type { DayPlan } from '../../types/plan'
+import { isPlanRockDone } from '../../lib/plan-done'
+import type { DayPlan, PlanRock } from '../../types/plan'
 
 export interface PlanController {
   // The plan to show in the inline card: the fresh mutation result when just generated, otherwise
@@ -18,6 +19,9 @@ export interface PlanController {
   // Dismiss the plan card: persist NULL to today's row (survives reload) and drop any fresh
   // in-memory result. The card reappears only when the user regenerates via the header button.
   clear: () => void
+  // Is this rock's task already completed today? The plan card strikes matching rocks through —
+  // reactive because it reads the same tasks/daily-state caches every done-marking path updates.
+  rockDone: (rock: PlanRock) => boolean
 }
 
 // Wires the "Plan My Day" concern for the shell: it pulls the same tasks/habits/daily-state the
@@ -59,5 +63,6 @@ export function usePlanController(timeZone: string): PlanController {
     canGenerate,
     generate,
     clear,
+    rockDone: (rock) => isPlanRockDone(rock, tasksQ.data ?? [], dailyQ.data?.done ?? {}, timeZone),
   }
 }

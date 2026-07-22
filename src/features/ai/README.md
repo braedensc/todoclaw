@@ -17,7 +17,13 @@ Functions (`supabase/functions/`).
   (the generate trigger) to `PlanBox`, which renders the structured
   `{headline, availableTime, bigRock, smallRocks, habitNote}` and **hydrates from `daily_state.plan`
   on load** — so the plan survives reloads and auto-clears at local midnight (a new day reads a
-  different date's row). The plan shape + its Zod validator live in `src/types/plan.ts`.
+  different date's row). The plan shape + its Zod validator live in `src/types/plan.ts`. Each rock
+  carries a `taskId` (stamped server-side from the model's `[T#]`/`[R#]` line ref), and the card
+  **scratches a rock off live** (✓ + strikethrough) once its task is completed — anywhere: grid ✓,
+  list, mobile, or BabyClaw — via `usePlanController.rockDone` → `src/lib/plan-done.ts`, which reads
+  the same tasks/daily-state caches every done-path updates. The evening check-in matches by the
+  same `taskId` (`_shared/dispatch.ts`), so it acknowledges what's already crossed off instead of
+  re-asking.
 
 - **`ChatPanel.tsx`** + **`use-ai-chat.ts`** — **BabyClaw**, the in-app planning assistant. A right
   slide-over that streams BabyClaw's reply token-by-token and pauses for **confirmation before any

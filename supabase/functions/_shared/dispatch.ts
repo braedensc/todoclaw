@@ -28,7 +28,9 @@ export type DueKind = 'plan' | 'recap'
 // daily_state.plan as this module consumes it — the emit_plan output shape (plan-prompt.ts), but
 // all-optional because the column is client-validated jsonb and opaque to the DB. Derived from the
 // canonical Rock/PlanResult types so a schema change there surfaces here as a type error.
-export type DispatchPlanRock = Partial<Pick<Rock, 'task' | 'duration'>>
+// taskId (stamped by resolvePlanTaskIds at generation) is what lets the recap recognize a finished
+// item by id instead of by text.
+export type DispatchPlanRock = Partial<Pick<Rock, 'task' | 'duration' | 'taskId'>>
 export type DispatchPlan = Partial<Pick<PlanResult, 'headline'>> & {
   bigRock?: DispatchPlanRock | null
   smallRocks?: DispatchPlanRock[]
@@ -47,7 +49,7 @@ export function normalizePlan(raw: unknown): DispatchPlan | null {
   const rock = (v: unknown): DispatchPlanRock | null => {
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return null
     const r = v as Record<string, unknown>
-    return { task: asString(r.task), duration: asString(r.duration) }
+    return { task: asString(r.task), duration: asString(r.duration), taskId: asString(r.taskId) }
   }
   return {
     headline: asString(p.headline),
@@ -325,12 +327,14 @@ function recurringDoneToday(task: DispatchInputs['tasks'][number], ctx: RecapCon
 }
 
 /**
- * The evening push — a check-in, not a stats dump. Built from that morning's plan: list its still-
- * unfinished items numbered and ask which got knocked out (the reply lands in chat, where BabyClaw
- * marks them done). Done-ness is matched by task text against today's done map (plus lastDoneAt for
- * recurring chores); an item we can't match stays on the list (better to ask than to silently drop).
- * No plan on file → a gentle generic check-in; everything finished → celebrate and stop. Rest days
- * are always a fine answer.
+ * The evening push — a check-in, not a stats dump. Built from that morning's plan: acknowledge the
+ * items already crossed off, list the still-unfinished ones numbered, and ask which got knocked out
+ * (the reply lands in chat, where BabyClaw marks them done). Done-ness is matched by the rock's
+ * taskId first — the done map is keyed by id and survives completed_at hiding the task row from
+ * inputs.tasks, so a one-off finished at noon is recognized tonight — with exact task-text matching
+ * as the fallback for legacy plans; an item we can't match stays on the list (better to ask than to
+ * silently drop). No plan on file → a gentle generic check-in; everything finished → celebrate and
+ * stop. Rest days are always a fine answer.
  */
 export function buildRecapMessage(inputs: DispatchInputs, ctx: RecapContext): MessageContent {
   const name = greetName(inputs)
@@ -340,7 +344,26 @@ export function buildRecapMessage(inputs: DispatchInputs, ctx: RecapContext): Me
   const rocks: DispatchPlanRock[] = plan
     ? [...(plan.bigRock ? [plan.bigRock] : []), ...(plan.smallRocks ?? [])]
     : []
-  const items = rocks.map((r) => r.task?.trim()).filter((t): t is string => Boolean(t))
+
+  // Is this rock's task already done today? By id when the rock carries one (done map for
+  // one-offs — its keys outlive the RPC's completed_at row filter — or the row's own completion
+  // signals when it's still present); by exact text otherwise.
+  const doneTexts = new Set(
+    inputs.tasks.filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx)).map((t) => t.text),
+  )
+  const taskById = new Map(inputs.tasks.map((t) => [t.id, t]))
+  const rockDone = (r: DispatchPlanRock): boolean => {
+    if (r.taskId) {
+      if (inputs.done[r.taskId] === true) return true
+      const t = taskById.get(r.taskId)
+      if (t && (!!t.completed_at || recurringDoneToday(t, ctx))) return true
+    }
+    return r.task != null && doneTexts.has(r.task.trim())
+  }
+
+  const items = rocks
+    .map((r) => ({ text: r.task?.trim() ?? '', done: rockDone(r) }))
+    .filter((i) => i.text.length > 0)
 
   if (items.length === 0) {
     // No plan today (or an empty one): check in generally instead of pretending there was a list.
@@ -358,11 +381,8 @@ export function buildRecapMessage(inputs: DispatchInputs, ctx: RecapContext): Me
     }
   }
 
-  // Which plan items still look open? Match by exact task text; unmatched items stay listed.
-  const doneTexts = new Set(
-    inputs.tasks.filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx)).map((t) => t.text),
-  )
-  const unfinished = items.filter((t) => !doneTexts.has(t))
+  const done = items.filter((i) => i.done).map((i) => i.text)
+  const unfinished = items.filter((i) => !i.done).map((i) => i.text)
 
   if (unfinished.length === 0) {
     return {
@@ -375,10 +395,27 @@ export function buildRecapMessage(inputs: DispatchInputs, ctx: RecapContext): Me
   const list = shown.map((t, i) => `${i + 1}. ${t}`).join('\n')
   const more =
     unfinished.length > shown.length ? `\n…and ${unfinished.length - shown.length} more` : ''
+
+  if (done.length === 0) {
+    return {
+      title: `Wrapping up ${ctx.dayName} 👋`,
+      body:
+        `${greet}Which of these did you knock out today?\n\n${list}${more}\n\n` +
+        `Reply with the numbers or names and I'll mark them done. No worries if today was a rest day 🙂\n\n${SIGNOFF}`,
+    }
+  }
+
+  // Partial progress: lead with what's already crossed off (never re-ask about a finished item),
+  // then the open remainder. The closer drops "rest day" — this wasn't one.
+  const doneShown = done.slice(0, CHECKIN_ITEMS_CAP)
+  const doneList = doneShown.map((t) => `✓ ${t}`).join('\n')
+  const doneMore =
+    done.length > doneShown.length ? `\n…and ${done.length - doneShown.length} more` : ''
   return {
     title: `Wrapping up ${ctx.dayName} 👋`,
     body:
-      `${greet}Which of these did you knock out today?\n\n${list}${more}\n\n` +
-      `Reply with the numbers or names and I'll mark them done. No worries if today was a rest day 🙂\n\n${SIGNOFF}`,
+      `${greet}Nice work today — already crossed off:\n${doneList}${doneMore}\n\n` +
+      `Still open from this morning's plan:\n${list}${more}\n\n` +
+      `Reply with the numbers or names and I'll mark them done. No worries if that's where today ends 🙂\n\n${SIGNOFF}`,
   }
 }

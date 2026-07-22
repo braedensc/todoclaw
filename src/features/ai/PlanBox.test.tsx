@@ -192,4 +192,56 @@ describe('PlanBox', () => {
     )
     expect(screen.getByText(/AI is paused for this month/i)).toBeInTheDocument()
   })
+
+  it('scratches a rock off (✓ + line-through + a11y "Done:") once rockDone says so', () => {
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        // The big rock and the FIRST small rock are done; the second small rock stays open.
+        rockDone={(rock) => rock.task === 'File taxes' || rock.task === 'Email landlord'}
+      />,
+    )
+    // Struck: the task text itself carries line-through, with a leading ✓ and a screen-reader
+    // "Done:" (line-through alone is invisible to a11y tech).
+    expect(screen.getByText('File taxes').className).toContain('line-through')
+    expect(screen.getByText('Email landlord').className).toContain('line-through')
+    expect(screen.getAllByText('✓')).toHaveLength(2)
+    expect(screen.getAllByText('Done:')).toHaveLength(2)
+    // The open rock is untouched — no strike, still ink-colored.
+    expect(screen.getByText('Book dentist').className).not.toContain('line-through')
+    // Chips/why remain visible on a struck rock (dimmed, not removed).
+    expect(screen.getByText(/Due tomorrow\./)).toBeInTheDocument()
+  })
+
+  it('renders no strikethrough at all without a rockDone prop (DemoScene) or when nothing is done', () => {
+    const { rerender } = render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect(screen.queryByText('✓')).not.toBeInTheDocument()
+    rerender(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        rockDone={() => false}
+      />,
+    )
+    expect(screen.queryByText('✓')).not.toBeInTheDocument()
+    expect(screen.getByText('File taxes').className).not.toContain('line-through')
+  })
 })
