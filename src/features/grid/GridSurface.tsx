@@ -25,11 +25,6 @@ import { ClusterPopup } from '../clustering/ClusterPopup'
 import { CLUSTER_BUBBLE_HALF } from '../clustering/cluster-constants'
 import type { GridApi } from './use-grid'
 
-// Pointer-down for a read-only (paused) card — it has no reposition drag, but GridCard's
-// onPointerDown prop is required. GridCard also drops the handler internally when `paused`, so this
-// is belt-and-suspenders.
-const noop = () => {}
-
 interface GridSurfaceProps {
   grid: GridApi
   /** The canvas surface ref the drag hooks bind to (created by WorkArea, shared with useGrid). */
@@ -165,12 +160,16 @@ export function GridSurface({
 
   // iPad hybrid (workshop PR 4): on coarse-pointer desktop, a TAP on a card (freed up by the
   // hold-to-lift reposition — use-grid) opens the touch actions popover anchored to that card.
-  // Resolved ONLY against placedTasks (active cards): a task that leaves the board — completed or
-  // deleted elsewhere, OR paused from within the popover's own SchedulePanel — drops out of
-  // placedTasks, so tappedTask goes null and the popover unmounts cleanly. (Dormant cards never
-  // reach the popover anyway: they render with a noop pointer-down, so they never fire onTap; and
-  // they register no DOM node, so anchoring one would be impossible.)
-  const tappedTask = tappedCardId ? (placedTasks.find((t) => t.id === tappedCardId) ?? null) : null
+  // Resolved against BOTH passes — active placedTasks AND dormant cards (which are now draggable +
+  // tappable too; the popover has its own paused mode: Schedule/Delete, no Done). A task that
+  // leaves either set — completed or deleted elsewhere — drops out here, so tappedTask goes null
+  // and the popover unmounts cleanly.
+  const tappedTask = tappedCardId
+    ? (placedTasks.find((t) => t.id === tappedCardId) ??
+      dormantPlaced.find((t) => t.id === tappedCardId) ??
+      null)
+    : null
+  const tappedPaused = tappedTask != null && dormantPlaced.some((t) => t.id === tappedTask.id)
   // A STABLE getter the popover measures against — not a node prop (would trip
   // set-state-in-effect) and not a render-written ref (trips react-compiler's no-refs-in-render).
   // getCardNode is a stable useCallback; tappedCardId is fixed for a popover instance (keyed).
@@ -185,9 +184,11 @@ export function GridSurface({
   // due write goes through setDue and sets `due`/`due_time` ONLY — it never touches x/y, so setting
   // a due date on a manually-placed card can't move it.
   //
-  // `paused` renders the dormant lane: it drops the reposition drag (no cardRef node registration,
-  // no pointer-down handler — a paused card is read-only) and forces the paused dress inside
-  // GridCard. Every write handler stays wired so the card's ⋯ SchedulePanel can still Resume it.
+  // `paused` renders the dormant lane's SLATE DRESS (ring / ⏸ chip / 💤 flag / dim) inside GridCard,
+  // but the card stays fully interactive: same reposition drag + node registration + tap→popover as
+  // an active card (dragging a dormant card just moves WHERE it will land on wake — the drop writes
+  // x/y only, never start_date, so it stays dormant). Every write handler stays wired so the ⋯
+  // SchedulePanel can Resume it.
   const renderGridCard = (task: Task & { x: number; y: number }, paused = false) => {
     // Re-clamp the stored coords to the card's bounding box at the current grid width (screen
     // position only — task.x/task.y and clustering are unchanged).
@@ -202,9 +203,9 @@ export function GridSurface({
         timeZone={timeZone}
         daysUntilDue={daysUntil(task.due, { timeZone })}
         minutesUntilDue={minutesUntilDueTime(task.due, task.due_time, timeZone, now)}
-        dragging={!paused && draggingId === task.id}
-        cardRef={paused ? undefined : (node) => registerCardNode(task.id, node)}
-        onPointerDown={paused ? noop : startReposition(task.id)}
+        dragging={draggingId === task.id}
+        cardRef={(node) => registerCardNode(task.id, node)}
+        onPointerDown={startReposition(task.id)}
         onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
         onDelete={() => handleDelete(task)}
         onDone={() => doneWithStamp(task)}
@@ -322,11 +323,11 @@ export function GridSurface({
             </div>
           )}
 
-          {/* Dormant (paused / future start_date) cards — their OWN read-only pass, rendered FIRST
-              so they paint BEHIND the active clustered cards (all cards are absolutely positioned;
-              DOM order is paint order). They stay out of `groups`/clustering entirely, so a paused
-              card can never fold into an active bubble or be dragged — it just shows, dimmed with
-              the ⏸ slate dress, WHERE it will land when it wakes. */}
+          {/* Dormant (paused / future start_date) cards — their OWN pass, rendered FIRST so they
+              paint BEHIND the active clustered cards (all cards are absolutely positioned; DOM
+              order is paint order). They stay out of `groups`/clustering entirely (a paused card
+              can never fold into an active bubble), but are draggable/tappable like any card — the
+              slate ⏸ dress just marks WHERE they will land when they wake. */}
           {dormantPlaced.map((task) => renderGridCard(task, true))}
 
           {groups.map((group) => {
@@ -437,7 +438,7 @@ export function GridSurface({
         <TouchCardPopover
           key={tappedTask.id}
           task={tappedTask}
-          paused={false}
+          paused={tappedPaused}
           getAnchor={getPopoverAnchor}
           reflowKey={reflowKey}
           daysUntilDue={daysUntil(tappedTask.due, { timeZone })}
