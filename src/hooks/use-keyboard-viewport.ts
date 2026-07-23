@@ -27,6 +27,34 @@ export interface KeyboardViewport {
 
 const CLOSED: KeyboardViewport = { inset: 0, height: 0, top: 0, keyboardOpen: false }
 
+/**
+ * The one true "how much keyboard is overlapping" detector, shared by useKeyboardViewport and
+ * use-locked-viewport-guard. The naive `innerHeight - vv.height` reads ~0 in an installed PWA
+ * (iOS shrinks the LAYOUT viewport too), so detection measures the visible height against a
+ * captured baseline of the keyboard-DOWN layout height: in a tab the baseline always equals live
+ * innerHeight (identical math to the naive form); in standalone it remembers the pre-keyboard
+ * value. Re-baselines on a width change (rotation / real resize) — innerWidth never changes for
+ * a keyboard. Create one per effect; each call refreshes the baseline, then reports the overlap.
+ */
+export function createKeyboardOverlapDetector(): { overlap: () => number } {
+  let baseInnerWidth = window.innerWidth
+  let baseInnerHeight = window.innerHeight
+  return {
+    overlap() {
+      if (window.innerWidth !== baseInnerWidth) {
+        // Orientation / genuine window resize: the full height changed for real — start fresh.
+        baseInnerWidth = window.innerWidth
+        baseInnerHeight = window.innerHeight
+      } else if (window.innerHeight > baseInnerHeight) {
+        // Keyboard dismissed (or URL bar settled): innerHeight recovered to its full value.
+        baseInnerHeight = window.innerHeight
+      }
+      const vv = window.visualViewport
+      return vv ? Math.max(0, Math.round(baseInnerHeight - vv.height)) : 0
+    },
+  }
+}
+
 // Track the visual viewport so a bottom-anchored mobile sheet can re-fit itself to the area the
 // keyboard leaves visible.
 //
@@ -58,31 +86,17 @@ export function useKeyboardViewport(enabled: boolean): KeyboardViewport {
     const vv = window.visualViewport
     if (!vv) return
 
-    // The layout-viewport height with the keyboard DOWN — our reference for "how tall is the screen
-    // without a keyboard". A tab never shrinks innerHeight, so this just tracks it; a standalone PWA
-    // does, so we remember the pre-keyboard value. innerWidth only changes on a real rotation/resize,
-    // never for a keyboard — so re-baseline when it does, and otherwise let innerHeight only ever
-    // recover UP to the baseline (a shrink is the keyboard, and `Math.max` ignores it).
-    let baseInnerHeight = window.innerHeight
-    let baseInnerWidth = window.innerWidth
+    // Baseline-tracking detector shared with use-locked-viewport-guard (see its docstring above).
+    const detector = createKeyboardOverlapDetector()
 
     const update = () => {
-      if (window.innerWidth !== baseInnerWidth) {
-        // Orientation / genuine window resize: the full height changed for real — start fresh.
-        baseInnerWidth = window.innerWidth
-        baseInnerHeight = window.innerHeight
-      } else if (window.innerHeight > baseInnerHeight) {
-        // Keyboard dismissed (or URL bar settled): innerHeight recovered to its full value.
-        baseInnerHeight = window.innerHeight
-      }
-
       // Detection: the visible viewport's shrink below the keyboard-down layout height. Scroll- AND
       // mode-independent — offsetTop only moves the visible band, never its height, and the baseline
       // survives a standalone innerHeight shrink. This — not `inset` below — is the reliable "is a
       // keyboard present" signal. (`inset` folds offsetTop in and collapses toward 0 once iOS scrolls
       // the page to reveal a focused composer near the bottom; deriving keyboardOpen from it made the
       // sheet read "keyboard closed" mid-typing — dropping the re-fit AND re-arming swipe-to-dismiss.)
-      const overlap = Math.max(0, Math.round(baseInnerHeight - vv.height))
+      const overlap = detector.overlap()
       // Positioning: the bottom offset for a `position: fixed` sheet, measured against the LIVE layout
       // viewport (not the baseline). Tab: innerHeight is still full, so this is the keyboard height
       // (minus any iOS auto-scroll, offsetTop). Standalone: innerHeight already shrank to the visible

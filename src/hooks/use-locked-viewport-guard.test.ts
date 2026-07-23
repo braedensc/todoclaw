@@ -48,6 +48,8 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'visualViewport')
   Reflect.deleteProperty(window, 'scrollY')
   Reflect.deleteProperty(window, 'scrollTo')
+  Reflect.deleteProperty(window, 'innerHeight')
+  Reflect.deleteProperty(window, 'innerWidth')
 })
 
 describe('useLockedViewportGuard', () => {
@@ -79,6 +81,29 @@ describe('useLockedViewportGuard', () => {
     fireVvResize(760) // 40px — below the KEYBOARD_MIN_PX floor
     fireWindowScroll(30)
     expect(scrollTo).toHaveBeenCalledWith(0, 0)
+  })
+
+  it('detects the keyboard in STANDALONE, where innerHeight shrinks with the visual viewport', () => {
+    renderHook(() => useLockedViewportGuard(true))
+    // Installed-PWA keyboard: iOS shrinks the LAYOUT viewport too, so innerHeight − vv.height
+    // reads ~0 — the naive formula sees "no keyboard" and the guard fought the caret-reveal pan
+    // on every keystroke. The captured keyboard-down baseline must still detect it.
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 460 })
+    fireVvResize(460)
+    fireWindowScroll(120) // iOS revealing the caret — must be left alone
+    expect(scrollTo).not.toHaveBeenCalled()
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER })
+    fireVvResize(INNER) // keyboard closes: both heights recover
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+  })
+
+  it('re-baselines on rotation so a shorter landscape height is not read as a keyboard', () => {
+    renderHook(() => useLockedViewportGuard(true))
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 420 })
+    fireVvResize(420) // landscape: far shorter than the portrait baseline, but width changed too
+    fireWindowScroll(30)
+    expect(scrollTo).toHaveBeenCalledWith(0, 0) // not a keyboard — residue must still be cleared
   })
 
   it('does nothing when already at 0 (no scrollTo loop)', () => {
