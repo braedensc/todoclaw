@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { useGrid } from './use-grid'
 import { TouchGridSurface } from './TouchGridSurface'
@@ -421,6 +421,89 @@ describe('TouchGridSurface move mode (tap-to-place)', () => {
     fireEvent.click(screen.getByRole('button', { name: /⇢ Move/ }))
     // jsdom doesn't enforce pointer-events, so pin the class that does it in a browser.
     expect(screen.getByTestId('chip-layer').className).toContain('pointer-events-none')
+  })
+})
+
+describe('TouchGridSurface hold-drag', () => {
+  const stubRect = () => {
+    const canvas = screen.getByTestId('touch-grid-canvas')
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 800, right: 400, bottom: 800, x: 0, y: 0 }) as DOMRect
+    return canvas
+  }
+
+  it('press-and-hold lifts the chip; move + release commits the offset-corrected position', () => {
+    vi.useFakeTimers()
+    try {
+      tasksFixture = [makeTask({ id: 'h1', text: 'Hold me', x: 0.2, y: 0.2 })]
+      render(<TouchHarness />)
+      stubRect()
+      fireEvent.pointerDown(chipFor('Hold me'), { clientX: 100, clientY: 600 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      // The chip rides 56px above the finger — drop the finger at y = 200 + 56 so the CHIP
+      // (and therefore the committed point) lands at screen y 200 → data y 0.75.
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      fireEvent.pointerUp(window)
+      expect(updateMutate).toHaveBeenCalledTimes(1)
+      const arg = updateMutate.mock.calls[0]?.[0] as {
+        id: string
+        patch: { x: number; y: number; staged: boolean }
+      }
+      expect(arg.id).toBe('h1')
+      expect(arg.patch.x).toBeCloseTo(0.75, 2)
+      expect(arg.patch.y).toBeCloseTo(0.75, 2)
+      expect(arg.patch.staged).toBe(false)
+      expect(screen.queryByRole('dialog')).toBeNull() // a drag is never also a tap
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a quick press-and-release still opens the sheet (the hook delivers the tap)', () => {
+    tasksFixture = [makeTask({ id: 'h2', text: 'Just a tap' })]
+    render(<TouchHarness />)
+    stubRect()
+    fireEvent.pointerDown(chipFor('Just a tap'), { clientX: 200, clientY: 400 })
+    fireEvent.pointerUp(window)
+    expect(screen.getByRole('dialog', { name: 'Task: Just a tap' })).toBeInTheDocument()
+    expect(updateMutate).not.toHaveBeenCalled()
+  })
+
+  it('keyboard activation (click with detail 0) opens the sheet on a draggable chip', () => {
+    tasksFixture = [makeTask({ id: 'h3', text: 'Keyed open' })]
+    render(<TouchHarness />)
+    fireEvent.click(chipFor('Keyed open')) // fireEvent.click has detail 0 — the keyboard path
+    expect(screen.getByRole('dialog', { name: 'Task: Keyed open' })).toBeInTheDocument()
+  })
+
+  it('paused chips are not draggable: no hold wiring, plain click opens the sheet', () => {
+    const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+    tasksFixture = [makeTask({ id: 'h4', text: 'Asleep', start_date: future })]
+    render(<TouchHarness />)
+    const chip = chipFor('Asleep')
+    expect(chip.style.touchAction).toBe('')
+    fireEvent.click(chip)
+    expect(screen.getByRole('dialog', { name: 'Task: Asleep' })).toBeInTheDocument()
+  })
+
+  it('a lift that never moves settles back without writing', () => {
+    vi.useFakeTimers()
+    try {
+      tasksFixture = [makeTask({ id: 'h5', text: 'Long press only', x: 0.4, y: 0.4 })]
+      render(<TouchHarness />)
+      stubRect()
+      fireEvent.pointerDown(chipFor('Long press only'), { clientX: 160, clientY: 480 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      fireEvent.pointerUp(window)
+      expect(updateMutate).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

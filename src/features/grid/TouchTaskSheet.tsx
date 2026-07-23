@@ -193,6 +193,12 @@ export function TouchTaskSheet({
           </button>
         </div>
 
+        {!paused && (
+          <div className="mt-2 text-center text-[10px] text-muted">
+            Press and hold a card on the grid to drag it — ⇢ Move taps a spot instead.
+          </div>
+        )}
+
         {showSchedule && (
           <div className="mt-3 border-t border-border pt-3">
             <SchedulePanel

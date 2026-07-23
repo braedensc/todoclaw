@@ -34,6 +34,18 @@ export interface TouchGridChipProps {
   paused?: boolean
   /** Dimmed while this chip is the one being moved (tap-to-place mode). */
   dimmed?: boolean
+  /**
+   * Registers this chip's DOM node with the surface, which paints the drag ghost imperatively
+   * per frame (the desktop cardNodesRef pattern). Only wired for draggable (active) chips.
+   */
+  chipRef?: (node: HTMLButtonElement | null) => void
+  /**
+   * Pointer-down from useHoldDrag.startHold — press-and-hold lifts the chip into a drag; a
+   * quick release is delivered back as the tap. When wired, plain pointer clicks are ignored
+   * (the hook owns tap detection) and only KEYBOARD activation (click detail 0) falls through
+   * to onTap, so Enter/Space still opens the sheet. Absent on read-only (paused) chips.
+   */
+  onHoldStart?: (event: React.PointerEvent) => void
   /** Open this task's action sheet. */
   onTap: () => void
 }
@@ -57,6 +69,8 @@ export function TouchGridChip({
   minutesUntilDue,
   paused = false,
   dimmed = false,
+  chipRef,
+  onHoldStart,
   onTap,
 }: TouchGridChipProps) {
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
@@ -95,11 +109,18 @@ export function TouchGridChip({
   return (
     <button
       type="button"
+      ref={chipRef}
       data-testid="touch-chip"
       data-task-id={task.id}
       data-quadrant={quadrant.key}
       data-paused={paused || undefined}
-      onClick={onTap}
+      onPointerDown={onHoldStart}
+      // With hold-drag wired, the hook owns pointer tap detection (its pointerup fires onTap);
+      // only keyboard activation — click with detail 0 — falls through here, so Enter/Space
+      // still opens the sheet. Without it (paused chips), every click is the tap.
+      onClick={(e) => {
+        if (!onHoldStart || e.detail === 0) onTap()
+      }}
       title={task.text}
       // The before: pseudo-element extends the TAP target ~10px beyond each edge (a bare
       // title-only chip is ~24px tall — far under the 44pt touch guideline) while the visible
@@ -119,7 +140,10 @@ export function TouchGridChip({
         background,
         opacity: dimmed ? 0.45 : paused ? PAUSED_OPACITY : undefined,
         animation: glow?.animation,
-        zIndex: 10,
+        zIndex: paused ? 5 : 10,
+        // Draggable chips must own their touches or scrolling steals the pointermove stream
+        // mid-drag (use-free-drag's documented requirement).
+        touchAction: onHoldStart ? 'none' : undefined,
       }}
     >
       {/* Top-right overhang disc — GridCard's corner slot, one occupant at a time: ↻ for a
