@@ -19,7 +19,12 @@ import {
   urgencyIcon,
   urgencyTier,
 } from '../../lib/visual-urgency'
-import { BUCKET_DOT, RECURRING_BADGE_MIN_DONE, TOUCH_CHIP_WIDTH } from './grid-constants'
+import {
+  BUCKET_DOT,
+  RECURRING_BADGE_MIN_DONE,
+  TOUCH_CHIP_LIFTED_WIDTH,
+  TOUCH_CHIP_WIDTH,
+} from './grid-constants'
 
 export interface TouchGridChipProps {
   task: Task
@@ -34,6 +39,14 @@ export interface TouchGridChipProps {
   paused?: boolean
   /** Dimmed while this chip is the one being moved (tap-to-place mode). */
   dimmed?: boolean
+  /**
+   * This chip is currently lifted for a drag. It widens and un-truncates its title so the full
+   * task is legible under the finger. Only `width` + the title span's classes key off this — the
+   * surface still paints transform/shadow/zIndex/left/top imperatively, and those properties are
+   * deliberately NOT touched here so React's per-frame re-render can't fight the direct-DOM paint
+   * (React skips re-writing style props whose value it last rendered — see TouchGridSurface).
+   */
+  lifted?: boolean
   /**
    * Registers this chip's DOM node with the surface, which paints the drag ghost imperatively
    * per frame (the desktop cardNodesRef pattern). Only wired for draggable (active) chips.
@@ -69,6 +82,7 @@ export function TouchGridChip({
   minutesUntilDue,
   paused = false,
   dimmed = false,
+  lifted = false,
   chipRef,
   onHoldStart,
   onTap,
@@ -131,7 +145,15 @@ export function TouchGridChip({
         left: `${screenX * 100}%`,
         top: `${screenY * 100}%`,
         transform: 'translate(-50%, -50%)',
-        width: TOUCH_CHIP_WIDTH,
+        // Lifted for a drag → widen so the un-truncated title fits (see the `lifted` prop). Only
+        // width keys off lift here; the surface owns transform/shadow/zIndex/left/top imperatively.
+        width: lifted ? TOUCH_CHIP_LIFTED_WIDTH : TOUCH_CHIP_WIDTH,
+        // A press-and-hold IS an iOS long-press: without these, holding a chip pops the native
+        // text-selection + callout overlay over the card mid-drag (it covers the UI). Suppress it
+        // so the hold reads only as a drag.
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
         borderTop: `3px solid ${topColor}`,
         borderRight: `1px ${rc ? 'dashed' : 'solid'} ${sideColor}`,
         borderBottom: `1px ${rc ? 'dashed' : 'solid'} ${sideColor}`,
@@ -169,7 +191,11 @@ export function TouchGridChip({
         </span>
       ) : null}
 
-      <span className="block truncate text-[10px] font-medium leading-snug text-ink">
+      <span
+        className={`block font-medium leading-snug text-ink ${
+          lifted ? 'whitespace-normal break-words text-[11px]' : 'truncate text-[10px]'
+        }`}
+      >
         {task.ongoing && (
           <span
             aria-hidden
@@ -187,7 +213,7 @@ export function TouchGridChip({
           recurring status / due chip (only when dated). */}
       {paused ? (
         <span
-          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed"
+          className="mt-0.5 inline-block rounded px-1 py-[1.5px] text-[9px] font-semibold leading-none"
           style={pausedChipStyle()}
         >
           {pausedChipLabel(task.start_date)}
@@ -195,14 +221,15 @@ export function TouchGridChip({
       ) : frost ? (
         <span
           title={frost.title}
-          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed"
+          className="mt-0.5 inline-block rounded px-1 py-[1.5px] text-[9px] font-semibold leading-none"
           style={staleChipStyle()}
         >
-          {frost.glyph} {frost.chip}
+          {/* No ❄️ prefix here — the corner badge already carries it (removing the duplicate). */}
+          {frost.chip}
         </span>
       ) : rc ? (
         <span
-          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed text-white"
+          className="mt-0.5 inline-block rounded px-1 py-[1.5px] text-[9px] font-semibold leading-none text-white"
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
           ↻ {rc.label}
@@ -211,7 +238,7 @@ export function TouchGridChip({
         </span>
       ) : tier !== 'none' && daysUntilDue !== null ? (
         <span
-          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed"
+          className="mt-0.5 inline-block rounded px-1 py-[1.5px] text-[9px] font-semibold leading-none"
           style={dueChipStyle(tier)}
         >
           {gridChipLabel(tier, daysUntilDue, task.due_time, minutesUntilDue)}

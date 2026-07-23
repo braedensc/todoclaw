@@ -93,8 +93,13 @@ export function toNormalized(
 export const DRAG_THRESHOLD_PX = 4
 
 // ---- Touch hold-to-lift constants (canonical home; use-hold-drag re-exports them). ----
-/** How long a press must hold still before a `holdToLift` drag lifts. */
-export const HOLD_MS = 250
+/**
+ * How long a press must hold still before a `holdToLift` drag lifts. Shared by the fullscreen
+ * touch grid (useHoldDrag) and the inline iPad hybrid (useFreeDrag's holdToLift) — a shorter
+ * value snappier on both. 175ms (down from 250, ~30% quicker) still sits well above a tap so a
+ * quick release stays a tap, not an accidental lift.
+ */
+export const HOLD_MS = 175
 /**
  * Movement tolerance around a hold: bigger pre-lift kills the pending lift (a swipe, not a
  * press), and post-lift it is the floor below which "movement" is finger jitter — real fingers

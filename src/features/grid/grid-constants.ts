@@ -28,6 +28,14 @@ export const TOUCH_CHIP_HALF_WIDTH = TOUCH_CHIP_WIDTH / 2
 export const TOUCH_CHIP_HALF_HEIGHT = 26
 
 /**
+ * Width a chip grows to WHILE lifted for a drag (press-and-hold). The resting chip's one-line
+ * title is truncated; the lifted "ghost" widens to this and un-truncates so the full task is
+ * legible under the finger during a reposition. Clamp math still uses the resting half-extents
+ * (the enlarged box is a transient drag affordance, not a placement footprint).
+ */
+export const TOUCH_CHIP_LIFTED_WIDTH = 150
+
+/**
  * Card border accent — EisenClaw colored every card by its bucket dot
  * (`getBucket(t.bucket).dot`, html:20-23/587). In its final state only the `oneoff` bucket
  * survives (dot `#c2693f` = the terracotta accent; `weekly`/`project` were migrated away —

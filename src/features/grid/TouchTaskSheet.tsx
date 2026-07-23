@@ -154,8 +154,9 @@ export function TouchTaskSheet({
           ) : null}
         </div>
 
-        {/* Action row — 44pt targets. Paused tasks are read-only on the board: no Done/Move;
-            Schedule stays (it is the Resume path) and Delete stays. */}
+        {/* Action row — 44pt targets. Paused tasks can be repositioned (Move / press-and-hold drag)
+            so the user can set WHERE they'll land on wake; only Done is withheld (a dormant task
+            isn't active to complete). Schedule stays (it is the Resume path) and Delete stays. */}
         <div className="flex gap-2">
           {!paused && (
             <button
@@ -174,15 +175,13 @@ export function TouchTaskSheet({
           >
             ⋯ Schedule
           </button>
-          {!paused && (
-            <button
-              type="button"
-              onClick={onMove}
-              className="min-h-[44px] flex-1 rounded-xl border border-puppy/60 bg-card text-sm font-semibold text-puppy"
-            >
-              ⇢ Move
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onMove}
+            className="min-h-[44px] flex-1 rounded-xl border border-puppy/60 bg-card text-sm font-semibold text-puppy"
+          >
+            ⇢ Move
+          </button>
           <button
             type="button"
             onClick={onDelete}
@@ -193,11 +192,9 @@ export function TouchTaskSheet({
           </button>
         </div>
 
-        {!paused && (
-          <div className="mt-2 text-center text-[10px] text-muted">
-            Press and hold a card on the grid to drag it — ⇢ Move taps a spot instead.
-          </div>
-        )}
+        <div className="mt-2 text-center text-[10px] text-muted">
+          Press and hold a card on the grid to drag it — ⇢ Move taps a spot instead.
+        </div>
 
         {showSchedule && (
           <div className="mt-3 border-t border-border pt-3">

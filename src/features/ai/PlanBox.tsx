@@ -23,6 +23,8 @@ export function PlanBox({
   onDismiss,
   mobile = false,
   rockDone,
+  collapsed = false,
+  onToggleCollapse,
 }: {
   plan: DayPlan | null
   paused: boolean
@@ -37,10 +39,18 @@ export function PlanBox({
   // dimmed text) so the card tracks the day's progress live. Optional: the onboarding DemoScene
   // shows its canned morning plan untouched.
   rockDone?: (rock: PlanRock) => boolean
+  // Collapse the plan to a one-line summary to free vertical space — a view toggle, NOT a delete
+  // (Dismiss is still the delete path). Omit onToggleCollapse to render without the toggle (the
+  // DemoScene's static card): then the card always shows expanded.
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }) {
   // Idle with no plan → render nothing at all. App gates the wrapper on the same condition so no
   // empty margin is left behind.
   if (!plan && !isPending && !isError && !paused) return null
+
+  const canCollapse = plan != null && onToggleCollapse != null
+  const isCollapsed = canCollapse && collapsed
 
   return (
     <section
@@ -48,20 +58,49 @@ export function PlanBox({
       className="relative rounded-[14px] border border-border bg-panel px-5 py-3.5"
     >
       {plan ? (
-        // Leave room for the corner ✕ on desktop; on mobile the dismiss is a footer button, no gap.
-        <div className={mobile ? 'flex flex-col' : 'flex flex-col pr-6'}>
-          {isError && (
-            // A regenerate failed but the saved plan is still shown — offer a quiet retry.
-            <p className="mb-2 text-[13px] text-accent">
-              Couldn't refresh —{' '}
-              <button type="button" onClick={onRetry} className="underline hover:text-ink">
-                try again
-              </button>
-              .
-            </p>
-          )}
-          <PlanContent plan={plan} rockDone={rockDone} />
-        </div>
+        isCollapsed ? (
+          // Collapsed: a compact one-line summary. Tapping it (or the ▾) expands — the plan itself
+          // is untouched (still in daily_state); this only reclaims space. Dismiss/delete lives in
+          // the expanded view, so a collapse can never silently discard the plan.
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-expanded={false}
+            className="flex w-full items-center gap-2 text-left"
+          >
+            <span
+              aria-hidden
+              className="shrink-0 rounded-md bg-accent px-[7px] py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
+            >
+              Plan
+            </span>
+            <span className="min-w-0 flex-1 truncate font-serif text-[15px] font-medium text-ink">
+              {plan.headline}
+            </span>
+            <span aria-hidden className="shrink-0 text-sm text-muted">
+              ▾
+            </span>
+          </button>
+        ) : (
+          // Leave room in the corner for the ✕ (desktop) and the collapse chevron.
+          <div
+            className={`flex flex-col ${
+              mobile ? (canCollapse ? 'pr-8' : '') : canCollapse ? 'pr-12' : 'pr-6'
+            }`}
+          >
+            {isError && (
+              // A regenerate failed but the saved plan is still shown — offer a quiet retry.
+              <p className="mb-2 text-[13px] text-accent">
+                Couldn't refresh —{' '}
+                <button type="button" onClick={onRetry} className="underline hover:text-ink">
+                  try again
+                </button>
+                .
+              </p>
+            )}
+            <PlanContent plan={plan} rockDone={rockDone} />
+          </div>
+        )
       ) : isPending ? (
         <p className="text-[14px] text-muted">Planning your day…</p>
       ) : isError ? (
@@ -83,7 +122,24 @@ export function PlanBox({
         </p>
       )}
 
+      {/* Collapse chevron — a corner control distinct from Dismiss (which deletes). Shown only in
+          the expanded view; the collapsed summary carries its own expand affordance. */}
+      {plan && !isCollapsed && canCollapse && (
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          aria-expanded
+          aria-label="Collapse plan"
+          className={`absolute top-2.5 flex h-7 w-7 items-center justify-center rounded text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            mobile ? 'right-2.5' : 'right-9'
+          }`}
+        >
+          <span aria-hidden>▴</span>
+        </button>
+      )}
+
       {plan &&
+        !isCollapsed &&
         (mobile ? (
           // Mobile: a full-width, tap-friendly footer button (the corner ✕ was too small to hit).
           <button

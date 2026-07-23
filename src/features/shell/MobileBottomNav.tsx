@@ -110,11 +110,21 @@ export function MobileBottomNav({
     <nav
       aria-label="Account"
       data-tour="options"
-      // In normal flow (flex child), full-width, never shrinking. px-3 keeps the outer tabs off the
-      // screen's rounded corners; divide-x draws a hairline between tabs; the bottom padding stacks
-      // a little breathing room on top of the home-indicator inset (which is 0 on non-notch devices).
-      className="z-40 flex shrink-0 items-stretch divide-x divide-border border-t border-border bg-panel/95 px-3 backdrop-blur"
-      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5px)' }}
+      // In normal flow (flex child), full-width, never shrinking. divide-x draws a hairline between
+      // tabs; the bottom padding stacks a little breathing room on top of the home-indicator inset.
+      // The negative side margins cancel body's unconditional env(safe-area-inset-left/right)
+      // padding so the bar's background/border reach the PHYSICAL screen edges in landscape (a
+      // notched phone insets body's content box ~59px otherwise); the matching side padding — the
+      // old px-3 plus the inset — keeps the outer tabs clear of the notch and rounded corners.
+      // Portrait insets are 0, so both collapse to the original edge-to-edge px-3.
+      className="z-40 flex shrink-0 items-stretch divide-x divide-border border-t border-border bg-panel/95 backdrop-blur"
+      style={{
+        marginLeft: 'calc(-1 * env(safe-area-inset-left, 0px))',
+        marginRight: 'calc(-1 * env(safe-area-inset-right, 0px))',
+        paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
+        paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5px)',
+      }}
     >
       <NavItem glyph="⌂" label="Home" onClick={onHome} active={route === 'home'} />
       <NavItem glyph="✚" label="Add" onClick={onAdd} primary tour="nav-add" />

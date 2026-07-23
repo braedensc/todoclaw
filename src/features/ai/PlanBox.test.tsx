@@ -218,6 +218,70 @@ describe('PlanBox', () => {
     expect(screen.getByText(/Due tomorrow\./)).toBeInTheDocument()
   })
 
+  it('collapses to a one-line summary that hides the body + dismiss, and expands on click', () => {
+    const onToggleCollapse = vi.fn()
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        collapsed
+        onToggleCollapse={onToggleCollapse}
+      />,
+    )
+    // The headline stays as the summary…
+    expect(screen.getByText('A focused but gentle day.')).toBeInTheDocument()
+    // …but the plan body and the delete path are hidden while collapsed.
+    expect(screen.queryByText('File taxes')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /dismiss/i })).not.toBeInTheDocument()
+    // The summary is a collapsed toggle; clicking it expands (does NOT dismiss/delete).
+    const summary = screen.getByRole('button', { expanded: false })
+    fireEvent.click(summary)
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  it('expanded: offers a Collapse toggle (distinct from Dismiss) that fires onToggleCollapse', () => {
+    const onToggleCollapse = vi.fn()
+    const onDismiss = vi.fn()
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={onDismiss}
+        collapsed={false}
+        onToggleCollapse={onToggleCollapse}
+      />,
+    )
+    // Full plan is shown, plus a Collapse control separate from the Dismiss ×.
+    expect(screen.getByText('File taxes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /collapse plan/i }))
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1)
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('without onToggleCollapse (DemoScene), a collapsed flag is ignored — the plan renders in full', () => {
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        collapsed
+      />,
+    )
+    // No toggle wired → the card can't collapse; the body stays visible and no collapse control.
+    expect(screen.getByText('File taxes')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /collapse plan/i })).not.toBeInTheDocument()
+  })
+
   it('renders no strikethrough at all without a rockDone prop (DemoScene) or when nothing is done', () => {
     const { rerender } = render(
       <PlanBox

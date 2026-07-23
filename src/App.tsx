@@ -376,31 +376,45 @@ function AppShell() {
                           Where your tasks learn to sit and stay.
                         </p>
                       </div>
-                      {/* Decorative paw trail — fills the corner, purely ornamental (no action). */}
-                      <svg
-                        width="56"
-                        height="56"
-                        viewBox="0 0 56 56"
-                        aria-hidden="true"
-                        className="shrink-0 text-muted-faint"
-                      >
-                        <g fill="currentColor">
-                          <g opacity="0.7">
-                            <ellipse cx="16" cy="22" rx="5.2" ry="4.2" />
-                            <circle cx="9.5" cy="15" r="2.1" />
-                            <circle cx="15" cy="11.5" r="2.3" />
-                            <circle cx="21" cy="13.5" r="2.1" />
-                            <circle cx="24.5" cy="19" r="1.9" />
+                      {/* Right column: a persistent grid-view door (discoverable in BOTH
+                          orientations — the floating RotateGridHint only appears after rotating to
+                          landscape, so portrait users had only the buried More → Grid view), above
+                          the ornamental paw trail. */}
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={enterGridOnly}
+                          title="Fill the screen with just the grid — hide everything else"
+                          className="flex items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-panel px-3 py-1.5 text-xs font-semibold text-primary shadow-sm active:bg-primary/10"
+                        >
+                          <span aria-hidden>▦</span> Grid
+                        </button>
+                        {/* Decorative paw trail — fills the corner, purely ornamental (no action). */}
+                        <svg
+                          width="56"
+                          height="56"
+                          viewBox="0 0 56 56"
+                          aria-hidden="true"
+                          className="text-muted-faint"
+                        >
+                          <g fill="currentColor">
+                            <g opacity="0.7">
+                              <ellipse cx="16" cy="22" rx="5.2" ry="4.2" />
+                              <circle cx="9.5" cy="15" r="2.1" />
+                              <circle cx="15" cy="11.5" r="2.3" />
+                              <circle cx="21" cy="13.5" r="2.1" />
+                              <circle cx="24.5" cy="19" r="1.9" />
+                            </g>
+                            <g opacity="0.4">
+                              <ellipse cx="38" cy="42" rx="5.2" ry="4.2" />
+                              <circle cx="31.5" cy="35" r="2.1" />
+                              <circle cx="37" cy="31.5" r="2.3" />
+                              <circle cx="43" cy="33.5" r="2.1" />
+                              <circle cx="46.5" cy="39" r="1.9" />
+                            </g>
                           </g>
-                          <g opacity="0.4">
-                            <ellipse cx="38" cy="42" rx="5.2" ry="4.2" />
-                            <circle cx="31.5" cy="35" r="2.1" />
-                            <circle cx="37" cy="31.5" r="2.3" />
-                            <circle cx="43" cy="33.5" r="2.1" />
-                            <circle cx="46.5" cy="39" r="1.9" />
-                          </g>
-                        </g>
-                      </svg>
+                        </svg>
+                      </div>
                     </div>
                   </header>
                 )
@@ -712,6 +726,8 @@ function AppShell() {
                             isError={planner.isError}
                             onRetry={planner.generate}
                             onDismiss={planner.clear}
+                            collapsed={planner.collapsed}
+                            onToggleCollapse={planner.toggleCollapsed}
                             rockDone={planner.rockDone}
                           />
                         </ErrorBoundary>

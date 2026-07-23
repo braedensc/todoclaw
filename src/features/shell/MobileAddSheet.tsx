@@ -87,21 +87,31 @@ export function MobileAddSheet({
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Add a task">
-      <AddTaskForm
-        defaultQuadrant={defaultQuadrant}
-        onAdd={handleAdd}
-        reminderDefault={reminderDefault}
-        inputRef={inputRef}
-        onOpenChat={
-          onOpenChat
-            ? () => {
-                onClose()
-                onOpenChat()
-              }
-            : undefined
-        }
-      />
+    // max-h + a scrollable body (the shared scrollable-sheet pattern, see SettingsPanel) so the
+    // form fits a short LANDSCAPE viewport instead of overflowing off the top of the screen; in
+    // portrait the content is shorter than the cap, so nothing scrolls and it sizes to content.
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      title="Add a task"
+      className="flex max-h-[92dvh] flex-col"
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <AddTaskForm
+          defaultQuadrant={defaultQuadrant}
+          onAdd={handleAdd}
+          reminderDefault={reminderDefault}
+          inputRef={inputRef}
+          onOpenChat={
+            onOpenChat
+              ? () => {
+                  onClose()
+                  onOpenChat()
+                }
+              : undefined
+          }
+        />
+      </div>
     </BottomSheet>
   )
 }
