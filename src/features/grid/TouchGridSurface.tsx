@@ -149,12 +149,20 @@ export function TouchGridSurface({
 
   // ---- Hold-to-drag (the touch reposition path; ⇢ Move in the sheet stays the precision one).
   // Painting is direct-DOM at pointer rate, like the desktop grid's paintDragFrame: React state
-  // only marks the lift/drop transitions. Chip nodes register here; a style snapshot taken at
-  // lift restores the exact resting inline styles on abort (React skips re-writing style props
-  // whose values it last rendered, so an aborted drag would otherwise strand the chip where the
-  // finger left it).
+  // only marks the lift/drop transitions. Chip nodes register here; lift-time style snapshots
+  // are keyed per chip id. The two end-of-lift paths differ deliberately (drag review):
+  //  - COMMIT keeps the painted left/top (useUpdateTask has no optimistic write — restoring the
+  //    snapshot would visibly snap the chip back to its origin for the whole refetch round-trip)
+  //    and restores only the lift dress (scale/shadow/zIndex).
+  //  - ABORT remounts the chips (chipEpoch in the key): a fresh mount re-writes every inline
+  //    style from current data, which both settles the chip back and absorbs any mid-drag
+  //    re-render races (React skips re-writing style props whose values it last rendered, so an
+  //    imperative restore alone can strand stale styles).
   const chipNodes = useRef(new Map<string, HTMLButtonElement>())
-  const savedStyle = useRef<Record<string, string> | null>(null)
+  const savedStyles = useRef(
+    new Map<string, { transform: string; boxShadow: string; zIndex: string }>(),
+  )
+  const [chipEpoch, setChipEpoch] = useState(0)
   const crossXRef = useRef<HTMLDivElement>(null)
   const crossYRef = useRef<HTMLDivElement>(null)
   const quadHiRef = useRef<HTMLDivElement>(null)
@@ -171,14 +179,11 @@ export function TouchGridSurface({
       navigator.vibrate?.(10)
       const n = chipNodes.current.get(id)
       if (!n) return
-      savedStyle.current = {
-        left: n.style.left,
-        top: n.style.top,
+      savedStyles.current.set(id, {
         transform: n.style.transform,
         boxShadow: n.style.boxShadow,
         zIndex: n.style.zIndex,
-        borderTopColor: n.style.borderTopColor,
-      }
+      })
       n.style.zIndex = '30'
       n.style.transform = 'translate(-50%, -50%) scale(1.12)'
       n.style.boxShadow = '0 10px 22px rgba(0,0,0,0.26), 0 0 0 2px rgba(46,42,36,0.25)'
@@ -208,19 +213,25 @@ export function TouchGridSurface({
         quadHiRef.current.style.outlineColor = q.color
       }
     },
-    onLiftEnd: (id) => {
+    onLiftEnd: (id, committed) => {
       if (crossXRef.current) crossXRef.current.style.display = 'none'
       if (crossYRef.current) crossYRef.current.style.display = 'none'
       if (quadHiRef.current) quadHiRef.current.style.display = 'none'
-      const n = chipNodes.current.get(id)
-      if (n && savedStyle.current) {
-        // Restore the exact resting inline styles; a committed drop then re-renders with the
-        // new coords, an abort settles the chip back where it was.
-        for (const [prop, value] of Object.entries(savedStyle.current)) {
-          n.style[prop as 'left'] = value
+      const snap = savedStyles.current.get(id)
+      savedStyles.current.delete(id)
+      if (committed) {
+        // Drop the lift dress but KEEP the painted position + quadrant border — the write is in
+        // flight and the refetch renders the same coords (see the block comment above).
+        const n = chipNodes.current.get(id)
+        if (n && snap) {
+          n.style.transform = snap.transform
+          n.style.boxShadow = snap.boxShadow
+          n.style.zIndex = snap.zIndex
         }
+      } else {
+        // Abort: remount the chips so every inline style re-derives from current data.
+        setChipEpoch((e) => e + 1)
       }
-      savedStyle.current = null
     },
     onDrop: (id, p) => updateMutate({ id, patch: { x: p.x, y: p.y, staged: false } }),
   })
@@ -383,7 +394,10 @@ export function TouchGridSurface({
                 const p = clampPoint(task.x ?? 0.5, task.y ?? 0.5, chipBounds)
                 return (
                   <TouchGridChip
-                    key={task.id}
+                    // chipEpoch in the key remounts chips after an ABORTED drag so their inline
+                    // styles re-derive from data (see the hold-to-drag block comment). Never
+                    // bumped mid-drag — a mid-drag remount would kill the pointer stream.
+                    key={`${task.id}:${chipEpoch}`}
                     task={task}
                     screenX={p.x}
                     screenY={1 - p.y}
@@ -420,18 +434,21 @@ export function TouchGridSurface({
               lifted chip is over. Hidden until a lift moves. */}
           <div
             ref={crossXRef}
+            data-testid="drag-crosshair-x"
             aria-hidden
             className="pointer-events-none absolute inset-x-0 h-px bg-ink/30"
             style={{ display: 'none', zIndex: 14 }}
           />
           <div
             ref={crossYRef}
+            data-testid="drag-crosshair-y"
             aria-hidden
             className="pointer-events-none absolute inset-y-0 w-px bg-ink/30"
             style={{ display: 'none', zIndex: 14 }}
           />
           <div
             ref={quadHiRef}
+            data-testid="drag-quadrant-outline"
             aria-hidden
             className="pointer-events-none absolute h-1/2 w-1/2"
             style={{

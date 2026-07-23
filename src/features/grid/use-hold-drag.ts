@@ -30,8 +30,12 @@ export interface UseHoldDragOptions {
   onLift?: (id: string) => void
   /** Fired on every post-lift move with the offset-corrected point (paint ghost/crosshairs). */
   onFrame?: (id: string, point: NormalizedPoint) => void
-  /** Fired when a lift ends for ANY reason (drop, cancel, Escape) — clear painted affordances. */
-  onLiftEnd?: (id: string) => void
+  /**
+   * Fired when a lift ends for ANY reason — clear painted affordances. `committed` is true when
+   * the release dropped the chip somewhere new (onDrop already fired): the caller should keep
+   * the painted position while the write round-trips, and fully reset only on an abort.
+   */
+  onLiftEnd?: (id: string, committed: boolean) => void
 }
 
 export interface HoldDrag {
@@ -67,6 +71,9 @@ export function useHoldDrag({
   onLiftEnd,
 }: UseHoldDragOptions): HoldDrag {
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  // One gesture at a time — a second finger pressing another chip while a gesture is live must
+  // not install a second competing listener set (touch-grid drag review).
+  const activeRef = useRef(false)
   const latest = useRef({ clamp, onDrop, onTap, onLift, onFrame, onLiftEnd })
   useEffect(() => {
     latest.current = { clamp, onDrop, onTap, onLift, onFrame, onLiftEnd }
@@ -74,18 +81,25 @@ export function useHoldDrag({
 
   const startHold = useCallback(
     (id: string) => (event: React.PointerEvent) => {
+      if (activeRef.current) return
       // No isPrimary guard, deliberately: React polyfills isPrimary to FALSE on events whose
       // native type lacks the field (jsdom's MouseEvent fallback), which would kill every
-      // gesture under test — and useFreeDrag has shipped without one all along. Multi-touch
-      // second fingers are as unhandled here as they are on the desktop grid.
+      // gesture under test. Second fingers are instead excluded by the activeRef gate above and
+      // the pointerId filter below.
       event.preventDefault()
       event.stopPropagation()
+      activeRef.current = true
+      const pointerId = event.pointerId
       const startX = event.clientX
       const startY = event.clientY
       let lifted = false
       let dead = false
       let movedSinceLift = false
       let lastPoint: NormalizedPoint | null = null
+
+      // Only the finger that started the gesture may steer or end it. (undefined === undefined
+      // keeps jsdom's field-less synthesized events flowing in tests.)
+      const samePointer = (e: PointerEvent): boolean => e.pointerId === pointerId
 
       const compute = (clientX: number, clientY: number): NormalizedPoint | null => {
         const rect = surfaceRef.current?.getBoundingClientRect()
@@ -103,12 +117,13 @@ export function useHoldDrag({
         latest.current.onLift?.(id)
       }, HOLD_MS)
 
-      const finishLift = (): void => {
-        if (lifted) latest.current.onLiftEnd?.(id)
+      const finishLift = (committed: boolean): void => {
+        if (lifted) latest.current.onLiftEnd?.(id, committed)
       }
 
       const cleanup = (): void => {
         window.clearTimeout(holdTimer)
+        activeRef.current = false
         setDraggingId(null)
         window.removeEventListener('pointermove', handleMove)
         window.removeEventListener('pointerup', handleUp)
@@ -117,12 +132,18 @@ export function useHoldDrag({
       }
 
       const handleMove = (e: PointerEvent): void => {
+        if (!samePointer(e)) return
+        // Real fingers wobble a few px while "holding still" — the same slop that lets a jittery
+        // press still lift also keeps a jittery stationary LIFT from becoming a phantom move
+        // (which would commit the chip 56px up on release — drag review finding #0).
+        const travelled = Math.hypot(e.clientX - startX, e.clientY - startY) > HOLD_SLOP_PX
         if (!lifted) {
           // Real movement before the hold fires means this was never a deliberate press —
           // abandon the pending lift; release will be a dead gesture, not a tap.
-          if (Math.hypot(e.clientX - startX, e.clientY - startY) > HOLD_SLOP_PX) dead = true
+          if (travelled) dead = true
           return
         }
+        if (!movedSinceLift && !travelled) return
         movedSinceLift = true
         const point = compute(e.clientX, e.clientY)
         if (point) {
@@ -131,20 +152,23 @@ export function useHoldDrag({
         }
       }
 
-      const handleUp = (): void => {
+      const handleUp = (e: PointerEvent): void => {
+        if (!samePointer(e)) return
         if (lifted) {
-          // A lift that never moved is a no-op — the chip settles back where it was; writing
-          // here would hop the task LIFT_OFFSET_PX up on every long-press-and-release.
-          if (movedSinceLift && lastPoint) latest.current.onDrop(id, lastPoint)
-          finishLift()
+          // A lift that never (really) moved is a no-op — the chip settles back where it was;
+          // writing here would hop the task LIFT_OFFSET_PX up on every long-press-and-release.
+          const commit = movedSinceLift && lastPoint != null
+          if (commit && lastPoint) latest.current.onDrop(id, lastPoint)
+          finishLift(commit)
         } else if (!dead) {
           latest.current.onTap(id)
         }
         cleanup()
       }
 
-      const handleCancel = (): void => {
-        finishLift()
+      const handleCancel = (e: PointerEvent): void => {
+        if (!samePointer(e)) return
+        finishLift(false)
         cleanup()
       }
 
@@ -153,7 +177,7 @@ export function useHoldDrag({
       const handleKey = (e: KeyboardEvent): void => {
         if (e.key !== 'Escape') return
         e.stopPropagation()
-        finishLift()
+        finishLift(false)
         cleanup()
       }
 

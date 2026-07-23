@@ -73,7 +73,7 @@ describe('useHoldDrag', () => {
     expect(id).toBe('t1')
     expect(point.x).toBeCloseTo(0.75, 2) // 300/400
     expect(point.y).toBeCloseTo(0.5, 2) // screen y 400/800, inverted
-    expect(onLiftEnd).toHaveBeenCalledWith('t1')
+    expect(onLiftEnd).toHaveBeenCalledWith('t1', true)
     expect(onTap).not.toHaveBeenCalled()
     expect(result.current.draggingId).toBeNull()
   })
@@ -85,7 +85,7 @@ describe('useHoldDrag', () => {
     act(() => winUp())
     expect(onDrop).not.toHaveBeenCalled()
     expect(onTap).not.toHaveBeenCalled()
-    expect(onLiftEnd).toHaveBeenCalledWith('t1')
+    expect(onLiftEnd).toHaveBeenCalledWith('t1', false)
   })
 
   it('moving past the slop before the hold fires kills the lift AND the tap (dead gesture)', () => {
@@ -99,6 +99,51 @@ describe('useHoldDrag', () => {
     expect(onDrop).not.toHaveBeenCalled()
   })
 
+  it('post-lift jitter within the slop is NOT a move — a wobbly long-press stays a no-op', () => {
+    const { result } = setup()
+    act(() => result.current.startHold('t1')(press(200, 400)))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    act(() => winMove(202, 403)) // ~4px of finger wobble — real hardware always emits some
+    expect(onFrame).not.toHaveBeenCalled()
+    act(() => winUp())
+    expect(onDrop).not.toHaveBeenCalled()
+    expect(onLiftEnd).toHaveBeenCalledWith('t1', false)
+  })
+
+  it('events from a different pointerId never steer or end the gesture', () => {
+    const { result } = setup()
+    act(() =>
+      result.current.startHold('t1')({ ...press(200, 400), pointerId: 1 } as React.PointerEvent),
+    )
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    const otherMove = new MouseEvent('pointermove', { clientX: 300, clientY: 300 })
+    Object.defineProperty(otherMove, 'pointerId', { value: 2 })
+    const otherUp = new Event('pointerup')
+    Object.defineProperty(otherUp, 'pointerId', { value: 2 })
+    act(() => {
+      window.dispatchEvent(otherMove)
+      window.dispatchEvent(otherUp)
+    })
+    // The stray finger neither moved nor dropped the lifted chip.
+    expect(onFrame).not.toHaveBeenCalled()
+    expect(onDrop).not.toHaveBeenCalled()
+    expect(result.current.draggingId).toBe('t1')
+    const ownUp = new Event('pointerup')
+    Object.defineProperty(ownUp, 'pointerId', { value: 1 })
+    act(() => window.dispatchEvent(ownUp))
+    expect(result.current.draggingId).toBeNull()
+  })
+
+  it('a second startHold while a gesture is live is ignored (one gesture at a time)', () => {
+    const { result } = setup()
+    act(() => result.current.startHold('t1')(press(200, 400)))
+    act(() => result.current.startHold('t2')(press(100, 100)))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    expect(onLift).toHaveBeenCalledTimes(1)
+    expect(onLift).toHaveBeenCalledWith('t1')
+    act(() => winUp()) // release t1 so no window listeners leak into the next test
+  })
+
   it('pointercancel aborts a lifted drag without writing', () => {
     const { result } = setup()
     act(() => result.current.startHold('t1')(press(200, 400)))
@@ -106,7 +151,7 @@ describe('useHoldDrag', () => {
     act(() => winMove(300, 300))
     act(() => window.dispatchEvent(new Event('pointercancel')))
     expect(onDrop).not.toHaveBeenCalled()
-    expect(onLiftEnd).toHaveBeenCalledWith('t1')
+    expect(onLiftEnd).toHaveBeenCalledWith('t1', false)
     expect(result.current.draggingId).toBeNull()
   })
 
@@ -121,7 +166,7 @@ describe('useHoldDrag', () => {
     })
     window.removeEventListener('keydown', bubbleListener)
     expect(onDrop).not.toHaveBeenCalled()
-    expect(onLiftEnd).toHaveBeenCalledWith('t1')
+    expect(onLiftEnd).toHaveBeenCalledWith('t1', false)
     expect(result.current.draggingId).toBeNull()
     expect(bubbleListener).not.toHaveBeenCalled()
   })

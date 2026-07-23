@@ -438,13 +438,25 @@ describe('TouchGridSurface hold-drag', () => {
       tasksFixture = [makeTask({ id: 'h1', text: 'Hold me', x: 0.2, y: 0.2 })]
       render(<TouchHarness />)
       stubRect()
-      fireEvent.pointerDown(chipFor('Hold me'), { clientX: 100, clientY: 600 })
+      const chip = chipFor('Hold me')
+      // The hook's hard requirement: draggable chips own their touches or the browser steals
+      // the pointer stream for scrolling mid-drag.
+      expect(chip.style.touchAction).toBe('none')
+      fireEvent.pointerDown(chip, { clientX: 100, clientY: 600 })
       act(() => {
         vi.advanceTimersByTime(300)
       })
       // The chip rides 56px above the finger — drop the finger at y = 200 + 56 so the CHIP
       // (and therefore the committed point) lands at screen y 200 → data y 0.75.
       fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      // Crosshairs + quadrant outline paint at the offset-corrected point while dragging.
+      expect(screen.getByTestId('drag-crosshair-x').style.display).toBe('block')
+      expect(screen.getByTestId('drag-crosshair-x').style.top).toBe('25%')
+      expect(screen.getByTestId('drag-crosshair-y').style.left).toBe('75%')
+      const outline = screen.getByTestId('drag-quadrant-outline')
+      expect(outline.style.display).toBe('block')
+      expect(outline.style.left).toBe('50%') // x 0.75 → the right-hand quadrants
+      expect(outline.style.top).toBe('0px') // y 0.75 → the top (Do Now)
       fireEvent.pointerUp(window)
       expect(updateMutate).toHaveBeenCalledTimes(1)
       const arg = updateMutate.mock.calls[0]?.[0] as {
@@ -455,7 +467,66 @@ describe('TouchGridSurface hold-drag', () => {
       expect(arg.patch.x).toBeCloseTo(0.75, 2)
       expect(arg.patch.y).toBeCloseTo(0.75, 2)
       expect(arg.patch.staged).toBe(false)
-      expect(screen.queryByRole('dialog')).toBeNull() // a drag is never also a tap
+      // Affordances clear, the lift dress drops, but the painted position STAYS (no optimistic
+      // cache write — restoring the origin would visibly snap the chip back until the refetch).
+      expect(screen.getByTestId('drag-crosshair-x').style.display).toBe('none')
+      expect(screen.getByTestId('drag-quadrant-outline').style.display).toBe('none')
+      expect(chip.style.left).toBe('75%')
+      expect(chip.style.transform).not.toContain('scale')
+      expect(screen.queryByRole('dialog')).toBeNull() // a drag is never also a tap...
+      // ...even against the browser's trailing click (detail 1) after the pointer sequence.
+      fireEvent.click(chip, { detail: 1 })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('Escape aborts a moved drag: the chip settles back and nothing writes', () => {
+    vi.useFakeTimers()
+    try {
+      tasksFixture = [makeTask({ id: 'ab', text: 'Abort me', x: 0.2, y: 0.2 })]
+      render(<TouchHarness />)
+      stubRect()
+      fireEvent.pointerDown(chipFor('Abort me'), { clientX: 100, clientY: 600 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      expect(chipFor('Abort me').style.left).toBe('75%') // painted at the drag point
+      const windowSpy = vi.fn()
+      window.addEventListener('keydown', windowSpy)
+      fireEvent.keyDown(document, { key: 'Escape' })
+      window.removeEventListener('keydown', windowSpy)
+      // The abort remounts the chip: every style re-derives from the stored (unchanged) data.
+      const settled = chipFor('Abort me')
+      expect(settled.style.left).toBe('20%')
+      expect(settled.style.transform).not.toContain('scale')
+      expect(screen.getByTestId('drag-crosshair-x').style.display).toBe('none')
+      expect(updateMutate).not.toHaveBeenCalled()
+      // The same keypress never reached App's window-level grid-only exit.
+      expect(windowSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a drag released at the screen edge commits the box-clamped coordinate', () => {
+    vi.useFakeTimers()
+    try {
+      tasksFixture = [makeTask({ id: 'ed', text: 'Edge case', x: 0.5, y: 0.5 })]
+      render(<TouchHarness />)
+      stubRect()
+      fireEvent.pointerDown(chipFor('Edge case'), { clientX: 200, clientY: 400 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      fireEvent.pointerMove(window, { clientX: 399, clientY: 456 })
+      fireEvent.pointerUp(window)
+      const arg = updateMutate.mock.calls[0]?.[0] as { patch: { x: number } }
+      // Box clamp: half-width 38 on a 400px surface → max x = 1 − 38/400 = 0.905, NOT the flat
+      // 0.97 default — the chip's whole box stays inside the surface.
+      expect(arg.patch.x).toBeCloseTo(0.905, 3)
     } finally {
       vi.useRealTimers()
     }
@@ -488,22 +559,44 @@ describe('TouchGridSurface hold-drag', () => {
     expect(screen.getByRole('dialog', { name: 'Task: Asleep' })).toBeInTheDocument()
   })
 
-  it('a lift that never moves settles back without writing', () => {
+  it('a lift that never really moves settles back without writing — even with finger jitter', () => {
     vi.useFakeTimers()
     try {
       tasksFixture = [makeTask({ id: 'h5', text: 'Long press only', x: 0.4, y: 0.4 })]
       render(<TouchHarness />)
       stubRect()
-      fireEvent.pointerDown(chipFor('Long press only'), { clientX: 160, clientY: 480 })
+      const chip = chipFor('Long press only')
+      fireEvent.pointerDown(chip, { clientX: 160, clientY: 480 })
       act(() => {
         vi.advanceTimersByTime(300)
       })
+      // Real touch hardware always wobbles a few px during a "stationary" hold — within the
+      // slop this must stay a no-op, not a phantom 56px-up commit.
+      fireEvent.pointerMove(window, { clientX: 162, clientY: 483 })
       fireEvent.pointerUp(window)
       expect(updateMutate).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      // The trailing browser click (finger still over the chip) must not pop the sheet either.
+      fireEvent.click(chip, { detail: 1 })
       expect(screen.queryByRole('dialog')).toBeNull()
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('Escape disarms tap-to-place move mode without exiting grid-only', () => {
+    tasksFixture = [makeTask({ id: 'mm', text: 'Armed task' })]
+    render(<TouchHarness />)
+    fireEvent.click(chipFor('Armed task'))
+    fireEvent.click(screen.getByRole('button', { name: /⇢ Move/ }))
+    expect(screen.getByText(/Tap where/)).toBeInTheDocument()
+    const windowSpy = vi.fn()
+    window.addEventListener('keydown', windowSpy)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    window.removeEventListener('keydown', windowSpy)
+    expect(screen.queryByText(/Tap where/)).toBeNull()
+    expect(updateMutate).not.toHaveBeenCalled()
+    expect(windowSpy).not.toHaveBeenCalled()
   })
 })
 
