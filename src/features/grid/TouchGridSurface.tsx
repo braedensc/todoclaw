@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import type { Task } from '../../types/task'
 import type { QuadrantKey } from '../../lib/quadrants'
@@ -19,6 +19,7 @@ import { MobileAddSheet } from '../shell/MobileAddSheet'
 import { ClusterBubble } from '../clustering/ClusterBubble'
 import { CLUSTER_BUBBLE_HALF } from '../clustering/cluster-constants'
 import { PawPrintShape, PawTrail } from './PawTrail'
+import { useHoldDrag } from './use-hold-drag'
 import type { GridApi } from './use-grid'
 import {
   AXIS_LABEL_COLOR,
@@ -73,8 +74,9 @@ export interface TouchGridSurfaceProps {
  * Interaction contract (the touch grammar): tap a chip → TouchTaskSheet with every card action;
  * tap a cluster bubble → TouchClusterSheet → pick a member; Move = tap-to-place (arm from the
  * sheet, tap the spot); ＋ opens the same MobileAddSheet as the bottom nav; 🐾 opens chat; exit
- * via the ✕ pill or the system Back gesture (grid-only holds a history entry). Hold-drag
- * repositioning lands in the follow-up PR — Move is the precision path either way.
+ * via the ✕ pill or the system Back gesture (grid-only holds a history entry). Repositioning is
+ * press-and-hold drag (useHoldDrag — lift, finger-offset ghost, crosshairs, quadrant outline);
+ * ⇢ Move in the sheet stays the tap-to-place precision path.
  */
 export function TouchGridSurface({
   grid,
@@ -144,6 +146,108 @@ export function TouchGridSurface({
 
   const daysFor = (task: Task) => daysUntil(task.due, { timeZone })
   const minutesFor = (task: Task) => minutesUntilDueTime(task.due, task.due_time, timeZone, now)
+
+  // ---- Hold-to-drag (the touch reposition path; ⇢ Move in the sheet stays the precision one).
+  // Painting is direct-DOM at pointer rate, like the desktop grid's paintDragFrame: React state
+  // only marks the lift/drop transitions. Chip nodes register here; lift-time style snapshots
+  // are keyed per chip id. The two end-of-lift paths differ deliberately (drag review):
+  //  - COMMIT keeps the painted left/top (useUpdateTask has no optimistic write — restoring the
+  //    snapshot would visibly snap the chip back to its origin for the whole refetch round-trip)
+  //    and restores only the lift dress (scale/shadow/zIndex).
+  //  - ABORT remounts the chips (chipEpoch in the key): a fresh mount re-writes every inline
+  //    style from current data, which both settles the chip back and absorbs any mid-drag
+  //    re-render races (React skips re-writing style props whose values it last rendered, so an
+  //    imperative restore alone can strand stale styles).
+  const chipNodes = useRef(new Map<string, HTMLButtonElement>())
+  const savedStyles = useRef(
+    new Map<string, { transform: string; boxShadow: string; zIndex: string }>(),
+  )
+  const [chipEpoch, setChipEpoch] = useState(0)
+  const crossXRef = useRef<HTMLDivElement>(null)
+  const crossYRef = useRef<HTMLDivElement>(null)
+  const quadHiRef = useRef<HTMLDivElement>(null)
+  const registerChip = (id: string) => (node: HTMLButtonElement | null) => {
+    if (node) chipNodes.current.set(id, node)
+    else chipNodes.current.delete(id)
+  }
+
+  const drag = useHoldDrag({
+    surfaceRef: gridRef,
+    clamp: (rect) => boxClampBounds(rect, TOUCH_CHIP_HALF_WIDTH, TOUCH_CHIP_HALF_HEIGHT),
+    onTap: (id) => setSelectedId(id),
+    onLift: (id) => {
+      navigator.vibrate?.(10)
+      const n = chipNodes.current.get(id)
+      if (!n) return
+      savedStyles.current.set(id, {
+        transform: n.style.transform,
+        boxShadow: n.style.boxShadow,
+        zIndex: n.style.zIndex,
+      })
+      n.style.zIndex = '30'
+      n.style.transform = 'translate(-50%, -50%) scale(1.12)'
+      n.style.boxShadow = '0 10px 22px rgba(0,0,0,0.26), 0 0 0 2px rgba(46,42,36,0.25)'
+    },
+    onFrame: (id, p) => {
+      const n = chipNodes.current.get(id)
+      const task = placedTasks.find((t) => t.id === id)
+      if (n) {
+        n.style.left = `${p.x * 100}%`
+        n.style.top = `${(1 - p.y) * 100}%`
+        // Live quadrant border, like the desktop drag frame — recurring keeps its status color.
+        if (!task?.recurring) n.style.borderTopColor = quadrantMeta(p.x, p.y).color
+      }
+      const q = quadrantMeta(p.x, p.y)
+      if (crossXRef.current) {
+        crossXRef.current.style.display = 'block'
+        crossXRef.current.style.top = `${(1 - p.y) * 100}%`
+      }
+      if (crossYRef.current) {
+        crossYRef.current.style.display = 'block'
+        crossYRef.current.style.left = `${p.x * 100}%`
+      }
+      if (quadHiRef.current) {
+        quadHiRef.current.style.display = 'block'
+        quadHiRef.current.style.left = p.x >= 0.5 ? '50%' : '0'
+        quadHiRef.current.style.top = p.y >= 0.5 ? '0' : '50%'
+        quadHiRef.current.style.outlineColor = q.color
+      }
+    },
+    onLiftEnd: (id, committed) => {
+      if (crossXRef.current) crossXRef.current.style.display = 'none'
+      if (crossYRef.current) crossYRef.current.style.display = 'none'
+      if (quadHiRef.current) quadHiRef.current.style.display = 'none'
+      const snap = savedStyles.current.get(id)
+      savedStyles.current.delete(id)
+      if (committed) {
+        // Drop the lift dress but KEEP the painted position + quadrant border — the write is in
+        // flight and the refetch renders the same coords (see the block comment above).
+        const n = chipNodes.current.get(id)
+        if (n && snap) {
+          n.style.transform = snap.transform
+          n.style.boxShadow = snap.boxShadow
+          n.style.zIndex = snap.zIndex
+        }
+      } else {
+        // Abort: remount the chips so every inline style re-derives from current data.
+        setChipEpoch((e) => e + 1)
+      }
+    },
+    onDrop: (id, p) => updateMutate({ id, patch: { x: p.x, y: p.y, staged: false } }),
+  })
+
+  // Escape disarms tap-to-place move mode (capture + stopPropagation so the same press can't
+  // also exit grid-only via App's window-level listener) — review follow-up, WCAG keyboard path.
+  useEffect(() => {
+    if (!movingId) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      setMovingId(null)
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [movingId])
 
   // Tap-to-place commit: a press on the coordinate surface ITSELF while a move is armed drops
   // the task there. The target guard is load-bearing (touch-grid review): the floating chrome
@@ -290,13 +394,18 @@ export function TouchGridSurface({
                 const p = clampPoint(task.x ?? 0.5, task.y ?? 0.5, chipBounds)
                 return (
                   <TouchGridChip
-                    key={task.id}
+                    // chipEpoch in the key remounts chips after an ABORTED drag so their inline
+                    // styles re-derive from data (see the hold-to-drag block comment). Never
+                    // bumped mid-drag — a mid-drag remount would kill the pointer stream.
+                    key={`${task.id}:${chipEpoch}`}
                     task={task}
                     screenX={p.x}
                     screenY={1 - p.y}
                     daysUntilDue={daysFor(task)}
                     minutesUntilDue={minutesFor(task)}
                     dimmed={movingId === task.id}
+                    chipRef={registerChip(task.id)}
+                    onHoldStart={drag.startHold(task.id)}
                     onTap={() => setSelectedId(task.id)}
                   />
                 )
@@ -319,6 +428,37 @@ export function TouchGridSurface({
               )
             })}
           </div>
+
+          {/* Hold-drag affordances, painted per frame by direct DOM (see the useHoldDrag wiring
+              above): crosshairs marking the exact drop point and an outline on the quadrant the
+              lifted chip is over. Hidden until a lift moves. */}
+          <div
+            ref={crossXRef}
+            data-testid="drag-crosshair-x"
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 h-px bg-ink/30"
+            style={{ display: 'none', zIndex: 14 }}
+          />
+          <div
+            ref={crossYRef}
+            data-testid="drag-crosshair-y"
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 w-px bg-ink/30"
+            style={{ display: 'none', zIndex: 14 }}
+          />
+          <div
+            ref={quadHiRef}
+            data-testid="drag-quadrant-outline"
+            aria-hidden
+            className="pointer-events-none absolute h-1/2 w-1/2"
+            style={{
+              display: 'none',
+              zIndex: 4,
+              outline: '2px solid',
+              outlineOffset: -2,
+              opacity: 0.5,
+            }}
+          />
 
           {/* Transient done stamps — see doneWithStamp above. Rendered after the chips so a
               print blooms over its neighbors, never under them. */}

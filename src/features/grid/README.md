@@ -24,8 +24,12 @@ math changes; only the cluster threshold's on-screen ellipse). Tasks render as 7
 `GridCard` — including the 🔥/❄️/💤 corner flags, the recurring ×N count, an inline ∞ for
 ongoing, and the done paw-stamp + paw-trail flourishes); tap → **`TouchTaskSheet`** (Done / inline `SchedulePanel` / Move / rename / delete —
 delete confirm-gated, due writes through `useSetDueWithDefaultReminder`); cluster bubbles →
-**`TouchClusterSheet`** (member list → task sheet). **Move** is tap-to-place: arm from the sheet,
-tap the drop point (own implementation over `toNormalized`; hold-drag is the planned follow-up).
+**`TouchClusterSheet`** (member list → task sheet). Repositioning is **press-and-hold drag**
+(`use-hold-drag.ts`: ~250ms hold lifts the chip with a haptic, it then rides ~56px above the
+finger — the finger-offset pattern — with crosshairs + a quadrant outline painted per frame by
+direct DOM, release drops it; a lift that never moves is a no-op, Escape aborts without exiting
+grid-only). **Move** in the sheet stays the tap-to-place precision path (own implementation over
+`toNormalized`).
 Floating chrome: ✕ exit (grid-only holds a history entry — `../shell/use-grid-only.ts` — so the
 system Back gesture exits too), ＋ → `MobileAddSheet`, 🐾 → chat (`ChatRail` steps into the z-50
 band on the desktop side — after the overlay in DOM order but before the body-portaled sheets, so
