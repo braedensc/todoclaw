@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import type { Task } from '../../types/task'
 import type { QuadrantKey } from '../../lib/quadrants'
@@ -18,6 +18,7 @@ import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
 import { MobileAddSheet } from '../shell/MobileAddSheet'
 import { ClusterBubble } from '../clustering/ClusterBubble'
 import { CLUSTER_BUBBLE_HALF } from '../clustering/cluster-constants'
+import { PawPrintShape, PawTrail } from './PawTrail'
 import type { GridApi } from './use-grid'
 import {
   AXIS_LABEL_COLOR,
@@ -112,6 +113,24 @@ export function TouchGridSurface({
   const [movingId, setMovingId] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
 
+  // Completion paw stamp — same 900ms flourish as the desktop grid (see GridSurface's
+  // doneWithStamp): one fading print blooms at the chip's stored x/y as it leaves the board.
+  // Skipped under reduced motion and in jsdom (no matchMedia).
+  const [stamps, setStamps] = useState<Array<{ key: number; x: number; y: number }>>([])
+  const stampSeq = useRef(0)
+  const doneWithStamp = (task: Task) => {
+    const reduce =
+      typeof window.matchMedia !== 'function' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!reduce && task.x != null && task.y != null) {
+      const key = ++stampSeq.current
+      const { x, y } = task
+      setStamps((s) => [...s, { key, x, y }])
+      setTimeout(() => setStamps((s) => s.filter((st) => st.key !== key)), 1000)
+    }
+    handleDone(task)
+  }
+
   // Everything derives from live query data, so a task completed or deleted elsewhere (another
   // device, realtime) closes its own sheet / cancels its own move by simply vanishing.
   const selected =
@@ -186,6 +205,14 @@ export function TouchGridSurface({
           <div
             className="pointer-events-none absolute bottom-0 right-0 h-1/2 w-1/2"
             style={{ background: QUADRANT_TINT.errands }}
+          />
+
+          {/* Decorative character layer, same as GridCanvas: the paw trail wandering toward
+              Do Now and the tiny ring marking the grid's true center. Both pointer-events-none. */}
+          <PawTrail />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-faint bg-bg"
           />
 
           {/* Corner quadrant labels + edge axis labels. */}
@@ -293,6 +320,20 @@ export function TouchGridSurface({
             })}
           </div>
 
+          {/* Transient done stamps — see doneWithStamp above. Rendered after the chips so a
+              print blooms over its neighbors, never under them. */}
+          {stamps.map((s) => (
+            <svg
+              key={s.key}
+              aria-hidden
+              viewBox="0 0 100 100"
+              className="tc-paw-stamp pointer-events-none absolute h-9 w-9"
+              style={{ left: `${s.x * 100}%`, top: `${(1 - s.y) * 100}%`, zIndex: 25 }}
+            >
+              <PawPrintShape />
+            </svg>
+          ))}
+
           {/* Floating chrome, all inside the safe-area box. */}
           <button
             type="button"
@@ -362,7 +403,7 @@ export function TouchGridSurface({
         reminderOffsets={selected ? (reminders?.get(selected.id) ?? []) : []}
         onClose={() => setSelectedId(null)}
         onDone={() => {
-          if (selected) handleDone(selected)
+          if (selected) doneWithStamp(selected)
           setSelectedId(null)
         }}
         onDelete={() => {

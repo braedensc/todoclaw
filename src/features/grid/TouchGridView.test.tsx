@@ -157,13 +157,62 @@ describe('TouchGridSurface rendering', () => {
     expect(screen.queryByText('Done earlier today')).toBeNull()
   })
 
-  it('a stale chip wears the ❄️ frost chip, never a warm due chip', () => {
+  it('a stale chip wears the full cool dress: ❄️ corner flag + azure frost chip, no warm chip', () => {
     // Deep-stale by construction: undated, on the board since 2000 (past the 90d floor).
     tasksFixture = [
       makeTask({ id: 'st1', text: 'Forgotten idea', created_at: '2000-01-01T00:00:00Z' }),
     ]
     render(<TouchHarness />)
-    expect(within(chipFor('Forgotten idea')).getByText(/Stale/)).toBeInTheDocument()
+    const chip = chipFor('Forgotten idea')
+    expect(within(chip).getByText(/❄️ Stale/)).toBeInTheDocument()
+    expect(
+      within(chip)
+        .getAllByTitle(/Stale —/)
+        .some((el) => el.textContent === '❄️'),
+    ).toBe(true)
+  })
+
+  it('an overdue chip wears the 🔥 corner flag + glow ring + pulse, like the desktop card', () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)
+    tasksFixture = [makeTask({ id: 'od', text: 'Renew insurance', due: twoDaysAgo })]
+    render(<TouchHarness />)
+    const chip = chipFor('Renew insurance')
+    expect(within(chip).getByTitle('Overdue').textContent).toBe('🔥')
+    expect(chip.style.boxShadow).toContain('rgba(194,105,63')
+    expect(chip.style.animation).toContain('urgency-pulse')
+  })
+
+  it('a paused chip wears the 💤 corner flag alongside its ⏸ chip', () => {
+    const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+    tasksFixture = [makeTask({ id: 'pz', text: 'Napping task', start_date: future })]
+    render(<TouchHarness />)
+    expect(
+      within(chipFor('Napping task'))
+        .getAllByTitle(/Paused/)
+        .some((el) => el.textContent === '💤'),
+    ).toBe(true)
+  })
+
+  it('a well-practiced recurring chip shows its ×N completion count (≥3, like the card)', () => {
+    tasksFixture = [
+      makeTask({
+        id: 'rn',
+        text: 'Water plants',
+        recurring: {
+          frequencyDays: 7,
+          lastDoneAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+          doneCount: 5,
+        },
+      }),
+    ]
+    render(<TouchHarness />)
+    expect(within(chipFor('Water plants')).getByText(/5×/)).toBeInTheDocument()
+  })
+
+  it('an ongoing chip carries the ∞ marker inline (the corner stays free for 🔥/❄️)', () => {
+    tasksFixture = [makeTask({ id: 'og', text: 'Learn piano', ongoing: true })]
+    render(<TouchHarness />)
+    expect(within(chipFor('Learn piano')).getByTitle('Ongoing project').textContent).toBe('∞')
   })
 
   it('a stale cluster member shows the same ❄️ chip in the member list (lane-gating parity)', () => {

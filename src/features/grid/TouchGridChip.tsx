@@ -7,6 +7,7 @@ import {
   dueChipStyle,
   gridChipLabel,
   PAUSED_OPACITY,
+  pausedBadge,
   pausedChipLabel,
   pausedChipStyle,
   pausedRingStyle,
@@ -15,9 +16,10 @@ import {
   staleness,
   staleRingStyle,
   urgencyGlowStyle,
+  urgencyIcon,
   urgencyTier,
 } from '../../lib/visual-urgency'
-import { BUCKET_DOT, TOUCH_CHIP_WIDTH } from './grid-constants'
+import { BUCKET_DOT, RECURRING_BADGE_MIN_DONE, TOUCH_CHIP_WIDTH } from './grid-constants'
 
 export interface TouchGridChipProps {
   task: Task
@@ -41,10 +43,11 @@ export interface TouchGridChipProps {
  * 112px desktop GridCard: one-line title + one status chip; everything else (actions, schedule,
  * rename) lives in the tap-opened TouchTaskSheet. The visual grammar is the card's, unchanged:
  * 3px status top border (RC_COLOR when recurring, else quadrant color), terracotta accent sides
- * (dashed + ↻ overhang when recurring, ∞ overhang when ongoing), and the same four exclusive
- * lanes in the same gating order as GridCard — paused first, then stale, then the warm urgency
- * tier; recurring exempt from all three. All state styling comes from lib/visual-urgency /
- * lib/recurring so the tiers can never drift from the desktop card.
+ * (dashed + ↻ corner disc when recurring, inline ∞ when ongoing), the 🔥/❄️/💤 corner flags, the
+ * ×N recurring count, and the same four exclusive lanes in the same gating order as GridCard —
+ * paused first, then stale, then the warm urgency tier; recurring exempt from all three. All
+ * state styling comes from lib/visual-urgency / lib/recurring so the tiers can never drift from
+ * the desktop card.
  */
 export function TouchGridChip({
   task,
@@ -65,6 +68,21 @@ export function TouchGridChip({
   const glow = urgencyGlowStyle(tier)
   const coolRing = paused ? pausedRingStyle() : staleRingStyle(stale)
   const frost = stale ? staleBadge(stale) : null
+  // The 🔥/❄️/💤 corner-flag family, exactly as GridCard wears it. Never collides with the ↻
+  // disc in the same slot: recurring cards are exempt from all three lanes by the gating above.
+  const hotIcon = urgencyIcon(tier)
+  const sleepBadge = paused ? pausedBadge(task.start_date) : null
+  const flag = hotIcon
+    ? { glyph: hotIcon.glyph, title: hotIcon.label, border: dueChipStyle(tier).backgroundColor }
+    : frost
+      ? { glyph: frost.glyph, title: frost.title, border: staleChipStyle().backgroundColor }
+      : sleepBadge
+        ? {
+            glyph: sleepBadge.glyph,
+            title: sleepBadge.title,
+            border: pausedChipStyle().backgroundColor,
+          }
+        : null
 
   // urgencyGlowStyle bakes BASE_CARD_SHADOW in; the cool rings deliberately don't — compose.
   const boxShadow =
@@ -104,22 +122,40 @@ export function TouchGridChip({
         zIndex: 10,
       }}
     >
-      {/* Type overhang, same slot as GridCard's: ↻ repeats / ∞ ongoing (mutually exclusive). */}
-      {(rc || task.ongoing) && (
+      {/* Top-right overhang disc — GridCard's corner slot, one occupant at a time: ↻ for a
+          recurring chip, else the 🔥/❄️/💤 state flag. (Ongoing gets an inline ∞ prefix instead
+          of the disc, so an overdue ongoing chip can wear its 🔥.) */}
+      {rc ? (
         <span
           aria-hidden
-          title={rc ? 'Repeats' : 'Ongoing project'}
+          title="Repeats"
           className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border bg-panel text-[9px] leading-none"
-          style={{
-            borderColor: rc ? RC_COLOR[rc.code] : quadrant.color,
-            color: rc ? RC_COLOR[rc.code] : quadrant.color,
-          }}
+          style={{ borderColor: RC_COLOR[rc.code], color: RC_COLOR[rc.code] }}
         >
-          {rc ? '↻' : ONGOING_GLYPH}
+          ↻
         </span>
-      )}
+      ) : flag ? (
+        <span
+          aria-hidden
+          title={flag.title}
+          className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border bg-card text-[9px] leading-none shadow-sm"
+          style={{ borderColor: flag.border }}
+        >
+          {flag.glyph}
+        </span>
+      ) : null}
 
       <span className="block truncate text-[10px] font-medium leading-snug text-ink">
+        {task.ongoing && (
+          <span
+            aria-hidden
+            title="Ongoing project"
+            className="mr-0.5"
+            style={{ color: quadrant.color }}
+          >
+            {ONGOING_GLYPH}
+          </span>
+        )}
         {task.text}
       </span>
 
@@ -138,7 +174,7 @@ export function TouchGridChip({
           className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed"
           style={staleChipStyle()}
         >
-          {frost.chip}
+          {frost.glyph} {frost.chip}
         </span>
       ) : rc ? (
         <span
@@ -146,6 +182,8 @@ export function TouchGridChip({
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
           ↻ {rc.label}
+          {(task.recurring?.doneCount ?? 0) >= RECURRING_BADGE_MIN_DONE &&
+            ` · ${task.recurring?.doneCount}×`}
         </span>
       ) : tier !== 'none' && daysUntilDue !== null ? (
         <span

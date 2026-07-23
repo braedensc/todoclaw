@@ -21,7 +21,8 @@ pointers, or **`TouchGridSurface`** for phones and any coarse-pointer device at 
 box IS the canvas (fills the screen's aspect — coords are normalized so no scoring/clustering
 math changes; only the cluster threshold's on-screen ellipse). Tasks render as 76px
 **`TouchGridChip`s** (one-line title + one status chip, same visual grammar/lane gating as
-`GridCard`); tap → **`TouchTaskSheet`** (Done / inline `SchedulePanel` / Move / rename / delete —
+`GridCard` — including the 🔥/❄️/💤 corner flags, the recurring ×N count, an inline ∞ for
+ongoing, and the done paw-stamp + paw-trail flourishes); tap → **`TouchTaskSheet`** (Done / inline `SchedulePanel` / Move / rename / delete —
 delete confirm-gated, due writes through `useSetDueWithDefaultReminder`); cluster bubbles →
 **`TouchClusterSheet`** (member list → task sheet). **Move** is tap-to-place: arm from the sheet,
 tap the drop point (own implementation over `toNormalized`; hold-drag is the planned follow-up).
