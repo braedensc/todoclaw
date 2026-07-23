@@ -25,6 +25,7 @@ import {
   type ClampBounds,
 } from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { useIsCoarsePointer } from '../../hooks/use-is-coarse-pointer'
 import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 
 /**
@@ -94,6 +95,8 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // has no card node of its own, but its bubble does. A dominant id never collides with a
   // standalone card (a clustered task renders as the bubble, not a card).
   const cardNodesRef = useRef(new Map<string, HTMLDivElement>())
+  /** The live DOM node a placed card renders as — the touch popover anchors to it (iPad). */
+  const getCardNode = useCallback((id: string) => cardNodesRef.current.get(id) ?? null, [])
   const registerCardNode = useCallback((id: string, node: HTMLDivElement | null) => {
     if (node) cardNodesRef.current.set(id, node)
     else cardNodesRef.current.delete(id)
@@ -306,11 +309,28 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     [updateMutate, endDrag],
   )
 
+  // The iPad hybrid (workshop PR 4): on a coarse-pointer device running this DESKTOP layout, an
+  // instant pointer-down drag steals every tap (a stray touch repositions a card), so reposition
+  // becomes HOLD-to-lift there and the freed-up TAP opens the card's touch actions popover
+  // (GridSurface anchors it via tappedCardId). Fine-pointer desktop is untouched: eager drag,
+  // no tap semantics (onTap only records when holdToLift is live).
+  const isCoarse = useIsCoarsePointer()
+  const holdToLift = isCoarse && !isMobile
+  const [tappedCardId, setTappedCardId] = useState<string | null>(null)
+  const handleCardTap = useCallback(
+    (id: string) => {
+      if (holdToLift) setTappedCardId((current) => (current === id ? null : id))
+    },
+    [holdToLift],
+  )
+  const clearCardTap = useCallback(() => setTappedCardId(null), [])
   const reposition = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handleRepositionDrop,
     onMove: handleDragMove,
+    onTap: handleCardTap,
     clamp: cardClamp,
+    holdToLift,
   })
 
   // --- New-item card → grid drag (desktop) -----------------------------------------------
@@ -416,10 +436,15 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     draggingId,
     // Placed-card render wiring
     registerCardNode,
+    getCardNode,
     startReposition: reposition.startDrag,
     updateMutate,
     softDeleteMutate,
     handleDone,
+    // iPad hybrid: the card whose touch-actions popover is open (tap on a coarse-pointer
+    // desktop; always null on fine pointers) + its dismissal.
+    tappedCardId,
+    clearCardTap,
     // Cluster popup + background
     openClusterId,
     selectCluster,

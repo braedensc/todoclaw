@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { useGrid } from './use-grid'
 import { GridSurface } from './GridSurface'
@@ -74,6 +74,12 @@ vi.mock('../reminders/use-task-reminders', () => ({
     toggle: vi.fn(),
   }),
 }))
+// The iPad hybrid flips on this capability (hold-to-lift reposition + tap → actions popover).
+// Default false so every pre-existing test exercises the untouched fine-pointer paths.
+const mockIsCoarse = vi.fn(() => false)
+vi.mock('../../hooks/use-is-coarse-pointer', () => ({
+  useIsCoarsePointer: () => mockIsCoarse(),
+}))
 
 // Build a Task with sane defaults; override per test.
 function makeTask(over: Partial<Task>): Task {
@@ -106,6 +112,8 @@ beforeEach(() => {
   updateMutate.mockClear()
   softDeleteMutate.mockClear()
   markDoneMutate.mockClear()
+  // vi.clearAllMocks() in afterEach wipes implementations too — re-arm the capability default.
+  mockIsCoarse.mockReturnValue(false)
   tasksFixture = []
   doneTodayFixture = {}
 })
@@ -842,5 +850,120 @@ describe('GridView cluster popup rework', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('a'))
+  })
+})
+
+describe('GridView iPad hybrid (coarse pointer, desktop layout)', () => {
+  const cardFor = (text: string) =>
+    screen.getByText(text).closest('[data-testid="grid-card"]') as HTMLElement
+
+  it('a tap on a card opens the touch actions popover instead of dragging', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'p1', text: 'Tap me' })]
+    render(<GridHarness />)
+    const card = cardFor('Tap me')
+    // A real tap: pointerdown, pointerup, then the browser's trailing click (detail 1).
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(card, { detail: 1 })
+    const popover = screen.getByTestId('touch-card-popover')
+    expect(within(popover).getByRole('button', { name: /✓ Done/ })).toBeInTheDocument()
+    expect(within(popover).getByRole('button', { name: /⋯ Schedule/ })).toBeInTheDocument()
+    expect(within(popover).getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
+    expect(updateMutate).not.toHaveBeenCalled() // the tap never repositioned the card
+  })
+
+  it('Done in the popover marks the task done and closes it', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'p2', text: 'Finish me' })]
+    render(<GridHarness />)
+    const card = cardFor('Finish me')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(
+      within(screen.getByTestId('touch-card-popover')).getByRole('button', { name: /✓ Done/ }),
+    )
+    expect(markDoneMutate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+  })
+
+  it('a schedule write from the popover routes through setDue and never carries x/y', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'p3', text: 'Schedule me' })]
+    render(<GridHarness />)
+    const card = cardFor('Schedule me')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    const popover = screen.getByTestId('touch-card-popover')
+    fireEvent.click(within(popover).getByRole('button', { name: /⋯ Schedule/ }))
+    const calendar = within(popover).getByTestId('schedule-calendar')
+    const tomorrow = new Date(Date.now() + 86_400_000)
+    const dayButton = within(calendar)
+      .getAllByRole('button')
+      .find((b) => b.textContent?.trim() === String(tomorrow.getDate()))
+    expect(dayButton).toBeDefined()
+    fireEvent.click(dayButton!)
+    expect(updateMutate).toHaveBeenCalled()
+    for (const call of updateMutate.mock.calls) {
+      const patch = (call[0] as { patch: Record<string, unknown> }).patch
+      expect('x' in patch).toBe(false)
+      expect('y' in patch).toBe(false)
+    }
+  })
+
+  it('hold + move + release repositions with the finger offset; no popover opens', () => {
+    vi.useFakeTimers()
+    try {
+      mockIsCoarse.mockReturnValue(true)
+      tasksFixture = [makeTask({ id: 'p4', text: 'Hold me', x: 0.2, y: 0.2 })]
+      render(<GridHarness />)
+      const canvas = screen.getByTestId('grid-canvas')
+      canvas.getBoundingClientRect = () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 400,
+          height: 800,
+          right: 400,
+          bottom: 800,
+          x: 0,
+          y: 0,
+        }) as DOMRect
+      const card = cardFor('Hold me')
+      fireEvent.pointerDown(card, { clientX: 100, clientY: 600 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      // The card rides 56px above the finger — finger at y = 200 + 56 drops the CARD at y 200.
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      fireEvent.pointerUp(window, { clientX: 300, clientY: 256 })
+      const repositionCall = updateMutate.mock.calls.find((c) => {
+        const patch = (c[0] as { patch: Record<string, unknown> }).patch
+        return 'x' in patch
+      })
+      expect(repositionCall).toBeDefined()
+      const patch = (repositionCall![0] as { patch: { x: number; y: number } }).patch
+      expect(patch.x).toBeCloseTo(0.75, 2)
+      expect(patch.y).toBeCloseTo(0.75, 2)
+      expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('fine pointers never see the popover — a plain click on a card does nothing new', () => {
+    tasksFixture = [makeTask({ id: 'p5', text: 'Desktop card' })]
+    render(<GridHarness />)
+    const card = cardFor('Desktop card')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(card, { detail: 1 })
+    expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+  })
+
+  it('the action bar carries the coarse-halo marker (index.css grows 44pt tap targets off it)', () => {
+    tasksFixture = [makeTask({ id: 'p6', text: 'Halo card' })]
+    render(<GridHarness />)
+    expect(cardFor('Halo card').querySelector('[data-card-actions]')).not.toBeNull()
   })
 })
