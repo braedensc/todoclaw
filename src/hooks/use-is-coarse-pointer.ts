@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 
 // Capability check: is the PRIMARY pointer a touch digit? Mirrors useIsMobile's matchMedia
 // shape, but answers a different question (ADR 2026-07-22-capability-keyed-insets-width-keyed-
-// shell): width decides which LAYOUT renders; pointer coarseness decides which INTERACTION
-// SURFACE a shared mode gets — a landscape iPhone (874pt) and an iPad are desktop-layout but
-// touch-first, so grid-only mode gives them the touch grid instead of the pointer overlay.
+// shell): the layout gate decides which LAYOUT renders; pointer coarseness decides which
+// INTERACTION SURFACE a shared mode gets — an iPad is desktop-layout but touch-first, so
+// grid-only mode gives it the touch grid instead of the pointer overlay. (Landscape iPhones
+// reach the touch grid via the layout gate's mobile side — ADR 2026-07-23 — not this hook.)
 // Note `pointer`, not `any-pointer`: a touch-screen laptop with a mouse stays fine-pointer.
 const QUERY = '(pointer: coarse)'
 

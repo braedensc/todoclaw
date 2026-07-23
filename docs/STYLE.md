@@ -85,16 +85,21 @@ to a done card (it has already left the grid). The exact tiers/constants live in
 
 ## Responsive layout
 
-Mobile-first around a **720px breakpoint** — the mobile/desktop threshold for the *interaction* and
-the shell. It is defined once as `MOBILE_MAX_WIDTH` (719) in `src/hooks/use-is-mobile.ts` and
-mirrored as a Tailwind screen named **`wide`** (`min-width: 720px`) in `tailwind.config.js`, so the
-CSS `wide:` utilities and the JS never disagree about where the mobile/desktop line is (which a
-stock `md` = 768px breakpoint would).
+Mobile-first around a **compound layout gate** — the mobile/desktop threshold for the *interaction*
+and the shell. Since ADR 2026-07-23-phones-stay-mobile-in-landscape it is no longer a bare width:
+mobile = `(max-width: 719px), ((pointer: coarse) and (min-aspect-ratio: 8/5) and (max-width:
+1023px))` — narrow viewports PLUS landscape phones (iPads stay desktop in both orientations; the
+leg is aspect+width, never height, because the iOS keyboard shrinks the layout viewport). It is
+defined once as `MOBILE_MEDIA_QUERY` in `src/hooks/use-is-mobile.ts` and mirrored in
+`src/index.css`'s locked-shell block and as the Tailwind **`wide`** screen (the complement, a raw
+query list) in `tailwind.config.js`, so the CSS `wide:` utilities and the JS never disagree about
+where the mobile/desktop line is — a lockstep pinned by `use-is-mobile.test.ts`, which reads all
+three homes from disk.
 
 Since ADR-0028, **mobile and desktop are different shells, not one squeezed layout** — `App`
 JS-gates on `useIsMobile()` (ADR-0026):
 
-- **Mobile (< 720px)** — the pixel grid does not render at all. The task surface is `MobileMatrix`
+- **Mobile (the gate's mobile side)** — the inline grid does not render. The task surface is `MobileMatrix`
   (`src/features/shell/`): a read-only 2×2 quadrant **overview** that opens per-quadrant **focus
   lists** (the shared `ListView` scoped by `quadrantFilter`). Repositioning is the tap-based
   **Move-to-quadrant** picker (`MoveToQuadrantSheet`), not drag. Chrome is a slim header + the
@@ -107,5 +112,7 @@ JS-gates on `useIsMobile()` (ADR-0026):
   than 720px, so tablets stay stacked even though the shell is already in desktop mode.
 
 (The Stage-5-era mobile design — bottom `TabNav`, a mobile grid with tap-to-place, always-visible
-grid-card actions — was replaced by ADR-0025/0026/0028. `use-grid.ts` still carries the
-tap-to-place path, but nothing mounts the grid below 720px.)
+grid-card actions — was replaced by ADR-0025/0026/0028. `use-grid.ts` still carries its own dead
+tap-to-place path; the mobile grid that DOES exist today is grid-only mode's fullscreen
+`TouchGridSurface` (2026-07-22 workshop), a deliberate exception to "no grid on mobile" with its
+own touch interaction grammar.)

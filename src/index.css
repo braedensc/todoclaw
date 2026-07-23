@@ -50,9 +50,9 @@
   }
 }
 
-/* iOS standalone / mobile viewport (fix/standalone-viewport). Below the 720px breakpoint the
-   PAGE never scrolls: html/body are locked to the viewport height and the app becomes a flex
-   column inside #root — a scrollable content region (App.tsx) plus the bottom nav pinned in
+/* iOS standalone / mobile viewport (fix/standalone-viewport). On the MOBILE side of the layout
+   gate (narrow viewports + landscape phones — the compound query below) the PAGE never scrolls:
+   html/body are locked to the viewport height and the app becomes a flex column inside #root — a scrollable content region (App.tsx) plus the bottom nav pinned in
    NORMAL FLOW as the column's last child. So the nav always sits flush to the column's bottom
    edge on every device; the earlier `position: fixed; bottom: 0` bar could float a hair above the
    true screen bottom on smaller iPhones (the layout-viewport bottom didn't line up), leaving an
@@ -93,7 +93,15 @@ html,
 body {
   overscroll-behavior: none;
 }
-@media (max-width: 719px) {
+/* THE LAYOUT GATE, CSS form. Phones stay MOBILE in both orientations (ADR
+   2026-07-23-phones-stay-mobile-in-landscape): the second leg catches coarse-pointer viewports
+   that are SHAPED like a landscape phone (aspect ≥ 8/5) and NARROW enough to not be an iPad
+   (≤ 1023px — landscape iPads are ≥ 1133pt wide). Deliberately aspect+width, never height:
+   the iOS keyboard shrinks the layout viewport in installed PWAs, so a height leg would flip
+   the whole shell mid-typing on an iPad (see LANDSCAPE_PHONE_MAX_WIDTH's derivation).
+   Lockstep with MOBILE_MEDIA_QUERY in src/hooks/use-is-mobile.ts and with tailwind.config.js's
+   `wide` screen (its complement). */
+@media (max-width: 719px), ((pointer: coarse) and (min-aspect-ratio: 8/5) and (max-width: 1023px)) {
   html,
   body {
     height: 100dvh; /* first paint + no-JS fallback (correct in a tab; see note above) */
@@ -105,10 +113,16 @@ body {
     overflow: hidden;
   }
 }
-/* Desktop-side layouts (≥ 720px — includes iPad standalone and landscape iPhones) scroll the
-   page normally, so the last content row can end under the home indicator; pad the scroll end
-   clear of it. Scoped OFF the mobile shell, where the bottom nav owns this inset (see above). */
-@media (min-width: 720px) {
+/* Desktop-side layouts (iPads included) scroll the page normally, so the last content row can
+   end under the home indicator; pad the scroll end clear of it. Scoped to the gate's COMPLEMENT
+   (same four-query spelling as tailwind's `wide` — ¬(coarse ∧ ar≥8/5 ∧ w≤1023) ≡ fine ∨ none ∨
+   ar<8/5 ∨ w≥1024) so the mobile shell, where the bottom nav owns this inset, never double-pads.
+   The ar<8/5 leg is spelled max-aspect-ratio: 1599/1000 — a hairline GAP at aspect ∈
+   (1.599, 1.6) beats an overlap where both shells' styles apply at exactly 8/5. */
+@media (min-width: 720px) and (pointer: fine),
+  (min-width: 720px) and (pointer: none),
+  (min-width: 1024px),
+  (min-width: 720px) and (max-aspect-ratio: 1599/1000) {
   body {
     padding-bottom: env(safe-area-inset-bottom);
   }
@@ -118,9 +132,9 @@ body {
    iOS Safari auto-zooms the page when a focused control's font-size is under 16px, and almost
    every input in the app is text-sm (14px) — so on phones every field focus triggered a zoom the
    user had to pinch back out of. Force all text-entry controls to 16px on any touch-primary
-   device: `(pointer: coarse)` is the capability leg (a landscape iPhone is 874pt wide and an
-   iPad wider still — both zoom/touch regardless of the layout breakpoint), and the width leg
-   keeps narrow desktop windows and phone-viewport test harnesses rendering exactly like phones.
+   device: `(pointer: coarse)` is the capability leg (iPads live on the DESKTOP side of the
+   layout gate but still zoom/touch), and the width leg keeps narrow desktop windows and
+   phone-viewport test harnesses rendering exactly like phones.
    !important is deliberate: it must beat the Tailwind text-sm/text-xs utility on the element
    (higher specificity than these element selectors). Fine-pointer desktop keeps its denser
    14px type. */

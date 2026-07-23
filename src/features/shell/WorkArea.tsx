@@ -23,8 +23,9 @@ import type { QuadrantFocus } from './use-quadrant-focus'
 //
 // `gridOnly` renders ONLY the fullscreen grid, in the presentation the device's pointer calls
 // for: the touch grid (TouchGridSurface — chips, tap sheets, tap-to-place) on every
-// coarse-pointer device — all mobile entries plus desktop-width touch devices like landscape
-// phones and iPads — and the desktop overlay (GridSurface gridOnly) for fine pointers.
+// coarse-pointer device — all mobile entries (which since ADR 2026-07-23 include landscape
+// phones) plus desktop-layout touch devices like iPads — and the desktop overlay
+// (GridSurface gridOnly) for fine pointers.
 // `onExitGridOnly` (also wired to Esc in AppShell) returns to the normal layout.
 export function WorkArea({
   chat,
