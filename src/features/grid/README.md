@@ -139,9 +139,11 @@ accidental click can't silently soft-delete. The row is **always visible** (an o
 though the grid itself is desktop-only now (ADR-0028). Each control stops pointer/click
 propagation so it never starts a drag.
 
-**Inline rename** is triggered by **double-clicking the text** (there is no ✎ button — the whole
-card is the drag handle, and a motionless double-click can't be confused with a drag). Enter/blur
-commits `text`; Escape cancels.
+**Rename** lives behind the **⋯ menu** (a "Rename task" item above the SchedulePanel), not a click
+on the card text — the whole card is the drag handle, so the title is inert and can't be turned into
+a click-to-edit target that fights the drag. Choosing it opens the inline editor on the card
+(Enter/blur commits `text`; Escape cancels). This mirrors the touch sheet/popover, where rename is a
+tap on the title inside the action surface.
 
 **⋯ menu (due + recurring)** — a small popover (`useClickOutside` to dismiss; flips above / aligns
 to the nearer edge so it stays on-canvas) holding the due-date picker + the shared

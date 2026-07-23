@@ -109,16 +109,17 @@ const stopDrag = (e: PointerEvent) => e.stopPropagation()
  * accent side/bottom borders (one-off cards keep thin solid terracotta sides) — see the style
  * object. The solid, status-colored top border is untouched so the two cues don't clash.
  *
- * Interactions: double-click the text to rename inline. A persistent bottom action bar (always
- * visible, no hover-reveal, on desktop AND mobile) carries the controls: an OUTLINED green "Done"
- * pill on the left (border + green text + ✓, deliberately not filled so it reads as "mark done",
- * not "already done") plus small ⋯ menu / × delete icons on the right. The ⋯ menu is the shared
- * SchedulePanel (two-week calendar + time chips + remind + repeats — the one schedule editor) —
- * setting a due date writes `due` only and never moves the card. The whole card is the drag
- * handle; every
- * control stopPropagation so clicking it never starts a drag (and double-click, being motionless,
- * can't be confused with one either). Done marks a normal task complete for today (it leaves the
- * grid) or resets a recurring task's cycle.
+ * Interactions: the WHOLE card is the drag handle — the title text is inert, so a click or drag
+ * anywhere on it repositions the card. Rename lives behind the ⋯ menu (its "Rename task" item opens
+ * the inline editor), matching the touch sheet/popover where rename is a tap on the title inside the
+ * action surface; the card text is never a click-to-edit target. A persistent bottom action bar
+ * (always visible, no hover-reveal, on desktop AND mobile) carries the controls: an OUTLINED green
+ * "Done" pill on the left (border + green text + ✓, deliberately not filled so it reads as "mark
+ * done", not "already done") plus small ⋯ menu / × delete icons on the right. The ⋯ menu holds the
+ * Rename item above the shared SchedulePanel (two-week calendar + time chips + remind + repeats —
+ * the one schedule editor) — setting a due date writes `due` only and never moves the card. Every
+ * control stopPropagation so clicking it never starts a drag. Done marks a normal task complete for
+ * today (it leaves the grid) or resets a recurring task's cycle.
  */
 export function GridCard({
   task,
@@ -396,15 +397,11 @@ export function GridCard({
           className="w-full rounded border border-border-strong bg-card px-1 py-0.5 text-xs"
         />
       ) : (
-        // Double-click to edit inline. Motionless, so it can't be confused with a reposition drag
-        // (the whole card is the drag handle) — the owner's chosen edit trigger (batch-2 item 5).
-        <p
-          className="break-words text-[10.5px] font-medium leading-[1.35]"
-          title="Double-click to edit"
-          onDoubleClick={startEditing}
-        >
-          {task.text}
-        </p>
+        // Inert title: the WHOLE card is the drag handle, so the text captures no clicks — a
+        // click/double-click here starting an inline edit fought the drag (owner feedback). Rename
+        // now lives behind the ⋯ menu ("Rename task" below), the same menu-driven rename the touch
+        // sheet/popover use; the card text itself is never a click-to-edit target.
+        <p className="break-words text-[10.5px] font-medium leading-[1.35]">{task.text}</p>
       )}
 
       {/* Non-recurring due chip — the textual half of the urgency ladder: tier-colored, says
@@ -486,6 +483,18 @@ export function GridCard({
                 onPointerDown={stopDrag}
                 onClick={(e) => e.stopPropagation()}
               >
+                {/* Rename lives here in the ⋯ menu (not a click on the card text) so the whole card
+                    stays a clean drag handle — parity with the touch sheet/popover, where rename is
+                    a tap on the title inside the action surface. Opens the inline editor on the card
+                    and closes the menu (startEditing). */}
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="mb-3 flex w-full items-center gap-1.5 rounded-md border border-border-strong bg-card px-2.5 py-2 text-left text-xs font-semibold text-ink hover:bg-bg"
+                >
+                  <span aria-hidden>✎</span> Rename task
+                </button>
+
                 {/* The ONE schedule editor (workshop direction B) — calendar + time chips +
                     remind + repeats, shared with the list/add surfaces so they can't drift. */}
                 <SchedulePanel

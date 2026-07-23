@@ -477,13 +477,19 @@ describe('GridView card action bar', () => {
     await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('del-me'))
   })
 
-  it('double-clicking the text edits it inline and commits a rename on Enter', () => {
+  it('renames via the ⋯ menu (not by clicking the text) and commits on Enter', () => {
     tasksFixture = [makeTask({ id: 'edit-me', text: 'Old name', staged: false })]
     render(<GridHarness />)
-    // No ✎ button anymore — the text itself is the edit trigger (owner's pick, batch-2 item 5).
+
+    // The card text is a pure drag handle now — clicking/double-clicking it must NOT open an
+    // editor (so the card stays easily draggable). Rename lives behind the ⋯ menu instead.
+    fireEvent.doubleClick(screen.getByText('Old name'))
     expect(screen.queryByLabelText('Edit task')).not.toBeInTheDocument()
 
-    fireEvent.doubleClick(screen.getByText('Old name'))
+    // Open the ⋯ menu and start the rename from there.
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    fireEvent.click(screen.getByRole('button', { name: 'Rename task' }))
+
     const input = screen.getByLabelText('Edit task') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'New name' } })
     fireEvent.keyDown(input, { key: 'Enter' })
