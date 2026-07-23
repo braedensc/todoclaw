@@ -1,21 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_BOUNDS,
+  HOLD_MS,
+  HOLD_SLOP_PX,
+  LIFT_OFFSET_PX,
   toNormalized,
   type ClampBounds,
   type NormalizedPoint,
   type SurfaceRect,
 } from '../../hooks/use-free-drag'
 
-/** How long a press must hold still before the chip lifts into a drag. */
-export const HOLD_MS = 250
-/** Movement past this before the hold fires abandons the lift (a stray swipe, not a press). */
-export const HOLD_SLOP_PX = 10
-/**
- * Once lifted AND moving, the chip rides this many px ABOVE the finger so it is never occluded
- * (the industry finger-offset pattern) — and the DROP commits at the chip, not the finger.
- */
-export const LIFT_OFFSET_PX = 56
+// The hold/slop/offset constants now live in use-free-drag (its `holdToLift` mode — the iPad
+// hybrid — shares them); re-exported here so this hook's consumers/tests keep one import path.
+export { HOLD_MS, HOLD_SLOP_PX, LIFT_OFFSET_PX }
 
 export interface UseHoldDragOptions {
   /** Element defining the coordinate space (the touch grid's safe-area canvas). */

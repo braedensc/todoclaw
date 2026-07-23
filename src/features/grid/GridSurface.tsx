@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
@@ -14,6 +14,7 @@ import { useElementSize } from '../../hooks/use-element-size'
 import { boxClampBounds, clampPoint } from '../../hooks/use-free-drag'
 import { GridCanvas } from './GridCanvas'
 import { GridCard } from './GridCard'
+import { TouchCardPopover } from './TouchCardPopover'
 import { GridAxes } from './GridAxes'
 import { GridLegend } from './GridLegend'
 import { PawPrintShape } from './PawTrail'
@@ -74,10 +75,13 @@ export function GridSurface({
     draggedTask,
     draggingId,
     registerCardNode,
+    getCardNode,
     startReposition,
     updateMutate,
     softDeleteMutate,
     handleDone,
+    tappedCardId,
+    clearCardTap,
     openClusterId,
     selectCluster,
     startPopupRowDrag,
@@ -158,6 +162,22 @@ export function GridSurface({
     )
       softDeleteMutate(task.id)
   }
+
+  // iPad hybrid (workshop PR 4): on coarse-pointer desktop, a TAP on a card (freed up by the
+  // hold-to-lift reposition — use-grid) opens the touch actions popover anchored to that card.
+  // Resolved ONLY against placedTasks (active cards): a task that leaves the board — completed or
+  // deleted elsewhere, OR paused from within the popover's own SchedulePanel — drops out of
+  // placedTasks, so tappedTask goes null and the popover unmounts cleanly. (Dormant cards never
+  // reach the popover anyway: they render with a noop pointer-down, so they never fire onTap; and
+  // they register no DOM node, so anchoring one would be impossible.)
+  const tappedTask = tappedCardId ? (placedTasks.find((t) => t.id === tappedCardId) ?? null) : null
+  // A STABLE getter the popover measures against — not a node prop (would trip
+  // set-state-in-effect) and not a render-written ref (trips react-compiler's no-refs-in-render).
+  // getCardNode is a stable useCallback; tappedCardId is fixed for a popover instance (keyed).
+  const getPopoverAnchor = useCallback(
+    () => (tappedCardId ? getCardNode(tappedCardId) : null),
+    [getCardNode, tappedCardId],
+  )
 
   // One placed card. Shared by the singleton-cluster render, the standalone dragged-card render,
   // and the dormant "set aside" pass so all three stay byte-for-byte identical (same handlers,
@@ -410,6 +430,56 @@ export function GridSurface({
           ))}
         </GridCanvas>
       </div>
+
+      {/* iPad hybrid touch actions (portaled, anchored to the tapped card; keyed by task id so
+          rename draft / schedule disclosure reset per task — the TouchTaskSheet precedent). */}
+      {tappedTask && (
+        <TouchCardPopover
+          key={tappedTask.id}
+          task={tappedTask}
+          paused={false}
+          getAnchor={getPopoverAnchor}
+          reflowKey={reflowKey}
+          daysUntilDue={daysUntil(tappedTask.due, { timeZone })}
+          minutesUntilDue={minutesUntilDueTime(tappedTask.due, tappedTask.due_time, timeZone, now)}
+          timeZone={timeZone}
+          reminderOffsets={reminders?.get(tappedTask.id) ?? []}
+          onClose={clearCardTap}
+          onDone={() => {
+            doneWithStamp(tappedTask)
+            clearCardTap()
+          }}
+          onDelete={() => {
+            void handleDelete(tappedTask)
+            clearCardTap()
+          }}
+          onRename={(text) => updateMutate({ id: tappedTask.id, patch: { text } })}
+          onSetDue={(due, dueTime) => setDue(tappedTask, due, dueTime)}
+          onSetRecurring={(frequencyDays) =>
+            updateMutate({
+              id: tappedTask.id,
+              patch: {
+                recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 },
+                ongoing: false,
+              },
+            })
+          }
+          onSetFrequency={(frequencyDays) => {
+            if (tappedTask.recurring)
+              updateMutate({
+                id: tappedTask.id,
+                patch: { recurring: { ...tappedTask.recurring, frequencyDays } },
+              })
+          }}
+          onRemoveRecurring={() => updateMutate({ id: tappedTask.id, patch: { recurring: null } })}
+          onSetOngoing={(on) => setOngoing(tappedTask, on)}
+          onSetStartDate={(startDate) => setStartDate(tappedTask, startDate)}
+          onToggleReminder={(minutes) =>
+            reminderWrites.toggle(tappedTask.id, minutes, reminders?.get(tappedTask.id) ?? [])
+          }
+          onClearReminders={() => reminderWrites.clear(tappedTask.id)}
+        />
+      )}
 
       {/* Urgency-ladder legend — below the frame, clear of the URGENCY axis arrow that lives in
           the bottom gutter (absolute at the frame's bottom edge; mt-7 steps past it). */}

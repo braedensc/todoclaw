@@ -73,6 +73,14 @@ draggable new-item card in the add widget instead.
 - **Reposition a placed card:** drag it (raw pointer events via `useFreeDrag`). A live "ghost"
   position tracks the pointer; on drop we commit `x`/`y` via `useUpdateTask`. **No collision
   resolution on drag** — overlaps are expected and absorbed by clustering.
+- **iPad hybrid (coarse pointer on the DESKTOP layout):** `useFreeDrag`'s `holdToLift` mode makes
+  reposition a **press-and-hold** drag (an instant drag would steal every tap; the touch
+  grammar — hold, finger-offset ghost, jitter slop, Escape abort — is shared with the fullscreen
+  grid's `use-hold-drag`), which frees a **tap** to open `TouchCardPopover`: the anchored,
+  44pt-control presentation of the card actions (Done / Schedule / Delete / rename), the
+  iPad-native counterpart to the phone's `TouchTaskSheet` (the DoneSheet/DonePage split). Wired in
+  `use-grid` (`holdToLift`/`tappedCardId`) and rendered by `GridSurface`. Fine-pointer desktop is
+  byte-identical: eager drag, no tap semantics, the desktop ⋯ menu.
 - **New-item card → grid (desktop):** drag a new-item card onto the canvas → it materializes
   under the pointer and commits `{ x, y, staged: false }` on drop.
 - **New-item card → grid (tap-to-place):** `use-grid.ts` still carries a tap-to-select →

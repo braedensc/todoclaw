@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
 import {
   boxClampBounds,
   clampPoint,
   DEFAULT_MAX,
   DEFAULT_MIN,
+  HOLD_MS,
+  LIFT_OFFSET_PX,
   toNormalized,
+  useFreeDrag,
   type SurfaceRect,
 } from './use-free-drag'
 
@@ -84,5 +88,134 @@ describe('clampPoint', () => {
     expect(clampPoint(0.01, 0.99, bounds)).toEqual({ x: bounds.minX, y: bounds.maxY })
     // A centred card is unchanged.
     expect(clampPoint(0.5, 0.5, bounds)).toEqual({ x: 0.5, y: 0.5 })
+  })
+})
+
+// ---- holdToLift mode (the iPad hybrid): the touch-gesture grammar on the SHARED drag hook. ----
+// Fake timers because the hold timer IS the behavior under test (the use-hold-drag precedent).
+describe('useFreeDrag holdToLift', () => {
+  const onDrop = vi.fn()
+  const onTap = vi.fn()
+  const onDragStart = vi.fn()
+  const onMove = vi.fn()
+
+  const surfaceRef = { current: null as HTMLDivElement | null }
+
+  function setup(holdToLift = true) {
+    surfaceRef.current = document.createElement('div')
+    surfaceRef.current.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 400, height: 800, right: 400, bottom: 800, x: 0, y: 0 }) as DOMRect
+    return renderHook(() =>
+      useFreeDrag({ surfaceRef, onDrop, onTap, onDragStart, onMove, holdToLift }),
+    )
+  }
+
+  const press = (x: number, y: number) =>
+    ({
+      clientX: x,
+      clientY: y,
+      preventDefault: () => {},
+      stopPropagation: () => {},
+    }) as unknown as React.PointerEvent
+  const winMove = (x: number, y: number) =>
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: y }))
+  const winUp = (x = 0, y = 0) =>
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: x, clientY: y }))
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    onDrop.mockClear()
+    onTap.mockClear()
+    onDragStart.mockClear()
+    onMove.mockClear()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('a quick release is a tap — the item never lifts', () => {
+    const { result } = setup()
+    act(() => result.current.startDrag('t1')(press(200, 400)))
+    expect(result.current.draggingId).toBeNull() // no eager lift in hold mode
+    act(() => winUp(200, 400))
+    expect(onTap).toHaveBeenCalledWith('t1')
+    expect(onDragStart).not.toHaveBeenCalled()
+    expect(onDrop).not.toHaveBeenCalled()
+  })
+
+  it('holding lifts (onDragStart), then move + release drops at the offset-corrected point', () => {
+    const { result } = setup()
+    act(() => result.current.startDrag('t1')(press(200, 400)))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    expect(onDragStart).toHaveBeenCalledWith('t1')
+    expect(result.current.draggingId).toBe('t1')
+    act(() => winMove(300, 400 + LIFT_OFFSET_PX)) // item rides 56px above → lands at y=400
+    expect(onMove).toHaveBeenCalled()
+    act(() => winUp(300, 400 + LIFT_OFFSET_PX))
+    const [id, point] = onDrop.mock.calls[0] as [string, { x: number; y: number }]
+    expect(id).toBe('t1')
+    expect(point.x).toBeCloseTo(0.75, 2)
+    expect(point.y).toBeCloseTo(0.5, 2)
+    expect(onTap).not.toHaveBeenCalled()
+    expect(result.current.draggingId).toBeNull()
+  })
+
+  it('post-lift jitter within the slop is neither a move nor a drop (settle-back no-op)', () => {
+    const { result } = setup()
+    act(() => result.current.startDrag('t1')(press(200, 400)))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    act(() => winMove(203, 403)) // finger wobble
+    expect(onMove).not.toHaveBeenCalled()
+    act(() => winUp(203, 403))
+    expect(onDrop).not.toHaveBeenCalled()
+    expect(onTap).not.toHaveBeenCalled()
+  })
+
+  it('a swipe past the slop before the hold fires is a dead gesture — no lift, no tap', () => {
+    const { result } = setup()
+    act(() => result.current.startDrag('t1')(press(200, 400)))
+    act(() => winMove(230, 400))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    expect(onDragStart).not.toHaveBeenCalled()
+    act(() => winUp(230, 400))
+    expect(onTap).not.toHaveBeenCalled()
+    expect(onDrop).not.toHaveBeenCalled()
+  })
+
+  it('Escape aborts a lifted drag without writing, and the keypress never bubbles to window', () => {
+    const { result } = setup()
+    act(() => result.current.startDrag('t1')(press(200, 400)))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    const bubbleListener = vi.fn()
+    window.addEventListener('keydown', bubbleListener)
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    window.removeEventListener('keydown', bubbleListener)
+    expect(onDrop).not.toHaveBeenCalled()
+    expect(result.current.draggingId).toBeNull()
+    expect(bubbleListener).not.toHaveBeenCalled()
+  })
+
+  it('a second startDrag while a hold gesture is live is ignored (one gesture at a time)', () => {
+    const { result } = setup()
+    act(() => result.current.startDrag('t1')(press(200, 400)))
+    act(() => result.current.startDrag('t2')(press(100, 100)))
+    act(() => vi.advanceTimersByTime(HOLD_MS))
+    expect(onDragStart).toHaveBeenCalledTimes(1)
+    expect(onDragStart).toHaveBeenCalledWith('t1')
+    act(() => winUp(200, 400))
+  })
+
+  it('eager mode (holdToLift false) is untouched: pointer-down lifts instantly, no offset', () => {
+    const { result } = setup(false)
+    act(() => result.current.startDrag('t1')(press(200, 400)))
+    expect(result.current.draggingId).toBe('t1') // eager lift, exactly as before
+    act(() => winMove(300, 200))
+    act(() => winUp(300, 200))
+    const [, point] = onDrop.mock.calls[0] as [string, { x: number; y: number }]
+    expect(point.x).toBeCloseTo(0.75, 2)
+    expect(point.y).toBeCloseTo(0.75, 2) // raw finger y — NO lift offset in eager mode
+    expect(onTap).not.toHaveBeenCalled()
   })
 })

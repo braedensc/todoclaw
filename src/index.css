@@ -152,6 +152,22 @@ body {
   }
 }
 
+/* iPad hybrid (workshop PR 4): the card action bar's controls are desktop-dense (the ⋯/× are
+   ~18px), far under the 44pt touch guideline — on coarse pointers, grow each an INVISIBLE tap
+   halo (the TouchGridChip trick) without changing the rendered card. Neighboring halos clip at
+   their midpoints; still far better than 18px. Coarse-only so fine-pointer click precision is
+   untouched. */
+@media (pointer: coarse) {
+  [data-card-actions] button {
+    position: relative;
+  }
+  [data-card-actions] button::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+}
+
 /* Native ranges (expanded-row sliders) rendered browser-default blue inside the warm palette —
    accent-color brings the thumb/track into the family everywhere (audit §7.2). Checkboxes
    already set accent-primary per-element. */

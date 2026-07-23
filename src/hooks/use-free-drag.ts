@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 // Free-canvas drag primitive — raw Pointer Events (chosen in ADR-0004).
 // One handler set covers mouse, touch, and pen. Drives every drag consumer:
-// grid card reposition, staging-tray → grid placement, and cluster-popup drag-out.
-// (Mobile tap-to-place is a separate, simpler interaction the surface handles directly.)
+// grid card reposition, new-item-card → grid placement, and cluster-popup drag-out.
+// Three modes: EAGER (default — lift on pointer-down), activateOnMove (defer the lift until a
+// real drag, so a bare press taps/edits in place), and holdToLift (the iPad hybrid — press-and-
+// HOLD to lift, with the touch-gesture discipline: finger-offset ghost, jitter slop, pointerId
+// filtering, one-gesture gate, Escape abort). (Mobile tap-to-place is a separate, simpler
+// interaction the surface handles directly.)
 
 export interface NormalizedPoint {
   /** urgency, 0 (left) → 1 (right) */
@@ -88,6 +92,22 @@ export function toNormalized(
 /** Pixels the pointer must travel before a press becomes a drag; below this it's a tap/click. */
 export const DRAG_THRESHOLD_PX = 4
 
+// ---- Touch hold-to-lift constants (canonical home; use-hold-drag re-exports them). ----
+/** How long a press must hold still before a `holdToLift` drag lifts. */
+export const HOLD_MS = 250
+/**
+ * Movement tolerance around a hold: bigger pre-lift kills the pending lift (a swipe, not a
+ * press), and post-lift it is the floor below which "movement" is finger jitter — real fingers
+ * wobble 1-5px while holding still, and without the post-lift floor a stationary long-press
+ * would commit a phantom reposition (touch-grid drag review).
+ */
+export const HOLD_SLOP_PX = 10
+/**
+ * Once lifted AND moving, the dragged item rides this many px ABOVE the finger so it is never
+ * occluded (the finger-offset pattern) — and the drop commits at the ITEM, not the finger.
+ */
+export const LIFT_OFFSET_PX = 56
+
 export interface UseFreeDragOptions {
   /** Element defining the coordinate space (the grid surface). */
   surfaceRef: React.RefObject<HTMLElement | null>
@@ -110,6 +130,16 @@ export interface UseFreeDragOptions {
    * cluster-popup row, where a tap edits in place and only a drag tears the card onto the grid.
    */
   activateOnMove?: boolean
+  /**
+   * TOUCH mode (the iPad hybrid — touch-grid workshop PR 4): a press must HOLD for HOLD_MS before
+   * it lifts into a drag — a quick release is a tap (onTap), a swipe past HOLD_SLOP_PX before
+   * the hold fires is a dead gesture, and once lifted the item rides LIFT_OFFSET_PX above the
+   * finger (drop commits at the item). Mutually exclusive with `activateOnMove`. Carries the
+   * touch-gesture discipline the fullscreen grid's use-hold-drag pioneered: post-lift jitter
+   * inside the slop is NOT a move, only the starting pointerId steers/ends the gesture, one
+   * gesture at a time, and Escape aborts without the keypress reaching window listeners.
+   */
+  holdToLift?: boolean
 }
 
 export interface FreeDrag {
@@ -130,71 +160,134 @@ export function useFreeDrag({
   onTap,
   clamp,
   activateOnMove,
+  holdToLift,
 }: UseFreeDragOptions): FreeDrag {
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  // holdToLift only: one gesture at a time — a second finger pressing another card must not
+  // install a second competing listener set (touch-grid drag review).
+  const holdActiveRef = useRef(false)
+  // Teardown for an IN-FLIGHT gesture, so unmounting mid-drag (e.g. a second finger navigates
+  // away while a card is lifted) doesn't leak the window pointer + document keydown listeners —
+  // the capture-phase Escape listener would otherwise swallow the app's next Escape. Null while
+  // no gesture is live (iPad-hybrid review).
+  const inFlightCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => inFlightCleanupRef.current?.(), [])
   // Hold the latest callbacks/options so the pointer listeners never go stale and we
   // don't rebind them on every render. Updated in an effect (not during render) so the
   // first drag after a prop change still sees fresh values.
-  const latest = useRef({ onDrop, onMove, onDragStart, onTap, clamp, activateOnMove })
+  const latest = useRef({ onDrop, onMove, onDragStart, onTap, clamp, activateOnMove, holdToLift })
   useEffect(() => {
-    latest.current = { onDrop, onMove, onDragStart, onTap, clamp, activateOnMove }
+    latest.current = { onDrop, onMove, onDragStart, onTap, clamp, activateOnMove, holdToLift }
   })
 
   const startDrag = useCallback(
     (id: string) => (event: React.PointerEvent) => {
+      const hold = latest.current.holdToLift === true
+      if (hold && holdActiveRef.current) return
       event.preventDefault()
       event.stopPropagation()
+      if (hold) holdActiveRef.current = true
+      // holdToLift only: the finger that started the gesture is the only one that may steer or
+      // end it. (undefined === undefined keeps jsdom's field-less synthesized events flowing.)
+      const pointerId = event.pointerId
+      const samePointer = (e: PointerEvent): boolean => !hold || e.pointerId === pointerId
       const startX = event.clientX
       const startY = event.clientY
       let moved = false
+      let lifted = !hold // pointer modes are "lifted" from the start; hold mode earns it
+      let dead = false
       // Eager consumers (grid reposition / new-item placement) lift the item on pointer-down so
       // its standalone card renders under the pointer from the first frame. Deferred consumers
-      // (activateOnMove) wait for real movement so a plain tap never pulls the item.
-      if (!latest.current.activateOnMove) setDraggingId(id)
+      // (activateOnMove) and hold mode wait, so a plain tap never pulls the item.
+      if (!latest.current.activateOnMove && !hold) setDraggingId(id)
+
+      const holdTimer = hold
+        ? window.setTimeout(() => {
+            if (dead) return
+            lifted = true
+            setDraggingId(id)
+            latest.current.onDragStart?.(id)
+          }, HOLD_MS)
+        : 0
 
       const compute = (e: PointerEvent): NormalizedPoint | null => {
         const rect = surfaceRef.current?.getBoundingClientRect()
         if (!rect) return null
         const bounds = latest.current.clamp?.(rect) ?? DEFAULT_BOUNDS
-        return toNormalized(rect, e.clientX, e.clientY, bounds)
+        // In hold mode a lifted item rides LIFT_OFFSET_PX above the finger — commit where the
+        // ITEM is, not where the finger is (toNormalized clamps, so the top edge stays on-board).
+        const offset = hold && lifted ? LIFT_OFFSET_PX : 0
+        return toNormalized(rect, e.clientX, e.clientY - offset, bounds)
       }
 
       const handleMove = (e: PointerEvent): void => {
+        if (!samePointer(e)) return
+        const travel = Math.hypot(e.clientX - startX, e.clientY - startY)
+        if (hold && !lifted) {
+          // Real movement before the hold fires means this was never a deliberate press —
+          // abandon the pending lift; release will be a dead gesture, not a tap.
+          if (travel > HOLD_SLOP_PX) dead = true
+          return
+        }
         if (!moved) {
           // A press only becomes a drag once it travels past the threshold — below that it is a
-          // tap (jitter of a click), so we ignore it and let handleUp fire onTap.
-          if (Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD_PX) return
+          // tap (pointer modes) or settle-back jitter (hold mode: real fingers wobble a few px
+          // during a "stationary" lift; without the floor a long-press would commit a phantom
+          // reposition LIFT_OFFSET_PX up).
+          const floor = hold ? HOLD_SLOP_PX : DRAG_THRESHOLD_PX
+          if (travel < floor) return
           moved = true
           if (latest.current.activateOnMove) setDraggingId(id)
-          latest.current.onDragStart?.(id)
+          if (!hold) latest.current.onDragStart?.(id)
         }
         const point = compute(e)
         if (point) latest.current.onMove?.(id, point)
       }
 
       const cleanup = (): void => {
+        window.clearTimeout(holdTimer)
+        holdActiveRef.current = false
+        inFlightCleanupRef.current = null
         setDraggingId(null)
         window.removeEventListener('pointermove', handleMove)
         window.removeEventListener('pointerup', handleUp)
         window.removeEventListener('pointercancel', handleCancel)
+        if (hold) document.removeEventListener('keydown', handleKey, true)
       }
 
       const handleUp = (e: PointerEvent): void => {
-        if (moved) {
+        if (!samePointer(e)) return
+        if (moved && lifted) {
           const point = compute(e)
           if (point) latest.current.onDrop(id, point)
-        } else {
+        } else if (!dead && !(hold && lifted)) {
+          // A quick release is a tap. A hold-lift released WITHOUT moving is a deliberate
+          // no-op (the item settles back) — neither a drop nor a tap.
           latest.current.onTap?.(id)
         }
         cleanup()
       }
 
       // A cancelled press (browser gesture, etc.) is neither a drop nor a tap — just tear down.
-      const handleCancel = (): void => cleanup()
+      const handleCancel = (e: PointerEvent): void => {
+        if (!samePointer(e)) return
+        cleanup()
+      }
 
+      // Hold mode only: Escape aborts the drag (or the pending hold). Capture phase +
+      // stopPropagation so the same keypress can't ALSO reach window-level listeners
+      // (the grid-only Esc exit).
+      const handleKey = (e: KeyboardEvent): void => {
+        if (e.key !== 'Escape') return
+        e.stopPropagation()
+        cleanup()
+      }
+
+      inFlightCleanupRef.current = cleanup
       window.addEventListener('pointermove', handleMove)
       window.addEventListener('pointerup', handleUp)
       window.addEventListener('pointercancel', handleCancel)
+      if (hold) document.addEventListener('keydown', handleKey, true)
     },
     [surfaceRef],
   )

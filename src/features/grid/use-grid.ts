@@ -25,6 +25,7 @@ import {
   type ClampBounds,
 } from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { useIsCoarsePointer } from '../../hooks/use-is-coarse-pointer'
 import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 
 /**
@@ -94,6 +95,8 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // has no card node of its own, but its bubble does. A dominant id never collides with a
   // standalone card (a clustered task renders as the bubble, not a card).
   const cardNodesRef = useRef(new Map<string, HTMLDivElement>())
+  /** The live DOM node a placed card renders as — the touch popover anchors to it (iPad). */
+  const getCardNode = useCallback((id: string) => cardNodesRef.current.get(id) ?? null, [])
   const registerCardNode = useCallback((id: string, node: HTMLDivElement | null) => {
     if (node) cardNodesRef.current.set(id, node)
     else cardNodesRef.current.delete(id)
@@ -198,6 +201,12 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // by clicking the grid background, dragging a row out, or marking a recurring task done.
   const [openClusterId, setOpenClusterId] = useState<string | null>(null)
 
+  // The iPad-hybrid touch actions popover (workshop PR 4): the placed card whose popover is open
+  // on a coarse-pointer desktop device, or null. Declared up here so selectCluster can clear it —
+  // the cluster popup and this popover are mutually exclusive (both are z-90 task editors).
+  const [tappedCardId, setTappedCardId] = useState<string | null>(null)
+  const clearCardTap = useCallback(() => setTappedCardId(null), [])
+
   // The cluster-popup row currently in inline-edit mode (a plain tap opens editing rather than
   // tearing the card out — item 16).
   const [editingClusterRowId, setEditingClusterRowId] = useState<string | null>(null)
@@ -209,6 +218,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   const selectCluster = useCallback((id: string | null) => {
     setOpenClusterId(id)
     setEditingClusterRowId(null)
+    setTappedCardId(null) // opening/closing a cluster closes the touch card popover (both z-90)
   }, [])
 
   // Size-aware drop clamp shared by every grid drag (reposition / new-item / popup drag-out) and
@@ -306,11 +316,32 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     [updateMutate, endDrag],
   )
 
+  // The iPad hybrid (workshop PR 4): on a coarse-pointer device running this DESKTOP layout, an
+  // instant pointer-down drag steals every tap (a stray touch repositions a card), so reposition
+  // becomes HOLD-to-lift there and the freed-up TAP opens the card's touch actions popover
+  // (GridSurface anchors it via tappedCardId). Fine-pointer desktop is untouched: eager drag,
+  // no tap semantics (onTap only records when holdToLift is live).
+  const isCoarse = useIsCoarsePointer()
+  const holdToLift = isCoarse && !isMobile
+  const handleCardTap = useCallback(
+    (id: string) => {
+      if (!holdToLift) return
+      setOpenClusterId(null) // a card tap closes any open cluster popup (mutually exclusive)
+      setTappedCardId((current) => (current === id ? null : id))
+    },
+    [holdToLift],
+  )
   const reposition = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handleRepositionDrop,
     onMove: handleDragMove,
+    onTap: handleCardTap,
+    // A hold-drag lift closes the popover — otherwise it floats detached at the card's old spot
+    // while the card moves (the reposition pointerdown stopPropagations past the popover's own
+    // outside-dismiss, iPad-hybrid review). No-op on fine pointer (tappedCardId is never set).
+    onDragStart: clearCardTap,
     clamp: cardClamp,
+    holdToLift,
   })
 
   // --- New-item card → grid drag (desktop) -----------------------------------------------
@@ -416,10 +447,15 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     draggingId,
     // Placed-card render wiring
     registerCardNode,
+    getCardNode,
     startReposition: reposition.startDrag,
     updateMutate,
     softDeleteMutate,
     handleDone,
+    // iPad hybrid: the card whose touch-actions popover is open (tap on a coarse-pointer
+    // desktop; always null on fine pointers) + its dismissal.
+    tappedCardId,
+    clearCardTap,
     // Cluster popup + background
     openClusterId,
     selectCluster,

@@ -56,7 +56,9 @@ export function CardActionBar({
   menuContent,
 }: CardActionBarProps) {
   return (
-    <div className="mt-1 flex items-center gap-0.5 border-t border-border pt-1">
+    // data-card-actions: on coarse pointers, index.css grows every button here an invisible
+    // ~44pt tap halo (the iPad hybrid — the visible controls stay desktop-dense).
+    <div data-card-actions className="mt-1 flex items-center gap-0.5 border-t border-border pt-1">
       <button
         type="button"
         onPointerDown={stopDrag}
