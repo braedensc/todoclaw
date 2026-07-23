@@ -16,9 +16,15 @@
 @layer base {
   body {
     @apply bg-bg font-sans text-ink antialiased;
-    /* Dynamic Island / notch sits on a SIDE edge in landscape; these resolve to 0px everywhere
-       else, so they apply unconditionally — deliberately outside the 719px query, because a
-       landscape iPhone (874pt wide on the 16 Pro) falls on the desktop side of the breakpoint. */
+    /* Safe-area insets key on env() itself, NOT the 719px width query (ADR
+       2026-07-22-capability-keyed-insets-width-keyed-shell): env() resolves 0 wherever there is
+       no inset (every desktop browser), while the devices that DO have insets routinely land on
+       the desktop side of the breakpoint — a landscape iPhone is 874pt wide on the 16 Pro
+       (side-edge notch → left/right), and an iPad in standalone spans under the transparent
+       status bar at every width (→ top). Bottom is the exception: below the breakpoint the
+       bottom nav manages its own safe-area inset, so a body pad there would double it — the
+       desktop-side rule lives with the shell block below. */
+    padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
@@ -57,12 +63,13 @@
    shorter than what's on screen and the nav floats up above the true bottom. dvh is by definition
    the height visible right now, so the column bottom == the screen bottom; and because the page
    can't scroll (overflow:hidden) the bar never retracts/expands from scrolling, so dvh doesn't
-   fluctuate — it's stable AND correct IN THE BROWSER. body (which
-   never scrolls) carries the safe-area TOP padding: with viewport-fit=cover the layout spans the
-   whole screen, so this keeps content clear of the camera island while the body's atmosphere
-   background — propagated to the canvas — still paints the strip above it. The nav manages its own
-   safe-area BOTTOM inset. overscroll-behavior is global (all widths): page-level scroll chaining /
-   pull-to-refresh gestures are never wanted.
+   fluctuate — it's stable AND correct IN THE BROWSER. body carries the safe-area TOP padding
+   unconditionally (@layer base above — iPads need it at desktop widths too), which on this
+   locked shell keeps content clear of the camera island while the body's atmosphere background —
+   propagated to the canvas — still paints the strip above it. The nav manages its own safe-area
+   BOTTOM inset; on the DESKTOP side of the breakpoint (no bottom nav, page scrolls normally) the
+   body instead pads the scroll end clear of the home indicator, below. overscroll-behavior is
+   global (all widths): page-level scroll chaining / pull-to-refresh gestures are never wanted.
 
    STANDALONE (installed PWA) — `--app-h` below. NO static CSS unit is correct there, and neither
    is raw visualViewport.height (measured on the iOS 26.5 iPhone 16 + 15 Pro Max sims,
@@ -93,22 +100,31 @@ body {
     height: var(--app-h, 100dvh); /* measured live viewport once useAppHeight runs */
     overflow: hidden;
   }
-  body {
-    padding-top: env(safe-area-inset-top);
-  }
   #root {
     height: 100%;
     overflow: hidden;
   }
 }
+/* Desktop-side layouts (≥ 720px — includes iPad standalone and landscape iPhones) scroll the
+   page normally, so the last content row can end under the home indicator; pad the scroll end
+   clear of it. Scoped OFF the mobile shell, where the bottom nav owns this inset (see above). */
+@media (min-width: 720px) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
 
-/* Mobile form ergonomics (feat/mobile-ergonomics, audit §3.1):
+/* Touch form ergonomics (feat/mobile-ergonomics, audit §3.1):
    iOS Safari auto-zooms the page when a focused control's font-size is under 16px, and almost
    every input in the app is text-sm (14px) — so on phones every field focus triggered a zoom the
-   user had to pinch back out of. Below the breakpoint, force all text-entry controls to 16px.
+   user had to pinch back out of. Force all text-entry controls to 16px on any touch-primary
+   device: `(pointer: coarse)` is the capability leg (a landscape iPhone is 874pt wide and an
+   iPad wider still — both zoom/touch regardless of the layout breakpoint), and the width leg
+   keeps narrow desktop windows and phone-viewport test harnesses rendering exactly like phones.
    !important is deliberate: it must beat the Tailwind text-sm/text-xs utility on the element
-   (higher specificity than these element selectors). Desktop keeps its denser 14px type. */
-@media (max-width: 719px) {
+   (higher specificity than these element selectors). Fine-pointer desktop keeps its denser
+   14px type. */
+@media (max-width: 719px), (pointer: coarse) {
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea {

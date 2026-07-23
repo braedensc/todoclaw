@@ -63,3 +63,4 @@ supersede it with a new ADR and flip the old one's Status.
 | [ADR 2026-07-13](adr/2026-07-13-persistent-chats.md) | 2026-07-13 | Persistent BabyClaw chats: server-authoritative history via a service-role write path |
 | [ADR 2026-07-21](adr/2026-07-21-task-activity-log-evening-recap.md) | 2026-07-21 | Task activity log (DEFINER trigger on `tasks`) + AI-written evening recap |
 | [ADR 2026-07-22](adr/2026-07-22-proactive-memory-inference-autosave.md) | 2026-07-22 | Proactive memory: confident inferences auto-save (drop `propose_memory`'s confirmation gate) |
+| [ADR 2026-07-22](adr/2026-07-22-capability-keyed-insets-width-keyed-shell.md) | 2026-07-22 | Safe-area insets + touch ergonomics key on capability (`env()` / `pointer: coarse`); locked shell stays width-keyed |
