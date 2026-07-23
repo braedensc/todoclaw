@@ -3,6 +3,15 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { TouchCardPopover } from './TouchCardPopover'
 
+// SchedulePanel transitively imports the real Supabase client (via ReminderPicker), which THROWS
+// at import time when env vars are absent — so a standalone render fails on CI (no .env.local),
+// the transitive import-throw trap. These tests exercise the popover's OWN behavior (actions,
+// rename, dismiss), not the schedule editor — stub it. Its wiring is covered by the GridView
+// integration tests, which mock the data hooks.
+vi.mock('../schedule/SchedulePanel', () => ({
+  SchedulePanel: () => <div data-testid="schedule-panel-stub" />,
+}))
+
 // The popover is a controlled, anchored portal — render it directly with an anchor stub. jsdom
 // lays out at 0px, so getBoundingClientRect is stubbed for a real anchor rect.
 
