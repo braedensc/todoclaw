@@ -126,10 +126,16 @@ export function TouchGridSurface({
   const daysFor = (task: Task) => daysUntil(task.due, { timeZone })
   const minutesFor = (task: Task) => minutesUntilDueTime(task.due, task.due_time, timeZone, now)
 
-  // Tap-to-place commit: any press on the coordinate surface while a move is armed drops the
-  // task there (chips go pointer-events-none during a move, so the whole screen is a target).
+  // Tap-to-place commit: a press on the coordinate surface ITSELF while a move is armed drops
+  // the task there. The target guard is load-bearing (touch-grid review): the floating chrome
+  // (✕ / Cancel / ＋ / 🐾) lives inside this div, and a real tap fires pointerdown BEFORE click —
+  // without the guard, tapping Cancel would commit the move at the banner's coordinates and only
+  // then disarm. Every backdrop layer is pointer-events-none and the chips go pointer-events-none
+  // during a move, so genuine canvas taps do target the canvas node — the whole board stays a
+  // valid drop target while the buttons stay buttons.
   const handleSurfacePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!movingTask) return
+    if (event.target !== event.currentTarget) return
     const rect = gridRef.current?.getBoundingClientRect()
     if (!rect) return
     const point = toNormalized(rect, event.clientX, event.clientY, chipBounds)
@@ -209,14 +215,14 @@ export function TouchGridSurface({
           </span>
           <span
             aria-hidden
-            className="pointer-events-none absolute bottom-7 right-2.5 text-[8px] font-bold uppercase tracking-[0.14em]"
+            className="pointer-events-none absolute bottom-7 right-2.5 text-[9px] font-bold uppercase tracking-[0.14em]"
             style={{ color: AXIS_LABEL_COLOR }}
           >
             Urgency →
           </span>
           <span
             aria-hidden
-            className="pointer-events-none absolute left-2.5 top-1/2 origin-left -rotate-90 text-[8px] font-bold uppercase tracking-[0.14em]"
+            className="pointer-events-none absolute left-2.5 top-1/2 origin-left -rotate-90 text-[9px] font-bold uppercase tracking-[0.14em]"
             style={{ color: AXIS_LABEL_COLOR }}
           >
             Importance →
@@ -230,7 +236,7 @@ export function TouchGridSurface({
           )}
 
           {/* Dormant (paused) chips — read-only pass BEHIND active chips, never clustered. */}
-          <div className={movingTask ? 'pointer-events-none' : undefined}>
+          <div data-testid="chip-layer" className={movingTask ? 'pointer-events-none' : undefined}>
             {dormantPlaced.map((task) => {
               const p = clampPoint(task.x, task.y, chipBounds)
               return (
@@ -292,18 +298,25 @@ export function TouchGridSurface({
             type="button"
             onClick={onExit}
             aria-label="Exit grid view"
-            className="absolute right-3 top-2 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary shadow-sm"
+            className="absolute right-3 top-2 z-[60] flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary shadow-sm"
           >
             <span aria-hidden>✕</span> Exit grid
           </button>
 
           {movingTask && (
-            <div className="absolute left-1/2 top-2 z-[60] flex max-w-[80%] -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-puppy/50 bg-panel px-4 py-2 text-xs font-medium text-ink shadow-md">
+            /* role=status/aria-live announces the armed place mode to assistive tech; the Cancel
+               inside is a full 44pt target (the banner's only control, and the only visible way
+               out of the mode). */
+            <div
+              role="status"
+              aria-live="polite"
+              className="absolute left-1/2 top-2 z-[60] flex max-w-[80%] -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full border border-puppy/50 bg-panel py-1 pl-4 pr-1 text-xs font-medium text-ink shadow-md"
+            >
               <span className="truncate">Tap where “{movingTask.text}” should go</span>
               <button
                 type="button"
                 onClick={() => setMovingId(null)}
-                className="font-semibold text-danger"
+                className="min-h-[44px] rounded-full px-3 font-semibold text-danger"
               >
                 Cancel
               </button>
@@ -322,12 +335,13 @@ export function TouchGridSurface({
           <button
             type="button"
             onClick={onOpenChat}
-            aria-label="Open chat"
+            aria-label={chatUnread > 0 ? `Open chat — ${chatUnread} unread` : 'Open chat'}
             className="absolute bottom-4 left-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full border border-border-strong bg-panel text-xl shadow-lg"
           >
             <span aria-hidden>🐾</span>
             {chatUnread > 0 && (
               <span
+                data-testid="chat-unread-dot"
                 aria-hidden
                 className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-panel bg-accent"
               />

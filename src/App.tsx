@@ -42,7 +42,7 @@ import { markTourDone } from './features/onboarding/setup-guide-store'
 import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
-import { useRoute, useChatMessageId, navigate } from './lib/route'
+import { useRoute, useChatMessageId, navigate, goBack } from './lib/route'
 import { supabase } from './lib/supabase'
 import {
   useMessages,
@@ -234,12 +234,16 @@ function AppShell() {
   }, [gridOnly, exitGridOnly])
 
   // The chat overlay is open via the WorkArea button (showChat) OR a #/chat deep link (route). Both
-  // the desktop push-drawer and the mobile sheet key off this; closing clears both and returns the
-  // hash to home when the chat was opened by a deep link.
+  // the desktop push-drawer and the mobile sheet key off this; closing clears both. A deep-linked
+  // chat closes via goBack() — POPPING the chat hash entry, like the Done/Reminders overlays —
+  // rather than pushing a fresh home entry: the push arrived as a null-state forward popstate that
+  // use-grid-only/use-quadrant-focus can't tell from their own entry being popped, so closing a
+  // notification chat over grid-only mode silently collapsed the grid (touch-grid review). goBack
+  // still lands on home for a cold deep link (hasNavigatedWithinApp guard in lib/route).
   const chatOpen = showChat || route === 'chat'
   const closeChat = () => {
     setShowChat(false)
-    if (route === 'chat') navigate('home')
+    if (route === 'chat') goBack()
   }
   // The two ways to open the drawer, each naming the face it wants. Every opener goes through one
   // of these so no caller can open the drawer without saying what it's opening ON.

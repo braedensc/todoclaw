@@ -83,7 +83,11 @@ export function TouchGridChip({
       data-paused={paused || undefined}
       onClick={onTap}
       title={task.text}
-      className="absolute rounded-[7px] bg-card px-1.5 pb-1 pt-0.5 text-left shadow-sm"
+      // The before: pseudo-element extends the TAP target ~10px beyond each edge (a bare
+      // title-only chip is ~24px tall — far under the 44pt touch guideline) while the visible
+      // chip stays small. Neighboring chips' invisible halos may overlap; the topmost wins,
+      // exactly like visual overlap.
+      className="absolute rounded-[7px] bg-card px-1.5 pb-1 pt-0.5 text-left shadow-sm before:absolute before:-inset-x-1.5 before:-inset-y-2.5 before:content-['']"
       style={{
         left: `${screenX * 100}%`,
         top: `${screenY * 100}%`,
@@ -123,7 +127,7 @@ export function TouchGridChip({
           recurring status / due chip (only when dated). */}
       {paused ? (
         <span
-          className="mt-0.5 inline-block rounded px-1 text-[7.5px] font-semibold leading-relaxed"
+          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed"
           style={pausedChipStyle()}
         >
           {pausedChipLabel(task.start_date)}
@@ -131,21 +135,21 @@ export function TouchGridChip({
       ) : frost ? (
         <span
           title={frost.title}
-          className="mt-0.5 inline-block rounded px-1 text-[7.5px] font-semibold leading-relaxed"
+          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed"
           style={staleChipStyle()}
         >
           {frost.chip}
         </span>
       ) : rc ? (
         <span
-          className="mt-0.5 inline-block rounded px-1 text-[7.5px] font-semibold leading-relaxed text-white"
+          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed text-white"
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
           ↻ {rc.label}
         </span>
       ) : tier !== 'none' && daysUntilDue !== null ? (
         <span
-          className="mt-0.5 inline-block rounded px-1 text-[7.5px] font-semibold leading-relaxed"
+          className="mt-0.5 inline-block rounded px-1 text-[9px] font-semibold leading-relaxed"
           style={dueChipStyle(tier)}
         >
           {gridChipLabel(tier, daysUntilDue, task.due_time, minutesUntilDue)}

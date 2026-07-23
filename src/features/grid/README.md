@@ -26,9 +26,13 @@ delete confirm-gated, due writes through `useSetDueWithDefaultReminder`); cluste
 **`TouchClusterSheet`** (member list → task sheet). **Move** is tap-to-place: arm from the sheet,
 tap the drop point (own implementation over `toNormalized`; hold-drag is the planned follow-up).
 Floating chrome: ✕ exit (grid-only holds a history entry — `../shell/use-grid-only.ts` — so the
-system Back gesture exits too), ＋ → `MobileAddSheet`, 🐾 → chat (`ChatRail` raises to z-[55] on
-the desktop side so it clears this overlay). Dormant (paused) tasks render as read-only
-`data-paused` chips behind the active pass, exactly like the desktop dormant pass.
+system Back gesture exits too), ＋ → `MobileAddSheet`, 🐾 → chat (`ChatRail` steps into the z-50
+band on the desktop side — after the overlay in DOM order but before the body-portaled sheets, so
+it clears the grid while sheets still cover it). The canvas `onPointerDown` (tap-to-place commit)
+guards `event.target === event.currentTarget` — the floating chrome lives inside the canvas and a
+tap's pointerdown would otherwise commit a move at the button's position before its click runs.
+Dormant (paused) tasks render as read-only `data-paused` chips behind the active pass, exactly
+like the desktop dormant pass.
 
 ## Files
 

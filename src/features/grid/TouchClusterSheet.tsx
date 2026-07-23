@@ -3,7 +3,14 @@ import { BottomSheet } from '../../components/BottomSheet'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
-import { dueChipStyle, gridChipLabel, urgencyTier } from '../../lib/visual-urgency'
+import {
+  dueChipStyle,
+  gridChipLabel,
+  staleBadge,
+  staleChipStyle,
+  staleness,
+  urgencyTier,
+} from '../../lib/visual-urgency'
 
 export interface TouchClusterSheetProps {
   /** The open cluster's members (length > 1), or null (sheet closed). */
@@ -26,9 +33,15 @@ export function TouchClusterSheet({ group, timeZone, onClose, onPick }: TouchClu
     <BottomSheet open onClose={onClose} title={`${group.length} tasks here`}>
       <div className="flex max-h-[60dvh] flex-col gap-1.5 overflow-y-auto overscroll-contain">
         {group.map((task) => {
+          // Same lane gating as every sibling surface (TouchGridChip / TouchTaskSheet /
+          // GridCard / desktop ClusterPopup rows): staleness gates the warm tier so a row can
+          // never contradict the chip and sheet it opens into. (No paused branch: dormant tasks
+          // never reach clusters.)
           const rc = recurringStatus(task.recurring)
           const d = daysUntil(task.due, { timeZone })
-          const tier = rc ? 'none' : urgencyTier(d, null)
+          const stale = rc ? null : staleness(task, d)
+          const frost = stale ? staleBadge(stale) : null
+          const tier = rc || stale ? 'none' : urgencyTier(d, null)
           const topColor = rc ? RC_COLOR[rc.code] : quadrantMeta(task.x ?? 0.5, task.y ?? 0.5).color
           return (
             <button
@@ -53,6 +66,14 @@ export function TouchClusterSheet({ group, timeZone, onClose, onPick }: TouchClu
                   style={{ color: RC_COLOR[rc.code] }}
                 >
                   {rc.label}
+                </span>
+              ) : frost ? (
+                <span
+                  title={frost.title}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                  style={staleChipStyle()}
+                >
+                  {frost.chip}
                 </span>
               ) : tier !== 'none' && d !== null ? (
                 <span

@@ -109,7 +109,12 @@ export function TouchTaskSheet({
             onBlur={commitRename}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commitRename()
-              if (e.key === 'Escape') setEditing(false)
+              if (e.key === 'Escape') {
+                // Stop the keydown here or BottomSheet's document-level Escape handler closes
+                // the whole sheet — backing out of the edit should return to the read view.
+                e.stopPropagation()
+                setEditing(false)
+              }
             }}
             aria-label="Task name"
             className="w-full rounded-md border border-border bg-card px-2 py-1.5 font-medium text-ink"
@@ -122,7 +127,7 @@ export function TouchTaskSheet({
               setEditing(true)
             }}
             title="Tap to rename"
-            className="w-full text-left"
+            className="flex min-h-[44px] w-full items-center text-left"
           >
             <span className="font-medium text-ink">{task.text}</span>
             <span aria-hidden className="ml-1.5 text-xs text-muted-faint">

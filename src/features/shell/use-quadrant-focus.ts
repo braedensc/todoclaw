@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { QuadrantKey } from '../../lib/quadrants'
+import { GRID_ONLY_FLAG } from './use-grid-only'
 
 // App-level state for the mobile matrix's overview → focus navigation (mobile audit §4.5): which
 // quadrant the phone user is "inside", or null for the 2×2 overview.
@@ -66,8 +67,10 @@ export function useQuadrantFocus(): QuadrantFocus {
     if (focus === null) return
     const onPop = (e: PopStateEvent) => {
       // Landed back ON the focus entry (e.g. Back out of #/done over a focus list) → keep it.
+      // A grid-only entry (use-grid-only) can sit ABOVE this focus entry — landing on IT means
+      // our entry is still intact beneath, so the focus must survive too (touch-grid review).
       const state = e.state as Record<string, unknown> | null
-      if (state?.[FOCUS_FLAG]) return
+      if (state?.[FOCUS_FLAG] || state?.[GRID_ONLY_FLAG]) return
       // Browsers fire popstate for FORWARD same-document navigations too — tapping Done pushes
       // `#/done` and Chrome/WebKit deliver a null-state popstate for it. Leaving home for a route
       // must not clear the focus (it should still be there on the way back); only a pop that

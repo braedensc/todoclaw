@@ -150,6 +150,39 @@ describe('TouchGridSurface rendering', () => {
     expect(screen.getByText(/No tasks placed yet/)).toBeInTheDocument()
   })
 
+  it('hides a chip the moment its task is in today’s done map (the fifth-surface invariant)', () => {
+    tasksFixture = [makeTask({ id: 'dt', text: 'Done earlier today' })]
+    doneTodayFixture = { dt: true }
+    render(<TouchHarness />)
+    expect(screen.queryByText('Done earlier today')).toBeNull()
+  })
+
+  it('a stale chip wears the ❄️ frost chip, never a warm due chip', () => {
+    // Deep-stale by construction: undated, on the board since 2000 (past the 90d floor).
+    tasksFixture = [
+      makeTask({ id: 'st1', text: 'Forgotten idea', created_at: '2000-01-01T00:00:00Z' }),
+    ]
+    render(<TouchHarness />)
+    expect(within(chipFor('Forgotten idea')).getByText(/Stale/)).toBeInTheDocument()
+  })
+
+  it('a stale cluster member shows the same ❄️ chip in the member list (lane-gating parity)', () => {
+    tasksFixture = [
+      makeTask({
+        id: 'st1',
+        text: 'Forgotten idea',
+        x: 0.3,
+        y: 0.3,
+        created_at: '2000-01-01T00:00:00Z',
+      }),
+      makeTask({ id: 'st2', text: 'Fresh neighbor', x: 0.31, y: 0.31 }),
+    ]
+    render(<TouchHarness />)
+    fireEvent.click(within(screen.getByTestId('cluster-bubble')).getByRole('button'))
+    const list = screen.getByRole('dialog', { name: '2 tasks here' })
+    expect(within(list).getByText(/Stale/)).toBeInTheDocument()
+  })
+
   it('wears the recurring grammar on chips (↻ chip + status text)', () => {
     tasksFixture = [
       makeTask({
@@ -240,7 +273,7 @@ describe('TouchGridSurface task sheet', () => {
 
   it('a due write from the schedule panel never repositions the chip (no x/y in the patch)', () => {
     tasksFixture = [makeTask({ id: 's1', text: 'Schedule me', x: 0.3, y: 0.6 })]
-    render(<TouchHarness />)
+    const { rerender } = render(<TouchHarness />)
     fireEvent.click(chipFor('Schedule me'))
     fireEvent.click(screen.getByRole('button', { name: /⋯ Schedule/ }))
     // Pick tomorrow on the SchedulePanel calendar (its cells are buttons named by day number).
@@ -254,7 +287,21 @@ describe('TouchGridSurface task sheet', () => {
       .filter((b) => b.textContent?.trim() === String(tomorrow.getDate()))
     expect(dayButtons.length).toBeGreaterThan(0)
     fireEvent.click(dayButtons[0]!)
+    // The write must route through useSetDueWithDefaultReminder: the patch carries the picked
+    // date (and later the time), and NEVER x/y — a due write must not reposition (#305 / the
+    // grid invariant).
     expect(updateMutate).toHaveBeenCalled()
+    const datePatch = (updateMutate.mock.calls.at(-1)?.[0] as { patch: Record<string, unknown> })
+      .patch
+    expect(typeof datePatch.due).toBe('string')
+    // Reflect the write back into the fixture (the real query cache would) so the time preset
+    // sees the task WITH a date — a time is only valid alongside one (DB CHECK).
+    tasksFixture = [{ ...tasksFixture[0]!, due: datePatch.due as string }]
+    rerender(<TouchHarness />)
+    fireEvent.click(within(panel).getByRole('button', { name: '9 AM' }))
+    const timePatch = (updateMutate.mock.calls.at(-1)?.[0] as { patch: Record<string, unknown> })
+      .patch
+    expect(timePatch.due_time).toBe('09:00')
     for (const call of updateMutate.mock.calls) {
       const patch = (call[0] as { patch: Record<string, unknown> }).patch
       expect('x' in patch).toBe(false)
@@ -289,14 +336,42 @@ describe('TouchGridSurface move mode (tap-to-place)', () => {
     expect(screen.queryByText(/Tap where/)).toBeNull()
   })
 
-  it('Cancel disarms without writing', () => {
+  it('Cancel disarms without writing — including its pointerdown (real taps fire it first)', () => {
     tasksFixture = [makeTask({ id: 'm2', text: 'Stay put' })]
     render(<TouchHarness />)
     fireEvent.click(chipFor('Stay put'))
     fireEvent.click(screen.getByRole('button', { name: /⇢ Move/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    // A real tap = pointerdown THEN click. The pointerdown bubbles to the canvas handler; the
+    // target guard must ignore it or Cancel would commit the move at the banner's coordinates.
+    fireEvent.pointerDown(cancel, { clientX: 200, clientY: 20 })
+    fireEvent.click(cancel)
     expect(screen.queryByText(/Tap where/)).toBeNull()
     expect(updateMutate).not.toHaveBeenCalled()
+  })
+
+  it('a tap on the floating chrome while armed never commits the move', () => {
+    tasksFixture = [makeTask({ id: 'm3', text: 'Precious position' })]
+    render(<TouchHarness />)
+    fireEvent.click(chipFor('Precious position'))
+    fireEvent.click(screen.getByRole('button', { name: /⇢ Move/ }))
+    for (const name of [/Exit grid view/, /Add a task/, /Open chat/]) {
+      fireEvent.pointerDown(screen.getByRole('button', { name }), { clientX: 350, clientY: 700 })
+    }
+    expect(updateMutate).not.toHaveBeenCalled()
+    expect(screen.getByText(/Tap where/)).toBeInTheDocument()
+  })
+
+  it('chips are pointer-inert while a move is armed (the whole screen is the drop target)', () => {
+    tasksFixture = [
+      makeTask({ id: 'm4', text: 'Mover', x: 0.2, y: 0.2 }),
+      makeTask({ id: 'm5', text: 'Bystander', x: 0.8, y: 0.8 }),
+    ]
+    render(<TouchHarness />)
+    fireEvent.click(chipFor('Mover'))
+    fireEvent.click(screen.getByRole('button', { name: /⇢ Move/ }))
+    // jsdom doesn't enforce pointer-events, so pin the class that does it in a browser.
+    expect(screen.getByTestId('chip-layer').className).toContain('pointer-events-none')
   })
 })
 
@@ -314,15 +389,60 @@ describe('TouchGridSurface clusters', () => {
   })
 })
 
+describe('TouchGridSurface live-data auto-close', () => {
+  it('the task sheet closes when its task vanishes from the data (done/deleted elsewhere)', () => {
+    tasksFixture = [makeTask({ id: 'v1', text: 'Ephemeral' })]
+    const { rerender } = render(<TouchHarness />)
+    fireEvent.click(chipFor('Ephemeral'))
+    expect(screen.getByRole('dialog', { name: 'Task: Ephemeral' })).toBeInTheDocument()
+    tasksFixture = []
+    rerender(<TouchHarness />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('the cluster sheet closes when the group dissolves to a single member', () => {
+    tasksFixture = [
+      makeTask({ id: 'g1', text: 'Stays', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'g2', text: 'Leaves', x: 0.52, y: 0.51 }),
+    ]
+    const { rerender } = render(<TouchHarness />)
+    fireEvent.click(within(screen.getByTestId('cluster-bubble')).getByRole('button'))
+    expect(screen.getByRole('dialog', { name: '2 tasks here' })).toBeInTheDocument()
+    tasksFixture = [tasksFixture[0]!]
+    rerender(<TouchHarness />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('the move banner cancels itself when the moving task vanishes', () => {
+    tasksFixture = [makeTask({ id: 'mv', text: 'Gone soon' })]
+    const { rerender } = render(<TouchHarness />)
+    fireEvent.click(chipFor('Gone soon'))
+    fireEvent.click(screen.getByRole('button', { name: /⇢ Move/ }))
+    expect(screen.getByText(/Tap where/)).toBeInTheDocument()
+    tasksFixture = []
+    rerender(<TouchHarness />)
+    expect(screen.queryByText(/Tap where/)).toBeNull()
+  })
+})
+
 describe('TouchGridSurface chrome', () => {
-  it('✕ exits, 🐾 opens chat (with an unread dot), ＋ opens the add sheet', () => {
+  it('✕ exits, 🐾 opens chat, ＋ opens the add sheet', () => {
     tasksFixture = [makeTask({ id: 'x', text: 'Anything' })]
     render(<TouchHarness chatUnread={2} />)
     fireEvent.click(screen.getByRole('button', { name: 'Exit grid view' }))
     expect(onExit).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Open chat' }))
+    fireEvent.click(screen.getByRole('button', { name: /Open chat/ }))
     expect(onOpenChat).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Add a task' }))
     expect(screen.getByRole('dialog', { name: 'Add a task' })).toBeInTheDocument()
+  })
+
+  it('the chat button announces + shows unread, and drops both at zero', () => {
+    const { rerender } = render(<TouchHarness chatUnread={2} />)
+    expect(screen.getByRole('button', { name: 'Open chat — 2 unread' })).toBeInTheDocument()
+    expect(screen.getByTestId('chat-unread-dot')).toBeInTheDocument()
+    rerender(<TouchHarness chatUnread={0} />)
+    expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-unread-dot')).toBeNull()
   })
 })

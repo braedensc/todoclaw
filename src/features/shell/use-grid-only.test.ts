@@ -74,4 +74,24 @@ describe('useGridOnly', () => {
     expect(result.current.gridOnly).toBe(true)
     window.location.hash = ''
   })
+
+  it('entered FROM a #/chat deep link, exit works: the pop lands on the chat entry, not home', () => {
+    // The desktop header pill is clickable while a chat deep link is the current entry — the
+    // exit detector keys on the RECORDED entry hash, never a hard-coded home hash.
+    window.location.hash = '#/chat'
+    const { result } = renderHook(() => useGridOnly())
+    act(() => result.current.enter())
+    act(() => fire(null)) // Back: pops the flagged entry, lands on the '#/chat' entry
+    expect(result.current.gridOnly).toBe(false)
+    window.location.hash = ''
+  })
+
+  it('a pop landing on ANOTHER overlay’s flagged entry (e.g. quadrant focus beneath) exits too', () => {
+    window.location.hash = '#/'
+    const { result } = renderHook(() => useGridOnly())
+    act(() => result.current.enter())
+    // Our entry popped; the entry beneath happens to be quadrant focus's (home hash, its flag).
+    act(() => fire({ tcQuadrantFocus: true }))
+    expect(result.current.gridOnly).toBe(false)
+  })
 })
