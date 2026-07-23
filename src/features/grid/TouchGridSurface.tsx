@@ -142,7 +142,11 @@ export function TouchGridSurface({
   const selectedPaused = selected != null && dormantPlaced.some((t) => t.id === selected.id)
   const openGroup =
     clusters.find((g) => g.length > 1 && clusterDominant(g, { timeZone }).id === clusterId) ?? null
-  const movingTask = placedTasks.find((t) => t.id === movingId) ?? null
+  // Dormant chips are draggable too (they show WHERE a paused task will land when it wakes), so
+  // every drag lookup searches BOTH passes — active placed chips and the dormant "set aside" pass.
+  const findPlaced = (id: string): Task | undefined =>
+    placedTasks.find((t) => t.id === id) ?? dormantPlaced.find((t) => t.id === id)
+  const movingTask = (movingId ? findPlaced(movingId) : undefined) ?? null
 
   const daysFor = (task: Task) => daysUntil(task.due, { timeZone })
   const minutesFor = (task: Task) => minutesUntilDueTime(task.due, task.due_time, timeZone, now)
@@ -190,7 +194,7 @@ export function TouchGridSurface({
     },
     onFrame: (id, p) => {
       const n = chipNodes.current.get(id)
-      const task = placedTasks.find((t) => t.id === id)
+      const task = findPlaced(id)
       if (n) {
         n.style.left = `${p.x * 100}%`
         n.style.top = `${(1 - p.y) * 100}%`
@@ -289,8 +293,10 @@ export function TouchGridSurface({
           data-testid="touch-grid-canvas"
           {...{ [BACKGROUND_DISMISS_ATTR]: true }}
           onPointerDown={handleSurfacePointerDown}
-          className="relative h-full w-full overflow-hidden"
-          style={PAPER_STYLE}
+          className="relative h-full w-full select-none overflow-hidden"
+          // Belt-and-suspenders with the chip's own suppression: a hold anywhere on the grid must
+          // never start an iOS text selection / callout that would cover the board mid-drag.
+          style={{ ...PAPER_STYLE, WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
         >
           {/* Quadrant tints — every backdrop layer is pointer-events-none so only the canvas
               itself counts as background (dismiss + tap-to-place both key off it). */}
@@ -369,19 +375,26 @@ export function TouchGridSurface({
             </div>
           )}
 
-          {/* Dormant (paused) chips — read-only pass BEHIND active chips, never clustered. */}
+          {/* Dormant (paused) chips — a distinct pass BEHIND active chips, never clustered, but
+              still repositionable: the same press-and-hold drag as active chips (dragging one just
+              updates WHERE it will land when it wakes; start_date is untouched, so it stays
+              dormant). The paused dress (slate ring / ⏸ chip / 💤 flag / dim) is unchanged. */}
           <div data-testid="chip-layer" className={movingTask ? 'pointer-events-none' : undefined}>
             {dormantPlaced.map((task) => {
               const p = clampPoint(task.x, task.y, chipBounds)
               return (
                 <TouchGridChip
-                  key={task.id}
+                  key={`${task.id}:${chipEpoch}`}
                   task={task}
                   screenX={p.x}
                   screenY={1 - p.y}
                   daysUntilDue={daysFor(task)}
                   minutesUntilDue={minutesFor(task)}
                   paused
+                  dimmed={movingId === task.id}
+                  lifted={drag.draggingId === task.id}
+                  chipRef={registerChip(task.id)}
+                  onHoldStart={drag.startHold(task.id)}
                   onTap={() => setSelectedId(task.id)}
                 />
               )
@@ -407,6 +420,7 @@ export function TouchGridSurface({
                     daysUntilDue={daysFor(task)}
                     minutesUntilDue={minutesFor(task)}
                     dimmed={movingId === task.id}
+                    lifted={drag.draggingId === task.id}
                     chipRef={registerChip(task.id)}
                     onHoldStart={drag.startHold(task.id)}
                     onTap={() => setSelectedId(task.id)}

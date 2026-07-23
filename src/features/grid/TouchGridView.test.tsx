@@ -157,14 +157,18 @@ describe('TouchGridSurface rendering', () => {
     expect(screen.queryByText('Done earlier today')).toBeNull()
   })
 
-  it('a stale chip wears the full cool dress: ❄️ corner flag + azure frost chip, no warm chip', () => {
+  it('a stale chip wears the ❄️ corner flag + an azure frost chip that does NOT repeat the ❄️', () => {
     // Deep-stale by construction: undated, on the board since 2000 (past the 90d floor).
     tasksFixture = [
       makeTask({ id: 'st1', text: 'Forgotten idea', created_at: '2000-01-01T00:00:00Z' }),
     ]
     render(<TouchHarness />)
     const chip = chipFor('Forgotten idea')
-    expect(within(chip).getByText(/❄️ Stale/)).toBeInTheDocument()
+    // The inline frost chip shows the stale age WITHOUT the snowflake — it's not duplicated; the
+    // ❄️ lives on the corner flag only.
+    const frostChip = within(chip).getByText(/Stale ·/)
+    expect(frostChip.textContent).not.toContain('❄️')
+    // The corner flag carries the ❄️.
     expect(
       within(chip)
         .getAllByTitle(/Stale —/)
@@ -308,14 +312,15 @@ describe('TouchGridSurface task sheet', () => {
     expect(updateMutate).toHaveBeenCalledWith({ id: 'n1', patch: { text: 'New name' } })
   })
 
-  it('a paused task sheet offers Schedule + Delete but no Done/Move', () => {
+  it('a paused task sheet offers Schedule + Delete + Move but no Done', () => {
     const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
     tasksFixture = [makeTask({ id: 'z1', text: 'Paused task', start_date: future })]
     render(<TouchHarness />)
     fireEvent.click(chipFor('Paused task'))
     const sheet = screen.getByRole('dialog', { name: 'Task: Paused task' })
     expect(within(sheet).queryByRole('button', { name: /✓ Done/ })).toBeNull()
-    expect(within(sheet).queryByRole('button', { name: /⇢ Move/ })).toBeNull()
+    // Paused tasks CAN be repositioned (Move / press-and-hold drag) to set where they land on wake.
+    expect(within(sheet).getByRole('button', { name: /⇢ Move/ })).toBeInTheDocument()
     expect(within(sheet).getByRole('button', { name: /⋯ Schedule/ })).toBeInTheDocument()
     expect(within(sheet).getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
   })
@@ -549,14 +554,50 @@ describe('TouchGridSurface hold-drag', () => {
     expect(screen.getByRole('dialog', { name: 'Task: Keyed open' })).toBeInTheDocument()
   })
 
-  it('paused chips are not draggable: no hold wiring, plain click opens the sheet', () => {
+  it('paused chips are draggable too: hold wiring present, plain tap still opens the sheet', () => {
     const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
     tasksFixture = [makeTask({ id: 'h4', text: 'Asleep', start_date: future })]
     render(<TouchHarness />)
     const chip = chipFor('Asleep')
-    expect(chip.style.touchAction).toBe('')
+    // Now wired for the press-and-hold drag: draggable chips own their touches (touch-action:none).
+    expect(chip.style.touchAction).toBe('none')
+    // A quick tap (no hold) is still delivered as the tap → opens the sheet.
     fireEvent.click(chip)
     expect(screen.getByRole('dialog', { name: 'Task: Asleep' })).toBeInTheDocument()
+  })
+
+  it('press-and-hold repositions a PAUSED chip too — the write keeps it dormant (only x/y move)', () => {
+    vi.useFakeTimers()
+    try {
+      const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+      tasksFixture = [
+        makeTask({ id: 'zp', text: 'Sleepy drag', x: 0.2, y: 0.2, start_date: future }),
+      ]
+      render(<TouchHarness />)
+      stubRect()
+      const chip = chipFor('Sleepy drag')
+      fireEvent.pointerDown(chip, { clientX: 100, clientY: 600 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      // Chip rides 56px above the finger — drop at y = 200 + 56 so the chip lands at data y 0.75.
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      fireEvent.pointerUp(window)
+      expect(updateMutate).toHaveBeenCalledTimes(1)
+      const arg = updateMutate.mock.calls[0]?.[0] as {
+        id: string
+        patch: { x: number; y: number; staged: boolean; start_date?: unknown }
+      }
+      expect(arg.id).toBe('zp')
+      expect(arg.patch.x).toBeCloseTo(0.75, 2)
+      expect(arg.patch.y).toBeCloseTo(0.75, 2)
+      expect(arg.patch.staged).toBe(false)
+      // The reposition never touches start_date, so the task stays dormant — it just relocates
+      // where it will land when it wakes.
+      expect(arg.patch).not.toHaveProperty('start_date')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('a lift that never really moves settles back without writing — even with finger jitter', () => {
