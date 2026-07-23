@@ -132,6 +132,32 @@ function render() {
       ins('left'),
   )
   L.push('')
+  // The LAYOUT GATE, evaluated on-device (ADR 2026-07-23-phones-stay-mobile-in-landscape).
+  // Must mirror MOBILE_MEDIA_QUERY in src/hooks/use-is-mobile.ts + tailwind's `wide` complement.
+  var gateMobile = matchMedia(
+    '(max-width: 719px), ((pointer: coarse) and (min-aspect-ratio: 8/5) and (max-width: 1023px))',
+  ).matches
+  var gateWide = matchMedia(
+    '(min-width: 720px) and (pointer: fine), (min-width: 720px) and (pointer: none), (min-width: 1024px), (min-width: 720px) and (max-aspect-ratio: 1599/1000)',
+  ).matches
+  L.push(
+    '<span class="k">layout gate</span>   <span class="hi">' +
+      (gateMobile ? 'MOBILE' : 'DESKTOP') +
+      '</span>  (wide=' +
+      gateWide +
+      (gateMobile === gateWide ? '  <span class="warn">(NOT complementary!)</span>' : '') +
+      ')  coarse=' +
+      matchMedia('(pointer: coarse)').matches,
+  )
+  // The pinned badge — readable even when the short landscape viewport clips this readout.
+  var gateEl = document.getElementById('gate')
+  if (gateEl) {
+    gateEl.textContent =
+      'gate: ' +
+      (gateMobile ? 'MOBILE' : 'DESKTOP') +
+      (gateMobile === gateWide ? ' ⚠︎ wide=' + gateWide : '')
+  }
+  L.push('')
   L.push('<span class="k">— vs screen —</span>')
   L.push(
     'innerH - screen  = ' +

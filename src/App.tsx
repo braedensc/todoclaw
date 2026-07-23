@@ -9,6 +9,7 @@ import { RemindersSheet } from './features/habits/RemindersSheet'
 import { WorkArea } from './features/shell/WorkArea'
 import { MobileBottomNav } from './features/shell/MobileBottomNav'
 import { MoreSheet } from './features/shell/MoreSheet'
+import { RotateGridHint } from './features/shell/RotateGridHint'
 import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
 import { useGridOnly } from './features/shell/use-grid-only'
@@ -821,6 +822,10 @@ function AppShell() {
                 onSignOut={() => void confirmSignOut()}
                 onClose={() => setShowMore(false)}
               />
+              {/* Rotating a phone no longer swaps to the desktop shell (ADR
+                  2026-07-23-phones-stay-mobile-in-landscape) — instead this pill surfaces the
+                  grid for a few seconds after each rotation to landscape, its natural aspect. */}
+              {route === 'home' && <RotateGridHint onOpenGrid={enterGridOnly} />}
             </>
           )}
         </div>

@@ -9,12 +9,29 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
-      // The app's single mobile/desktop breakpoint, mirroring `MOBILE_MAX_WIDTH` (719) in
-      // src/hooks/use-is-mobile.ts: `wide:` utilities apply at >= 720px (desktop), so CSS layout
-      // and the JS `useIsMobile()` (which drives tap-to-place) flip at the exact same width.
-      // Added alongside Tailwind's defaults (sm/md/lg/xl), not replacing them.
+      // The app's single mobile/desktop LAYOUT GATE, mirroring MOBILE_MEDIA_QUERY in
+      // src/hooks/use-is-mobile.ts: `wide:` utilities apply exactly where `useIsMobile()` is
+      // false, so CSS layout and JS gating flip at the same boundary. Since ADR
+      // 2026-07-23-phones-stay-mobile-in-landscape that boundary is COMPOUND (width plus a
+      // landscape-phone leg), not a bare 720px — see the `wide` comment below. Added alongside
+      // Tailwind's defaults (sm/md/lg/xl), not replacing them.
       screens: {
-        wide: '720px',
+        // `wide` = the DESKTOP side of the layout gate — the complement of MOBILE_MEDIA_QUERY
+        // in src/hooks/use-is-mobile.ts (keep the two in lockstep; ADR-0020's "flip at the
+        // identical boundary" rule now covers the landscape leg too). Phones stay MOBILE in
+        // both orientations (ADR 2026-07-23-phones-stay-mobile-in-landscape), so wide is no
+        // longer plain min-width: it also requires NOT (coarse ∧ phone-shaped ∧ ≤1023px wide).
+        // Aspect+width, never height — the iOS keyboard shrinks the layout viewport in
+        // installed PWAs, so a height leg would flip the shell mid-typing on an iPad (see
+        // LANDSCAPE_PHONE_MAX_WIDTH's derivation). Spelled as a four-query list instead of
+        // Media Queries 4 `not (...)` so older engines that can't parse boolean negation don't
+        // silently drop the desktop styles:
+        //   ¬(coarse ∧ ar≥8/5 ∧ w≤1023) ≡ fine ∨ none ∨ ar<8/5 ∨ w≥1024
+        // The ar<8/5 leg is max-aspect-ratio: 1599/1000 — a hairline GAP at aspect (1.599, 1.6)
+        // beats an overlap where both shells' styles would apply at exactly 8/5.
+        wide: {
+          raw: '(min-width: 720px) and (pointer: fine), (min-width: 720px) and (pointer: none), (min-width: 1024px), (min-width: 720px) and (max-aspect-ratio: 1599/1000)',
+        },
       },
       colors: {
         // Surfaces (warm paper)

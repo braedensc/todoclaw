@@ -91,6 +91,22 @@
       .warn {
         color: #ff8a8a;
       }
+      /* The layout-gate verdict, pinned so it survives the SHORT landscape viewport (the fixed
+         shell clips the readout there — this badge is how the sim-lab reads the gate). */
+      #gate {
+        position: fixed;
+        top: calc(4px + env(safe-area-inset-top));
+        right: calc(6px + env(safe-area-inset-right));
+        z-index: 9;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: #12324a;
+        border: 1px solid #2f6ea3;
+        color: #ffd479;
+        font:
+          700 12px ui-monospace,
+          monospace;
+      }
       /* A visible bar pinned to the true bottom of the flex column — mirrors the app's nav.
          If this bar is cut off / off-screen, that's the "nav too tiny" bug reproduced. */
       #bar {
@@ -140,6 +156,7 @@
     <div class="u" id="lvh"></div>
     <div class="u" id="svh"></div>
     <div class="u" id="vh"></div>
+    <div id="gate">gate: …</div>
     <div id="wrap">
       <pre id="out">measuring…</pre>
       <input id="inp" placeholder="tap here to raise the keyboard" />

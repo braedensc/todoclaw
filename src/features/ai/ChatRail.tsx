@@ -45,9 +45,10 @@ export function ChatRail({
   const isMobile = useIsMobile()
   useBackgroundDismiss(onClose, open && !isMobile)
 
-  // This full-height rail also serves iPhone-landscape and small iPads (≥ 720px), where a real
-  // software keyboard eats the bottom of the screen and would bury the rail's bottom-anchored
-  // composer behind the keys. Mirror ChatPanel: while the keyboard is up, clamp the rail into the
+  // This full-height rail also serves small iPads (desktop side of the layout gate; landscape
+  // iPhones are MOBILE since ADR 2026-07-23 and get the ChatPanel sheet, never this rail),
+  // where a real software keyboard eats the bottom of the screen and would bury the rail's
+  // bottom-anchored composer behind the keys. Mirror ChatPanel: while the keyboard is up, clamp the rail into the
   // visible band (pin its bottom above the keyboard, take the visible height) so the composer lands
   // above it. Scoped to `open` so the listeners only run while the rail is up; the hook returns
   // CLOSED where visualViewport is unsupported, so a mouse-driven desktop keeps its static layout.

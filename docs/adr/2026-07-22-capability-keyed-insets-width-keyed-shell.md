@@ -1,6 +1,6 @@
 # ADR 2026-07-22 — Safe-area insets and touch ergonomics key on capability; the locked shell stays width-keyed
 
-**Date:** 2026-07-22 · **Post-launch** (mobile shell) · **Status:** Accepted · refines [ADR-0020](0020-responsive-layout-one-720px-breakpoint-bottom.md), leaves [ADR-0028](0028-mobile-list-only-no-grid-single-add-sheet.md) unchanged
+**Date:** 2026-07-22 · **Post-launch** (mobile shell) · **Status:** Accepted · refines [ADR-0020](0020-responsive-layout-one-720px-breakpoint-bottom.md), leaves [ADR-0028](0028-mobile-list-only-no-grid-single-add-sheet.md) unchanged · the *layout gate itself* (which this ADR keeps the shell keyed to) later gained a landscape-phone leg — [ADR 2026-07-23](2026-07-23-phones-stay-mobile-in-landscape.md) — so "width-keyed" now reads "layout-gate-keyed": the shell still flips exactly with the layout, never with bare capability
 
 A device-debugging report (iPad + landscape-iPhone follow-up to #329) flagged that **all** iOS
 shell behavior was gated on the one `(max-width: 719px)` layout breakpoint: the locked

@@ -1,6 +1,6 @@
 # ADR-0028 — Mobile is list-only: no grid, one add sheet
 
-**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign) · **Status:** Accepted · supersedes the mobile grid of [ADR-0020](0020-responsive-layout-one-720px-breakpoint-bottom.md) / [ADR-0025](0025-mobile-matrix-overview-focus-reinterpretation.md)
+**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign) · **Status:** Accepted · supersedes the mobile grid of [ADR-0020](0020-responsive-layout-one-720px-breakpoint-bottom.md) / [ADR-0025](0025-mobile-matrix-overview-focus-reinterpretation.md) · gate definition amended by [ADR 2026-07-23](2026-07-23-phones-stay-mobile-in-landscape.md) (phones stay mobile in landscape); the fullscreen touch grid (grid-only mode) is the deliberate exception to "no grid on mobile"
 
 After using the mobile redesign (ADR-0025/0026), the pixel grid earned its keep only on desktop.
 On a phone it added a second, worse way to see the same tasks (a cramped canvas) and a confusing
