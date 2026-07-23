@@ -961,6 +961,49 @@ describe('GridView iPad hybrid (coarse pointer, desktop layout)', () => {
     expect(screen.queryByTestId('touch-card-popover')).toBeNull()
   })
 
+  it('starting a hold-drag on the tapped card closes its popover (no detached float)', () => {
+    vi.useFakeTimers()
+    try {
+      mockIsCoarse.mockReturnValue(true)
+      tasksFixture = [makeTask({ id: 'p7', text: 'Move after tap' })]
+      render(<GridHarness />)
+      const card = cardFor('Move after tap')
+      // Open the popover.
+      fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+      fireEvent.click(card, { detail: 1 })
+      expect(screen.getByTestId('touch-card-popover')).toBeInTheDocument()
+      // Now press-and-hold the same card to reposition — the lift must close the popover.
+      fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('tapping a second card moves the popover to it (capture-phase dismiss beats stopPropagation)', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [
+      makeTask({ id: 'a1', text: 'First card', x: 0.2, y: 0.2 }),
+      makeTask({ id: 'b1', text: 'Second card', x: 0.8, y: 0.8 }),
+    ]
+    render(<GridHarness />)
+    const tap = (text: string) => {
+      const card = cardFor(text)
+      fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+      fireEvent.click(card, { detail: 1 })
+    }
+    tap('First card')
+    expect(screen.getByRole('dialog', { name: 'Task: First card' })).toBeInTheDocument()
+    tap('Second card')
+    expect(screen.queryByRole('dialog', { name: 'Task: First card' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Task: Second card' })).toBeInTheDocument()
+  })
+
   it('the action bar carries the coarse-halo marker (index.css grows 44pt tap targets off it)', () => {
     tasksFixture = [makeTask({ id: 'p6', text: 'Halo card' })]
     render(<GridHarness />)

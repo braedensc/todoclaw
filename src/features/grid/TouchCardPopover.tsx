@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { CSSProperties, RefObject } from 'react'
 import type { Task } from '../../types/task'
@@ -37,6 +37,12 @@ export interface TouchCardPopoverProps {
    * trips react-hooks/set-state-in-effect).
    */
   anchorRef: RefObject<HTMLElement | null>
+  /**
+   * Bumped whenever the grid reflows (chat push-drawer, window resize) — the anchor card moves
+   * but fires no scroll/resize event of its own, so this is the re-anchor signal (ClusterPopup's
+   * reflowKey pattern; a ResizeObserver, not a window resize, drives the grid's reflow).
+   */
+  reflowKey: number
   daysUntilDue: number | null
   minutesUntilDue: number | null
   timeZone: string
@@ -70,6 +76,7 @@ export function TouchCardPopover({
   task,
   paused,
   anchorRef,
+  reflowKey,
   daysUntilDue,
   minutesUntilDue,
   timeZone,
@@ -91,6 +98,7 @@ export function TouchCardPopover({
   const [draft, setDraft] = useState('')
   const [showSchedule, setShowSchedule] = useState(false)
   const [pos, setPos] = useState<PopoverPos | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const reposition = useCallback(() => {
     const anchor = anchorRef.current
@@ -129,16 +137,22 @@ export function TouchCardPopover({
       window.removeEventListener('scroll', reposition, true)
       window.removeEventListener('resize', reposition)
     }
-    // showSchedule/editing change the panel height → re-measure so a flip stays correct.
-  }, [reposition, showSchedule, editing])
+    // showSchedule/editing change the panel height, and reflowKey bumps when the grid resizes
+    // under a fixed anchor — re-measure on any of them so a flip/anchor stays correct.
+  }, [reposition, showSchedule, editing, reflowKey])
 
-  // Dismiss on any press OUTSIDE the popover. Deliberately pointerdown (not click): the grid
-  // canvas and cards both act on pointerdown, so the popover must already be gone by then —
-  // and our own panel stops pointerdown propagation, so it never self-dismisses.
+  // Dismiss on any press OUTSIDE the popover. CAPTURE phase (+ a contains() check) is
+  // load-bearing: grid cards and action-bar controls stopPropagation on pointerdown, which — via
+  // React 18's root-delegated events — would swallow a BUBBLE-phase document listener, so tapping
+  // another card / the card's ⋯ / a cluster bubble would never dismiss this (iPad-hybrid review).
+  // Capture runs top-down before any target handler, so nothing downstream can block it; the
+  // contains() check is what keeps a press inside the panel from self-dismissing.
   useEffect(() => {
-    const onDocPointerDown = () => onClose()
-    document.addEventListener('pointerdown', onDocPointerDown)
-    return () => document.removeEventListener('pointerdown', onDocPointerDown)
+    const onDocPointerDown = (e: PointerEvent) => {
+      if (!panelRef.current?.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('pointerdown', onDocPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onDocPointerDown, true)
   }, [onClose])
 
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
@@ -166,6 +180,7 @@ export function TouchCardPopover({
 
   return createPortal(
     <div
+      ref={panelRef}
       data-testid="touch-card-popover"
       role="dialog"
       aria-label={`Task: ${task.text}`}

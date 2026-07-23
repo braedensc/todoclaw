@@ -68,6 +68,7 @@ function renderPopover(
       task={task}
       paused={over.paused ?? false}
       anchorRef={anchorStub()}
+      reflowKey={0}
       daysUntilDue={null}
       minutesUntilDue={null}
       timeZone="America/New_York"
@@ -123,5 +124,18 @@ describe('TouchCardPopover', () => {
     expect(h.onClose).not.toHaveBeenCalled()
     fireEvent.pointerDown(document.body)
     expect(h.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('outside-dismiss survives a stopPropagation on the press (capture-phase listener)', () => {
+    // A grid card / action-bar control stops pointerdown propagation; a bubble-phase document
+    // listener would be swallowed (React 18 delegates at #root). The capture-phase listener must
+    // still fire so tapping another card dismisses the popover.
+    const h = renderPopover(makeTask({ text: 'Dismiss me' }))
+    const outside = document.createElement('button')
+    outside.addEventListener('pointerdown', (e) => e.stopPropagation())
+    document.body.appendChild(outside)
+    fireEvent.pointerDown(outside)
+    expect(h.onClose).toHaveBeenCalledTimes(1)
+    outside.remove()
   })
 })

@@ -165,13 +165,12 @@ export function GridSurface({
 
   // iPad hybrid (workshop PR 4): on coarse-pointer desktop, a TAP on a card (freed up by the
   // hold-to-lift reposition — use-grid) opens the touch actions popover anchored to that card.
-  // Derived from live data so a task completed/deleted elsewhere closes its own popover.
-  const tappedTask = tappedCardId
-    ? (placedTasks.find((t) => t.id === tappedCardId) ??
-      dormantPlaced.find((t) => t.id === tappedCardId) ??
-      null)
-    : null
-  const tappedPaused = tappedTask != null && dormantPlaced.some((t) => t.id === tappedTask.id)
+  // Resolved ONLY against placedTasks (active cards): a task that leaves the board — completed or
+  // deleted elsewhere, OR paused from within the popover's own SchedulePanel — drops out of
+  // placedTasks, so tappedTask goes null and the popover unmounts cleanly. (Dormant cards never
+  // reach the popover anyway: they render with a noop pointer-down, so they never fire onTap; and
+  // they register no DOM node, so anchoring one would be impossible.)
+  const tappedTask = tappedCardId ? (placedTasks.find((t) => t.id === tappedCardId) ?? null) : null
   // A stable ref for the popover to measure against (a changing node PROP would trip the
   // set-state-in-effect lint). Point it at the tapped card's live node each render; a derived
   // value, not React state, so writing it in render is fine.
@@ -436,8 +435,9 @@ export function GridSurface({
         <TouchCardPopover
           key={tappedTask.id}
           task={tappedTask}
-          paused={tappedPaused}
+          paused={false}
           anchorRef={popoverAnchorRef}
+          reflowKey={reflowKey}
           daysUntilDue={daysUntil(tappedTask.due, { timeZone })}
           minutesUntilDue={minutesUntilDueTime(tappedTask.due, tappedTask.due_time, timeZone, now)}
           timeZone={timeZone}

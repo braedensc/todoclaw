@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 // Free-canvas drag primitive — raw Pointer Events (chosen in ADR-0004).
 // One handler set covers mouse, touch, and pen. Drives every drag consumer:
-// grid card reposition, staging-tray → grid placement, and cluster-popup drag-out.
-// (Mobile tap-to-place is a separate, simpler interaction the surface handles directly.)
+// grid card reposition, new-item-card → grid placement, and cluster-popup drag-out.
+// Three modes: EAGER (default — lift on pointer-down), activateOnMove (defer the lift until a
+// real drag, so a bare press taps/edits in place), and holdToLift (the iPad hybrid — press-and-
+// HOLD to lift, with the touch-gesture discipline: finger-offset ghost, jitter slop, pointerId
+// filtering, one-gesture gate, Escape abort). (Mobile tap-to-place is a separate, simpler
+// interaction the surface handles directly.)
 
 export interface NormalizedPoint {
   /** urgency, 0 (left) → 1 (right) */
@@ -127,7 +131,7 @@ export interface UseFreeDragOptions {
    */
   activateOnMove?: boolean
   /**
-   * TOUCH mode (the iPad hybrid, ADR-0028 workshop PR 4): a press must HOLD for HOLD_MS before
+   * TOUCH mode (the iPad hybrid — touch-grid workshop PR 4): a press must HOLD for HOLD_MS before
    * it lifts into a drag — a quick release is a tap (onTap), a swipe past HOLD_SLOP_PX before
    * the hold fires is a dead gesture, and once lifted the item rides LIFT_OFFSET_PX above the
    * finger (drop commits at the item). Mutually exclusive with `activateOnMove`. Carries the
@@ -162,6 +166,12 @@ export function useFreeDrag({
   // holdToLift only: one gesture at a time — a second finger pressing another card must not
   // install a second competing listener set (touch-grid drag review).
   const holdActiveRef = useRef(false)
+  // Teardown for an IN-FLIGHT gesture, so unmounting mid-drag (e.g. a second finger navigates
+  // away while a card is lifted) doesn't leak the window pointer + document keydown listeners —
+  // the capture-phase Escape listener would otherwise swallow the app's next Escape. Null while
+  // no gesture is live (iPad-hybrid review).
+  const inFlightCleanupRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => inFlightCleanupRef.current?.(), [])
   // Hold the latest callbacks/options so the pointer listeners never go stale and we
   // don't rebind them on every render. Updated in an effect (not during render) so the
   // first drag after a prop change still sees fresh values.
@@ -237,6 +247,7 @@ export function useFreeDrag({
       const cleanup = (): void => {
         window.clearTimeout(holdTimer)
         holdActiveRef.current = false
+        inFlightCleanupRef.current = null
         setDraggingId(null)
         window.removeEventListener('pointermove', handleMove)
         window.removeEventListener('pointerup', handleUp)
@@ -272,6 +283,7 @@ export function useFreeDrag({
         cleanup()
       }
 
+      inFlightCleanupRef.current = cleanup
       window.addEventListener('pointermove', handleMove)
       window.addEventListener('pointerup', handleUp)
       window.addEventListener('pointercancel', handleCancel)

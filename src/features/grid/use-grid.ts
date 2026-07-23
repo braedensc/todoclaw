@@ -201,6 +201,12 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // by clicking the grid background, dragging a row out, or marking a recurring task done.
   const [openClusterId, setOpenClusterId] = useState<string | null>(null)
 
+  // The iPad-hybrid touch actions popover (workshop PR 4): the placed card whose popover is open
+  // on a coarse-pointer desktop device, or null. Declared up here so selectCluster can clear it —
+  // the cluster popup and this popover are mutually exclusive (both are z-90 task editors).
+  const [tappedCardId, setTappedCardId] = useState<string | null>(null)
+  const clearCardTap = useCallback(() => setTappedCardId(null), [])
+
   // The cluster-popup row currently in inline-edit mode (a plain tap opens editing rather than
   // tearing the card out — item 16).
   const [editingClusterRowId, setEditingClusterRowId] = useState<string | null>(null)
@@ -212,6 +218,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   const selectCluster = useCallback((id: string | null) => {
     setOpenClusterId(id)
     setEditingClusterRowId(null)
+    setTappedCardId(null) // opening/closing a cluster closes the touch card popover (both z-90)
   }, [])
 
   // Size-aware drop clamp shared by every grid drag (reposition / new-item / popup drag-out) and
@@ -316,19 +323,23 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // no tap semantics (onTap only records when holdToLift is live).
   const isCoarse = useIsCoarsePointer()
   const holdToLift = isCoarse && !isMobile
-  const [tappedCardId, setTappedCardId] = useState<string | null>(null)
   const handleCardTap = useCallback(
     (id: string) => {
-      if (holdToLift) setTappedCardId((current) => (current === id ? null : id))
+      if (!holdToLift) return
+      setOpenClusterId(null) // a card tap closes any open cluster popup (mutually exclusive)
+      setTappedCardId((current) => (current === id ? null : id))
     },
     [holdToLift],
   )
-  const clearCardTap = useCallback(() => setTappedCardId(null), [])
   const reposition = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handleRepositionDrop,
     onMove: handleDragMove,
     onTap: handleCardTap,
+    // A hold-drag lift closes the popover — otherwise it floats detached at the card's old spot
+    // while the card moves (the reposition pointerdown stopPropagations past the popover's own
+    // outside-dismiss, iPad-hybrid review). No-op on fine pointer (tappedCardId is never set).
+    onDragStart: clearCardTap,
     clamp: cardClamp,
     holdToLift,
   })
