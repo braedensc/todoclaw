@@ -11,6 +11,7 @@ import { MobileBottomNav } from './features/shell/MobileBottomNav'
 import { MoreSheet } from './features/shell/MoreSheet'
 import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
+import { useGridOnly } from './features/shell/use-grid-only'
 import { useIsMobile } from './hooks/use-is-mobile'
 import { useLockedViewportGuard } from './hooks/use-locked-viewport-guard'
 import { useAppHeight } from './hooks/use-app-height'
@@ -108,8 +109,10 @@ function AppShell() {
   // writes reach every surface, not just this mobile add flow.
   const showToast = useToast()
   // Grid-only view: the grid goes fullscreen and everything else on the shell is hidden. Entered
-  // from the header pill (desktop) or the More sheet (mobile); left via the overlay's ✕ pill or Esc.
-  const [gridOnly, setGridOnly] = useState(false)
+  // from the header pill (desktop) or the More sheet's "Grid view" row (mobile); left via the
+  // overlay's ✕ pill, Esc, or the system Back gesture — the mode holds one state-flagged history
+  // entry (use-grid-only), so ✕/Esc route through history.back() like quadrant focus does.
+  const { gridOnly, enter: enterGridOnly, exit: exitGridOnly } = useGridOnly()
   // Below 720px the tall header is replaced by a slim top bar + a thumb-zone bottom nav (Concept D,
   // ADR-0026). JS-gated (not just CSS) so exactly one Account nav renders per environment — keeping
   // the golden `openDone` selector unambiguous and desktop untouched.
@@ -219,15 +222,16 @@ function AppShell() {
       })
   }, [chatMsgId, messages.data, openSession, mark, openMsgChat, showToast])
 
-  // Esc leaves grid-only mode (the overlay covers the header, so the ✕ pill + this are the exits).
+  // Esc leaves grid-only mode (the overlay covers the header, so the ✕ pill, Back, and this are
+  // the exits). Routes through history like the ✕ pill so the mode's entry is consumed.
   useEffect(() => {
     if (!gridOnly) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setGridOnly(false)
+      if (e.key === 'Escape') exitGridOnly()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [gridOnly])
+  }, [gridOnly, exitGridOnly])
 
   // The chat overlay is open via the WorkArea button (showChat) OR a #/chat deep link (route). Both
   // the desktop push-drawer and the mobile sheet key off this; closing clears both and returns the
@@ -453,7 +457,7 @@ function AppShell() {
                       grid-alone mode (tagline / plan / reminders / input / toggle all hidden). */}
                         <button
                           type="button"
-                          onClick={() => setGridOnly(true)}
+                          onClick={enterGridOnly}
                           title="Fill the screen with just the grid — hide everything else"
                           className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
                         >
@@ -730,8 +734,9 @@ function AppShell() {
                     chat={chat}
                     onOpenChat={openChatConversation}
                     gridOnly={gridOnly}
-                    onExitGridOnly={() => setGridOnly(false)}
+                    onExitGridOnly={exitGridOnly}
                     quadrantFocus={quadrantFocus}
+                    chatUnread={unread}
                     onSeeExample={() => setTour('demo-solo')}
                   />
                 </ErrorBoundary>
@@ -805,6 +810,7 @@ function AppShell() {
               />
               <MoreSheet
                 open={showMore}
+                onGrid={enterGridOnly}
                 onReminders={() => navigate('reminders')}
                 onSettings={() => setShowSettings(true)}
                 onAdmin={isOwner ? () => navigate('admin') : undefined}
@@ -848,6 +854,7 @@ function AppShell() {
         onClose={closeChat}
         view={chatView}
         onViewChange={setChatView}
+        raised={gridOnly}
       />
       {chatOpen && (
         <ErrorBoundary>

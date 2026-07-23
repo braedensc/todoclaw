@@ -4,6 +4,7 @@ import { MoreSheet } from './MoreSheet'
 
 describe('MoreSheet', () => {
   const handlers = () => ({
+    onGrid: vi.fn(),
     onReminders: vi.fn(),
     onSettings: vi.fn(),
     onSignOut: vi.fn(),

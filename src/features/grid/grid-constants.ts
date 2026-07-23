@@ -18,6 +18,16 @@ export const CARD_HALF_WIDTH = CARD_WIDTH / 2
 export const CARD_HALF_HEIGHT = 44
 
 /**
+ * Touch-chip extents (TouchGridSurface, the fullscreen touch grid). Chips are the phone/tablet
+ * simplification of the 112px desktop card: one-line title + status chip. Same clamp math as
+ * cards (boxClampBounds with these halves keeps a chip's whole box inside the surface). Height
+ * is representative like CARD_HALF_HEIGHT — a chip with a status row runs ~44px tall.
+ */
+export const TOUCH_CHIP_WIDTH = 76
+export const TOUCH_CHIP_HALF_WIDTH = TOUCH_CHIP_WIDTH / 2
+export const TOUCH_CHIP_HALF_HEIGHT = 26
+
+/**
  * Card border accent — EisenClaw colored every card by its bucket dot
  * (`getBucket(t.bucket).dot`, html:20-23/587). In its final state only the `oneoff` bucket
  * survives (dot `#c2693f` = the terracotta accent; `weekly`/`project` were migrated away —
