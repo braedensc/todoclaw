@@ -40,7 +40,7 @@ function anchorStub() {
       x: 300,
       y: 200,
     }) as DOMRect
-  return { current: el } as React.RefObject<HTMLElement | null>
+  return () => el
 }
 
 const handlers = () => ({
@@ -67,7 +67,7 @@ function renderPopover(
     <TouchCardPopover
       task={task}
       paused={over.paused ?? false}
-      anchorRef={anchorStub()}
+      getAnchor={anchorStub()}
       reflowKey={0}
       daysUntilDue={null}
       minutesUntilDue={null}

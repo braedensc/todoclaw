@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { CSSProperties, RefObject } from 'react'
+import type { CSSProperties } from 'react'
 import type { Task } from '../../types/task'
 import { SchedulePanel } from '../schedule/SchedulePanel'
 import { quadrantMeta } from '../../lib/quadrants'
@@ -31,12 +31,13 @@ export interface TouchCardPopoverProps {
   /** Dormant (paused) card — read-only except the schedule path (Resume) and delete. */
   paused: boolean
   /**
-   * Ref to the card's live DOM node to anchor to (GridSurface points it at getCardNode(id)).
-   * A REF, not a plain node, deliberately: `reposition` then closes over a stable dependency,
-   * so the measure-in-effect matches ClusterPopup's lint-clean shape (a prop-node dependency
-   * trips react-hooks/set-state-in-effect).
+   * Returns the card's live DOM node to anchor to (GridSurface passes a stable
+   * useCallback wrapping getCardNode(id)). A stable GETTER, not a node prop: `reposition` then
+   * closes over a stable dependency (matching ClusterPopup's lint-clean measure-in-effect — a
+   * changing node dependency trips react-hooks/set-state-in-effect), and unlike a ref there is
+   * no ref written during render (the react-compiler "no refs during render" rule).
    */
-  anchorRef: RefObject<HTMLElement | null>
+  getAnchor: () => HTMLElement | null
   /**
    * Bumped whenever the grid reflows (chat push-drawer, window resize) — the anchor card moves
    * but fires no scroll/resize event of its own, so this is the re-anchor signal (ClusterPopup's
@@ -75,7 +76,7 @@ export interface TouchCardPopoverProps {
 export function TouchCardPopover({
   task,
   paused,
-  anchorRef,
+  getAnchor,
   reflowKey,
   daysUntilDue,
   minutesUntilDue,
@@ -99,9 +100,14 @@ export function TouchCardPopover({
   const [showSchedule, setShowSchedule] = useState(false)
   const [pos, setPos] = useState<PopoverPos | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  // The anchor node, cached in a ref (populated in the effect below, never during render).
+  // `reposition` then reads ONLY refs, so it can carry empty deps and stay stable — the shape
+  // that keeps the effect's setState off react-hooks/set-state-in-effect (a reactive dep like
+  // the getAnchor fn or a node prop trips it; ClusterPopup relies on the same ref-stability).
+  const anchorNodeRef = useRef<HTMLElement | null>(null)
 
   const reposition = useCallback(() => {
-    const anchor = anchorRef.current
+    const anchor = anchorNodeRef.current
     if (!anchor) return
     const rect = anchor.getBoundingClientRect()
     const vw = window.innerWidth
@@ -124,12 +130,15 @@ export function TouchCardPopover({
         maxHeight: Math.max(0, Math.min(MAX_HEIGHT, spaceBelow)),
       })
     }
-  }, [anchorRef])
+  }, [])
 
-  // Position after mount and on anything that can move the anchor (window scroll in capture —
-  // the grid-only overlay scrolls its own box — resize, and the height change of the schedule
-  // disclosure). Same pattern as ClusterPopup.
+  // Refresh the cached anchor node (cards commit their ref callbacks before this parent effect,
+  // so getAnchor resolves the live node here) and position — after mount and on anything that
+  // can move the anchor: window scroll (capture — the grid-only overlay scrolls its own box),
+  // resize, the schedule/edit disclosure's height change, and reflowKey (the grid resizes under
+  // a fixed anchor with no event of its own). Same pattern as ClusterPopup.
   useEffect(() => {
+    anchorNodeRef.current = getAnchor()
     reposition()
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
@@ -137,9 +146,7 @@ export function TouchCardPopover({
       window.removeEventListener('scroll', reposition, true)
       window.removeEventListener('resize', reposition)
     }
-    // showSchedule/editing change the panel height, and reflowKey bumps when the grid resizes
-    // under a fixed anchor — re-measure on any of them so a flip/anchor stays correct.
-  }, [reposition, showSchedule, editing, reflowKey])
+  }, [reposition, getAnchor, showSchedule, editing, reflowKey])
 
   // Dismiss on any press OUTSIDE the popover. CAPTURE phase (+ a contains() check) is
   // load-bearing: grid cards and action-bar controls stopPropagation on pointerdown, which — via
