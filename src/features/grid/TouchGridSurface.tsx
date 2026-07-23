@@ -319,15 +319,18 @@ export function TouchGridSurface({
             className="pointer-events-none absolute left-1/2 top-1/2 h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-muted-faint bg-bg"
           />
 
-          {/* Corner quadrant labels + edge axis labels. */}
+          {/* Corner quadrant labels + edge axis labels. The TOP pair sits at top-16 (not the
+              very corner) so it clears the floating exit pill that owns the top-right — the same
+              "push labels clear of top chrome" the desktop GridCanvas does; both top labels drop
+              together to stay symmetric. */}
           <span
-            className="pointer-events-none absolute left-2.5 top-2 text-[10px] font-semibold uppercase tracking-wide"
+            className="pointer-events-none absolute left-2.5 top-16 text-[10px] font-semibold uppercase tracking-wide"
             style={{ color: SCHEDULE.color }}
           >
             {SCHEDULE.label}
           </span>
           <span
-            className="pointer-events-none absolute right-2.5 top-2 text-[10px] font-semibold uppercase tracking-wide"
+            className="pointer-events-none absolute right-2.5 top-16 text-[10px] font-semibold uppercase tracking-wide"
             style={{ color: DO_NOW.color }}
           >
             {DO_NOW.label}
@@ -474,14 +477,20 @@ export function TouchGridSurface({
             </svg>
           ))}
 
-          {/* Floating chrome, all inside the safe-area box. */}
+          {/* Floating chrome, all inside the safe-area box. The exit pill is a SOLID, elevated
+              control (was a faint 10%-tint pill that read poorly over the warm/quadrant-tinted
+              grid and collided with the DO NOW corner label) — solid brand green, white glyph +
+              label, a ring for edge definition on light tints, owning the top-right corner. */}
           <button
             type="button"
             onClick={onExit}
             aria-label="Exit grid view"
-            className="absolute right-3 top-2 z-[60] flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary shadow-sm"
+            className="absolute right-3 top-3 z-[60] flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg ring-1 ring-black/10"
           >
-            <span aria-hidden>✕</span> Exit grid
+            <span aria-hidden className="text-base leading-none">
+              ✕
+            </span>{' '}
+            Exit grid
           </button>
 
           {movingTask && (
