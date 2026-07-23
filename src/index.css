@@ -8,21 +8,39 @@
    Atmosphere (the "style mix" pass): the background is no longer a flat hex — four soft
    radial washes echo the quadrant colors in their actual corners (schedule green top-left,
    do-now terracotta top-right, someday grey bottom-left, errands olive bottom-right), and a
-   fine SVG-noise grain kills the vector-flatness. All layers are fixed-attachment so the light
-   stays put while the page scrolls. Decorative only — contrast of text on bg is unaffected
+   fine SVG-noise grain kills the vector-flatness. All layers ride a fixed body::before (below)
+   so the light stays put while the page scrolls. Decorative only — contrast of text on bg is unaffected
    (every wash is ≤ 15% alpha over warm paper). Strengths were doubled from the original
    ≤ 8.5% pass at the owner's request, and the short-lived time-of-day variant was dropped
    for this one constant, grid-matching tint. */
 @layer base {
   body {
     @apply bg-bg font-sans text-ink antialiased;
+    /* Dynamic Island / notch sits on a SIDE edge in landscape; these resolve to 0px everywhere
+       else, so they apply unconditionally — deliberately outside the 719px query, because a
+       landscape iPhone (874pt wide on the 16 Pro) falls on the desktop side of the breakpoint. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* The atmosphere washes live on a fixed pseudo-element, NOT background-attachment: fixed —
+     iOS Safari inconsistently demotes that to `scroll`, and the body's background positioning
+     area is displaced by its safe-area padding anyway (a bug report measured the washes missing
+     from part of the visible viewport). A fixed inset:0 layer anchors the corner washes to the
+     true screen corners; it paints above body's own bg-bg (negative z-index children sit over
+     the parent's background, under its content). The flat bg-bg stays on body so the canvas
+     (which propagates body's background) never flashes unpainted. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background-image:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
       radial-gradient(58% 46% at 8% 0%, rgba(61, 122, 95, 0.15), transparent 70%),
       radial-gradient(58% 46% at 94% 0%, rgba(191, 94, 42, 0.15), transparent 70%),
       radial-gradient(52% 42% at 4% 100%, rgba(133, 124, 110, 0.13), transparent 70%),
       radial-gradient(52% 42% at 96% 100%, rgba(125, 107, 30, 0.11), transparent 70%);
-    background-attachment: fixed;
   }
 }
 
@@ -46,19 +64,22 @@
    safe-area BOTTOM inset. overscroll-behavior is global (all widths): page-level scroll chaining /
    pull-to-refresh gestures are never wanted.
 
-   STANDALONE (installed PWA) — `--app-h` below. NO static CSS unit is correct there (measured
-   on the iOS 26.5 iPhone 15 Pro Max sim, fix/chat-keyboard-bottom-bar): the standalone viewport
-   itself FLIPS between screen-minus-top-inset (873 of a 932pt screen, fresh launch) and the full
-   screen (932, after the web-app chrome settles). `dvh` tracks the flip, so in the short state a
-   dvh shell leaves the nav floating 59px up (the original floating-bar bug). A previous fix pinned
-   the shell to `100lvh` — but lvh is a static full-screen 932, so in the 873 state the shell
-   OVERHANGS the physical bottom and the nav is clipped to a sliver (the iPhone-15-Pro-Max "bottom
-   bar too tiny" bug; lvh had been measured only in the full-bleed state, on an iPhone 16). The
-   oversized shell also leaves ~59px of scrollable slack that iOS pans when the chat composer
-   focuses, displacing every fixed-position sheet (the broken-chat-keyboard half of the report).
-   The fix: src/hooks/use-app-height.ts measures the REAL live viewport (visualViewport.height,
-   ignoring keyboard-sized shrinks) into `--app-h`; the shell can then never overshoot or
-   undershoot in either standalone state. In a browser tab visualViewport.height == dvh, so the
+   STANDALONE (installed PWA) — `--app-h` below. NO static CSS unit is correct there, and neither
+   is raw visualViewport.height (measured on the iOS 26.5 iPhone 16 + 15 Pro Max sims,
+   fix/iphone16-bottom-bar-still-high): at COLD LAUNCH the window is full-bleed but the
+   layout+visual viewport is screen-minus-top-inset and TOP-anchored — a dead strip spans the
+   bottom 59px until the first DOM-mutating tap settles the viewport to full-bleed (it never
+   settles on its own). A dvh OR vv.height shell floats the nav 59px up in that state (#317's
+   original float, re-shipped by #328's pure-vv measure); a static `100lvh` shell paints flush
+   there (document overflow below the short viewport still paints) but OVERHANGS in the
+   bottom-anchored short state #328's session measured (the 15-Pro-Max "bottom bar too tiny"
+   bug), and leaves scrollable slack iOS pans on composer focus (the chat sheets re-anchor from
+   visualViewport top+height, so panning is survivable — but never free).
+   The fix: src/hooks/use-app-height.ts measures the live viewport (visualViewport.height,
+   ignoring keyboard-sized shrinks) into `--app-h`, RAISED to the measured 100lvh window height
+   when iOS-standalone && env(safe-area-inset-top) > 0 — env() is viewport-relative, so a
+   non-zero top inset proves the viewport is pinned to the window TOP and the shell must reach
+   the window bottom. In a browser tab env-top == 0 and visualViewport.height == dvh, so the
    measured value only ever matches the (correct) dvh path — the fallback below is also the
    pre-JS first-paint value. */
 html,

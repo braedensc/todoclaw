@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { KEYBOARD_MIN_PX } from './use-keyboard-viewport'
+import { KEYBOARD_MIN_PX, createKeyboardOverlapDetector } from './use-keyboard-viewport'
 
 // Guard the mobile shell's locked viewport against scroll residue.
 //
@@ -12,20 +12,25 @@ import { KEYBOARD_MIN_PX } from './use-keyboard-viewport'
 // ("the bar got pulled up"), until something re-scrolls the page.
 //
 // The guard snaps the page back to 0 whenever it finds the window scrolled while NO keyboard is
-// up. While a keyboard IS up (visual viewport shrunk past the shared KEYBOARD_MIN_PX floor) it
-// deliberately does nothing — that pan is iOS revealing the focused field, and fighting it would
-// hide the caret. The keyboard closing fires visualViewport 'resize', so the residue is cleared
-// the moment it can safely be. A window 'scroll' listener catches any other stray pan (rubber-band
-// overscroll edge cases) — on an unscrolled page it never fires, and snapping to 0 re-fires it
-// exactly once as a no-op, so there is no loop.
+// up. While a keyboard IS up (overlap past the shared KEYBOARD_MIN_PX floor) it deliberately does
+// nothing — that pan is iOS revealing the focused field, and fighting it would hide the caret.
+// The keyboard closing fires visualViewport 'resize', so the residue is cleared the moment it can
+// safely be. A window 'scroll' listener catches any other stray pan (rubber-band overscroll edge
+// cases) — on an unscrolled page it never fires, and snapping to 0 re-fires it exactly once as a
+// no-op, so there is no loop.
+//
+// Keyboard detection MUST be the shared baseline detector, not the naive innerHeight − vv.height:
+// in an installed PWA iOS shrinks the LAYOUT viewport with the keyboard, so the naive difference
+// collapses to ~0 and reads "no keyboard" mid-typing — this guard then fought iOS's caret-reveal
+// pan on every keystroke (reported as the chat composer jumping while typing in the installed
+// app). The detector's captured keyboard-down baseline survives the standalone shrink.
 export function useLockedViewportGuard(enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return
+    const detector = createKeyboardOverlapDetector()
 
     const snapBack = () => {
-      const vv = window.visualViewport
-      const overlap = vv ? Math.max(0, Math.round(window.innerHeight - vv.height)) : 0
-      if (overlap > KEYBOARD_MIN_PX) return // keyboard up — the pan is load-bearing, leave it
+      if (detector.overlap() > KEYBOARD_MIN_PX) return // keyboard up — the pan is load-bearing, leave it
       const scroller = document.scrollingElement ?? document.documentElement
       if (window.scrollY !== 0 || scroller.scrollTop !== 0) {
         window.scrollTo(0, 0)

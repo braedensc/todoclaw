@@ -10,6 +10,7 @@ import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
 import { PawPrint } from '../../components/PawPrint'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { registerReloadBlocker } from '../../lib/app-update'
 
 // The full BabyClaw conversation UI (header + streamed history + confirm gate + input), factored
 // out of ChatPanel so BOTH chat shells render the same thing:
@@ -111,6 +112,13 @@ export function ChatConversation({
   const showHistory = enableSessions && view === 'history'
   const listRef = useRef<HTMLUListElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // An unsent draft vetoes the installed-PWA auto-update reload (src/lib/app-update.ts) — any
+  // future long-form composer surface must register its own blocker the same way.
+  const draftRef = useRef(text)
+  useEffect(() => {
+    draftRef.current = text
+  }, [text])
+  useEffect(() => registerReloadBlocker(() => draftRef.current.trim() !== ''), [])
   const isMobile = useIsMobile()
   const tag = sessionTag(activeSession)
 

@@ -2,10 +2,27 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Vercel exposes the deploying commit as VERCEL_GIT_COMMIT_SHA at build time. Single source of
+// truth for the app's build identity: baked into the bundle as __GIT_COMMIT_SHA__ (Sentry
+// release) AND into index.html as <meta name="build-sha"> (the installed-PWA auto-update marker,
+// src/lib/app-update.ts). Empty locally / in CI — an empty meta parses as "no marker" and an
+// empty __GIT_COMMIT_SHA__ disables the update check entirely.
+const buildSha = process.env.VERCEL_GIT_COMMIT_SHA ?? ''
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    // Deploy marker for the installed-PWA auto-update. Fetching `/` no-store and comparing this
+    // meta against the running bundle's sha is atomic with the deploy (no separate version file
+    // to skew against). Vercel serves index.html with max-age=0/must-revalidate; if HTML ever
+    // gains CDN Cache-Control, the check degrades to slower-but-safe — never a loop.
+    {
+      name: 'todoclaw:build-sha-meta',
+      transformIndexHtml: () => [
+        { tag: 'meta', attrs: { name: 'build-sha', content: buildSha }, injectTo: 'head' as const },
+      ],
+    },
     // PWA for Web Push (ADR-0031). injectManifest: we own the service worker (src/sw.ts) so it can
     // handle `push` / `notificationclick`; the plugin still injects the precache list + emits the
     // web manifest and its <link>. Registration is manual (virtual:pwa-register in main.tsx), so
@@ -53,13 +70,13 @@ export default defineConfig({
       devOptions: { enabled: true, type: 'module' },
     }),
   ],
-  // Vercel exposes the deploying commit as VERCEL_GIT_COMMIT_SHA at build time; bake it in as a
-  // compile-time constant so Sentry can tag each error with the release that shipped it. Empty
-  // string locally / in CI (the var is absent) → main.tsx treats that as "no release". Default to
-  // '' rather than undefined: JSON.stringify(undefined) emits the bare token `undefined`, which
+  // buildSha baked in as a compile-time constant so Sentry can tag each error with the release
+  // that shipped it (and app-update.ts can compare itself to the deployed marker). Empty string
+  // locally / in CI (the var is absent) → main.tsx treats that as "no release". Default to ''
+  // rather than undefined: JSON.stringify(undefined) emits the bare token `undefined`, which
   // Vite's define handles specially — '' is safe and collapses to undefined at runtime.
   define: {
-    __GIT_COMMIT_SHA__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? ''),
+    __GIT_COMMIT_SHA__: JSON.stringify(buildSha),
     // Vercel sets VERCEL_ENV to 'production' | 'preview' | 'development'. Baked in so Sentry can
     // tag the environment correctly — otherwise import.meta.env.MODE is 'production' for BOTH
     // preview and prod builds (both run `vite build`), and preview errors would masquerade as prod.
