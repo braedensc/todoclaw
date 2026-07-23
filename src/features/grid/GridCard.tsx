@@ -50,12 +50,12 @@ export interface GridCardProps {
   /** True while this card is the one being dragged (so we can suppress its transition). */
   dragging: boolean
   /**
-   * DORMANT (paused / future start_date) card. Rendered as its own read-only "set aside" pass
-   * BEHIND the active board (GridSurface) so a paused task still shows where it will land without
-   * joining the clustering / drag machinery. Forces the paused lane FIRST — gating urgency to
-   * 'none' and suppressing the stale ring + the due chip (its deadline is intentionally deferred),
-   * exactly as staleness gates the warm lane — and drops the drag handle. Resume is via the card's
-   * ⋯ SchedulePanel. Default false (every normal placed card).
+   * DORMANT (paused / future start_date) card. Rendered as its own "set aside" pass BEHIND the
+   * active board (GridSurface) so a paused task still shows where it will land; it stays out of
+   * clustering but is otherwise fully interactive (draggable, tap→popover). Forces the paused lane
+   * FIRST — gating urgency to 'none' and suppressing the stale ring + the due chip (its deadline is
+   * intentionally deferred), exactly as staleness gates the warm lane — and wears the slate ⏸ dress.
+   * Resume is via the card's ⋯ SchedulePanel. Default false (every normal placed card).
    */
   paused?: boolean
   /**
@@ -250,8 +250,8 @@ export function GridCard({
       ? { background: glow?.background ?? coolRing?.background }
       : {}),
     // A paused card is dimmed whole — the set-aside cue that survives even where the slate
-    // ring/chip can't be told from another lane. Read-only, so it never drags (the dragging
-    // branch below, which also sets opacity, can't fire on it).
+    // ring/chip can't be told from another lane. When it IS being dragged, the dragging branch
+    // below (opacity 0.85 + lift) overrides this dim so the lifted card reads clearly.
     ...(paused ? { opacity: PAUSED_OPACITY } : {}),
     // Lift the card above its neighbors while its ⋯ menu is open — the menu itself is portaled
     // (never occluded), so this is just a "this card is active" focus cue.
@@ -298,16 +298,14 @@ export function GridCard({
       data-task-id={task.id}
       data-quadrant={quadrant.key}
       {...(paused ? { 'data-paused': '' } : {})}
-      // A paused card is READ-ONLY: no reposition drag (the whole-card drag handle is dropped) and
-      // no grab cursor / hover lift — it's a "set aside" preview, not something to move. Its ⋯ menu
-      // still opens (that's the Resume path). Editing also suppresses the drag on a normal card.
-      onPointerDown={editing || paused ? undefined : onPointerDown}
+      // A paused card is fully draggable (reposition = move where it lands on wake); only inline
+      // editing suppresses the drag, same as an active card. Its ⋯ menu / tap popover still opens
+      // (the Resume path).
+      onPointerDown={editing ? undefined : onPointerDown}
       // hover:[--tc-lift:-2px] = the 2px hover rise (style mix): the inline transform above
       // consumes the var, so cards feel like index cards lifting off a desk. Desktop-only by
       // construction (the grid never renders on mobile).
-      className={`absolute rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md ${
-        paused ? '' : 'cursor-grab hover:[--tc-lift:-2px] active:cursor-grabbing'
-      }`}
+      className="absolute cursor-grab rounded-lg border bg-card text-xs text-ink shadow-sm hover:z-10 hover:shadow-md hover:[--tc-lift:-2px] active:cursor-grabbing"
       style={{ ...style, borderTopWidth: 3, padding: '6px 8px 5px' }}
     >
       {/* Persistent recurring cue: a ↻ chip overhanging the top-right corner, decoupled from the

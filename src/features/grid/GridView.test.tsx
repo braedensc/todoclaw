@@ -375,7 +375,7 @@ describe('GridView paused (dormant) cards', () => {
   // Now-relative so the fixture can't rot across the daily boundary — a month out is firmly future.
   const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
 
-  it('renders a dormant placed task as a read-only, dimmed card with the ⏸ paused chip', () => {
+  it('renders a dormant placed task as a draggable, dimmed card with the ⏸ paused chip', () => {
     tasksFixture = [
       makeTask({ id: 'zzz', text: 'Book the venue', x: 0.3, y: 0.7, start_date: future }),
     ]
@@ -392,9 +392,10 @@ describe('GridView paused (dormant) cards', () => {
     // The slate dress threads onto the node: full-alpha slate ring + slate tint (#e7ebf2).
     expect(card.style.boxShadow).toContain('rgba(100,116,139,1)')
     expect(card.style.background).toBe('rgb(231, 235, 242)')
-    // Read-only: flagged for E2E/style hooks, and NO grab cursor (can't be dragged).
+    // Draggable like any card (parity with the touch grid) — dragging just sets where it lands on
+    // wake. The slate dress is flagged for E2E/style hooks via data-paused.
     expect(card).toHaveAttribute('data-paused')
-    expect(card.className).not.toContain('cursor-grab')
+    expect(card.className).toContain('cursor-grab')
     // Dimmed whole (set-aside cue), but still legible.
     expect(card.style.opacity).not.toBe('')
     expect(parseFloat(card.style.opacity)).toBeLessThan(1)
@@ -424,7 +425,7 @@ describe('GridView paused (dormant) cards', () => {
 
   it('keeps a dormant card OUT of clustering — it never folds into an active bubble', () => {
     // A paused card sharing an active card's coords must NOT merge into a cluster bubble: both
-    // render as standalone cards (the active one draggable, the paused one read-only).
+    // render as standalone cards. Dormancy affects CLUSTERING, not drag — both are draggable.
     tasksFixture = [
       makeTask({ id: 'active', text: 'Live task', x: 0.5, y: 0.5 }),
       makeTask({ id: 'zzz', text: 'Paused task', x: 0.5, y: 0.5, start_date: future }),
@@ -434,12 +435,13 @@ describe('GridView paused (dormant) cards', () => {
     expect(screen.queryByTestId('cluster-bubble')).toBeNull()
     const cards = screen.getAllByTestId('grid-card')
     expect(cards).toHaveLength(2)
-    // The paused one is the read-only card; the active one is draggable.
     const pausedCard = cards.find((c) => c.hasAttribute('data-paused'))!
     const activeCard = cards.find((c) => !c.hasAttribute('data-paused'))!
     expect(within(pausedCard).getByText('Paused task')).toBeInTheDocument()
     expect(within(activeCard).getByText('Live task')).toBeInTheDocument()
+    // Both draggable; only the paused one wears the slate dress.
     expect(activeCard.className).toContain('cursor-grab')
+    expect(pausedCard.className).toContain('cursor-grab')
   })
 })
 
@@ -945,6 +947,65 @@ describe('GridView iPad hybrid (coarse pointer, desktop layout)', () => {
       const patch = (repositionCall![0] as { patch: { x: number; y: number } }).patch
       expect(patch.x).toBeCloseTo(0.75, 2)
       expect(patch.y).toBeCloseTo(0.75, 2)
+      expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+
+  it('a tap on a PAUSED card opens the popover in paused mode: Schedule + Delete, no Done', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'pz', text: 'Sleep tap', start_date: future })]
+    render(<GridHarness />)
+    const card = cardFor('Sleep tap')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(card, { detail: 1 })
+    const popover = screen.getByTestId('touch-card-popover')
+    // Paused mode: no Done (a dormant task isn't active to complete); Schedule (Resume) + Delete stay.
+    expect(within(popover).queryByRole('button', { name: /✓ Done/ })).toBeNull()
+    expect(within(popover).getByRole('button', { name: /⋯ Schedule/ })).toBeInTheDocument()
+    expect(within(popover).getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
+  })
+
+  it('hold + move + release repositions a PAUSED card too — x/y only, stays dormant', () => {
+    vi.useFakeTimers()
+    try {
+      mockIsCoarse.mockReturnValue(true)
+      tasksFixture = [
+        makeTask({ id: 'pz2', text: 'Hold sleepy', x: 0.2, y: 0.2, start_date: future }),
+      ]
+      render(<GridHarness />)
+      const canvas = screen.getByTestId('grid-canvas')
+      canvas.getBoundingClientRect = () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 400,
+          height: 800,
+          right: 400,
+          bottom: 800,
+          x: 0,
+          y: 0,
+        }) as DOMRect
+      const card = cardFor('Hold sleepy')
+      fireEvent.pointerDown(card, { clientX: 100, clientY: 600 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      fireEvent.pointerUp(window, { clientX: 300, clientY: 256 })
+      const repositionCall = updateMutate.mock.calls.find(
+        (c) => 'x' in (c[0] as { patch: Record<string, unknown> }).patch,
+      )
+      expect(repositionCall).toBeDefined()
+      const patch = (repositionCall![0] as { patch: Record<string, unknown> }).patch
+      expect(patch.x).toBeCloseTo(0.75, 2)
+      expect(patch.y).toBeCloseTo(0.75, 2)
+      // A reposition never touches start_date — the card stays dormant, just relocated.
+      expect('start_date' in patch).toBe(false)
       expect(screen.queryByTestId('touch-card-popover')).toBeNull()
     } finally {
       vi.useRealTimers()
