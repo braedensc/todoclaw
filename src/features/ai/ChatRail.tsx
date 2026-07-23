@@ -22,6 +22,7 @@ export function ChatRail({
   onClose,
   view,
   onViewChange,
+  raised = false,
 }: {
   chat: ChatController
   open: boolean
@@ -29,6 +30,8 @@ export function ChatRail({
   /** Which face to show. Owned by App — this rail stays mounted, so it can't hold the state itself. */
   view?: ChatView
   onViewChange?: (view: ChatView) => void
+  /** Step into the z-50 band over the grid-only overlay so chat stays reachable there (see className). */
+  raised?: boolean
 }) {
   // Press the page's inert background (empty grid canvas, the gutters around the content column) to
   // close. This rail has no scrim to tap — it pushes the grid rather than covering it — so without
@@ -55,7 +58,14 @@ export function ChatRail({
       aria-label="Chat"
       aria-hidden={!open}
       className={
-        'fixed right-0 top-0 z-40 hidden h-screen w-[420px] flex-col border-l border-border-strong bg-panel shadow-xl transition-transform duration-300 ease-out wide:flex ' +
+        // Normally z-40 (under the z-50 modal band). While grid-only mode is up (`raised`), the
+        // z-50 fullscreen grid overlay would bury the rail, and chat must stay reachable in every
+        // mode — so the rail steps to z-50, NOT higher: within the z-50 band, paint order is DOM
+        // order, and this rail sits after the overlay (inside #root) but before the body-portaled
+        // sheets (BottomSheet & co. append to <body> on open). So the raised rail clears the grid
+        // takeover while the touch grid's own task/cluster/add sheets still cover the rail — the
+        // same sheet-over-rail relationship as normal mode (z-[55] buried them; touch-grid review).
+        `fixed right-0 top-0 ${raised ? 'z-50' : 'z-40'} hidden h-screen w-[420px] flex-col border-l border-border-strong bg-panel shadow-xl transition-transform duration-300 ease-out wide:flex ` +
         (open ? 'translate-x-0' : 'pointer-events-none translate-x-full')
       }
       // Keyboard up: override top-0/h-screen so the rail spans only the visible band above the keys

@@ -39,6 +39,7 @@ function MoreItem({
 
 export function MoreSheet({
   open,
+  onGrid,
   onReminders,
   onSettings,
   onAdmin,
@@ -46,6 +47,8 @@ export function MoreSheet({
   onClose,
 }: {
   open: boolean
+  /** Enters fullscreen grid view (the mobile door to TouchGridSurface). */
+  onGrid: () => void
   /** Navigates to the Daily habits page (#/reminders). */
   onReminders: () => void
   onSettings: () => void
@@ -63,6 +66,7 @@ export function MoreSheet({
     <BottomSheet open={open} onClose={onClose} title="More">
       <div className="flex flex-col gap-0.5">
         {onAdmin && <MoreItem glyph="❖" label="Admin" onClick={run(onAdmin)} />}
+        <MoreItem glyph="▦" label="Grid view" onClick={run(onGrid)} />
         <MoreItem
           glyph={<BoneIcon className="inline h-3 w-auto align-middle text-puppy/80" />}
           label="Daily habits"

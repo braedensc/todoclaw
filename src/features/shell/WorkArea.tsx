@@ -2,8 +2,10 @@ import { useRef, useState } from 'react'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { useIsCoarsePointer } from '../../hooks/use-is-coarse-pointer'
 import { useGrid } from '../grid/use-grid'
 import { GridSurface } from '../grid/GridSurface'
+import { TouchGridSurface } from '../grid/TouchGridSurface'
 import { ListView } from '../list/ListView'
 import { MobileMatrix } from './MobileMatrix'
 import { TaskInputWidget } from './TaskInputWidget'
@@ -14,19 +16,23 @@ import type { QuadrantFocus } from './use-quadrant-focus'
 // (useGrid) and the Grid⇄List `view`, laying out the one input widget above the swapped Grid/List
 // content (each with the embedded toggle notched into its top border).
 //
-// On MOBILE (< 720px, ADR-0028) there is no grid and no Grid/List toggle — MobileMatrix (the
-// quadrant overview→focus list) is the ONLY task surface, and adding is owned by the bottom nav's
-// "+" (MobileAddSheet), so no input widget renders here either. A compact Daily-reminders inline
-// list renders ABOVE this (in AppShell).
+// On MOBILE (< 720px, ADR-0028) there is no INLINE grid and no Grid/List toggle — MobileMatrix
+// (the quadrant overview→focus list) is the everyday task surface, and adding is owned by the
+// bottom nav's "+" (MobileAddSheet), so no input widget renders here either. A compact
+// Daily-reminders inline list renders ABOVE this (in AppShell).
 //
-// `gridOnly` (the desktop-only "Grid-only view" pill) is the exception: it renders ONLY the
-// fullscreen grid. `onExitGridOnly` (also wired to Esc in AppShell) returns to the normal layout.
+// `gridOnly` renders ONLY the fullscreen grid, in the presentation the device's pointer calls
+// for: the touch grid (TouchGridSurface — chips, tap sheets, tap-to-place) on every
+// coarse-pointer device — all mobile entries plus desktop-width touch devices like landscape
+// phones and iPads — and the desktop overlay (GridSurface gridOnly) for fine pointers.
+// `onExitGridOnly` (also wired to Esc in AppShell) returns to the normal layout.
 export function WorkArea({
   chat,
   onOpenChat,
   gridOnly,
   onExitGridOnly,
   quadrantFocus,
+  chatUnread,
   onSeeExample,
 }: {
   chat: ChatController
@@ -35,6 +41,8 @@ export function WorkArea({
   onExitGridOnly: () => void
   /** Mobile overview→focus state (App-owned so Back pops it and the add sheet reads it). */
   quadrantFocus: QuadrantFocus
+  /** Unread chat count — badges the touch grid's floating chat button. */
+  chatUnread?: number
   /** Open the example-day scene (DemoScene) — surfaced from the empty-board states. */
   onSeeExample?: () => void
 }) {
@@ -43,6 +51,21 @@ export function WorkArea({
   const grid = useGrid(gridRef)
   const [view, setView] = useState<WorkView>('grid')
   const isMobile = useIsMobile()
+  const isCoarse = useIsCoarsePointer()
+
+  // Grid-only, touch presentation: phones always (the mobile layout has no other grid), and any
+  // desktop-width device whose primary pointer is a finger.
+  if (gridOnly && (isMobile || isCoarse)) {
+    return (
+      <TouchGridSurface
+        grid={grid}
+        gridRef={gridRef}
+        onExit={onExitGridOnly}
+        onOpenChat={onOpenChat}
+        chatUnread={chatUnread}
+      />
+    )
+  }
 
   // Mobile: the quadrant overview→focus list IS the work region — no grid, no toggle, no input
   // widget (adding lives in the bottom nav's "+"). ADR-0028.
@@ -54,8 +77,9 @@ export function WorkArea({
     )
   }
 
-  // Grid-only mode (desktop): the fullscreen grid overlay is the entire work region. The input
-  // widget, the Grid⇄List toggle, and the List are all dropped; the overlay carries its own Exit.
+  // Grid-only mode (fine-pointer desktop): the fullscreen grid overlay is the entire work
+  // region. The input widget, the Grid⇄List toggle, and the List are all dropped; the overlay
+  // carries its own Exit.
   if (gridOnly) {
     return (
       <GridSurface

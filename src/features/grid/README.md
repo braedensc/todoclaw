@@ -6,10 +6,34 @@ is inverted from data-y**: a card at data `(x, y)` renders at `left: x*100%`, `t
 high importance sits at the top. New tasks are added from the widget above the grid and surface as
 draggable **new-item cards** there (card-in-place, B2 — there is no staging tray).
 
-> **Mobile (< 720px) never mounts this feature** (ADR-0028): `WorkArea` renders `MobileMatrix`
+> **Mobile (< 720px) never mounts the INLINE grid** (ADR-0028): `WorkArea` renders `MobileMatrix`
 > (quadrant overview → focus lists) instead, and repositioning is the tap-based Move-to-quadrant
-> sheet. The tap-to-place branches referenced below are desktop-era code that only ran when the
-> grid was still rendered on phones; they are unreachable today.
+> sheet. Since the touch-grid workshop (2026-07-22), phones DO get a grid — but only as the
+> fullscreen **grid-only** takeover (`TouchGridSurface`, below), entered from the More sheet's
+> "Grid view" row. `useGrid`'s own legacy tap-to-place branch (`togglePlacing`/
+> `handleGridPointerDown`) is still unreachable — the touch surface implements its own.
+
+## Touch grid (grid-only on phones + coarse-pointer devices)
+
+Grid-only mode renders one of two presentations (`WorkArea`): the desktop overlay for fine
+pointers, or **`TouchGridSurface`** for phones and any coarse-pointer device at desktop widths
+(landscape phones, iPads). The touch surface is a `fixed inset-0 z-50` takeover whose safe-area
+box IS the canvas (fills the screen's aspect — coords are normalized so no scoring/clustering
+math changes; only the cluster threshold's on-screen ellipse). Tasks render as 76px
+**`TouchGridChip`s** (one-line title + one status chip, same visual grammar/lane gating as
+`GridCard` — including the 🔥/❄️/💤 corner flags, the recurring ×N count, an inline ∞ for
+ongoing, and the done paw-stamp + paw-trail flourishes); tap → **`TouchTaskSheet`** (Done / inline `SchedulePanel` / Move / rename / delete —
+delete confirm-gated, due writes through `useSetDueWithDefaultReminder`); cluster bubbles →
+**`TouchClusterSheet`** (member list → task sheet). **Move** is tap-to-place: arm from the sheet,
+tap the drop point (own implementation over `toNormalized`; hold-drag is the planned follow-up).
+Floating chrome: ✕ exit (grid-only holds a history entry — `../shell/use-grid-only.ts` — so the
+system Back gesture exits too), ＋ → `MobileAddSheet`, 🐾 → chat (`ChatRail` steps into the z-50
+band on the desktop side — after the overlay in DOM order but before the body-portaled sheets, so
+it clears the grid while sheets still cover it). The canvas `onPointerDown` (tap-to-place commit)
+guards `event.target === event.currentTarget` — the floating chrome lives inside the canvas and a
+tap's pointerdown would otherwise commit a move at the button's position before its click runs.
+Dormant (paused) tasks render as read-only `data-paused` chips behind the active pass, exactly
+like the desktop dormant pass.
 
 ## Files
 
