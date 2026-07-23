@@ -257,17 +257,22 @@ export function GridSurface({
       }
     >
       {/* Grid-only exit — the fullscreen overlay covers the header (and its entry pill), so this
-          labelled ✕ pill pinned to the viewport corner, plus Esc, are the ways back. Tinted in the
-          same brand green as the entry pill (soft fill so it stays legible over the grid cards). */}
+          labelled ✕ pill pinned to the viewport corner, plus Esc, are the ways back. A SOLID,
+          elevated control (was a faint 10%-tint pill that read poorly over the warm/quadrant-tinted
+          grid) — solid brand green, white glyph + label, a ring for edge definition, and a raised
+          shadow, matching the touch grid's exit pill (#336) and the solid entry pill it returns to. */}
       {gridOnly && (
         <button
           type="button"
           onClick={onExitGridOnly}
           aria-label="Exit grid-only view"
           title="Exit grid-only view (Esc)"
-          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary shadow-sm hover:bg-primary/20"
+          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg ring-1 ring-black/10 hover:opacity-90"
         >
-          <span aria-hidden>✕</span> Exit grid-only
+          <span aria-hidden className="text-base leading-none">
+            ✕
+          </span>{' '}
+          Exit grid-only
         </button>
       )}
 
