@@ -58,6 +58,14 @@ const liveTask = {
   recurring: null,
 }
 
+Deno.test('loadChatContext: renders the current local time in the TODAY block', async () => {
+  // NOW is 15:00 UTC = 11:00 AM in America/New_York — the render must carry that wall-clock next to
+  // the date so BabyClaw knows the hour and can read a late-night "tomorrow" the way the user means.
+  const { context } = await loadChatContext(fakeClient({ user_schedule: [SCHED] }), NOW)
+  assertEquals(context.nowTime, '11:00 AM')
+  assertStringIncludes(buildSystem(context), 'July 4, 2026, 11:00 AM (timezone America/New_York).')
+})
+
 Deno.test(
   'loadChatContext: a prior-day completed one-off never appears under ACTIVE or DONE TODAY',
   async () => {
