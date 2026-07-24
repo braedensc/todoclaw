@@ -365,10 +365,16 @@ export async function loadChatContext(
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
   const today = fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  // The current wall-clock time in the user's zone ("1:45 AM"), rendered alongside `today` so
+  // BabyClaw knows when it's the small hours — a user up at 1 AM who says "tomorrow" means the day
+  // they're waking into (already TODAY on the calendar), not the next calendar day. en-US default is
+  // 12-hour; pin hour12 so server output never drifts with locale.
+  const nowTime = fmt({ hour: 'numeric', minute: '2-digit', hour12: true })
   const dayOfWeek = dayNameInTZ(timeZone, now)
 
   const context: ChatContext = {
     today,
+    nowTime,
     timeZone,
     scheduleSummary: scheduleSummary(config, dayOfWeek),
     reminderDefault: reminderDefaultFromConfig(config),
