@@ -43,12 +43,14 @@ export function demoTour(isMobile: boolean): TourStep[] {
       target: 'demo-board',
       title: 'Sorted by what matters',
       body: isMobile
-        ? 'Everything sorts into four boxes by how urgent and important it is, so what to do next ' +
-          'is always obvious — “Do Now” is the box to clear first. The ⏰ badges flag what’s due; ' +
-          'tap any box to open its list.'
-        : 'Further right is more urgent, higher up is more important — so the top-right corner is ' +
-          'always what to do next. Tasks heat up as they come due, then cool down and turn icy ❄️ ' +
-          'once ignored too long. Repeating chores wear the ↻ arrow.',
+        ? 'You sort each task into one of four boxes by how urgent and important it is — tap ' +
+          '“Move to quadrant” to place it. That placement is what sets its priority, so what to ' +
+          'do next is always clear: “Do Now” is the box to clear first. The ⏰ badges flag what’s ' +
+          'due; tap any box to open its list.'
+        : 'You place each task yourself — drag it right for more urgent, up for more important. ' +
+          'Where you drop it sets its priority, so the top-right corner is always what to do next. ' +
+          'Tasks heat up as they come due, then cool to icy ❄️ once ignored too long; repeating ' +
+          'chores wear the ↻ arrow.',
     },
     {
       target: 'demo-board',
@@ -73,9 +75,10 @@ export function demoTour(isMobile: boolean): TourStep[] {
       target: 'demo-plan',
       title: 'One tap plans your day',
       body:
-        'This ✦ Plan My Day button turns your whole board into a realistic day — one big rock, a ' +
-        'few quick wins, and room for habits, never an overstuffed list. One tap builds the plan ' +
-        'you see here.',
+        'This ✦ Plan My Day button turns your whole board into a realistic day. BabyClaw reads ' +
+        'where you placed each task and the details — due dates, recurring chores, ongoing ' +
+        'projects — to pick one big rock, a few quick wins, and room for habits, never an ' +
+        'overstuffed list. One tap builds the plan you see here.',
     },
     {
       target: 'demo-chat-morning',

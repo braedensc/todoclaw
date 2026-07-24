@@ -122,6 +122,33 @@ describe('demo tour script', () => {
     }
   })
 
+  it('teaches the two-parameter model AND that the user places each task, on both breakpoints', () => {
+    // The core model the tour must land: priority comes from urgency × importance, and the USER is
+    // the one who places each task there (desktop drag, mobile "Move to quadrant"). Unguarded prose
+    // drifts, so pin both axes and the user-places-it link on each breakpoint's board step.
+    for (const isMobile of [false, true]) {
+      const board = demoTour(isMobile).find((s) => s.title === 'Sorted by what matters')!
+      const label = isMobile ? 'mobile' : 'desktop'
+      expect(board.body, label).toMatch(/urgent/i)
+      expect(board.body, label).toMatch(/import/i)
+      expect(board.body, label).toMatch(/\byou\b/i)
+      expect(board.body, label).toMatch(/place|placed|drop|drag|move/i)
+    }
+  })
+
+  it('Plan My Day names the placements AND the context (due/recurring/ongoing) BabyClaw reads', () => {
+    // The plan is derived from grid position PLUS each task's context — the explicit ask. Without a
+    // guard this rots back into a vague "turns your board into a day," so pin the placement link and
+    // all three context signals by name.
+    const plan = demoTour(false).find((s) => s.title === 'One tap plans your day')!
+    expect(plan.body).toMatch(/where you placed/i)
+    expect(plan.body).toMatch(/due/i)
+    expect(plan.body).toMatch(/recurr/i)
+    expect(plan.body).toMatch(/ongoing/i)
+    // Step 4 is a single shared body — the same string serves both breakpoints.
+    expect(demoTour(true).find((s) => s.title === 'One tap plans your day')!.body).toBe(plan.body)
+  })
+
   it('teaches the grid decoder ring (↻/❄️) on desktop only — the mobile overview has no badges', () => {
     // The mobile scene is the quadrant overview — none of the grid-card treatments exist there, so
     // no mobile step (body OR bullets) may reference them; the desktop board step must.
