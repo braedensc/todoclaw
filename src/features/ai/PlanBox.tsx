@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { DayPlan, PlanRock } from '../../types/plan'
+import type { DayPlan, PlanNudge, PlanRock } from '../../types/plan'
 
 // The inline "Plan My Day" card — a PERSISTENT parchment box above the grid (not a modal). It
 // hydrates from daily_state.plan on load, stays for the whole local day, and disappears after
@@ -201,6 +201,12 @@ function PlanContent({
         </div>
       ))}
 
+      {/* The optional quiet-day nudge — a deliberately soft, no-pressure suggestion, NOT a rock: no
+          orange BIG ROCK pill, no then/also slotting, no strike-through (it's a choice, not a
+          commitment). The server only sets it on a no-big-rock day; the `!plan.bigRock` guard keeps
+          a malformed persisted plan (jsonb is client-writable) from ever showing both. */}
+      {!plan.bigRock && plan.nudge && <NudgeBody nudge={plan.nudge} />}
+
       {plan.habitNote && <p className="mt-3 text-[13px] italic text-primary">↻ {plan.habitNote}</p>}
     </div>
   )
@@ -237,6 +243,30 @@ function RockBody({
       <div className="mt-[5px] flex flex-wrap gap-[5px]">
         {rock.duration && <Chip>⏱ {rock.duration}</Chip>}
         {rock.when && <Chip>◎ {rock.when}</Chip>}
+      </div>
+    </div>
+  )
+}
+
+// The quiet-day nudge: a gentle, clearly-optional "if you're looking for something" card. Softer
+// than any rock — no bold accent pill, a muted lead-in, and a "no pressure" chip — so it reads as an
+// invitation, not an assignment. Rendered only when the plan has no big rock.
+function NudgeBody({ nudge }: { nudge: PlanNudge }) {
+  return (
+    <div className="mt-3 flex items-start gap-2.5">
+      <span aria-hidden className="mt-0.5 shrink-0 text-[15px]">
+        💡
+      </span>
+      <div className="flex-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
+          If you're looking for something
+        </div>
+        <div className="mt-[3px] text-[14px] font-medium leading-snug text-ink">{nudge.task}</div>
+        {nudge.why && <div className="mt-0.5 text-[12.5px] text-muted">{nudge.why}</div>}
+        <div className="mt-[5px] flex flex-wrap gap-[5px]">
+          {nudge.duration && <Chip>⏱ {nudge.duration}</Chip>}
+          <Chip>no pressure</Chip>
+        </div>
       </div>
     </div>
   )
