@@ -118,6 +118,59 @@ describe('PlanBox', () => {
     expect(screen.queryByRole('button', { name: /dismiss plan/i })).not.toBeInTheDocument()
   })
 
+  it('renders the quiet-day nudge as a distinct, no-pressure element (no Big rock pill)', () => {
+    render(
+      <PlanBox
+        plan={{
+          headline: 'Nothing pressing today — enjoy the breathing room.',
+          availableTime: '~4.5h free this afternoon',
+          bigRock: null,
+          smallRocks: [],
+          habitNote: 'Keep the water habit going.',
+          nudge: {
+            task: 'Write the novel',
+            why: 'A relaxed hour would move it along.',
+            duration: '~1h',
+            taskId: 'task-9',
+          },
+        }}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    // The soft lead-in, the task, its why, and the "no pressure" chip all render…
+    expect(screen.getByText(/If you're looking for something/i)).toBeInTheDocument()
+    expect(screen.getByText('Write the novel')).toBeInTheDocument()
+    expect(screen.getByText(/A relaxed hour would move it along\./)).toBeInTheDocument()
+    expect(screen.getByText(/no pressure/i)).toBeInTheDocument()
+    // …but it is NOT dressed up as a Big rock (that's the whole point).
+    expect(screen.queryByText('Big rock')).not.toBeInTheDocument()
+  })
+
+  it('suppresses the nudge when a big rock exists (contract: nudge is a no-big-rock-day thing)', () => {
+    render(
+      <PlanBox
+        // A malformed/persisted plan carrying BOTH — the card shows the big rock, hides the nudge.
+        plan={{
+          ...PLAN,
+          nudge: { task: 'Tidy the garage', why: 'w', duration: '~1h', taskId: null },
+        }}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect(screen.getByText('Big rock')).toBeInTheDocument()
+    expect(screen.getByText('File taxes')).toBeInTheDocument()
+    expect(screen.queryByText('Tidy the garage')).not.toBeInTheDocument()
+    expect(screen.queryByText(/If you're looking for something/i)).not.toBeInTheDocument()
+  })
+
   it('uses bullets for small rocks when there is no big rock', () => {
     render(
       <PlanBox

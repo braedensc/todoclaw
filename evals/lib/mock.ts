@@ -23,6 +23,7 @@ export function mockAnthropic() {
             bigRock: null,
             smallRocks: [],
             habitNote: '',
+            nudge: null,
           }
         } else if (tool === 'emit_recap') {
           input = { body: 'A quiet mock evening — nothing real was judged.\n— BabyClaw 🐾' }

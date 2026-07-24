@@ -7,6 +7,7 @@ import {
   SYSTEM_PROMPT,
   buildUserPrompt,
   resolvePlanTaskIds,
+  type EmittedNudge,
   type EmittedPlan,
   type EmittedRock,
   type PlanRequest,
@@ -129,6 +130,42 @@ Deno.test('big rock is substance-not-urgency; quick wins stay short, lean, and c
   assert(SYSTEM_PROMPT.includes('PREFER making it the BIG ROCK'))
   // The schema hard-caps smallRocks at 2 so three quick wins can't be emitted.
   assertEquals(EMIT_PLAN_TOOL.input_schema.properties.smallRocks.maxItems, 2)
+})
+
+Deno.test('a quiet, low-value board is an optional relaxed day with a no-pressure nudge', () => {
+  // A low board (a few low-importance/low-urgency, undated tasks) must NOT force a minor task into the
+  // big rock. The prompt makes a relaxed day (bigRock null) a valid, VARIED choice, and offers the
+  // OPTIONAL nudge as the "if you want something to do" pointer — never an instruction, and only some
+  // days (non-deterministic), so it never becomes a mechanical every-quiet-day rule.
+  assert(SYSTEM_PROMPT.includes('QUIET, LOW-VALUE DAYS'))
+  assert(SYSTEM_PROMPT.includes('manufacture a big rock'))
+  assert(SYSTEM_PROMPT.includes('no-pressure choice'))
+  assert(SYSTEM_PROMPT.includes('OCCASIONAL, VARIED call'))
+  assert(SYSTEM_PROMPT.includes('vary day to day'))
+  // The nudge is scoped: only when there's no big rock, and null on a truly empty board.
+  assert(SYSTEM_PROMPT.includes('null whenever there is a real bigRock'))
+  assert(SYSTEM_PROMPT.includes('null on a truly EMPTY board'))
+  // The ongoing-project rule keeps its "prefer the big rock" default but no longer forces a low-value
+  // project into the slot on an otherwise quiet board.
+  assert(SYSTEM_PROMPT.includes('PREFER making it the BIG ROCK'))
+  assert(SYSTEM_PROMPT.includes('do NOT force it into the big rock'))
+})
+
+Deno.test('emit_plan exposes an optional, ref-linked nudge (nullable, required key)', () => {
+  const props = EMIT_PLAN_TOOL.input_schema.properties as Record<string, unknown>
+  assert('nudge' in props, 'nudge property present')
+  // Nudge is nullable (anyOf null | object) and, like bigRock, a required KEY so the model always
+  // decides (null or an object) rather than omitting it.
+  const required = EMIT_PLAN_TOOL.input_schema.required as readonly string[]
+  assert(required.includes('nudge'))
+  const nudge = props.nudge as { anyOf: Array<Record<string, unknown>> }
+  assert(Array.isArray(nudge.anyOf))
+  const obj = nudge.anyOf.find((s) => s.type === 'object') as
+    | { required?: readonly string[] }
+    | undefined
+  // A nudge carries the same `ref` linking contract as a rock, but no `when` (it is never scheduled).
+  assert(obj?.required?.includes('ref'))
+  assert(!obj?.required?.includes('when'))
 })
 
 Deno.test('task size renders with its hour hint only when present; untagged lines omit it', () => {
@@ -350,12 +387,17 @@ const emittedRock = (task: string, ref: string | null): EmittedRock => ({
   ref,
 })
 
-const emitted = (bigRock: EmittedRock | null, smallRocks: EmittedRock[]): EmittedPlan => ({
+const emitted = (
+  bigRock: EmittedRock | null,
+  smallRocks: EmittedRock[],
+  nudge: EmittedNudge | null = null,
+): EmittedPlan => ({
   headline: 'h',
   availableTime: 'a',
   habitNote: 'n',
   bigRock,
   smallRocks,
+  nudge,
 })
 
 Deno.test('task and recurring lines carry the bracketed ids rocks cite back ([T#]/[R#])', () => {
@@ -416,6 +458,24 @@ Deno.test('resolvePlanTaskIds: an id-less request (old cached client) degrades t
   const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), base)
   assertEquals(plan.bigRock?.taskId, null)
 })
+
+Deno.test(
+  'resolvePlanTaskIds: a quiet-day nudge resolves its ref like a rock (and strips ref)',
+  () => {
+    const nudge: EmittedNudge = { task: 'Read paper', why: 'w', duration: '~30min', ref: 'T2' }
+    const plan = resolvePlanTaskIds(emitted(null, [], nudge), withIds)
+    // Relaxed day: no big rock, no small rocks, but the nudge points at a real task.
+    assertEquals(plan.bigRock, null)
+    assertEquals(plan.smallRocks.length, 0)
+    assertEquals(plan.nudge?.taskId, 'task-2')
+    assert(plan.nudge && !('ref' in plan.nudge)) // ref stripped, taskId stamped
+    // An absent nudge stays null (the common case: a real big rock owns the day).
+    assertEquals(
+      resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), withIds).nudge,
+      null,
+    )
+  },
+)
 
 Deno.test('PlanRequestSchema accepts task/recurring ids and tolerates their absence', () => {
   assertEquals(PlanRequestSchema.parse(withIds).tasks[0].id, 'task-1')

@@ -8,6 +8,7 @@
 import { dayOffsetISO, DEFAULT_TZ, instantOffsetISO, PLAN_NOW } from '../../lib/fixture-dates.ts'
 import {
   bigRockNeverS,
+  nudgeContract,
   planHeadline,
   restDay,
   rocksExclude,
@@ -69,7 +70,33 @@ export const scenarios: PlanScenario[] = [
     persona: 'brand-new user',
     tasks: [],
     habits: [{ text: 'Drink more water', active: true }],
-    checks: [planHeadline(), restDay()],
+    // A truly empty board has nothing to point at → a pure rest day, and never a nudge.
+    checks: [planHeadline(), restDay(), nudgeContract()],
+  },
+  {
+    kind: 'plan',
+    id: 'plan-low-value-board',
+    title: 'A low-value board is not padded — a big rock is never manufactured from a minor task',
+    tags: ['plan', 'rest-day', 'nudge', 'faithfulness'],
+    persona: 'nearly-cleared board, nothing pressing',
+    // Only a few LOW-importance, LOW-urgency, undated tasks — one an ongoing project. Nothing here
+    // earns a substantial focused block, so the model must NOT inflate one into the big rock. Either
+    // outcome is valid (it's a non-deterministic call): a relaxed day (bigRock null) — optionally
+    // with a no-pressure nudge — or a single light focus. The checks pin only the invariants that
+    // hold either way; the rubric judges the softer "didn't manufacture a mandatory big rock" quality.
+    tasks: [
+      task({ id: 'lv1', text: 'Sort through old photos', x: 0.2, y: 0.25, size: 'S' }),
+      task({ id: 'lv2', text: 'Reorganize the bookshelf', x: 0.15, y: 0.2, size: 'M' }),
+      task({ id: 'lv3', text: 'Practice guitar', x: 0.2, y: 0.3, size: 'M', ongoing: true }),
+    ],
+    habits: [{ text: 'Drink more water', active: true }],
+    checks: [planHeadline(), rocksResolve(), bigRockNeverS(), nudgeContract()],
+    rubric:
+      'The board holds only minor, non-urgent, undated tasks. The plan must NOT manufacture a ' +
+      'mandatory-feeling big rock out of one of them (the ongoing "Practice guitar" included). A ' +
+      'relaxed day is a perfectly good outcome: if it rests, the framing is calm and any nudge is a ' +
+      'no-pressure "if you want something to do" suggestion, not an assignment. If it instead names ' +
+      'a single light focus, that is also fine. No task is invented.',
   },
   {
     kind: 'plan',

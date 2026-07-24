@@ -90,20 +90,34 @@ export interface Rock {
   when: (typeof WHEN_VALUES)[number]
   taskId: string | null
 }
+// A no-pressure suggestion for a quiet/relaxed day (bigRock null): the single most worthwhile thing
+// the user COULD do if they want something to do — never an assignment, and never scheduled into a
+// slot (so, a Rock without `when`). taskId links it back to a real task so the card can name it.
+export interface Nudge {
+  task: string
+  why: string
+  duration: string
+  taskId: string | null
+}
 export interface PlanResult {
   headline: string
   availableTime: string
   bigRock: Rock | null
   smallRocks: Rock[]
   habitNote: string
+  // Set ONLY on a quiet/relaxed day the model chose not to give a big rock (see the QUIET, LOW-VALUE
+  // DAYS guidance); null whenever there is a real bigRock, and null on a truly empty board.
+  nudge: Nudge | null
 }
 
 // The rock as emit_plan actually returns it: a `ref` line id instead of a resolved taskId. `ref`
 // is schema-required, but the tool input arrives as an unchecked cast, so treat it as optional.
 export type EmittedRock = Omit<Rock, 'taskId'> & { ref?: string | null }
-export type EmittedPlan = Omit<PlanResult, 'bigRock' | 'smallRocks'> & {
+export type EmittedNudge = Omit<Nudge, 'taskId'> & { ref?: string | null }
+export type EmittedPlan = Omit<PlanResult, 'bigRock' | 'smallRocks' | 'nudge'> & {
   bigRock: EmittedRock | null
   smallRocks: EmittedRock[]
+  nudge: EmittedNudge | null
 }
 
 const rockSchema = {
@@ -122,6 +136,24 @@ const rockSchema = {
     },
   },
   required: ['task', 'why', 'duration', 'when', 'ref'],
+}
+
+// A nudge is a rock without a slot: never scheduled, just offered. Same `ref` linking contract.
+const nudgeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    task: { type: 'string', description: 'The one real listed task to gently offer.' },
+    why: { type: 'string', description: 'One short, low-key reason it might be worth a look.' },
+    duration: { type: 'string', description: 'Rough estimate, e.g. "~30min", "~1h".' },
+    ref: {
+      type: ['string', 'null'],
+      description:
+        'The bracketed id of the task line this nudge came from — copy it exactly, e.g. "T3". ' +
+        'null ONLY if it is somehow not one of the listed items.',
+    },
+  },
+  required: ['task', 'why', 'duration', 'ref'],
 }
 
 // Forced-tool-use is how we get guaranteed-parseable structured output (no fence stripping).
@@ -161,8 +193,16 @@ export const EMIT_PLAN_TOOL = {
         type: 'string',
         description: "One encouraging sentence about today's habits.",
       },
+      nudge: {
+        anyOf: [{ type: 'null' }, nudgeSchema],
+        description:
+          'OPTIONAL no-pressure suggestion, ONLY for a quiet/relaxed day when bigRock is null: the ' +
+          'single most worthwhile thing the user COULD do if they want something to do — offered as ' +
+          'a choice, never an assignment. null whenever there is a real bigRock, and null on a truly ' +
+          'empty board (no tasks to point at). Use it only occasionally (see QUIET, LOW-VALUE DAYS).',
+      },
     },
-    required: ['headline', 'availableTime', 'bigRock', 'smallRocks', 'habitNote'],
+    required: ['headline', 'availableTime', 'bigRock', 'smallRocks', 'habitNote', 'nudge'],
   },
 } as const
 
@@ -233,7 +273,23 @@ export const SYSTEM_PROMPT = [
   'substantial, PREFER making it the BIG ROCK rather than padding it onto the quick-wins list, paced',
   'toward its due date if it has one. Only make it a small rock if it is genuinely short (S/M) and',
   'something bigger already owns the day. Never tell the user to "finish" it or treat it as',
-  'must-finish-today — a session on it is progress, not completion.',
+  'must-finish-today — a session on it is progress, not completion. One caveat: this is for a project',
+  'genuinely worth a session. If it — and everything else on the board — is low-importance and',
+  'low-urgency with nothing pressing, do NOT force it into the big rock; a relaxed day is often the',
+  'better call (see QUIET, LOW-VALUE DAYS).',
+  '',
+  'QUIET, LOW-VALUE DAYS: sometimes the board holds only a few LOW-importance, LOW-urgency tasks with',
+  'no due dates — nothing that genuinely earns a substantial focused block. On a day like that you do',
+  'NOT have to manufacture a big rock out of a minor task (an ongoing project included). It is good —',
+  'and often better — to call it a relaxed day: set bigRock null, keep smallRocks light or empty, and',
+  'use the OPTIONAL `nudge` to point at the single most worthwhile thing they COULD do if they want',
+  'something to do, framed as a no-pressure choice ("nothing pressing today — if you feel like it, you',
+  'could chip at X"), never an instruction. Make this an OCCASIONAL, VARIED call, not a mechanical',
+  'rule: some quiet days deserve the relaxed-day-with-a-nudge shape, other similar days a single light',
+  'focus is the right move instead — vary day to day rather than doing the same thing every time. The',
+  '`nudge` is ONLY for these relaxed days: leave it null whenever there is a real bigRock, and leave it',
+  'null on a truly EMPTY board (no tasks to point at — that is a pure rest day). Never invent a nudge',
+  'task; it must be one of the listed items, with its bracketed ref copied exactly, like any rock.',
   '',
   'A task line may carry a rough size — S (~15m), M (~45m), L (~2h), XL (~half-day). When a task has',
   'no size, estimate its effort yourself from the text before weighing the day (rule 4).',
@@ -341,12 +397,15 @@ function taskLines(req: PlanRequest): string {
 
 // ---- Ref resolution --------------------------------------------------------------------------
 
-// Map one emitted rock's `ref` ("T3" → req.tasks[2], "R1" → req.recurringDue[0]) to the real task
+// Map one emitted item's `ref` ("T3" → req.tasks[2], "R1" → req.recurringDue[0]) to the real task
 // id, falling back to an exact-text match when the ref is missing or out of range (the schema
-// requires `ref`, but the tool input is an unchecked cast — never trust it blindly). Returns the
-// stored rock shape: taskId in, ref out.
-function resolveRock(rock: EmittedRock, req: PlanRequest): Rock {
-  const { ref, ...rest } = rock
+// requires `ref`, but the tool input is an unchecked cast — never trust it blindly). Generic over
+// rocks and nudges (both are `{ task, ..., ref }`): returns the stored shape, taskId in, ref out.
+function resolveRef<T extends { task: string; ref?: string | null }>(
+  emitted: T,
+  req: PlanRequest,
+): Omit<T, 'ref'> & { taskId: string | null } {
+  const { ref, ...rest } = emitted
   let taskId: string | null = null
   const m = typeof ref === 'string' ? ref.trim().match(/^([TR])(\d+)$/i) : null
   if (m) {
@@ -354,29 +413,30 @@ function resolveRock(rock: EmittedRock, req: PlanRequest): Rock {
     const src = m[1].toUpperCase() === 'T' ? req.tasks[idx] : req.recurringDue[idx]
     taskId = src?.id ?? null
   }
-  if (!taskId && typeof rock.task === 'string') {
-    const text = rock.task.trim()
+  if (!taskId && typeof emitted.task === 'string') {
+    const text = emitted.task.trim()
     const hit =
       req.tasks.find((t) => t.text.trim() === text) ??
       req.recurringDue.find((r) => r.text.trim() === text)
     taskId = hit?.id ?? null
   }
-  return { ...rest, taskId }
+  return { ...rest, taskId } as Omit<T, 'ref'> & { taskId: string | null }
 }
 
 /**
- * Resolve every rock's `ref` in an emitted plan to a real tasks.id, producing the STORED plan
- * shape (rocks carry `taskId`, never `ref`). A rock that can't be tied to a listed item — model
- * said null, cited a bogus ref against an id-less request, or paraphrased the text — degrades to
- * taskId null: the plan still renders, it just can't be crossed off automatically.
+ * Resolve every rock's (and the nudge's) `ref` in an emitted plan to a real tasks.id, producing the
+ * STORED plan shape (items carry `taskId`, never `ref`). An item that can't be tied to a listed one —
+ * model said null, cited a bogus ref against an id-less request, or paraphrased the text — degrades
+ * to taskId null: the plan still renders, it just can't be crossed off automatically.
  */
 export function resolvePlanTaskIds(plan: EmittedPlan, req: PlanRequest): PlanResult {
   return {
     ...plan,
-    bigRock: plan.bigRock ? resolveRock(plan.bigRock, req) : null,
+    bigRock: plan.bigRock ? resolveRef(plan.bigRock, req) : null,
     smallRocks: Array.isArray(plan.smallRocks)
-      ? plan.smallRocks.map((r) => resolveRock(r, req))
+      ? plan.smallRocks.map((r) => resolveRef(r, req))
       : [],
+    nudge: plan.nudge ? resolveRef(plan.nudge, req) : null,
   }
 }
 

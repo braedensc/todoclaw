@@ -23,14 +23,28 @@ export const PlanRockSchema = z.object({
   taskId: z.string().nullish().catch(null),
 })
 
+// The optional "if you want something to do" suggestion on a quiet/relaxed day — a rock without a
+// slot (never scheduled). See the emit_plan nudge in plan-prompt.ts.
+export const PlanNudgeSchema = z.object({
+  task: z.string(),
+  why: z.string(),
+  duration: z.string(),
+  taskId: z.string().nullish().catch(null),
+})
+
 export const DayPlanSchema = z.object({
   headline: z.string(),
   availableTime: z.string(),
   bigRock: PlanRockSchema.nullable(), // null on a light/rest day
   smallRocks: z.array(PlanRockSchema),
   habitNote: z.string(),
+  // Present only on a quiet/relaxed day (bigRock null). Optional + `.catch(null)` for the same
+  // reasons as taskId: plans persisted before the field lack it, and a malformed value degrades to
+  // no-nudge rather than nuking the whole plan.
+  nudge: PlanNudgeSchema.nullish().catch(null),
 })
 
 export type PlanWhen = z.infer<typeof PlanWhenSchema>
 export type PlanRock = z.infer<typeof PlanRockSchema>
+export type PlanNudge = z.infer<typeof PlanNudgeSchema>
 export type DayPlan = z.infer<typeof DayPlanSchema>

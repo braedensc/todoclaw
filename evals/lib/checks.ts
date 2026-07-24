@@ -314,6 +314,26 @@ export function restDay(): PlanCheck {
     )
 }
 
+/**
+ * The quiet-day nudge contract. The nudge is the no-big-rock-day pointer, so WHEN one is emitted it
+ * must (a) resolve to a real listed task and (b) coincide with bigRock === null. This never forces a
+ * nudge — a pure rest day with none is valid — it only constrains one that appears. Pairs with a
+ * rubric for the non-deterministic quality call (relax vs. a single light focus).
+ */
+export function nudgeContract(): PlanCheck {
+  return (plan) => {
+    if (!plan.nudge) return r('nudge: only w/o a big rock, resolves to a task', true)
+    const ok = plan.bigRock == null && !!plan.nudge.taskId
+    return r(
+      'nudge: only w/o a big rock, resolves to a task',
+      ok,
+      `bigRock=${plan.bigRock?.task ?? 'null'}, nudge="${plan.nudge.task}" taskId=${
+        plan.nudge.taskId ?? 'null'
+      }`,
+    )
+  }
+}
+
 /** Every emitted rock resolved back to a real fixture task (taskId non-null). */
 export function rocksResolve(): PlanCheck {
   return (plan) => {
