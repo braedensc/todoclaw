@@ -77,6 +77,7 @@ export interface PromptActivity {
 }
 export interface ChatContext {
   today: string // "Saturday, July 4, 2026"
+  nowTime: string // current local wall-clock, e.g. "1:45 AM" — lets BabyClaw read a late-night "tomorrow"
   timeZone: string
   scheduleSummary: string | null
   // The user's effective default reminder (minutes before due; null = Off) — the offset the app
@@ -220,6 +221,15 @@ export const SYSTEM_PREFIX = [
   '  fixed future day (a movie, a flight, an appointment) — offer to PAUSE it (pause_task, or a start',
   '  date on a new one) until that day: pausing keeps the task, its due date AND its reminders, and it',
   '  reappears that morning. Only complete when the work is actually DONE; only delete to remove it.',
+  '',
+  "DATES & THE CLOCK: the TODAY block gives the current local date AND time, and the app's day rolls",
+  'over at local midnight. In the small hours (roughly midnight to 5 AM) the calendar has already',
+  'advanced to the new date while the user is usually still living the night before — so someone up at',
+  '1 AM who says "tomorrow" almost always means the day they are about to wake into, which the app now',
+  'calls TODAY, and "tonight" means this coming evening, not a day later. During those hours read a',
+  'relative day the everyday way, tell the user the concrete date you landed on ("due Friday the',
+  '24th") so a wrong guess is easy to catch, and ASK first when it is ambiguous or the stakes are',
+  'real. At normal hours read relative days plainly — "tomorrow" is the next calendar day.',
   '',
   'APP GUIDE — how TodoClaw works. Answer questions about the app from this guide; it is accurate.',
   'Never invent a feature or setting that is not here or in your tools.',
@@ -405,7 +415,9 @@ function habitLine(h: PromptHabit): string {
 }
 
 function contextBlock(ctx: ChatContext): string {
-  const blocks: string[] = [`=== TODAY ===\n${ctx.today} (timezone ${ctx.timeZone}).`]
+  const blocks: string[] = [
+    `=== TODAY ===\n${ctx.today}, ${ctx.nowTime} (timezone ${ctx.timeZone}).`,
+  ]
   if (ctx.scheduleSummary) blocks[0] += `\n${ctx.scheduleSummary}`
   // The user's default reminder, so BabyClaw explains reminder behavior from their real setting
   // ("your default is 1 hour before") instead of guessing.

@@ -14,6 +14,7 @@ import {
 function baseContext(over: Partial<ChatContext> = {}): ChatContext {
   return {
     today: 'Saturday, July 4, 2026',
+    nowTime: '11:00 AM',
     timeZone: 'America/New_York',
     scheduleSummary: null,
     reminderDefault: 60,
@@ -154,6 +155,26 @@ Deno.test("the TODAY block carries the user's default reminder (60 / custom / of
   )
   assertStringIncludes(buildSystem(baseContext({ reminderDefault: null })), 'Default reminder: OFF')
 })
+
+Deno.test('the TODAY block shows the current local time next to the date', () => {
+  const sys = buildSystem(baseContext({ today: 'Friday, July 24, 2026', nowTime: '1:45 AM' }))
+  assertStringIncludes(
+    sys,
+    '=== TODAY ===\nFriday, July 24, 2026, 1:45 AM (timezone America/New_York).',
+  )
+})
+
+Deno.test(
+  'the prefix teaches the small-hours reading of relative days (the 1:45 AM "tomorrow" bug)',
+  () => {
+    // Regression guard for the screenshot bug: at 1:45 AM the calendar has already flipped, so a
+    // strict reading sends "tomorrow" a day too far. The prefix must point BabyClaw at the everyday
+    // reading (the day the user is waking into) during the small hours.
+    assertStringIncludes(SYSTEM_PREFIX, 'DATES & THE CLOCK')
+    assertStringIncludes(SYSTEM_PREFIX, 'small hours')
+    assertStringIncludes(SYSTEM_PREFIX, 'the day they are about to wake into')
+  },
+)
 
 Deno.test('a sized task renders its S/M/L/XL so BabyClaw can answer "what size is X?"', () => {
   const sys = buildSystem(
