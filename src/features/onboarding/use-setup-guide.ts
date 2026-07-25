@@ -12,12 +12,13 @@ import {
   dismissSetupGuide,
   markPlanTried,
 } from './setup-guide-store'
+import { useOnboardingMirror } from './use-onboarding-mirror'
 
 // use-setup-guide — the state behind the first-run "Get set up" card. Each step is AUTO-DETECTED
 // rather than self-reported, because every one leaves an observable trace:
 //   1. Take the tour        → localStorage when the FeatureTour closes, MIRRORED to the account
 //      (config.onboarding.tourSeen) so the checkmark survives the browser↔installed-app storage
-//      partition split — the tour is a device-independent fact (see use-mark-tour-seen.ts).
+//      partition split — the tour is a device-independent fact (see use-onboarding-mirror.ts).
 //   2. Install the app      → running as the installed app (display-mode: standalone). Its OWN step
 //      now (2026-07-09): the old combined "install + notifications" step let users think they were
 //      done after installing, when notifications still waited — splitting them tracks each plainly.
@@ -96,13 +97,28 @@ export interface SetupGuideState {
 }
 
 export function useSetupGuide(planReady: boolean): SetupGuideState {
-  const dismissed = useSyncExternalStore(subscribeSetupGuide, () => readFlag(DISMISSED_KEY))
+  const dismissedLocal = useSyncExternalStore(subscribeSetupGuide, () => readFlag(DISMISSED_KEY))
   const planLatched = useSyncExternalStore(subscribeSetupGuide, () => readFlag(PLAN_DONE_KEY))
   const tourLatched = useSyncExternalStore(subscribeSetupGuide, () => readFlag(TOUR_DONE_KEY))
   // An explicit "Show the setup guide" (Settings) — forces the card up regardless of completion.
   const requested = useSyncExternalStore(subscribeSetupGuide, readRequested)
   const schedule = useUserSchedule()
   const tasks = useTasks()
+  const mirror = useOnboardingMirror()
+
+  // ---- Dismissal: local latch OR the account mirror. The account half is what makes "I'm done
+  // with this card" stick — the local flag lives in one storage partition, so installing the app
+  // (or clearing site data) used to hand a finished user the checklist all over again.
+  // `requested` wins over both: Settings just asked for the card, and the account clear it fires is
+  // an async save, so honouring the stored flag here would blank the card until that round-trips.
+  const dismissedAccount = schedule.data?.config?.onboarding?.setupDismissed === true
+  const dismissed = !requested && (dismissedLocal || dismissedAccount)
+  // Close the card everywhere at once: local latch (instant, this context) + account mirror.
+  const markSetupDismissed = mirror.markSetupDismissed
+  const dismiss = useCallback(() => {
+    dismissSetupGuide()
+    markSetupDismissed()
+  }, [markSetupDismissed])
 
   // ---- Install facts. Standalone can't change without a relaunch, so a per-render read is stable.
   const context = detectInstallContext()
@@ -176,8 +192,11 @@ export function useSetupGuide(planReady: boolean): SetupGuideState {
   if (!dismissed && loaded && !allDone && !sawIncomplete) setSawIncomplete(true)
   useEffect(() => {
     if (dismissed || !loaded || requested) return
-    if (allDone && !sawIncomplete) dismissSetupGuide()
-  }, [dismissed, loaded, allDone, sawIncomplete, requested])
+    // The silent auto-dismiss writes the ACCOUNT flag too, so "already set up" is settled once for
+    // the person rather than re-decided on every device. `dismiss` no-ops the save when the flag is
+    // already true, so this costs at most one write per account.
+    if (allDone && !sawIncomplete) dismiss()
+  }, [dismissed, loaded, allDone, sawIncomplete, requested, dismiss])
 
   return {
     visible: !dismissed && loaded && (requested || sawIncomplete || !allDone),
@@ -197,6 +216,6 @@ export function useSetupGuide(planReady: boolean): SetupGuideState {
     doneCount,
     stepCount: order.length,
     allDone,
-    dismiss: dismissSetupGuide,
+    dismiss,
   }
 }

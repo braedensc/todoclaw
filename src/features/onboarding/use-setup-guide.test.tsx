@@ -5,8 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // the task list (plan step's evolving button), and the platform/standalone detection from the push
 // hook. localStorage is jsdom's real one — each test starts from a cleared store.
 const mockSchedule = vi.fn<() => { data?: unknown; isLoading?: boolean }>()
+// The account mirror (use-onboarding-mirror) writes through this — captured so the specs can assert
+// that dismissing/auto-dismissing persists `config.onboarding.setupDismissed` to the account.
+const mockSaveConfig = vi.fn<(vars: unknown) => Promise<unknown>>()
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => mockSchedule(),
+  useSaveScheduleConfig: () => ({ mutateAsync: mockSaveConfig }),
 }))
 
 const mockTasks = vi.fn<() => { data?: unknown[]; isLoading?: boolean }>()
@@ -41,6 +45,8 @@ beforeEach(() => {
   // forced-show state can't leak between tests.
   dismissSetupGuide()
   localStorage.clear()
+  mockSaveConfig.mockReset()
+  mockSaveConfig.mockResolvedValue(undefined)
   mockSchedule.mockReturnValue(loadedSchedule())
   mockTasks.mockReturnValue({ data: [], isLoading: false })
   mockPlatform.mockReturnValue('ios')
@@ -227,6 +233,70 @@ describe('useSetupGuide', () => {
     // And dismissing ends the forced-show (no eternal card).
     act(() => result.current.dismiss())
     expect(result.current.visible).toBe(false)
+  })
+
+  it('dismissing mirrors to the account (config.onboarding.setupDismissed)', () => {
+    const { result } = renderHook(() => useSetupGuide(false))
+    act(() => result.current.dismiss())
+    expect(localStorage.getItem(DISMISSED_KEY)).toBe('1')
+    expect(mockSaveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ config: { onboarding: { setupDismissed: true } } }),
+    )
+  })
+
+  it('the account mirror keeps the card down with no local flag (fresh storage partition)', () => {
+    // The reported bug: installing the app (or clearing site data) drops localStorage, so a user
+    // who had already finished setup got the whole checklist back. The account half holds it.
+    mockSchedule.mockReturnValue(loadedSchedule({ onboarding: { setupDismissed: true } }))
+    const { result } = renderHook(() => useSetupGuide(false))
+    expect(result.current.visible).toBe(false)
+    expect(localStorage.getItem(DISMISSED_KEY)).toBeNull() // purely the account half
+  })
+
+  it('an explicit request beats the account flag, and re-dismissing settles it for good', () => {
+    // Settings clears the account flag with an ASYNC save, so the request has to win on the
+    // synchronous render — otherwise the card the user just asked for stays hidden.
+    mockSchedule.mockReturnValue(loadedSchedule({ onboarding: { setupDismissed: true } }))
+    const { result, rerender } = renderHook(() => useSetupGuide(false))
+    expect(result.current.visible).toBe(false)
+
+    act(() => resetSetupGuide())
+    expect(result.current.visible).toBe(true) // shown before the account clear has landed
+
+    // Settings' clear lands.
+    mockSchedule.mockReturnValue(loadedSchedule({ onboarding: { setupDismissed: false } }))
+    rerender()
+    expect(result.current.visible).toBe(true)
+
+    act(() => result.current.dismiss())
+    expect(result.current.visible).toBe(false)
+    // …and it's back on the account, so it never returns on its own.
+    expect(mockSaveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ config: { onboarding: { setupDismissed: true } } }),
+    )
+  })
+
+  it('the silent auto-dismiss writes the account flag too, so other devices stay quiet', () => {
+    mockStandalone.mockReturnValue(true)
+    mockSchedule.mockReturnValue(loadedSchedule({ notifications: { enabled: true } }))
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    localStorage.setItem(PLAN_DONE_KEY, '1')
+    localStorage.setItem(TOUR_DONE_KEY, '1')
+
+    const { result } = renderHook(() => useSetupGuide(false))
+    expect(result.current.visible).toBe(false)
+    expect(mockSaveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ onboarding: { setupDismissed: true } }),
+      }),
+    )
+  })
+
+  it('does not re-write the account flag when it is already set', () => {
+    mockSchedule.mockReturnValue(loadedSchedule({ onboarding: { setupDismissed: true } }))
+    const { result } = renderHook(() => useSetupGuide(false))
+    act(() => result.current.dismiss())
+    expect(mockSaveConfig).not.toHaveBeenCalled()
   })
 
   it('withholds judgment while the schedule row is still loading', () => {

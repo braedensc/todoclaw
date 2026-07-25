@@ -90,6 +90,44 @@ describe('ChatSessionList (unified inbox + chats)', () => {
     expect(screen.getByText('Untitled chat')).toBeInTheDocument()
   })
 
+  describe('read state: a dot in this list only ever means unread', () => {
+    it('the open conversation gets no dot — it is marked by aria-current, not a marker', () => {
+      // The reported bug: the open chat carried a leading accent dot identical to a "new message"
+      // marker, so coming back out of a chat you had just read painted a fresh-looking dot on it.
+      messages = [m('m1', { read_at: new Date().toISOString() })]
+      render(<ChatSessionList currentId="a" onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.queryByLabelText('unread')).toBeNull()
+      expect(screen.getByText('Plan my week').textContent).toBe('Plan my week')
+      expect(screen.getByRole('button', { name: /^Plan my week/ })).toHaveAttribute(
+        'aria-current',
+        'true',
+      )
+      // …and the chat you're NOT in stays unmarked.
+      expect(screen.getByRole('button', { name: /^Untitled chat/ })).not.toHaveAttribute(
+        'aria-current',
+      )
+    })
+
+    it('an unread check-in still shows its dot while its own chat is open', () => {
+      messages = [m('m1', { session_id: 'sess-1' })]
+      render(<ChatSessionList currentId="sess-1" onOpen={vi.fn()} onNew={vi.fn()} />)
+      expect(screen.getAllByLabelText('unread')).toHaveLength(1)
+    })
+
+    it('opening an unread check-in marks it read exactly once', () => {
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      fireEvent.click(screen.getByText(/morning plan/i))
+      expect(markReadMutate).toHaveBeenCalledWith('m1')
+    })
+
+    it('does not re-mark a check-in that is already read', () => {
+      messages = [m('m1', { read_at: new Date().toISOString(), session_id: 'sess-1' })]
+      render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)
+      fireEvent.click(screen.getByText(/morning plan/i))
+      expect(markReadMutate).not.toHaveBeenCalled()
+    })
+  })
+
   it('day-stamps a plan/recap so it is clear which day it is', () => {
     messages = [m('m1', { kind: 'plan', local_date: '2026-07-14' })]
     render(<ChatSessionList currentId={null} onOpen={vi.fn()} onNew={vi.fn()} />)

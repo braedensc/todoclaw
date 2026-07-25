@@ -79,12 +79,21 @@ so the Deno drift test can import it).
   `config.notifications.enabled` + `Notification.permission` (the same two halves the dispatcher
   requires), and today's plan (latched in localStorage so the midnight plan-clear doesn't regress
   the checkmark).
-- **Per-device semantics.** Dismissal lives in localStorage (`setup-guide-store.ts`), not account
-  config — reappearing on a new device is correct, since install/permission are per-device. A user
-  already fully set up never sees the card (silent auto-dismiss on load). The tour checkmark alone
-  is device-independent (the account mirror), because watching the tour twice helps nobody.
-- **Re-findable:** Settings → "Show the setup guide" (calls `resetSetupGuide()`), or "Replay the
-  tour" for just the walkthrough.
+- **Dismissal is per-ACCOUNT, detection is per-device.** The individual step checks stay device-local
+  (install and permission genuinely are), but "I'm done with this card" is a fact about the person:
+  it latches in localStorage *and* mirrors to `config.onboarding.setupDismissed`
+  (`use-onboarding-mirror.ts`), so installing the app — a fresh storage partition — or clearing site
+  data can't hand a finished user the checklist again. Same for the tour checkmark
+  (`config.onboarding.tourSeen`): watching the tour twice helps nobody. A user already fully set up
+  never sees the card at all (silent auto-dismiss on load, which writes the account flag too).
+- **Anything that writes `user_schedule.config` must read-modify-write.** The save replaces the whole
+  jsonb, so a writer that rebuilds the config from its own form deletes every section it doesn't
+  model. That is exactly how a Settings save used to wipe `config.onboarding` and put "See how
+  TodoClaw works" back on the checklist for someone who had already taken the tour — see
+  `settings-form.ts`'s `carryOver()`, which passes non-editor keys through by default.
+- **Re-findable:** Settings → "Show the setup guide" (calls `resetSetupGuide()` plus the account
+  clears), or "Replay the tour" for just the walkthrough. Re-showing it is a one-shot: the card
+  stays up until dismissed, and that dismissal settles it for good again.
 - **Golden suite:** `e2e/golden/auth.setup.ts` seeds the dismissal key before sign-in so specs
   assert the established shell, not the guide (the demo scene never mounts there either — the tour
   only launches from the guide, the empty states, or Settings).

@@ -166,4 +166,40 @@ describe('settings-form', () => {
       expect(configToDraft(out).reminderDefault).toBe('10')
     })
   })
+
+  // The save path replaces `config` whole, so anything draftToConfig doesn't emit is DELETED.
+  // `onboarding` isn't part of the editor's form, and dropping it wiped the account half of the
+  // tour/setup-guide state — so saving unrelated settings put "See how TodoClaw works" back on the
+  // checklist for someone who'd already taken the tour.
+  describe('sections the editor does not model', () => {
+    it('carries `onboarding` through a save untouched', () => {
+      const base = draftToConfig({ ...EMPTY_DRAFT, planNotes: 'old' })
+      const stored = { ...base, onboarding: { tourSeen: true, setupDismissed: true } }
+      const out = draftToConfig({ ...EMPTY_DRAFT, planNotes: 'new' }, stored)
+      expect(out.onboarding).toEqual({ tourSeen: true, setupDismissed: true })
+      expect(out.planNotes).toBe('new') // the edit still lands
+    })
+
+    it('still lets the editor clear the sections it DOES own', () => {
+      const stored = draftToConfig({
+        ...EMPTY_DRAFT,
+        planNotes: 'gone',
+        location: 'Portland',
+        babyclawTone: 'warm',
+      })
+      const out = draftToConfig(EMPTY_DRAFT, stored)
+      expect(out.planNotes).toBeUndefined()
+      expect(out.location).toBeUndefined()
+      expect(out.assistant).toBeUndefined()
+    })
+
+    it('drops the legacy `babyclaw` alias rather than carrying it (editor-owned)', () => {
+      const out = draftToConfig(EMPTY_DRAFT, { babyclaw: { tone: 'warm' } })
+      expect(out.babyclaw).toBeUndefined()
+    })
+
+    it('no base behaves exactly as before (nothing invented)', () => {
+      expect(draftToConfig(EMPTY_DRAFT)).toEqual({})
+    })
+  })
 })

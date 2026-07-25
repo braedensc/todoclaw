@@ -91,18 +91,22 @@ function ReplyBadge({ count }: { count: number }) {
 // One row's text column: name and time on the first line, last-message snippet on the second. The
 // snippet gets a line to itself (rather than sharing with the time) because it's the part that has
 // something to say; `truncate` does the ellipsis, so it adapts to the drawer's width.
+//
+// A DOT IN THIS LIST MEANS EXACTLY ONE THING: unread (the puppy dot at the row's trailing edge).
+// The open conversation used to get a second, leading accent dot here — visually identical to a
+// "new message" marker, and it appeared on a chat the moment you came back out of it, which read as
+// the app forgetting you'd just been reading. The open row is already carried by its card
+// background + ring (and `aria-current` for assistive tech), so the dot is gone.
 function RowText({
   title,
   time,
   preview,
   bold,
-  dot,
 }: {
   title: string
   time: string
   preview: string
   bold?: boolean
-  dot?: boolean
 }) {
   return (
     <span className="min-w-0 flex-1">
@@ -112,7 +116,6 @@ function RowText({
             'min-w-0 flex-1 truncate text-sm ' + (bold ? 'font-semibold text-ink' : 'text-ink')
           }
         >
-          {dot && <span className="mr-1 text-accent">●</span>}
           {title}
         </span>
         <span className="shrink-0 text-[10px] text-muted-light">{time}</span>
@@ -262,17 +265,13 @@ export function ChatSessionList({
                 type="button"
                 onClick={() => onOpen(s.id)}
                 title={title}
+                aria-current={active ? 'true' : undefined}
                 className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-2 text-left"
               >
                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                   <PawPrint className="h-3.5 w-3.5" />
                 </span>
-                <RowText
-                  title={title}
-                  time={relTime(s.updated_at)}
-                  preview={preview}
-                  dot={active}
-                />
+                <RowText title={title} time={relTime(s.updated_at)} preview={preview} />
               </button>
               {confirmingId === s.id ? (
                 <span className="flex shrink-0 items-center gap-1">
@@ -353,6 +352,7 @@ export function ChatSessionList({
               type="button"
               onClick={() => openMessage(m)}
               title={title}
+              aria-current={active ? 'true' : undefined}
               className={
                 'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
                 // The open conversation still wins the row's background — it's the stronger state,

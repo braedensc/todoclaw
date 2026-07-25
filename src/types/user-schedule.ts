@@ -117,6 +117,12 @@ const notificationsSchema = z.object({
 // opened from the Home Screen instead of Safari. See setup-guide-store.ts.
 const onboardingSchema = z.object({
   tourSeen: z.boolean().optional(),
+  // "I'm done with the first-run setup guide" — account-level for the same reason as `tourSeen`,
+  // plus one more: finishing setup is a fact about the PERSON, and a device-local dismissal meant
+  // installing the app (a fresh storage partition) or clearing site data brought the checklist back
+  // to someone who'd already finished it. Set by any dismissal, including the silent auto-dismiss
+  // for an already-complete user; cleared only by Settings → "Show the setup guide".
+  setupDismissed: z.boolean().optional(),
 })
 
 export const ScheduleConfigSchema = z.object({

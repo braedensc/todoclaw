@@ -40,7 +40,7 @@ import { FeatureTour } from './features/onboarding/FeatureTour'
 import { DemoScene } from './features/onboarding/DemoScene'
 import { ADD_TASK_SPOTLIGHT, demoTour } from './features/onboarding/tour-steps'
 import { markTourDone } from './features/onboarding/setup-guide-store'
-import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
+import { useOnboardingMirror } from './features/onboarding/use-onboarding-mirror'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
 import { useRoute, useChatMessageId, navigate, goBack } from './lib/route'
@@ -127,7 +127,7 @@ function AppShell() {
   // unit either floats the bottom nav (dvh, short state) or clips it off the physical screen
   // (lvh, the iPhone-15-Pro-Max "too tiny" bug). See use-app-height.ts for the measured numbers.
   useAppHeight(isMobile)
-  const { markSeen: markTourSeen } = useMarkTourSeen()
+  const { markTourSeen } = useOnboardingMirror()
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
