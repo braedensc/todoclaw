@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import { ConfirmProvider } from '../../components/use-confirm'
 import { ToastProvider } from '../../components/use-toast'
 import { DemoScene } from './DemoScene'
-import { DEMO_PLAN, DEMO_EVENING_REPLY } from './demo-transcript'
+import { DEMO_ASK, DEMO_PLAN, DEMO_EVENING_REPLY } from './demo-transcript'
 import { demoTour } from './tour-steps'
 
 // jsdom has no matchMedia, so the real useIsMobile always reports desktop (the App.test.tsx
@@ -73,6 +73,18 @@ describe('DemoScene', () => {
     expect(screen.getByText('Renew the passport')).toBeInTheDocument()
     expect(screen.getByText('Clean out the garage')).toBeInTheDocument()
 
+    // The add UI is the REAL AddTaskForm with its schedule disclosure pre-opened, so the three
+    // kinds of task are the Type switch's own buttons rather than copy describing them.
+    const add = anchor('demo-add')
+    for (const kind of ['Task', 'Recurring', 'Ongoing']) {
+      expect(within(add).getByText(kind, { selector: 'button' })).toBeInTheDocument()
+    }
+
+    // Chat-as-control-surface: a plain ask with the receipts the real tools stamp.
+    const ask = anchor('demo-chat-ask')
+    expect(within(ask).getByText(DEMO_ASK)).toBeInTheDocument()
+    expect(within(ask).getByText(/Moved "Send the invoice" to Monday\./)).toBeInTheDocument()
+
     // The plan card renders the canned plan through the real PlanBox, under the example ✦ Plan My
     // Day button the tour's plan panel spotlights (button + result shown together). getByText, not
     // getByRole: the whole scene is aria-hidden scenery, so the button has no accessible role.
@@ -100,6 +112,23 @@ describe('DemoScene', () => {
     expect(screen.queryByLabelText('Message')).toBeNull()
 
     // Nothing ever reached for the Supabase client.
+    expect(supabaseTouched).toEqual([])
+  })
+
+  it('mobile shows the REAL touch grid, embedded — minus the chrome that would go nowhere', () => {
+    // A phone's grid lives behind Grid view, so the tour has to show the actual TouchGridSurface
+    // rather than a look-alike (or, as before, nothing at all). Embedded it drops the fullscreen
+    // takeover's floating controls: an "Exit grid" or ＋ inside inert scenery is a dead button.
+    mockIsMobile.mockReturnValue(true)
+    renderScene()
+
+    const grid = anchor('demo-grid')
+    expect(within(grid).getByTestId('touch-grid-canvas')).toBeInTheDocument()
+    expect(within(grid).queryByLabelText('Exit grid view')).toBeNull()
+    expect(within(grid).queryByLabelText('Add a task')).toBeNull()
+
+    // …and the quadrant overview it's the alternative to, as its own section.
+    expect(within(anchor('demo-matrix')).getByText('Renew the passport')).toBeInTheDocument()
     expect(supabaseTouched).toEqual([])
   })
 

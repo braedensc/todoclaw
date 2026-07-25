@@ -54,6 +54,7 @@ export function AddTaskForm({
   reminderDefault,
   onOpenChat,
   inputRef,
+  defaultScheduleOpen = false,
 }: {
   defaultQuadrant: QuadrantKey | null
   /** Create the task: text + quadrant + optional recurring + optional due date/time + any number
@@ -75,6 +76,13 @@ export function AddTaskForm({
   /** The text field, exposed so the caller can focus it explicitly if ever needed (NOT focused
    *  on open — the keyboard must not pop until the user asks for it). */
   inputRef?: RefObject<HTMLInputElement>
+  /**
+   * Start with the schedule disclosure already open. Off for the real add flow (capture stays one
+   * screen tall); the tour's example day turns it on so the Task / Recurring / Ongoing switch —
+   * the three kinds of task, in the actual add UI — is on screen without a tap the scenery can't
+   * take. Initial state only; the user still folds it away normally.
+   */
+  defaultScheduleOpen?: boolean
 }) {
   const [text, setText] = useState('')
   const [selected, setSelected] = useState<QuadrantKey | null>(defaultQuadrant)
@@ -88,7 +96,7 @@ export function AddTaskForm({
   const [reminderMinutes, setReminderMinutes] = useState<number[]>(
     reminderDefault != null ? [reminderDefault] : [],
   )
-  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(defaultScheduleOpen)
   const timeZone = useTimeZone()
 
   const canAdd = text.trim().length > 0 && selected != null

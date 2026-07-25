@@ -113,11 +113,15 @@ describe('demo habits fixture', () => {
 })
 
 describe('demo tour script', () => {
-  it('targets demo-* anchors for every step but the last (grid/matrix also exist in the real shell underneath)', () => {
-    // The closing step targets 'options' — the REAL Account nav / bottom bar, not a DemoScene anchor.
+  it('opens on the real masthead, closes on the real nav, and points at demo-* in between', () => {
+    // The first and last steps deliberately target REAL shell chrome — the masthead (so the tour
+    // starts at the top of the app, not mid-board) and the Account nav / bottom bar. Everything
+    // between them is DemoScene's own scenery, prefixed `demo-` because 'grid' and 'matrix' also
+    // exist in the real shell underneath and anchors resolve first-match-in-document.
     for (const isMobile of [false, true]) {
       const steps = demoTour(isMobile)
-      for (const step of steps.slice(0, -1)) expect(step.target).toMatch(/^demo-/)
+      expect(steps[0]!.target).toBe('app-top')
+      for (const step of steps.slice(1, -1)) expect(step.target).toMatch(/^demo-/)
       expect(steps.at(-1)!.target).toBe('options')
     }
   })
@@ -175,22 +179,99 @@ describe('demo tour script', () => {
     expect(closing(true).body).not.toMatch(/along the top/i)
   })
 
-  it('is the full 9-panel single section, in order, on both breakpoints', () => {
-    // The first eight steps live on DemoScene (the plan button and the habits strip); the last one
-    // points at the real Account nav / bottom bar in the shell around it. Order matters (the plan
-    // button precedes the check-ins; habits then the real options close it out).
-    const expected = [
-      'demo-board', // welcome
-      'demo-board', // sorted by what matters
-      'demo-board', // three kinds of task
+  it('walks the example day in one forward pass, on both breakpoints', () => {
+    // Order is load-bearing twice over: it's the narrative (board → what a task is → chat → the
+    // plan built from them → the check-ins → habits → the rest), AND FeatureTour scrolls each
+    // anchor into view, so this list must stay in DemoScene's DOM order or the page jumps
+    // backwards mid-tour. The phone gets one extra panel: the quadrant overview it actually
+    // opens on, right after the grid it's an alternative to.
+    const middle = [
+      'demo-add', // three kinds of task
+      'demo-chat-ask', // chat runs the whole app
       'demo-plan', // Plan My Day button + the plan it builds
       'demo-chat-morning',
-      'demo-chat-evening', // evenings close the loop
-      'demo-chat-evening', // chat runs the whole app (same anchor — its receipts are the proof)
+      'demo-chat-evening',
       'demo-habits',
-      'options',
     ]
-    for (const isMobile of [false, true])
-      expect(demoTour(isMobile).map((s) => s.target)).toEqual(expected)
+    expect(demoTour(false).map((s) => s.target)).toEqual([
+      'app-top',
+      'demo-grid',
+      ...middle,
+      'options',
+    ])
+    expect(demoTour(true).map((s) => s.target)).toEqual([
+      'app-top',
+      'demo-grid',
+      'demo-matrix',
+      ...middle,
+      'options',
+    ])
+  })
+
+  it('shows the grid on BOTH breakpoints, and the quadrant overview only on mobile', () => {
+    // The phone used to be told about quadrant boxes and never shown the grid its priorities
+    // actually live on. Now it leads with the grid too; the overview is the follow-up.
+    const titles = (isMobile: boolean) => demoTour(isMobile).map((s) => s.title)
+    expect(titles(false)).toContain('Sorted by what matters')
+    expect(titles(true)).toContain('Sorted by what matters')
+    expect(titles(true)).toContain('Or the quick overview')
+    expect(titles(false)).not.toContain('Or the quick overview')
+  })
+
+  it('teaches the three kinds on the add UI itself, naming the switch\u2019s own words', () => {
+    // The bullets have to match the Type control the panel spotlights (SchedulePanel's
+    // Task / Recurring / Ongoing) — a bullet named something else is a caption for a control the
+    // user is looking at and can't find.
+    for (const isMobile of [false, true]) {
+      const step = demoTour(isMobile).find((s) => s.title === 'Three kinds of task')!
+      expect(step.target, isMobile ? 'mobile' : 'desktop').toBe('demo-add')
+      expect(step.bullets?.map((b) => b.lead)).toEqual(['Task', 'Recurring', 'Ongoing'])
+    }
+  })
+
+  it('puts \u201Cchat runs the whole app\u201D between the task kinds and Plan My Day', () => {
+    for (const isMobile of [false, true]) {
+      const order = demoTour(isMobile).map((s) => s.title)
+      const kinds = order.indexOf('Three kinds of task')
+      const chat = order.indexOf('Chat runs the whole app')
+      const plan = order.indexOf('One tap plans your day')
+      expect(kinds, isMobile ? 'mobile' : 'desktop').toBeLessThan(chat)
+      expect(chat, isMobile ? 'mobile' : 'desktop').toBeLessThan(plan)
+    }
+  })
+
+  it('Plan My Day stops at \u201Cintelligently plan your day\u201D \u2014 no rock/habit taxonomy', () => {
+    // The panel names WHAT BabyClaw reads, not how he sorts it: big rocks / quick wins / habits
+    // are plan-card vocabulary a first-run user hasn't met yet.
+    const plan = demoTour(false).find((s) => s.title === 'One tap plans your day')!
+    expect(plan.body).toMatch(/intelligently plan your day/i)
+    expect(plan.body).not.toMatch(/big rock|quick win|small rock|room for habits/i)
+  })
+
+  it('rings the bottom-bar tab a panel is about \u2014 mobile only', () => {
+    // On a phone the surface and the button that opens it are in different places, so the add and
+    // chat panels call out their tab too (FeatureTour's `also`). Desktop's equivalents are in the
+    // header nav the closing panel already covers, so nothing rings there.
+    const alsoBy = (isMobile: boolean) =>
+      Object.fromEntries(demoTour(isMobile).map((s) => [s.title, s.also]))
+    const mobile = alsoBy(true)
+    expect(mobile['Three kinds of task']).toBe('nav-add')
+    expect(mobile['Chat runs the whole app']).toBe('nav-chat')
+    // Not the closing panel: it already spotlights the whole bar, so a ring inside that cutout
+    // would double-treat an area that isn't dimmed in the first place.
+    expect(mobile['Done and Settings']).toBeUndefined()
+    expect(demoTour(false).every((s) => s.also === undefined)).toBe(true)
+  })
+
+  it('the closing panel is about Done and Settings, not the whole nav', () => {
+    for (const isMobile of [false, true]) {
+      const closing = demoTour(isMobile).at(-1)!
+      const label = isMobile ? 'mobile' : 'desktop'
+      expect(closing.title, label).toBe('Done and Settings')
+      expect(closing.body, label).toMatch(/\bDone\b/)
+      expect(closing.body, label).toMatch(/Settings/)
+      // The surfaces that now have panels of their own must not be re-listed here.
+      expect(closing.body, label).not.toMatch(/chat|habits/i)
+    }
   })
 })

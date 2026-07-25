@@ -43,6 +43,38 @@ describe('FeatureTour', () => {
     expect(onClose).toHaveBeenCalledWith(true)
   })
 
+  describe('`also` — the secondary call-out', () => {
+    it('rings the named anchor alongside the spotlight, and clears it on the next step', () => {
+      // The mobile bottom bar's reason for existing: a panel shows the surface, `also` says which
+      // tab opens it. It must not linger onto a step that doesn't ask for one.
+      plantAnchors('alpha', 'beta', 'nav-add')
+      render(
+        <FeatureTour
+          steps={[
+            { target: 'alpha', title: 'First stop', body: 'Alpha.', also: 'nav-add' },
+            { target: 'beta', title: 'Second stop', body: 'Beta.' },
+          ]}
+          onClose={vi.fn()}
+        />,
+      )
+      expect(screen.getByTestId('tour-also')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+      expect(screen.queryByTestId('tour-also')).toBeNull()
+    })
+
+    it('ignores an `also` whose anchor is absent (a step shared across breakpoints)', () => {
+      plantAnchors('alpha')
+      render(
+        <FeatureTour
+          steps={[{ target: 'alpha', title: 'First stop', body: 'Alpha.', also: 'nav-add' }]}
+          onClose={vi.fn()}
+        />,
+      )
+      expect(screen.getByText('First stop')).toBeInTheDocument()
+      expect(screen.queryByTestId('tour-also')).toBeNull()
+    })
+  })
+
   it('Skip tour closes without completing', () => {
     plantAnchors('alpha')
     const onClose = vi.fn()

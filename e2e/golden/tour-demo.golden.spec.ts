@@ -1,8 +1,9 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from '../helpers/fixtures'
 
-// The feature tour is ONE section (9 panels). DemoScene mounts INLINE in the real shell — below the
-// real header/mascot, in place of the real board/plan/reminders it stands in for — so the chrome
+// The feature tour is ONE section (9 panels on desktop, 10 on mobile — the phone gets its own
+// quadrant-overview panel after the grid). It OPENS on the real masthead, and DemoScene mounts
+// INLINE below it in place of the real board/plan/reminders it stands in for — so the chrome
 // around it (masthead, Account nav, mobile bottom bar) is always the real thing, never a look-alike.
 // Only the plan panel (`demo-plan`) is look-only scenery, since a first-run user has no real plan
 // yet. These specs guard the walkthrough, the "finishing OR skipping latches the checkmark"
@@ -36,14 +37,26 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'TodoClaw', exact: true })).toBeVisible()
   await expect(page.getByText('Clean out the garage')).toBeVisible()
 
-  // Walk all nine panels: welcome → board → task kinds → plan → morning → evening → chat →
-  // habits → the rest of the app. The first eight spotlight the example scene; the last one the
-  // REAL Account nav in the shell around it.
+  // Walk all nine panels: welcome → grid → task kinds → chat → plan → morning → evening →
+  // habits → Done and Settings. The welcome panel opens on the REAL masthead and the closing one
+  // on the REAL Account nav; the seven between them spotlight the example scene.
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Sorted by what matters' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Three kinds of task' })).toBeVisible()
+  // The panel points at the REAL add UI, so the three kinds are the Type switch's own words.
+  const addUi = page.locator('[data-tour="demo-add"]') // desktop: the real SchedulePanel
+  for (const kind of ['Task', 'Recurring', 'Ongoing']) {
+    await expect(addUi.getByText(kind, { exact: true })).toBeVisible()
+  }
+
+  await page.getByRole('button', { name: 'Next', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Chat runs the whole app' })).toBeVisible()
+  // A plain ask with real receipts — chat as the control surface, not just a check-in reply.
+  await expect(
+    page.locator('[data-tour="demo-chat-ask"]').getByText(/push the invoice to Monday/),
+  ).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'One tap plans your day' })).toBeVisible()
@@ -60,23 +73,19 @@ test('the tour walks the example day, then latches done', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Evenings close the loop' })).toBeVisible()
-  await expect(page.getByText(/Which of these did you knock out today\?/)).toBeVisible()
-
-  await page.getByRole('button', { name: 'Next', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Chat runs the whole app' })).toBeVisible()
+  await expect(page.getByText(/Still open from this morning's plan:/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Daily habits' })).toBeVisible()
-  // The habits panel points at the REAL RemindersInline strip, seeded from the sealed cache and
-  // sitting right above the board — exactly where it lives in the real shell.
+  // The habits panel points at the REAL RemindersInline strip, seeded from the sealed cache.
   await expect(
     page.locator('[data-tour="demo-habits"]').getByText('Stretch 10 minutes'),
   ).toBeVisible()
 
   await page.getByRole('button', { name: 'Next', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'The rest of the app' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Done and Settings' })).toBeVisible()
   // Desktop: the options chrome IS the real header's Account nav — no copy.
-  await expect(page.locator('[data-tour="options"]').getByText('Daily habits')).toBeVisible()
+  await expect(page.locator('[data-tour="options"]').getByText('Settings')).toBeVisible()
 
   // Not latched until the tour actually closes.
   expect(await tourDone(page)).toBeNull()

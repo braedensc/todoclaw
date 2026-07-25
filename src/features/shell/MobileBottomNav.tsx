@@ -44,7 +44,11 @@ function NavItem({
   active?: boolean
   /** Unread indicator — a small slate dot on the glyph (the Chat tab, for unread plan/recap). */
   badge?: boolean
-  /** Optional FeatureTour anchor name (`data-tour`); no live tour step targets the nav tabs today. */
+  /**
+   * Optional FeatureTour anchor name (`data-tour`). The demo tour's `also` call-out rings the tab
+   * a panel is about (Add, Chat) while the panel itself holds the spotlight, so a phone user learns
+   * both the surface and the button that opens it.
+   */
   tour?: string
 }) {
   return (
@@ -137,6 +141,7 @@ export function MobileBottomNav({
           onClick={onChat}
           active={route === 'chat'}
           badge={unread > 0}
+          tour="nav-chat"
         />
       )}
       <NavItem glyph="✓" label="Done" onClick={onDone} active={route === 'done'} />

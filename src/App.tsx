@@ -320,7 +320,10 @@ function AppShell() {
                 // pill sits just below this masthead (near the logo) so it — and its "Re-plan my day"
                 // state — stay reachable at the top of the screen.
                 !gridOnly && (
-                  <header className="mb-4 mt-1">
+                  // data-tour="app-top": the tour's welcome panel opens HERE, at the very top of
+                  // the app, rather than mid-board — the first thing a first-run user should see
+                  // is the app's own masthead, with the example day starting right below it.
+                  <header data-tour="app-top" className="mb-4 mt-1">
                     <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
                       {dateline}
                     </div>
@@ -419,7 +422,9 @@ function AppShell() {
                   </header>
                 )
               ) : (
-                <header className="mb-3">
+                // data-tour="app-top" — see the mobile masthead above: the welcome panel opens at
+                // the top of the app on both breakpoints.
+                <header data-tour="app-top" className="mb-3">
                   {/* Masthead dateline (style mix) — a small-caps folio strip above the wordmark,
                       like a morning paper's date line. Hidden in grid-only along with the rest of
                       the masthead trim (the fullscreen overlay covers the header anyway). */}
