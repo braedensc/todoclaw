@@ -181,3 +181,17 @@ export const DEMO_EVENING_TOOL_NOTES = [
 ]
 export const DEMO_EVENING_CLOSE =
   'Nice — two more knocked out 🎉 “Water the plants” will be waiting tomorrow. Enjoy your evening!'
+
+// A plain, un-prompted exchange — the tour's "chat runs the whole app" panel. Deliberately NOT a
+// check-in: it shows the thing the check-ins only hint at, which is that you can say anything to
+// BabyClaw at any time and he does it on the board. Two asks in one turn (an add and a
+// reschedule) so the receipts show a real action, not a chat reply. The ✓ notes use the same
+// wording the real add_task / set_due tools return, so a first-run user recognises them later.
+export const DEMO_ASK = 'add dentist Friday 2pm, and push the invoice to Monday'
+export const DEMO_ASK_TOOL_NOTES = [
+  'Added "Dentist" for Friday, 2:00 PM, with a reminder 1 hour before.',
+  'Moved "Send the invoice" to Monday.',
+]
+export const DEMO_ASK_REPLY =
+  'Done — “Dentist” is on the board for Friday at 2 PM (I’ll nudge you an hour before), and the ' +
+  'invoice now sits on Monday. Anything else?'

@@ -24,6 +24,12 @@ lives in `supabase/functions/` — see `supabase/functions/README.md`.
   `ChatSessionList` (`src/features/ai`) lists check-ins under "From BabyClaw" — unread rows are
   exempt from its display cap and carry per-row dots, with a "Mark all read" bulk action on the
   group label. Opening a message materialises/reopens its chat session and marks it read.
+- **Read state is optimistic, and a dot in that list only ever means unread.** Both mark-read
+  mutations write the cache in `onMutate` (rolled back on failure) so the dot clears on the tap, and
+  `useOpenMessageChat` PATCHES the row's `session_id` rather than invalidating `['messages']` — the
+  two run concurrently when a check-in is opened, and an invalidate there refetched the row as
+  unread mid-write and repainted the dot on the chat the user had just opened. `ChatSessionList`
+  marks the open conversation with `aria-current` + its card background, never a second dot.
 
 ## Flow
 

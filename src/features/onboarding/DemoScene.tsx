@@ -5,7 +5,10 @@ import { localDateInTZ } from '../../lib/dates'
 import { EMPTY_DAILY_STATE } from '../daily-state/use-daily-state'
 import { useGrid } from '../grid/use-grid'
 import { GridSurface } from '../grid/GridSurface'
+import { TouchGridSurface } from '../grid/TouchGridSurface'
 import { MobileMatrix } from '../shell/MobileMatrix'
+import { AddTaskForm } from '../shell/AddTaskForm'
+import { SchedulePanel } from '../schedule/SchedulePanel'
 import type { QuadrantFocus } from '../shell/use-quadrant-focus'
 import { RemindersInline } from '../habits/RemindersInline'
 import { PlanBox } from '../ai/PlanBox'
@@ -14,6 +17,9 @@ import type { ChatController } from '../ai/use-chat-controller'
 import type { ChatItem } from '../ai/use-ai-chat'
 import { buildDemoTasks, buildDemoHabits, DEMO_HABIT_DONE } from './demo-board'
 import {
+  DEMO_ASK,
+  DEMO_ASK_REPLY,
+  DEMO_ASK_TOOL_NOTES,
   DEMO_EVENING_CLOSE,
   DEMO_EVENING_REPLY,
   DEMO_EVENING_TOOL_NOTES,
@@ -32,14 +38,24 @@ import {
 // otherwise render a second board directly beneath this one) — see the `tour` guard there.
 //
 // Everything the scene shows is the REAL component rendering fake in-memory data:
-//   • the board — the real GridSurface (desktop) / MobileMatrix (mobile) fed by a nested,
-//     pre-seeded TanStack QueryClient, so clustering, glow, ↻ / ❄️ badges and quadrant tints are
-//     the live production code paths (a new card treatment shows up here for free);
+//   • the grid — the real GridSurface (desktop) / TouchGridSurface in its `embedded` panel form
+//     (mobile — the same grid a phone reaches through Grid view), fed by a nested, pre-seeded
+//     TanStack QueryClient, so clustering, glow, ↻ / ❄️ badges and quadrant tints are the live
+//     production code paths (a new card treatment shows up here for free);
+//   • the quadrant overview — the real MobileMatrix, mobile only, as the everyday alternative;
+//   • the add UI — per breakpoint, because they genuinely differ: mobile gets the real AddTaskForm
+//     (the ➕ sheet's form) with its schedule disclosure pre-opened, desktop the real SchedulePanel
+//     exactly as the Task Manager's 📅 Schedule chip opens it. Either way the three kinds of task
+//     (Task / Recurring / Ongoing) are shown on the actual control, not described;
 //   • the plan — the real PlanBox with a canned, schema-valid plan (demo-transcript.ts);
-//   • the check-ins — the real ChatConversation playing the scripted morning push and evening
-//     recap, whose texts are drift-guarded against the actual dispatch builders by a Deno test;
-//   • the habits strip — the real RemindersInline over seeded habits, sitting right above the board
-//     exactly as it does in the real shell (PlanBox → RemindersInline → WorkArea).
+//   • the conversations — the real ChatConversation playing a scripted free-form ask plus the
+//     morning push and evening recap, the latter two drift-guarded against the actual dispatch
+//     builders by a Deno test;
+//   • the habits strip — the real RemindersInline over seeded habits.
+//
+// SECTION ORDER FOLLOWS THE TOUR SCRIPT, not the shell's layout: FeatureTour scrolls each anchor
+// into view in turn, so a script that walks the panels in a different order than the DOM makes the
+// page jump backwards mid-walkthrough. Keep tour-steps.ts and the sections below in lockstep.
 //
 // The ONE thing that stays look-only is the ✦ Plan My Day button + the plan panel under it
 // (`demo-plan`): a first-run user has no real plan yet, so the tour fakes "what it looks like once
@@ -96,6 +112,15 @@ const MORNING_ITEMS: ChatItem[] = [
   { id: 'demo-m1', role: 'assistant', text: `${DEMO_MORNING.title}\n\n${DEMO_MORNING.body}` },
 ]
 
+// The un-prompted ask — chat as the app's control surface, not just the reply to a check-in.
+const ASK_ITEMS: ChatItem[] = [
+  { id: 'demo-a1', role: 'user', text: DEMO_ASK },
+  ...DEMO_ASK_TOOL_NOTES.map(
+    (text, i): ChatItem => ({ id: `demo-a-tool-${i}`, role: 'tool', text, ok: true }),
+  ),
+  { id: 'demo-a2', role: 'assistant', text: DEMO_ASK_REPLY },
+]
+
 // The recap title/close name a weekday ("Wrapping up Monday"). The demo board is authored relative
 // to the REAL today and the shell dateline (visible around the scene) shows the real weekday, so a
 // fixed "Monday" would read stale on a Thursday. Swap the pinned day for the viewer's actual one at
@@ -149,8 +174,11 @@ function makeDemoClient(timeZone: string): QueryClient {
   return client
 }
 
-// Desktop board: the same useGrid + GridSurface pairing WorkArea mounts, minus the input widget.
-function DemoBoardDesktop() {
+// The grid, per breakpoint — the SAME components WorkArea mounts, so the tour teaches the real
+// thing. Desktop is the free-canvas GridSurface; a phone's grid is the touch grid it reaches
+// through Grid view (⌐ pill / More → Grid view), rendered here in its `embedded` panel form —
+// same chips, tints, clustering, minus the fullscreen chrome that would be a control to nowhere.
+function DemoGridDesktop() {
   const gridRef = useRef<HTMLDivElement>(null)
   const grid = useGrid(gridRef)
   return (
@@ -161,6 +189,38 @@ function DemoBoardDesktop() {
       onSelectView={noop}
       gridOnly={false}
       onExitGridOnly={noop}
+    />
+  )
+}
+
+function DemoGridTouch() {
+  const gridRef = useRef<HTMLDivElement>(null)
+  const grid = useGrid(gridRef)
+  return <TouchGridSurface grid={grid} gridRef={gridRef} onExit={noop} onOpenChat={noop} embedded />
+}
+
+// Desktop's add path: the real SchedulePanel, exactly as the Task Manager's 📅 Schedule chip
+// opens it. Inert scenery, so every handler is a noop and the draft never moves off its defaults.
+function DemoSchedulePanel() {
+  return (
+    <SchedulePanel
+      taskText="Water the plants"
+      due={null}
+      dueTime={null}
+      recurring={null}
+      ongoing={false}
+      timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+      onSetDue={noop}
+      onSetRecurring={noop}
+      onSetFrequency={noop}
+      onRemoveRecurring={noop}
+      onSetOngoing={noop}
+      startDate={null}
+      onSetStartDate={noop}
+      reminderOffsets={[]}
+      onToggleReminder={noop}
+      onClearReminders={noop}
+      idPrefix="demo"
     />
   )
 }
@@ -214,7 +274,48 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
       }}
     >
       <QueryClientProvider client={client}>
-        {/* The plan step spotlights this whole block — the ✦ Plan My Day button AND the plan it
+        {/* 1. The board. On BOTH breakpoints the tour now leads with the GRID — it's where the
+            urgency × importance model is legible — and the phone gets the real touch grid it
+            reaches through Grid view. */}
+        <div data-tour="demo-grid">{isMobile ? <DemoGridTouch /> : <DemoGridDesktop />}</div>
+
+        {/* 2. …and, on a phone only, the everyday quadrant overview the shell actually opens on
+            (ADR-0028). Its own step, right after the grid, so "there's a quicker view too" is
+            shown rather than just claimed. Desktop has no such surface — nothing is mounted. */}
+        {isMobile && (
+          <div data-tour="demo-matrix">
+            <MobileMatrix quadrantFocus={DEMO_QUADRANT_FOCUS} />
+          </div>
+        )}
+
+        {/* 3. The three kinds of task, shown on the REAL control that sets them (SchedulePanel's
+            Task / Recurring / Ongoing switch) rather than described in prose. Each breakpoint gets
+            its OWN add surface, because they genuinely differ: a phone's ➕ tab opens AddTaskForm
+            (rendered here with its schedule disclosure pre-opened — the scenery is inert, so it
+            can't be tapped open), while on desktop you type into the Task Manager above the grid
+            and the 📅 Schedule chip opens the panel by itself. Same switch either way. */}
+        <div data-tour="demo-add" className="rounded-[14px] border border-border bg-panel p-3">
+          <p className="pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+            {isMobile ? '✚ Add a task' : '📅 Schedule'}
+          </p>
+          {isMobile ? (
+            <AddTaskForm
+              defaultQuadrant="do-now"
+              onAdd={noop}
+              reminderDefault={60}
+              defaultScheduleOpen
+            />
+          ) : (
+            <DemoSchedulePanel />
+          )}
+        </div>
+
+        {/* 4. Chat as the app's control surface — a plain, un-prompted ask with real receipts.
+            Placed BEFORE Plan My Day on purpose: "you can just tell him" follows straight on from
+            "here's what a task is", and the plan then arrives as something built on top. */}
+        <DemoChatCard tourId="demo-chat-ask" caption="🐾 any time — just ask" items={ASK_ITEMS} />
+
+        {/* 5. The plan step spotlights this whole block — the ✦ Plan My Day button AND the plan it
             builds — so the tour shows the button and its result together. Look-only scenery: a
             first-run user has no real plan yet, so this fakes what one looks like. Styled like the
             real header pill. */}
@@ -242,36 +343,34 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
           </div>
         </div>
 
-        {/* The habits strip — the REAL RemindersInline, fed from the sealed cache. Same bet as
+        {/* 6–7. The two proactive moments of the same conversation — the morning push and the
+            evening check-in. */}
+        <div className="grid grid-cols-1 gap-4 wide:grid-cols-2">
+          <DemoChatCard
+            tourId="demo-chat-morning"
+            caption="☀️ 8:00 AM — the plan arrives on its own"
+            items={MORNING_ITEMS}
+          />
+          <DemoChatCard
+            tourId="demo-chat-evening"
+            caption="🌙 8:30 PM — the evening check-in"
+            items={eveningItems}
+          />
+        </div>
+
+        {/* 8. The habits strip — the REAL RemindersInline, fed from the sealed cache. Same bet as
             the board: the live component means the actual home-screen treatment (paw checks, the
             bone "treats earned" tally, the desktop inline row vs. the mobile collapsible card) is
-            what the tour shows, and a redesign lands here without anyone remembering to re-fake
-            it. It sits between the plan and the board because that is exactly the real shell's
-            order, so the panel's "right above your board" is literally true.
+            what the tour shows, and a redesign lands here without anyone remembering to re-fake it.
             MUST stay inside the QueryClientProvider: outside it, useHabits would bind to the
-            app's real client and the "example" would fetch and display the user's OWN habits. */}
+            app's real client and the "example" would fetch and display the user's OWN habits.
+            (The scene's section order follows the TOUR's narrative, not the shell's layout — a
+            walkthrough that scrolls backwards reads as a glitch. In the real shell this strip does
+            sit right above the board, which is what its panel says.) */}
         <div data-tour="demo-habits">
           <RemindersInline />
         </div>
-
-        <div data-tour="demo-board">
-          {isMobile ? <MobileMatrix quadrantFocus={DEMO_QUADRANT_FOCUS} /> : <DemoBoardDesktop />}
-        </div>
       </QueryClientProvider>
-
-      {/* Two moments of the same conversation — the morning push and the evening check-in. */}
-      <div className="grid grid-cols-1 gap-4 wide:grid-cols-2">
-        <DemoChatCard
-          tourId="demo-chat-morning"
-          caption="☀️ 8:00 AM — the plan arrives on its own"
-          items={MORNING_ITEMS}
-        />
-        <DemoChatCard
-          tourId="demo-chat-evening"
-          caption="🌙 8:30 PM — the evening check-in"
-          items={eveningItems}
-        />
-      </div>
     </div>
   )
 }

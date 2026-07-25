@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { BottomSheet } from '../../components/BottomSheet'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { resetSetupGuide } from '../onboarding/setup-guide-store'
-import { useMarkTourSeen } from '../onboarding/use-mark-tour-seen'
+import { useOnboardingMirror } from '../onboarding/use-onboarding-mirror'
 import { useUserSchedule, useSaveScheduleConfig } from '../schedule/use-user-schedule'
 import {
   ASSISTANT_TONES,
@@ -361,7 +361,7 @@ export function SettingsPanel({
 }) {
   const scheduleQuery = useUserSchedule()
   const save = useSaveScheduleConfig()
-  const { clearSeen: clearTourSeen } = useMarkTourSeen()
+  const { clearTourSeen, clearSetupDismissed } = useOnboardingMirror()
 
   // Three tabs (2026-07-09): Plan My Day / Notifications / AI. The setup guide's "turn on
   // notifications" deep-link (initialSection) picks the starting tab; Save persists the whole
@@ -420,7 +420,13 @@ export function SettingsPanel({
         setDraft(d) // reflect it in the field too, in case the save fails and the panel stays open
       }
     }
-    save.mutate({ config: draftToConfig(d), timezone }, { onSuccess: onClose })
+    // Pass the stored config as the base: the save replaces `config` wholesale, so the sections
+    // this editor doesn't model (onboarding — the tour/setup-guide mirror) have to ride along or
+    // they're wiped by an unrelated save.
+    save.mutate(
+      { config: draftToConfig(d, scheduleQuery.data?.config), timezone },
+      { onSuccess: onClose },
+    )
   }
 
   const isMobile = useIsMobile()
@@ -685,10 +691,13 @@ export function SettingsPanel({
               <button
                 type="button"
                 onClick={() => {
-                  // Clear BOTH halves of the tour checkmark (localStorage + account mirror) so the
-                  // guide fully resets and the tour can be re-taken (#3).
+                  // Clear BOTH halves of every latch (localStorage + account mirror) so the guide
+                  // fully resets and the tour can be re-taken (#3). The account dismissal has to go
+                  // too, or the card the user just asked for would stay suppressed — it comes back
+                  // for good the moment they dismiss it again.
                   resetSetupGuide()
                   clearTourSeen()
+                  clearSetupDismissed()
                   onClose()
                 }}
                 className="text-xs text-muted underline hover:text-ink"

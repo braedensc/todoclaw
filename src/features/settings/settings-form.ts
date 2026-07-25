@@ -159,7 +159,46 @@ function compact<T extends Record<string, unknown>>(obj: T): T | undefined {
   return Object.keys(out).length ? (out as T) : undefined
 }
 
-export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
+// The config keys this editor OWNS: it renders every one of them, so the draft is authoritative and
+// a key absent from the draft is genuinely being cleared. `babyclaw` is here deliberately — it's the
+// legacy alias the editor migrates onto `assistant`, so a save must DROP it.
+//
+// Everything else in `config` belongs to some other surface and must SURVIVE a Settings save. The
+// save path replaces the whole `config` jsonb (useSaveScheduleConfig upserts what it's handed), so
+// anything this function forgets to emit is silently deleted — that's how saving Settings used to
+// wipe `config.onboarding.tourSeen` and put the "See how TodoClaw works" step back on the setup
+// guide for someone who'd already taken the tour. `satisfies` ties this list to the schema, and
+// carryOver() below handles the rest generically so a future key is preserved by default.
+const EDITOR_OWNED_KEYS = [
+  'location',
+  'locationResolved',
+  'weekday',
+  'weekend',
+  'commitments',
+  'planNotes',
+  'assistant',
+  'babyclaw',
+  'notifications',
+] as const satisfies readonly (keyof ScheduleConfig)[]
+
+const EDITOR_OWNED = new Set<string>(EDITOR_OWNED_KEYS)
+
+/** The parts of the stored config this editor doesn't model — passed through a save untouched. */
+function carryOver(base: ScheduleConfig | null | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(base ?? {}))
+    if (!EDITOR_OWNED.has(k) && v !== undefined) out[k] = v
+  return out
+}
+
+/**
+ * Shape the draft back into a ScheduleConfig for persistence.
+ *
+ * `base` is the config as currently stored — pass it whenever one is loaded. Keys the editor
+ * doesn't model (today: `onboarding`) ride along from it; without it they're dropped, which is a
+ * destructive save, not a no-op.
+ */
+export function draftToConfig(draft: SettingsDraft, base?: ScheduleConfig | null): ScheduleConfig {
   const weekday = compact({
     wakeTime: str(draft.wakeTime),
     workStart: str(draft.workStart),
@@ -226,5 +265,5 @@ export function draftToConfig(draft: SettingsDraft): ScheduleConfig {
     assistant,
     notifications,
   })
-  return ScheduleConfigSchema.parse(raw ?? {})
+  return ScheduleConfigSchema.parse({ ...carryOver(base), ...(raw ?? {}) })
 }

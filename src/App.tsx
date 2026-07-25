@@ -40,7 +40,7 @@ import { FeatureTour } from './features/onboarding/FeatureTour'
 import { DemoScene } from './features/onboarding/DemoScene'
 import { ADD_TASK_SPOTLIGHT, demoTour } from './features/onboarding/tour-steps'
 import { markTourDone } from './features/onboarding/setup-guide-store'
-import { useMarkTourSeen } from './features/onboarding/use-mark-tour-seen'
+import { useOnboardingMirror } from './features/onboarding/use-onboarding-mirror'
 import { AdminPage } from './features/admin/AdminPage'
 import { useIsOwner } from './features/auth/use-is-owner'
 import { useRoute, useChatMessageId, navigate, goBack } from './lib/route'
@@ -127,7 +127,7 @@ function AppShell() {
   // unit either floats the bottom nav (dvh, short state) or clips it off the physical screen
   // (lvh, the iPhone-15-Pro-Max "too tiny" bug). See use-app-height.ts for the measured numbers.
   useAppHeight(isMobile)
-  const { markSeen: markTourSeen } = useMarkTourSeen()
+  const { markTourSeen } = useOnboardingMirror()
   const ensureSchedule = useEnsureUserSchedule()
   const timeZone = useTimeZone()
   const planner = usePlanController(timeZone)
@@ -320,7 +320,10 @@ function AppShell() {
                 // pill sits just below this masthead (near the logo) so it — and its "Re-plan my day"
                 // state — stay reachable at the top of the screen.
                 !gridOnly && (
-                  <header className="mb-4 mt-1">
+                  // data-tour="app-top": the tour's welcome panel opens HERE, at the very top of
+                  // the app, rather than mid-board — the first thing a first-run user should see
+                  // is the app's own masthead, with the example day starting right below it.
+                  <header data-tour="app-top" className="mb-4 mt-1">
                     <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
                       {dateline}
                     </div>
@@ -419,7 +422,9 @@ function AppShell() {
                   </header>
                 )
               ) : (
-                <header className="mb-3">
+                // data-tour="app-top" — see the mobile masthead above: the welcome panel opens at
+                // the top of the app on both breakpoints.
+                <header data-tour="app-top" className="mb-3">
                   {/* Masthead dateline (style mix) — a small-caps folio strip above the wordmark,
                       like a morning paper's date line. Hidden in grid-only along with the rest of
                       the masthead trim (the fullscreen overlay covers the header anyway). */}

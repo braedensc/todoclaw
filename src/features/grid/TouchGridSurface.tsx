@@ -62,6 +62,13 @@ export interface TouchGridSurfaceProps {
   onOpenChat: () => void
   /** Unread chat count for the floating chat button's badge dot. */
   chatUnread?: number
+  /**
+   * Render as an in-flow, aspect-boxed panel instead of the fullscreen takeover, with the floating
+   * chrome (exit / ＋ / 🐾) dropped. Exists for the tour's example day (DemoScene), which shows a
+   * phone user the real touch grid inline rather than a look-alike — the board, the tints, the
+   * chips and the clustering are all the production code path, just sized to a card.
+   */
+  embedded?: boolean
 }
 
 /**
@@ -84,6 +91,7 @@ export function TouchGridSurface({
   onExit,
   onOpenChat,
   chatUnread = 0,
+  embedded = false,
 }: TouchGridSurfaceProps) {
   const {
     timeZone,
@@ -105,6 +113,10 @@ export function TouchGridSurface({
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
   const setDue = useSetDueWithDefaultReminder()
+
+  // Where the TOP quadrant labels sit: pushed down past the floating exit pill in the real
+  // fullscreen grid, in the true corner when embedded (no chrome to dodge).
+  const topLabelY = embedded ? 'top-2' : 'top-16'
 
   const gridSize = useElementSize(gridRef)
   const chipBounds = boxClampBounds(gridSize, TOUCH_CHIP_HALF_WIDTH, TOUCH_CHIP_HALF_HEIGHT)
@@ -283,11 +295,24 @@ export function TouchGridSurface({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-bg">
+    <div
+      className={
+        embedded
+          ? 'relative aspect-[4/5] w-full overflow-hidden rounded-[14px] border border-border bg-bg'
+          : 'fixed inset-0 z-50 bg-bg'
+      }
+    >
       {/* Safe-area frame: the coordinate surface is the PADDED box, so chips, tints, and the
           painted center axes all share one geometry. Insets go in classes (jsdom drops inline
-          env()); the full-bleed strips outside show warm paper, like the shell's body padding. */}
-      <div className="h-full w-full pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] pt-[env(safe-area-inset-top,0px)]">
+          env()); the full-bleed strips outside show warm paper, like the shell's body padding.
+          Embedded, the panel isn't at the screen edges — no insets to dodge. */}
+      <div
+        className={
+          embedded
+            ? 'h-full w-full'
+            : 'h-full w-full pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] pt-[env(safe-area-inset-top,0px)]'
+        }
+      >
         <div
           ref={gridRef}
           data-testid="touch-grid-canvas"
@@ -328,15 +353,16 @@ export function TouchGridSurface({
           {/* Corner quadrant labels + edge axis labels. The TOP pair sits at top-16 (not the
               very corner) so it clears the floating exit pill that owns the top-right — the same
               "push labels clear of top chrome" the desktop GridCanvas does; both top labels drop
-              together to stay symmetric. */}
+              together to stay symmetric. Embedded there IS no floating chrome, so they take the
+              true corner like the bottom pair. */}
           <span
-            className="pointer-events-none absolute left-2.5 top-16 text-[10px] font-semibold uppercase tracking-wide"
+            className={`pointer-events-none absolute left-2.5 text-[10px] font-semibold uppercase tracking-wide ${topLabelY}`}
             style={{ color: SCHEDULE.color }}
           >
             {SCHEDULE.label}
           </span>
           <span
-            className="pointer-events-none absolute right-2.5 top-16 text-[10px] font-semibold uppercase tracking-wide"
+            className={`pointer-events-none absolute right-2.5 text-[10px] font-semibold uppercase tracking-wide ${topLabelY}`}
             style={{ color: DO_NOW.color }}
           >
             {DO_NOW.label}
@@ -494,63 +520,69 @@ export function TouchGridSurface({
           {/* Floating chrome, all inside the safe-area box. The exit pill is a SOLID, elevated
               control (was a faint 10%-tint pill that read poorly over the warm/quadrant-tinted
               grid and collided with the DO NOW corner label) — solid brand green, white glyph +
-              label, a ring for edge definition on light tints, owning the top-right corner. */}
-          <button
-            type="button"
-            onClick={onExit}
-            aria-label="Exit grid view"
-            className="absolute right-3 top-3 z-[60] flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg ring-1 ring-black/10"
-          >
-            <span aria-hidden className="text-base leading-none">
-              ✕
-            </span>{' '}
-            Exit grid
-          </button>
-
-          {movingTask && (
-            /* role=status/aria-live announces the armed place mode to assistive tech; the Cancel
-               inside is a full 44pt target (the banner's only control, and the only visible way
-               out of the mode). */
-            <div
-              role="status"
-              aria-live="polite"
-              className="absolute left-1/2 top-2 z-[60] flex max-w-[80%] -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full border border-puppy/50 bg-panel py-1 pl-4 pr-1 text-xs font-medium text-ink shadow-md"
-            >
-              <span className="truncate">Tap where “{movingTask.text}” should go</span>
+              label, a ring for edge definition on light tints, owning the top-right corner.
+              Embedded (the tour's example day), none of it renders: the panel is scenery inside a
+              page that has its own chrome, and a fake "Exit grid" would be a control to nowhere. */}
+          {!embedded && (
+            <>
               <button
                 type="button"
-                onClick={() => setMovingId(null)}
-                className="min-h-[44px] rounded-full px-3 font-semibold text-danger"
+                onClick={onExit}
+                aria-label="Exit grid view"
+                className="absolute right-3 top-3 z-[60] flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg ring-1 ring-black/10"
               >
-                Cancel
+                <span aria-hidden className="text-base leading-none">
+                  ✕
+                </span>{' '}
+                Exit grid
               </button>
-            </div>
+
+              {movingTask && (
+                /* role=status/aria-live announces the armed place mode to assistive tech; the Cancel
+               inside is a full 44pt target (the banner's only control, and the only visible way
+               out of the mode). */
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="absolute left-1/2 top-2 z-[60] flex max-w-[80%] -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full border border-puppy/50 bg-panel py-1 pl-4 pr-1 text-xs font-medium text-ink shadow-md"
+                >
+                  <span className="truncate">Tap where “{movingTask.text}” should go</span>
+                  <button
+                    type="button"
+                    onClick={() => setMovingId(null)}
+                    className="min-h-[44px] rounded-full px-3 font-semibold text-danger"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                aria-label="Add a task"
+                className="absolute bottom-4 right-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full bg-primary text-2xl font-semibold text-white shadow-lg"
+              >
+                ＋
+              </button>
+
+              <button
+                type="button"
+                onClick={onOpenChat}
+                aria-label={chatUnread > 0 ? `Open chat — ${chatUnread} unread` : 'Open chat'}
+                className="absolute bottom-4 left-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full border border-border-strong bg-panel text-xl shadow-lg"
+              >
+                <span aria-hidden>🐾</span>
+                {chatUnread > 0 && (
+                  <span
+                    data-testid="chat-unread-dot"
+                    aria-hidden
+                    className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-panel bg-accent"
+                  />
+                )}
+              </button>
+            </>
           )}
-
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            aria-label="Add a task"
-            className="absolute bottom-4 right-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full bg-primary text-2xl font-semibold text-white shadow-lg"
-          >
-            ＋
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenChat}
-            aria-label={chatUnread > 0 ? `Open chat — ${chatUnread} unread` : 'Open chat'}
-            className="absolute bottom-4 left-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full border border-border-strong bg-panel text-xl shadow-lg"
-          >
-            <span aria-hidden>🐾</span>
-            {chatUnread > 0 && (
-              <span
-                data-testid="chat-unread-dot"
-                aria-hidden
-                className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-panel bg-accent"
-              />
-            )}
-          </button>
         </div>
       </div>
 
