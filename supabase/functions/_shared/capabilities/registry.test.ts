@@ -613,7 +613,9 @@ Deno.test('generate_plan uses the injected service, else degrades gracefully', a
           plan: {
             headline: 'Focus day',
             availableTime: '~4h',
-            anchors: [{ task: 'Timing belt', time: '2:00 PM', taskId: 'car' }],
+            anchors: [
+              { task: 'Timing belt', time: '2:00 PM', duration: '~half-day', taskId: 'car' },
+            ],
             bigRock: {
               task: 'Draft the deck',
               why: 'w',
