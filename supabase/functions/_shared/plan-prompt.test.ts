@@ -6,6 +6,8 @@ import {
   PlanRequestSchema,
   SYSTEM_PROMPT,
   buildUserPrompt,
+  deriveAnchors,
+  MAX_ANCHORS,
   resolvePlanTaskIds,
   type EmittedNudge,
   type EmittedPlan,
@@ -481,4 +483,121 @@ Deno.test('PlanRequestSchema accepts task/recurring ids and tolerates their abse
   assertEquals(PlanRequestSchema.parse(withIds).tasks[0].id, 'task-1')
   assertEquals(PlanRequestSchema.parse(withIds).recurringDue[0].id, 'chore-1')
   assertEquals(PlanRequestSchema.parse(base).tasks[0].id ?? null, null) // deploy-skew safe
+})
+
+// ---- fixed-time anchors (deriveAnchors) --------------------------------------------------------
+// The bug this closes: a task due TODAY at a set time (a 2 PM appointment) has no valid home among
+// the rocks — it is not a "quick win" and never a big rock — so once two other due-today tasks
+// filled smallRocks (capped at 2) it simply vanished from the plan card. Anchors are derived from
+// the request, never emitted by the model, so the rock caps can no longer swallow a commitment.
+
+Deno.test('deriveAnchors: only tasks due TODAY at a set time, earliest first, formatted', () => {
+  const req: PlanRequest = {
+    ...base,
+    tasks: [
+      // Due today at 2 PM — the appointment that used to disappear.
+      {
+        text: 'Timing belt',
+        importance: 90,
+        urgency: 95,
+        due: '2026-06-24',
+        dueInDays: 0,
+        dueTime: '14:00:00',
+        id: 'car',
+      },
+      {
+        text: 'Call Sam',
+        importance: 40,
+        urgency: 60,
+        due: '2026-06-24',
+        dueInDays: 0,
+        dueTime: '09:30',
+        id: 'sam',
+      },
+      // Due today but all-day → not an anchor (the user picks when).
+      {
+        text: 'Order produce containers',
+        importance: 30,
+        urgency: 70,
+        due: '2026-06-24',
+        dueInDays: 0,
+        id: 'produce',
+      },
+      // Timed but on a LATER day → not today's anchor.
+      {
+        text: 'Flight to NYC',
+        importance: 90,
+        urgency: 40,
+        due: '2026-06-27',
+        dueInDays: 3,
+        dueTime: '07:00',
+        id: 'flight',
+      },
+    ],
+  }
+  assertEquals(deriveAnchors(req), [
+    { task: 'Call Sam', time: '9:30 AM', taskId: 'sam' },
+    { task: 'Timing belt', time: '2:00 PM', taskId: 'car' },
+  ])
+})
+
+Deno.test('deriveAnchors: caps the list and tolerates an id-less request', () => {
+  const many: PlanRequest = {
+    ...base,
+    tasks: Array.from({ length: MAX_ANCHORS + 3 }, (_, i) => ({
+      text: `Meeting ${i}`,
+      importance: 50,
+      urgency: 50,
+      due: '2026-06-24',
+      dueInDays: 0,
+      dueTime: `0${i}:00`,
+    })),
+  }
+  const anchors = deriveAnchors(many)
+  assertEquals(anchors.length, MAX_ANCHORS)
+  assertEquals(anchors[0].taskId, null) // no ids on the request → unlinked, still listed
+})
+
+Deno.test("resolvePlanTaskIds: stamps the day's anchors onto the plan", () => {
+  // `base`'s Dentist is due today at 10:30 — an anchor, whatever the model emitted.
+  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), withIds)
+  assertEquals(plan.anchors, [{ task: 'Dentist', time: '10:30 AM', taskId: 'task-4' }])
+})
+
+Deno.test('resolvePlanTaskIds: a rock the model emitted for an anchored task is dropped', () => {
+  // The prompt tells the model not to emit an anchor as a rock; if it does anyway, the anchors
+  // strip already shows it, so listing it twice would be noise. Matched by ref-resolved id...
+  const plan = resolvePlanTaskIds(
+    emitted(emittedRock('File taxes', 'T1'), [
+      emittedRock('Dentist', 'T4'),
+      emittedRock('Water plants', 'R1'),
+    ]),
+    withIds,
+  )
+  assertEquals(
+    plan.smallRocks.map((r) => r.task),
+    ['Water plants'],
+  )
+  assertEquals(plan.bigRock?.task, 'File taxes')
+  assertEquals(plan.anchors.length, 1)
+})
+
+Deno.test(
+  'resolvePlanTaskIds: an anchored BIG rock drops to null (an appointment is not a rock)',
+  () => {
+    // ...and by exact text, for an id-less request where no ref can resolve.
+    const plan = resolvePlanTaskIds(emitted(emittedRock('Dentist', 'T4'), []), base)
+    assertEquals(plan.bigRock, null)
+    assertEquals(plan.anchors[0].task, 'Dentist')
+  },
+)
+
+Deno.test('buildUserPrompt: fixed times are called out as plan-around, never-emit material', () => {
+  const p = buildUserPrompt(withIds, schedule, null)
+  assertStringIncludes(p, '=== FIXED TIMES TODAY')
+  assertStringIncludes(p, '- 10:30 AM — Dentist')
+  assertStringIncludes(p, 'never emit one as a rock')
+  // A day with nothing timed gets no block at all.
+  const untimed: PlanRequest = { ...base, tasks: [base.tasks[0], base.tasks[1]] }
+  assert(!buildUserPrompt(untimed, schedule, null).includes('FIXED TIMES TODAY'))
 })

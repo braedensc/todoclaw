@@ -25,7 +25,10 @@ import {
   type PlanResult,
 } from './plan-prompt.ts'
 
-export type PlanRunResult = { ok: true; headline: string } | { ok: false; reason: string }
+// The generated plan comes back WHOLE, not just its headline: BabyClaw's generate_plan tool result
+// is the model's only window onto what it just produced, and a headline alone left it narrating the
+// plan's contents from imagination (and then insisting a dropped item was "still in the plan panel").
+export type PlanRunResult = { ok: true; plan: PlanResult } | { ok: false; reason: string }
 
 // The pure Anthropic call: build the prompt, force emit_plan, return the structured plan + token
 // usage. Shared by the interactive path (runPlanForUser) and the proactive dispatcher (ADR-0031),
@@ -120,7 +123,7 @@ export async function runPlanForUser(
       console.error('save_daily_plan failed:', error)
       return { ok: false, reason: "I couldn't save your plan just now — please try again." }
     }
-    return { ok: true, headline: plan.headline }
+    return { ok: true, plan }
   } catch (e) {
     console.error('plan run failed:', e)
     return { ok: false, reason: "I couldn't plan your day just now — please try again." }

@@ -28,7 +28,8 @@ export interface PlanController {
   toggleCollapsed: () => void
   // Is this rock's task already completed today? The plan card strikes matching rocks through —
   // reactive because it reads the same tasks/daily-state caches every done-marking path updates.
-  rockDone: (rock: PlanRock) => boolean
+  // Takes the (task, taskId) pair only, so the card can strike fixed-time anchors through too.
+  rockDone: (rock: Pick<PlanRock, 'task' | 'taskId'>) => boolean
 }
 
 // Device-local persistence for the collapsed view-preference. Keyed by the local date so a stale

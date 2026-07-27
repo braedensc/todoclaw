@@ -26,6 +26,10 @@ export const SIZE_HINTS: Record<(typeof SIZE_VALUES)[number], string> = {
 // can't import from this Deno tree, so it re-declares the same value with a comment.
 export const UPCOMING_WINDOW_DAYS = 3
 
+// How many fixed-time anchors the plan card lists before it stops (a day with more timed items than
+// this is already over-committed; the rest still live on the board). Mirrors dispatch.ts TIMES_CAP.
+export const MAX_ANCHORS = 6
+
 // ---- Client payload (validated at the function boundary) -------------------------------------
 // The frontend builds this from its existing hooks + lib (taskScore / recurringStatus / daysUntil),
 // so the on-grid filtering and scoring stay in one place (src/lib). importance/urgency are 0–100.
@@ -99,9 +103,20 @@ export interface Nudge {
   duration: string
   taskId: string | null
 }
+// A FIXED TIME today: a task due today at a specific clock time (a 2 PM appointment, a 9:30 call).
+// It is NOT a rock and never competes for a rock slot — it is a point on the day the user does not
+// choose. Derived DETERMINISTICALLY from the request (deriveAnchors), never emitted by the model, so
+// a timed commitment can never be squeezed out of the plan by the bigRock/smallRocks caps.
+export interface PlanAnchor {
+  task: string
+  time: string // formatted wall-clock, e.g. "2:00 PM"
+  taskId: string | null
+}
 export interface PlanResult {
   headline: string
   availableTime: string
+  // Today's fixed times, earliest first. Always derived server-side; [] when nothing is timed today.
+  anchors: PlanAnchor[]
   bigRock: Rock | null
   smallRocks: Rock[]
   habitNote: string
@@ -114,7 +129,7 @@ export interface PlanResult {
 // is schema-required, but the tool input arrives as an unchecked cast, so treat it as optional.
 export type EmittedRock = Omit<Rock, 'taskId'> & { ref?: string | null }
 export type EmittedNudge = Omit<Nudge, 'taskId'> & { ref?: string | null }
-export type EmittedPlan = Omit<PlanResult, 'bigRock' | 'smallRocks' | 'nudge'> & {
+export type EmittedPlan = Omit<PlanResult, 'anchors' | 'bigRock' | 'smallRocks' | 'nudge'> & {
   bigRock: EmittedRock | null
   smallRocks: EmittedRock[]
   nudge: EmittedNudge | null
@@ -225,7 +240,8 @@ export const SYSTEM_PROMPT = [
   '   "flight to NYC", "1:1 with Sam", "dinner reservation"). NEVER tell the user to "knock out",',
   '   "do", "finish", or "get ahead on" a future-dated event — it is not actionable until its day.',
   "   Leave such an event out of today's plan entirely unless today IS its day; on its day, treat it",
-  '   as a fixed anchor to plan around (rule 5), never a rock to complete. Any prep the user has',
+  '   as a fixed anchor to plan around (rule 5), never a rock to complete — the app surfaces it on',
+  '   its own, so you do not emit it at all. Any prep the user has',
   '   listed as its OWN task (e.g. "pack for trip", "buy a gift") is a normal deliverable — plan',
   '   that if it fits, but never invent prep that is not on the grid. When genuinely unsure, treat a',
   '   task as an ordinary deliverable.',
@@ -249,9 +265,14 @@ export const SYSTEM_PROMPT = [
   '5. RESPECT THE SCHEDULE. Assign each rock a slot (morning/lunch/afternoon/evening) that fits the',
   "   user's real availability. Treat any listed recurring commitments as time already on the",
   '   calendar — plan around them, and never propose a commitment itself as a task.',
-  '   A task shown with a specific time (e.g. "due today at 3:00 PM") is a FIXED ANCHOR: it happens',
-  '   at that time — put it in the matching slot, plan other rocks around it, and never move or',
-  '   reschedule it. Anything else the user can slot whenever it fits.',
+  '   A task shown with a specific time TODAY (e.g. "due today at 3:00 PM") is a FIXED ANCHOR: it',
+  '   happens at that time, whether or not you mention it. The app lists every one of them for the',
+  '   user itself, in their own "fixed times today" strip — so do NOT emit an anchor as a bigRock or',
+  '   a smallRock (it would just show twice, and it is not a rock: the user is not choosing to do',
+  '   it). Your job is to plan AROUND them: never give a rock a slot that collides with an anchor,',
+  '   never schedule a long block over one, and size the day honestly against the time they eat.',
+  '   Referring to one in the headline or availableTime ("around the 2 PM appointment") is good.',
+  '   Anything else the user can slot whenever it fits.',
   '6. HABITS: acknowledge the active habits encouragingly in habitNote (they always appear).',
   '7. USER PREFERENCES & SAVED MEMORY: the message may include a "USER PLANNING PREFERENCES" block',
   '   and/or a "WHAT BABYCLAW KNOWS ABOUT THE USER" block. Treat BOTH as soft, factual context',
@@ -424,18 +445,52 @@ function resolveRef<T extends { task: string; ref?: string | null }>(
 }
 
 /**
+ * Today's fixed times, straight from the request — every task due TODAY at a specific clock time,
+ * earliest first. Deterministic on purpose: an appointment is a fact about the day, not a choice the
+ * planner makes, so it must not depend on the model finding room for it among the capped rock slots
+ * (before this existed, a 2 PM appointment simply vanished from the card once two other due-today
+ * tasks filled smallRocks). Mirrors dispatch.ts timedTodayLines, which does the same for the push.
+ */
+export function deriveAnchors(req: PlanRequest): PlanAnchor[] {
+  return req.tasks
+    .filter((t) => t.dueInDays === 0 && !!t.dueTime)
+    .sort((a, b) => (a.dueTime! < b.dueTime! ? -1 : a.dueTime! > b.dueTime! ? 1 : 0))
+    .slice(0, MAX_ANCHORS)
+    .map((t) => ({ task: t.text, time: formatClockTime(t.dueTime!), taskId: t.id ?? null }))
+}
+
+// Does this rock point at the same task as an anchor? By taskId when both carry one, else by exact
+// text — the same two-step the ref resolver uses.
+function isAnchored(rock: { task: string; taskId: string | null }, anchors: PlanAnchor[]): boolean {
+  return anchors.some(
+    (a) =>
+      (rock.taskId != null && a.taskId != null && rock.taskId === a.taskId) ||
+      a.task.trim() === rock.task.trim(),
+  )
+}
+
+/**
  * Resolve every rock's (and the nudge's) `ref` in an emitted plan to a real tasks.id, producing the
  * STORED plan shape (items carry `taskId`, never `ref`). An item that can't be tied to a listed one —
  * model said null, cited a bogus ref against an id-less request, or paraphrased the text — degrades
  * to taskId null: the plan still renders, it just can't be crossed off automatically.
+ *
+ * This is also where `anchors` is stamped on (deriveAnchors). A rock the model emitted for a task
+ * that IS an anchor is dropped: the anchors strip already shows it, and the prompt tells the model
+ * not to emit one. Dropping the bigRock that way leaves bigRock null, which is the honest read of a
+ * day whose only big item is an appointment.
  */
 export function resolvePlanTaskIds(plan: EmittedPlan, req: PlanRequest): PlanResult {
+  const anchors = deriveAnchors(req)
+  const bigRock = plan.bigRock ? resolveRef(plan.bigRock, req) : null
+  const smallRocks = Array.isArray(plan.smallRocks)
+    ? plan.smallRocks.map((r) => resolveRef(r, req))
+    : []
   return {
     ...plan,
-    bigRock: plan.bigRock ? resolveRef(plan.bigRock, req) : null,
-    smallRocks: Array.isArray(plan.smallRocks)
-      ? plan.smallRocks.map((r) => resolveRef(r, req))
-      : [],
+    anchors,
+    bigRock: bigRock && !isAnchored(bigRock, anchors) ? bigRock : null,
+    smallRocks: smallRocks.filter((r) => !isAnchored(r, anchors)),
     nudge: plan.nudge ? resolveRef(plan.nudge, req) : null,
   }
 }
@@ -503,6 +558,16 @@ export function buildUserPrompt(
     )
   }
   blocks.push(`=== TASKS ON THE GRID ===\n(importance 0–100, urgency 0–100)\n${taskLines(req)}`)
+  // The same timed-today tasks the card lists on its own (deriveAnchors), called out here so the
+  // model can plan around them instead of over them. Explicitly NOT rock material — see rule 5.
+  const anchors = deriveAnchors(req)
+  if (anchors.length) {
+    blocks.push(
+      '=== FIXED TIMES TODAY (already shown to the user — plan AROUND these, never emit one as a ' +
+        'rock) ===\n' +
+        anchors.map((a) => `- ${a.time} — ${a.task}`).join('\n'),
+    )
+  }
   // Paused / not-yet-started tasks that un-pause soon. Heads-up material ONLY — the planner may nod
   // to an imminent one but never schedules it (see SYSTEM_PROMPT "COMING UP"). Omitted when empty.
   if (req.upcoming.length) {

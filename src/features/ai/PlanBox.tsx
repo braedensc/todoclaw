@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react'
-import type { DayPlan, PlanNudge, PlanRock } from '../../types/plan'
+import type { DayPlan, PlanAnchor, PlanNudge, PlanRock } from '../../types/plan'
+
+// Anything the card can strike off once its task is done — a rock or an anchor. Both carry the
+// (task, taskId) pair isPlanRockDone matches on.
+type Strikeable = Pick<PlanRock, 'task' | 'taskId'>
 
 // The inline "Plan My Day" card — a PERSISTENT parchment box above the grid (not a modal). It
 // hydrates from daily_state.plan on load, stays for the whole local day, and disappears after
@@ -38,7 +42,7 @@ export function PlanBox({
   // Is this rock's task already completed? A matching rock renders scratched off (✓ + struck,
   // dimmed text) so the card tracks the day's progress live. Optional: the onboarding DemoScene
   // shows its canned morning plan untouched.
-  rockDone?: (rock: PlanRock) => boolean
+  rockDone?: (rock: Strikeable) => boolean
   // Collapse the plan to a one-line summary to free vertical space — a view toggle, NOT a delete
   // (Dismiss is still the delete path). Omit onToggleCollapse to render without the toggle (the
   // DemoScene's static card): then the card always shows expanded.
@@ -165,21 +169,38 @@ export function PlanBox({
   )
 }
 
-// The rendered plan: headline, available time, big rock, small rocks, habit note. Rocks whose
-// task is already completed (rockDone) render scratched off.
+// The rendered plan: headline, available time, today's fixed times, big rock, small rocks, habit
+// note. Rocks whose task is already completed (rockDone) render scratched off.
 function PlanContent({
   plan,
   rockDone,
 }: {
   plan: DayPlan
-  rockDone?: (rock: PlanRock) => boolean
+  rockDone?: (rock: Strikeable) => boolean
 }) {
-  const done = (r: PlanRock) => rockDone?.(r) ?? false
+  const done = (r: Strikeable) => rockDone?.(r) ?? false
+  const anchors = plan.anchors ?? []
   return (
     <div className="flex flex-col">
       <p className="font-serif text-[19px] font-medium leading-snug text-ink">{plan.headline}</p>
       {plan.availableTime && (
         <p className="mt-1 text-[12.5px] text-muted">⏰ {plan.availableTime}</p>
+      )}
+
+      {/* Today's fixed times, above the rocks: these aren't chosen work, they're the shape of the
+          day everything else fits around. Derived from the board (never from the model), so a timed
+          appointment always appears — it can't lose a rock slot to a couple of quick errands. */}
+      {anchors.length > 0 && (
+        <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
+            Fixed times today
+          </div>
+          <ul className="mt-1 flex flex-col gap-[3px]">
+            {anchors.map((a, i) => (
+              <AnchorRow key={i} anchor={a} done={done(a)} />
+            ))}
+          </ul>
+        </div>
       )}
 
       {plan.bigRock && (
@@ -209,6 +230,28 @@ function PlanContent({
 
       {plan.habitNote && <p className="mt-3 text-[13px] italic text-primary">↻ {plan.habitNote}</p>}
     </div>
+  )
+}
+
+// One fixed time — "2:00 PM — Timing belt & water pump". Strikes off like a rock once its task is
+// completed, so the day's anchors track progress too.
+function AnchorRow({ anchor, done }: { anchor: PlanAnchor; done: boolean }) {
+  return (
+    <li className={`text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}>
+      {done && (
+        <>
+          <span aria-hidden className="mr-1.5 text-primary">
+            ✓
+          </span>
+          <span className="sr-only">Done: </span>
+        </>
+      )}
+      <span className={done ? 'line-through' : undefined}>
+        <span className="font-semibold tabular-nums">{anchor.time}</span>
+        {' — '}
+        {anchor.task}
+      </span>
+    </li>
   )
 }
 

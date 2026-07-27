@@ -57,6 +57,7 @@ export interface PromptHabit {
 // it (or the user) generated without a tool round-trip. Null when the day hasn't been planned.
 export interface PromptPlan {
   headline: string | null
+  anchors: string[] // today's fixed times, e.g. "2:00 PM — Timing belt & water pump"
   bigRock: string | null // e.g. "Draft the deck (this morning, ~2h)"
   smallRocks: string[] // secondary task names
 }
@@ -466,10 +467,16 @@ function contextBlock(ctx: ChatContext): string {
   if (ctx.plan) {
     const planBits: string[] = []
     if (ctx.plan.headline) planBits.push(ctx.plan.headline)
-    if (ctx.plan.bigRock) planBits.push(`Big rock: ${ctx.plan.bigRock}.`)
+    if (ctx.plan.anchors.length) planBits.push(`Fixed times today: ${ctx.plan.anchors.join('; ')}.`)
+    planBits.push(ctx.plan.bigRock ? `Big rock: ${ctx.plan.bigRock}.` : 'No big rock.')
     if (ctx.plan.smallRocks.length) planBits.push(`Then: ${ctx.plan.smallRocks.join(', ')}.`)
+    // COMPLETE, not a blurb: the card shows these items and no others. Without saying so, the model
+    // read this block as an abridged summary and told the user a missing item was "still in the plan
+    // panel" — say plainly that anything absent here is absent from the card.
     blocks.push(
-      `=== TODAY'S PLAN (already generated; ✓ = that item is already done) ===\n${planBits.join(' ')}`,
+      "=== TODAY'S PLAN (already generated; this is the COMPLETE card — anything not listed here " +
+        'is NOT in the plan; ✓ = that item is already done) ===\n' +
+        planBits.join(' '),
     )
   }
 

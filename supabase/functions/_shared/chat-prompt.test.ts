@@ -470,17 +470,28 @@ Deno.test("today's saved plan renders in its own block so BabyClaw can reference
     baseContext({
       plan: {
         headline: 'Focused morning, easy afternoon.',
+        anchors: ['2:00 PM — Timing belt & water pump'],
         bigRock: 'Draft the deck (this morning, ~2h)',
         smallRocks: ['Reply to Sam', 'Book flights'],
       },
     }),
   )
-  assertStringIncludes(
-    sys,
-    "=== TODAY'S PLAN (already generated; ✓ = that item is already done) ===",
-  )
+  // The header says COMPLETE on purpose: read as an abridged blurb, the model told a user a task
+  // the card had dropped was "still in the plan panel".
+  assertStringIncludes(sys, "=== TODAY'S PLAN (already generated; this is the COMPLETE card")
+  assertStringIncludes(sys, 'anything not listed here is NOT in the plan')
+  assertStringIncludes(sys, 'Fixed times today: 2:00 PM — Timing belt & water pump.')
   assertStringIncludes(sys, 'Big rock: Draft the deck (this morning, ~2h).')
   assertStringIncludes(sys, 'Then: Reply to Sam, Book flights.')
+})
+
+Deno.test('a rock-less plan says so outright rather than staying silent about the big rock', () => {
+  const sys = buildSystem(
+    baseContext({
+      plan: { headline: 'Quiet one.', anchors: [], bigRock: null, smallRocks: [] },
+    }),
+  )
+  assertStringIncludes(sys, 'No big rock.')
 })
 
 Deno.test('no plan block when the day has not been planned', () => {

@@ -8,6 +8,9 @@
 
 import type { z } from 'npm:zod@4.4.3'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
+// Type-only: the plan SHAPE, not the planner. plan-prompt.ts is pure prompt/schema code — no
+// Anthropic client — so this doesn't pull the model layer into the transport-agnostic registry.
+import type { PlanResult } from '../plan-prompt.ts'
 
 // Domains of user data a capability can mutate. The chat's live-refresh maps each to a TanStack
 // Query key (see src/features/ai/use-ai-chat.ts) so the grid / list / habits / Done UI updates
@@ -27,7 +30,9 @@ export type MutationDomain =
 export interface CapabilityServices {
   // Runs the existing Plan My Day path server-side for the caller and persists today's plan.
   // Wired by ai-chat to ../run-plan.ts; carries its own plan_my_day rate-limit + budget gate.
-  generatePlan?: () => Promise<{ ok: true; headline: string } | { ok: false; reason: string }>
+  // Resolves with the WHOLE plan, so generate_plan can hand the model exactly what landed on the
+  // card instead of a headline to guess around.
+  generatePlan?: () => Promise<{ ok: true; plan: PlanResult } | { ok: false; reason: string }>
 }
 
 export interface CapabilityContext {

@@ -88,7 +88,12 @@ export function planSummary(
   tasks: { id: string; text: string; doneToday: boolean; completedAt: string | null }[] = [],
 ): PromptPlan | null {
   if (!raw || typeof raw !== 'object') return null
-  const p = raw as { headline?: unknown; bigRock?: RawRock | null; smallRocks?: unknown }
+  const p = raw as {
+    headline?: unknown
+    anchors?: unknown
+    bigRock?: RawRock | null
+    smallRocks?: unknown
+  }
   const doneIds = new Set<string>()
   const doneTexts = new Set<string>()
   for (const t of tasks) {
@@ -118,8 +123,19 @@ export function planSummary(
       return rockDone(rock) ? `✓ ${rock.task.trim()}` : rock.task.trim()
     })
     .filter((t) => t.length > 0)
-  if (!headline && !bigRock && smallRocks.length === 0) return null
-  return { headline, bigRock, smallRocks }
+  // Today's fixed times (plan.anchors) — read as defensively as the rocks, since the column is
+  // client-writable jsonb. Struck the same way when their task is already done.
+  const anchors = (Array.isArray(p.anchors) ? p.anchors : [])
+    .map((a) => {
+      const anchor = a as (RawRock & { time?: unknown }) | null
+      if (!anchor || typeof anchor.task !== 'string' || !anchor.task.trim()) return ''
+      const time = typeof anchor.time === 'string' && anchor.time.trim() ? anchor.time.trim() : null
+      const base = time ? `${time} — ${anchor.task.trim()}` : anchor.task.trim()
+      return rockDone(anchor) ? `✓ ${base}` : base
+    })
+    .filter((t) => t.length > 0)
+  if (!headline && !bigRock && smallRocks.length === 0 && anchors.length === 0) return null
+  return { headline, anchors, bigRock, smallRocks }
 }
 
 function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {

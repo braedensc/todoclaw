@@ -113,6 +113,19 @@ function rockSlotIfScheduled(id: string, slot: Rock['when'], label: string): Pla
   }
 }
 
+/** A task due today at a set time must land in the deterministic `anchors` strip — the fixed-times
+ * list the card always renders, derived from the request rather than emitted by the model. */
+function anchored(id: string, label: string): PlanCheck {
+  return (plan) => {
+    const anchor = plan.anchors.find((a) => a.taskId === id)
+    return {
+      name: label,
+      pass: anchor != null,
+      detail: anchor ? `${anchor.time} — ${anchor.task}` : `anchors: ${plan.anchors.length}`,
+    }
+  }
+}
+
 /** Substring probe over the WHOLE emitted plan (headline, availableTime, rocks, habitNote). */
 function planMentions(needle: string, label: string): PlanCheck {
   return (plan) => ({
@@ -242,7 +255,12 @@ export const scenarios: PlanScenario[] = [
     checks: [
       planHeadline(),
       rocksResolve(),
-      rockSlotIfScheduled('t1', 'afternoon', 'timed demo lands in the afternoon slot'),
+      // The demo is a fixed time, so it belongs in the anchors strip and NOT in a rock slot —
+      // the rock caps used to be the only home for it, which is how a timed commitment could get
+      // squeezed off the card entirely by a couple of due-today errands.
+      anchored('t1', 'timed demo is a fixed-time anchor'),
+      rocksExclude(['t1'], 'the anchor is not also emitted as a rock'),
+      rockSlotIfScheduled('t2', 'afternoon', 'flexible work still respects the afternoon window'),
     ],
     rubric:
       'The demo is fixed at 3pm today: the plan must treat it as an afternoon anchor — never ' +
