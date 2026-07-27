@@ -8,7 +8,23 @@
 import { z } from 'npm:zod@4.4.3'
 import { localDateInTZ } from '../dates.ts'
 import { defineCapability, type Capability } from './types.ts'
+import type { PlanResult } from '../plan-prompt.ts'
 import { ok, err, systemErr } from './helpers.ts'
+
+// Exactly what the plan card now shows, as one narratable line — the model's only view of the plan
+// it just generated. Explicitly COMPLETE ("that is the whole plan") so a follow-up like "wait, isn't
+// the car repair in there?" gets answered from the plan instead of from a guess about the panel.
+export function planNarration(plan: PlanResult): string {
+  const bits = [`Planned the day — ${plan.headline}`]
+  if (plan.anchors.length) {
+    bits.push(`Fixed times today: ${plan.anchors.map((a) => `${a.time} ${a.task}`).join('; ')}.`)
+  }
+  bits.push(plan.bigRock ? `Big rock: ${plan.bigRock.task}.` : 'No big rock (a light day).')
+  if (plan.smallRocks.length) bits.push(`Then: ${plan.smallRocks.map((r) => r.task).join(', ')}.`)
+  if (plan.nudge) bits.push(`Optional nudge: ${plan.nudge.task}.`)
+  bits.push('That is the whole plan — nothing else is on the card.')
+  return bits.join(' ')
+}
 
 export const planCapabilities: Capability[] = [
   defineCapability({
@@ -21,8 +37,9 @@ export const planCapabilities: Capability[] = [
       const res = await ctx.services.generatePlan()
       if (!res.ok) return err(res.reason)
       // The plan is persisted onto today's daily_state row; invalidating that domain hydrates
-      // the inline plan card. Keep the model's narration short — the card shows the detail.
-      return ok(`Planned the day — ${res.headline}`, ['daily_state'])
+      // the inline plan card. The result spells out WHAT the card now shows: with only a headline
+      // to go on, the model invented the rest and then defended items the card had dropped.
+      return ok(planNarration(res.plan), ['daily_state'])
     },
   }),
 

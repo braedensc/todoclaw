@@ -606,11 +606,39 @@ Deno.test('delete_habit is destructive and its confirm summary names the habit',
 Deno.test('generate_plan uses the injected service, else degrades gracefully', async () => {
   const withSvc = ctx(
     {},
-    { generatePlan: () => Promise.resolve({ ok: true, headline: 'Focus day' }) },
+    {
+      generatePlan: () =>
+        Promise.resolve({
+          ok: true,
+          plan: {
+            headline: 'Focus day',
+            availableTime: '~4h',
+            anchors: [{ task: 'Timing belt', time: '2:00 PM', taskId: 'car' }],
+            bigRock: {
+              task: 'Draft the deck',
+              why: 'w',
+              duration: '~2h',
+              when: 'afternoon',
+              taskId: 'deck',
+            },
+            smallRocks: [
+              { task: 'Reply to Sam', why: 'w', duration: '~10min', when: 'lunch', taskId: 'sam' },
+            ],
+            habitNote: 'Nice streak.',
+            nudge: null,
+          },
+        }),
+    },
   )
   const ok = await executeTool('generate_plan', {}, withSvc)
   assert(!ok.is_error)
   assert(ok.content.includes('Focus day'))
+  // The tool result spells the card out — with only a headline the model narrated the rest from
+  // imagination, then insisted a dropped item was still on the card.
+  assert(ok.content.includes('2:00 PM Timing belt'))
+  assert(ok.content.includes('Big rock: Draft the deck.'))
+  assert(ok.content.includes('Then: Reply to Sam.'))
+  assert(ok.content.includes('That is the whole plan'))
   assertEquals(ok.mutated, ['daily_state'])
 
   const noSvc = await executeTool('generate_plan', {}, ctx())

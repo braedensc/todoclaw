@@ -379,10 +379,7 @@ Deno.test(
     assertEquals(context.plan?.bigRock, '✓ Grab the groceries (morning, ~30min)')
     assertEquals(context.plan?.smallRocks, ['Live errand'])
     const system = buildSystem(context)
-    assertStringIncludes(
-      system,
-      "=== TODAY'S PLAN (already generated; ✓ = that item is already done) ===",
-    )
+    assertStringIncludes(system, "=== TODAY'S PLAN (already generated; this is the COMPLETE card")
     assertStringIncludes(system, 'Big rock: ✓ Grab the groceries (morning, ~30min).')
   },
 )

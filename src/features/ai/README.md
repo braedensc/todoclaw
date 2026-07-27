@@ -15,9 +15,15 @@ Functions (`supabase/functions/`).
   and, on success, **persists** the plan onto today's `daily_state` row via the `save_daily_plan`
   RPC (keyed by the user's local date). `usePlanController` wires the header "Plan My Day" button
   (the generate trigger) to `PlanBox`, which renders the structured
-  `{headline, availableTime, bigRock, smallRocks, habitNote}` and **hydrates from `daily_state.plan`
-  on load** — so the plan survives reloads and auto-clears at local midnight (a new day reads a
-  different date's row). The plan shape + its Zod validator live in `src/types/plan.ts`. Each rock
+  `{headline, availableTime, anchors, bigRock, smallRocks, habitNote}` and **hydrates from
+  `daily_state.plan` on load** — so the plan survives reloads and auto-clears at local midnight (a
+  new day reads a different date's row). The plan shape + its Zod validator live in
+  `src/types/plan.ts`. `anchors` is the "fixed times today" strip — every task due today at a set
+  clock time, derived **deterministically server-side** (`_shared/plan-prompt.ts` `deriveAnchors`)
+  rather than emitted by the model, because a 2 PM appointment is a fact about the day, not a choice:
+  before it existed, a timed commitment could be squeezed out of the card entirely once the capped
+  rock slots filled up. An anchor strikes off like a rock, and a rock the model emitted for an
+  anchored task is dropped as a duplicate. Each rock
   carries a `taskId` (stamped server-side from the model's `[T#]`/`[R#]` line ref), and the card
   **scratches a rock off live** (✓ + strikethrough) once its task is completed — anywhere: grid ✓,
   list, mobile, or BabyClaw — via `usePlanController.rockDone` → `src/lib/plan-done.ts`, which reads

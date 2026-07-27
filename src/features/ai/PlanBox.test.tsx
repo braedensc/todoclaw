@@ -361,4 +361,92 @@ describe('PlanBox', () => {
     expect(screen.queryByText('✓')).not.toBeInTheDocument()
     expect(screen.getByText('File taxes').className).not.toContain('line-through')
   })
+
+  // Fixed times today (plan.anchors) — the regression this section exists for: an appointment due
+  // today at a set hour used to be squeezed out of the card entirely by the bigRock/smallRocks caps.
+  // It's derived from the board, not the model, so it always renders — even on a plan with no rocks.
+  describe('fixed times today', () => {
+    const ANCHORED: DayPlan = {
+      ...PLAN,
+      anchors: [
+        { task: 'Timing belt & water pump', time: '2:00 PM', taskId: 'car' },
+        { task: 'Call with Sam', time: '9:30 AM', taskId: 'sam' },
+      ],
+    }
+
+    it('lists every anchor alongside the rocks', () => {
+      render(
+        <PlanBox
+          plan={ANCHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Fixed times today')).toBeInTheDocument()
+      expect(screen.getByText(/Timing belt & water pump/)).toBeInTheDocument()
+      expect(screen.getByText('2:00 PM')).toBeInTheDocument()
+      expect(screen.getByText(/Call with Sam/)).toBeInTheDocument()
+      // The rocks are untouched — anchors are an addition, not a replacement.
+      expect(screen.getByText('File taxes')).toBeInTheDocument()
+    })
+
+    it('shows anchors even when the plan has no rocks at all', () => {
+      render(
+        <PlanBox
+          plan={{ ...ANCHORED, bigRock: null, smallRocks: [] }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText(/Timing belt & water pump/)).toBeInTheDocument()
+    })
+
+    it('strikes an anchor off once its task is done', () => {
+      render(
+        <PlanBox
+          plan={ANCHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'car'}
+        />,
+      )
+      expect(screen.getByText(/Timing belt & water pump/).className).toContain('line-through')
+      expect(screen.getByText(/Call with Sam/).className).not.toContain('line-through')
+      expect(screen.getByText('Done:')).toBeInTheDocument()
+    })
+
+    it('renders no fixed-times section for a plan without anchors (or a legacy plan missing them)', () => {
+      const { rerender } = render(
+        <PlanBox
+          plan={PLAN}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText('Fixed times today')).not.toBeInTheDocument()
+      rerender(
+        <PlanBox
+          plan={{ ...PLAN, anchors: [] }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText('Fixed times today')).not.toBeInTheDocument()
+    })
+  })
 })

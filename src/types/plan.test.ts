@@ -63,3 +63,26 @@ describe('DayPlanSchema nudge (the optional quiet-day suggestion)', () => {
     expect(parsed.headline).toBe('Steady.')
   })
 })
+
+// Fixed-time anchors (2026-07-27). Same read-boundary contract as taskId/nudge: plans persisted
+// before the field must keep parsing, a stored anchor must survive (zod strips unknown keys — a
+// schema that forgot the field would drop the day's appointments on every reload), and a malformed
+// value degrades to no-anchors rather than nuking the card.
+describe('DayPlanSchema anchors', () => {
+  const anchor = { task: 'Timing belt & water pump', time: '2:00 PM', taskId: 'car' }
+
+  it('a legacy plan without anchors still parses', () => {
+    expect(DayPlanSchema.parse(base).anchors ?? null).toBeNull()
+  })
+
+  it('stored anchors round-trip the parse instead of being stripped', () => {
+    const parsed = DayPlanSchema.parse({ ...base, anchors: [anchor] })
+    expect(parsed.anchors).toEqual([anchor])
+  })
+
+  it('a malformed anchors value degrades to null, not a dead plan card', () => {
+    const parsed = DayPlanSchema.parse({ ...base, anchors: 'at 2pm' })
+    expect(parsed.anchors ?? null).toBeNull()
+    expect(parsed.headline).toBe('Steady.')
+  })
+})
