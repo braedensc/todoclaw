@@ -130,7 +130,12 @@ export function planSummary(
       const anchor = a as (RawRock & { time?: unknown }) | null
       if (!anchor || typeof anchor.task !== 'string' || !anchor.task.trim()) return ''
       const time = typeof anchor.time === 'string' && anchor.time.trim() ? anchor.time.trim() : null
-      const base = time ? `${time} — ${anchor.task.trim()}` : anchor.task.trim()
+      const dur =
+        typeof anchor.duration === 'string' && anchor.duration.trim()
+          ? anchor.duration.trim()
+          : null
+      const base =
+        (time ? `${time} — ${anchor.task.trim()}` : anchor.task.trim()) + (dur ? ` (${dur})` : '')
       return rockDone(anchor) ? `✓ ${base}` : base
     })
     .filter((t) => t.length > 0)

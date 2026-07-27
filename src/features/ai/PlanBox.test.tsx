@@ -369,8 +369,8 @@ describe('PlanBox', () => {
     const ANCHORED: DayPlan = {
       ...PLAN,
       anchors: [
-        { task: 'Timing belt & water pump', time: '2:00 PM', taskId: 'car' },
-        { task: 'Call with Sam', time: '9:30 AM', taskId: 'sam' },
+        { task: 'Timing belt & water pump', time: '2:00 PM', duration: '~half-day', taskId: 'car' },
+        { task: 'Call with Sam', time: '9:30 AM', duration: null, taskId: 'sam' },
       ],
     }
 
@@ -391,6 +391,26 @@ describe('PlanBox', () => {
       expect(screen.getByText(/Call with Sam/)).toBeInTheDocument()
       // The rocks are untouched — anchors are an addition, not a replacement.
       expect(screen.getByText('File taxes')).toBeInTheDocument()
+    })
+
+    it('shows how much of the day an anchor eats, and omits it when unsized', () => {
+      render(
+        <PlanBox
+          plan={ANCHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      // Seeing "~half-day" next to 2 PM is what makes a light plan underneath it read as correct.
+      expect(screen.getByText('⏱ ~half-day')).toBeInTheDocument()
+      // Exactly one anchor carries a length — the unsized 9:30 one gets no chip, not a made-up one.
+      const strip = screen.getByText('Fixed times today').parentElement!
+      expect(strip.querySelectorAll('li')).toHaveLength(2)
+      expect(strip.textContent).not.toMatch(/⏱ null|⏱ undefined/)
+      expect(strip.textContent!.match(/⏱/g)).toHaveLength(1)
     })
 
     it('shows anchors even when the plan has no rocks at all', () => {

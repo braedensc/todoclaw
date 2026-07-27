@@ -150,7 +150,7 @@ Deno.test('a quiet, low-value board is an optional relaxed day with a no-pressur
   // The ongoing-project rule keeps its "prefer the big rock" default but no longer forces a low-value
   // project into the slot on an otherwise quiet board.
   assert(SYSTEM_PROMPT.includes('PREFER making it the BIG ROCK'))
-  assert(SYSTEM_PROMPT.includes('do NOT force it into the big rock'))
+  assert(SYSTEM_PROMPT.includes('leave bigRock null and let the day be light'))
 })
 
 Deno.test('emit_plan exposes an optional, ref-linked nudge (nullable, required key)', () => {
@@ -503,6 +503,7 @@ Deno.test('deriveAnchors: only tasks due TODAY at a set time, earliest first, fo
         due: '2026-06-24',
         dueInDays: 0,
         dueTime: '14:00:00',
+        size: 'XL',
         id: 'car',
       },
       {
@@ -536,8 +537,8 @@ Deno.test('deriveAnchors: only tasks due TODAY at a set time, earliest first, fo
     ],
   }
   assertEquals(deriveAnchors(req), [
-    { task: 'Call Sam', time: '9:30 AM', taskId: 'sam' },
-    { task: 'Timing belt', time: '2:00 PM', taskId: 'car' },
+    { task: 'Call Sam', time: '9:30 AM', duration: null, taskId: 'sam' },
+    { task: 'Timing belt', time: '2:00 PM', duration: '~half-day', taskId: 'car' },
   ])
 })
 
@@ -561,7 +562,9 @@ Deno.test('deriveAnchors: caps the list and tolerates an id-less request', () =>
 Deno.test("resolvePlanTaskIds: stamps the day's anchors onto the plan", () => {
   // `base`'s Dentist is due today at 10:30 — an anchor, whatever the model emitted.
   const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), withIds)
-  assertEquals(plan.anchors, [{ task: 'Dentist', time: '10:30 AM', taskId: 'task-4' }])
+  assertEquals(plan.anchors, [
+    { task: 'Dentist', time: '10:30 AM', duration: null, taskId: 'task-4' },
+  ])
 })
 
 Deno.test('resolvePlanTaskIds: a rock the model emitted for an anchored task is dropped', () => {
@@ -600,4 +603,51 @@ Deno.test('buildUserPrompt: fixed times are called out as plan-around, never-emi
   // A day with nothing timed gets no block at all.
   const untimed: PlanRequest = { ...base, tasks: [base.tasks[0], base.tasks[1]] }
   assert(!buildUserPrompt(untimed, schedule, null).includes('FIXED TIMES TODAY'))
+})
+
+Deno.test('the prompt bars internal vocabulary from anything the user reads', () => {
+  // A real leak: the card's headline read "…with the timing belt appointment as a fixed anchor at
+  // 2pm". "anchor"/"big rock"/"quick win" are OUR words for building the plan, not the user's.
+  assertStringIncludes(SYSTEM_PROMPT, 'WRITE LIKE A PERSON, NOT LIKE THE SCHEMA')
+  assertStringIncludes(SYSTEM_PROMPT, 'NEVER put those words in any text they read')
+  for (const jargon of ['"anchor"', '"big rock"', '"quick win"']) {
+    assertStringIncludes(SYSTEM_PROMPT, jargon)
+  }
+  // And the fixed-times strip owns the listing, so the headline must not recite the times.
+  assertStringIncludes(SYSTEM_PROMPT, 're-list the times')
+})
+
+Deno.test('an anchor costs time: the prompt makes the day pay for it', () => {
+  const req: PlanRequest = {
+    ...base,
+    tasks: [
+      {
+        text: 'Get timing belt + water pump replaced',
+        importance: 90,
+        urgency: 95,
+        due: '2026-06-24',
+        dueInDays: 0,
+        dueTime: '14:00:00',
+        size: 'XL',
+        id: 'car',
+      },
+    ],
+  }
+  const p = buildUserPrompt(req, schedule, null)
+  // The rough length rides along with the time, so the model can subtract it...
+  assertStringIncludes(p, '- 2:00 PM — Get timing belt + water pump replaced (about ~half-day)')
+  // ...and is told to, rather than echoing the schedule's free-hours figure untouched.
+  assertStringIncludes(p, 'These COST TIME.')
+  assertStringIncludes(p, 'SCALE THE DAY DOWN')
+})
+
+Deno.test('a low/low ongoing project does not earn the big rock by default', () => {
+  // The regression: "Work on portfolio site" sat bottom-left on the grid, yet took the BIG ROCK
+  // slot on a day whose real weight was a half-day car appointment. The old caveat only fired when
+  // EVERYTHING on the board was low/low — which was false here (two due-today errands) — so it
+  // never applied. It now judges the project on its own importance/urgency.
+  assertStringIncludes(SYSTEM_PROMPT, 'Judge it on ITS OWN')
+  assertStringIncludes(SYSTEM_PROMPT, 'not on whether anything else wants the slot')
+  assertStringIncludes(SYSTEM_PROMPT, 'is not a reason either')
+  assertStringIncludes(SYSTEM_PROMPT, 'leave bigRock null and let the day be light')
 })
