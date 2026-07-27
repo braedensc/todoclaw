@@ -601,3 +601,15 @@ Deno.test('buildUserPrompt: fixed times are called out as plan-around, never-emi
   const untimed: PlanRequest = { ...base, tasks: [base.tasks[0], base.tasks[1]] }
   assert(!buildUserPrompt(untimed, schedule, null).includes('FIXED TIMES TODAY'))
 })
+
+Deno.test('the prompt bars internal vocabulary from anything the user reads', () => {
+  // A real leak: the card's headline read "…with the timing belt appointment as a fixed anchor at
+  // 2pm". "anchor"/"big rock"/"quick win" are OUR words for building the plan, not the user's.
+  assertStringIncludes(SYSTEM_PROMPT, 'WRITE LIKE A PERSON, NOT LIKE THE SCHEMA')
+  assertStringIncludes(SYSTEM_PROMPT, 'NEVER put those words in any text they read')
+  for (const jargon of ['"anchor"', '"big rock"', '"quick win"']) {
+    assertStringIncludes(SYSTEM_PROMPT, jargon)
+  }
+  // And the fixed-times strip owns the listing, so the headline must not recite the times.
+  assertStringIncludes(SYSTEM_PROMPT, 're-list the times')
+})
