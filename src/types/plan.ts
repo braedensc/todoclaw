@@ -39,6 +39,9 @@ export const PlanNudgeSchema = z.object({
 export const PlanAnchorSchema = z.object({
   task: z.string(),
   time: z.string(), // formatted wall-clock, e.g. "2:00 PM"
+  // Rough cost of the commitment ("~half-day"), from the task's size; null when unsized. An anchor
+  // is a block of the day, not a point in it — the planner subtracts it from the day's free hours.
+  duration: z.string().nullish().catch(null),
   taskId: z.string().nullish().catch(null),
 })
 

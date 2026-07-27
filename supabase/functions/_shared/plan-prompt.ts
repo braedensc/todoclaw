@@ -110,6 +110,11 @@ export interface Nudge {
 export interface PlanAnchor {
   task: string
   time: string // formatted wall-clock, e.g. "2:00 PM"
+  // Rough cost of the commitment, from the task's own size ("~half-day"), or null when unsized. An
+  // anchor is a BLOCK of the day, not a point in it — a 2 PM timing-belt job takes the afternoon
+  // with it. Without this the planner echoed the schedule's free-hours figure untouched and then
+  // handed out a 1.5h focus session on a day that was already spoken for.
+  duration: string | null
   taskId: string | null
 }
 export interface PlanResult {
@@ -296,10 +301,13 @@ export const SYSTEM_PROMPT = [
   'substantial, PREFER making it the BIG ROCK rather than padding it onto the quick-wins list, paced',
   'toward its due date if it has one. Only make it a small rock if it is genuinely short (S/M) and',
   'something bigger already owns the day. Never tell the user to "finish" it or treat it as',
-  'must-finish-today — a session on it is progress, not completion. One caveat: this is for a project',
-  'genuinely worth a session. If it — and everything else on the board — is low-importance and',
-  'low-urgency with nothing pressing, do NOT force it into the big rock; a relaxed day is often the',
-  'better call (see QUIET, LOW-VALUE DAYS).',
+  'must-finish-today — a session on it is progress, not completion. One caveat, and it is important:',
+  'this is only for a project THE USER has signalled is worth a session. Judge it on ITS OWN',
+  'importance and urgency, not on whether anything else wants the slot. A project sitting LOW on both',
+  'is one they deliberately parked at the bottom of the grid — an empty big-rock slot is not a reason',
+  'to promote it, and "nothing else is competing" is not a reason either. When the only candidate is',
+  'a low/low project, leave bigRock null and let the day be light (see QUIET, LOW-VALUE DAYS) — that',
+  'is the honest read, especially on a day a fixed commitment already owns.',
   '',
   'QUIET, LOW-VALUE DAYS: sometimes the board holds only a few LOW-importance, LOW-urgency tasks with',
   'no due dates — nothing that genuinely earns a substantial focused block. On a day like that you do',
@@ -465,7 +473,12 @@ export function deriveAnchors(req: PlanRequest): PlanAnchor[] {
     .filter((t) => t.dueInDays === 0 && !!t.dueTime)
     .sort((a, b) => (a.dueTime! < b.dueTime! ? -1 : a.dueTime! > b.dueTime! ? 1 : 0))
     .slice(0, MAX_ANCHORS)
-    .map((t) => ({ task: t.text, time: formatClockTime(t.dueTime!), taskId: t.id ?? null }))
+    .map((t) => ({
+      task: t.text,
+      time: formatClockTime(t.dueTime!),
+      duration: t.size ? SIZE_HINTS[t.size] : null,
+      taskId: t.id ?? null,
+    }))
 }
 
 // Does this rock point at the same task as an anchor? By taskId when both carry one, else by exact
@@ -574,7 +587,15 @@ export function buildUserPrompt(
     blocks.push(
       '=== FIXED TIMES TODAY (already shown to the user — plan AROUND these, never emit one as a ' +
         'rock) ===\n' +
-        anchors.map((a) => `- ${a.time} — ${a.task}`).join('\n'),
+        anchors
+          .map((a) => `- ${a.time} — ${a.task}${a.duration ? ` (about ${a.duration})` : ''}`)
+          .join('\n') +
+        '\nThese COST TIME. Subtract them from the free hours above before you decide how much to ' +
+        'assign — an appointment is a block of the day, not a moment in it. Where no rough length ' +
+        'is given, judge it from what the thing actually is (a mechanic leaving a car up on a lift ' +
+        'is not a 15-minute errand). If they take most of the day, say so plainly in availableTime ' +
+        'and SCALE THE DAY DOWN: a much smaller focus, or bigRock null, is the honest answer — ' +
+        'never hand out a full session on top of a day that is already spoken for.',
     )
   }
   // Paused / not-yet-started tasks that un-pause soon. Heads-up material ONLY — the planner may nod

@@ -251,6 +251,11 @@ function AnchorRow({ anchor, done }: { anchor: PlanAnchor; done: boolean }) {
         {' — '}
         {anchor.task}
       </span>
+      {/* How much of the day it eats. Shown because an appointment is a block, not a moment: seeing
+          "~half-day" next to 2 PM is what makes a light plan underneath it read as correct. */}
+      {anchor.duration && (
+        <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">⏱ {anchor.duration}</span>
+      )}
     </li>
   )
 }
