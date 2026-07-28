@@ -1,7 +1,13 @@
 // Deno tests for the shared activity vocabulary (normalizeActivity / describeActivity / activityTally).
 // Run: deno test --no-check supabase/functions/_shared/activity.test.ts
 import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1'
-import { activityTally, describeActivity, normalizeActivity, type ActivityRow } from './activity.ts'
+import {
+  activityTally,
+  describeActivity,
+  isProgressActivity,
+  normalizeActivity,
+  type ActivityRow,
+} from './activity.ts'
 
 Deno.test('normalizeActivity: typed rows through, malformed dropped, detail coerced', () => {
   const rows = normalizeActivity([
@@ -79,4 +85,24 @@ Deno.test('activityTally: counts by bucket, most-frequent first, top 4, empty â†
   assertEquals(t.startsWith('3 done'), true)
   assertEquals(activityTally([]), null)
   assertEquals(activityTally([{ kind: 'nonsense', taskText: 'x', detail: {} }]), null)
+})
+
+Deno.test('isProgressActivity: only finishing counts as real progress', () => {
+  assertEquals(isProgressActivity('completed'), true)
+  // Everything else is the user deciding to do something, not doing it â€” the recap must not
+  // celebrate any of these.
+  for (const kind of [
+    'created',
+    'due_set',
+    'due_cleared',
+    'placed',
+    'moved',
+    'renamed',
+    'made_ongoing',
+    'made_recurring',
+    'paused',
+    'uncompleted',
+  ]) {
+    assertEquals(isProgressActivity(kind), false, `${kind} must not read as progress`)
+  }
 })

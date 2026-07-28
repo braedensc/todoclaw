@@ -35,6 +35,10 @@ export type DispatchPlanRock = Partial<Pick<Rock, 'task' | 'duration' | 'taskId'
 export type DispatchPlan = Partial<Pick<PlanResult, 'headline'>> & {
   bigRock?: DispatchPlanRock | null
   smallRocks?: DispatchPlanRock[]
+  // Today's fixed-time commitments. They are NOT rocks, but they ARE things the user committed to
+  // today, so the evening recap has to be able to ask how they went — when anchors were split out of
+  // smallRocks, the day's most consequential item (a car booked into a shop) went invisible here.
+  anchors?: DispatchPlanRock[]
 }
 
 const asString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
@@ -57,6 +61,9 @@ export function normalizePlan(raw: unknown): DispatchPlan | null {
     bigRock: rock(p.bigRock),
     smallRocks: Array.isArray(p.smallRocks)
       ? p.smallRocks.map(rock).filter((r): r is DispatchPlanRock => r !== null)
+      : [],
+    anchors: Array.isArray(p.anchors)
+      ? p.anchors.map(rock).filter((r): r is DispatchPlanRock => r !== null)
       : [],
   }
 }
@@ -353,8 +360,10 @@ export function recapPlanItems(
   ctx: RecapContext,
 ): { done: string[]; open: string[]; hasPlan: boolean } {
   const plan = normalizePlan(inputs.plan)
+  // Anchors count as plan items here even though they are not rocks: the recap's job is to ask how
+  // the day's COMMITMENTS went, and a fixed appointment is the most committed thing on it.
   const rocks: DispatchPlanRock[] = plan
-    ? [...(plan.bigRock ? [plan.bigRock] : []), ...(plan.smallRocks ?? [])]
+    ? [...(plan.anchors ?? []), ...(plan.bigRock ? [plan.bigRock] : []), ...(plan.smallRocks ?? [])]
     : []
   const doneTexts = new Set(
     inputs.tasks.filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx)).map((t) => t.text),

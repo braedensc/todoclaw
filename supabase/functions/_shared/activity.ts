@@ -97,6 +97,17 @@ export function describeActivity(row: ActivityRow): string {
   }
 }
 
+/**
+ * Did this action move real work forward, or was it board upkeep? Only finishing something counts as
+ * progress; creating a task, dating it, or dragging it around is deciding to do something, not doing
+ * it. The evening recap splits on this: it once opened with "you got X and Y onto your list … good
+ * little planning day — proud of you!" on a day when nothing had actually been done, because the
+ * whole activity feed was handed to it as "everything they got done today".
+ */
+export function isProgressActivity(kind: string): boolean {
+  return kind === 'completed'
+}
+
 // Coarse buckets for the one-line tally in the deterministic fallback ("3 done · 2 created · 1 moved").
 const TALLY_LABEL: Record<string, string> = {
   completed: 'done',
