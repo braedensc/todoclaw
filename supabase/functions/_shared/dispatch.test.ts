@@ -778,7 +778,7 @@ Deno.test('normalizePlan: rejects non-object shapes and coerces mis-typed fields
   assertEquals(normalizePlan('a string'), null)
   assertEquals(normalizePlan([1, 2]), null)
   const p = normalizePlan({ headline: 42, bigRock: 'nope', smallRocks: 'also nope' })
-  assertEquals(p, { headline: undefined, bigRock: null, smallRocks: [] })
+  assertEquals(p, { headline: undefined, bigRock: null, smallRocks: [], anchors: [] })
 })
 
 Deno.test('normalizePlan: carries rock taskId through, degrading a mis-typed one to absent', () => {
