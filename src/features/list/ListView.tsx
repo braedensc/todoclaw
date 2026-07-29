@@ -160,6 +160,8 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   // Mark a RECURRING task done: reset its cycle — lastDoneAt=now, doneCount+=1 — via the plain
   // task UPDATE. Deliberately NOT history/daily_state (parity spec: recurring done lives in
   // lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
+  // Completing also CONSUMES any one-off due-date override (due/due_time cleared): the deadline
+  // applied to the occurrence just finished, and leaving it set would read overdue forever.
   const handleDoneRecurring = (task: Task) => {
     if (!task.recurring) return
     updateTask.mutate({
@@ -170,6 +172,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
           lastDoneAt: new Date().toISOString(),
           doneCount: (task.recurring.doneCount ?? 0) + 1,
         },
+        ...(task.due ? { due: null, due_time: null } : {}),
       },
     })
   }

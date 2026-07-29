@@ -14,7 +14,7 @@ import {
   urgencyTier,
   type UrgencyTier,
 } from '../../lib/visual-urgency'
-import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
+import { recurringTaskStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
 import { ONGOING_GLYPH } from '../../lib/task-type'
 import { resolveCollision } from '../../lib/collision'
 import { IconButton } from '../../components/IconButton'
@@ -116,7 +116,7 @@ export function ListRow({
   const due = daysUntil(task.due, { timeZone })
   const minutesUntil = minutesUntilDueTime(task.due, task.due_time, timeZone, now)
   const tier = urgencyTier(due, minutesUntil)
-  const status = recurringStatus(task.recurring)
+  const status = recurringTaskStatus(task, { timeZone })
   // ❄️ stale badge — shown when this one-off has clearly been ignored (3+ weeks past due, or an
   // undated task months on the board). It REPLACES the warm due chip below (the lane flip every
   // surface makes); a recurring task carries its own status instead. The list has no rings
@@ -161,7 +161,7 @@ export function ListRow({
   // Slider commit: resolve the target against all active tasks (skips self), then write the
   // non-overlapping spot. Collision runs ONLY here, never live (parity spec).
   function handleCommitCoords(x: number, y: number) {
-    const resolved = resolveCollision(x, y, allTasks, task.id)
+    const resolved = resolveCollision(x, y, allTasks, task.id, { timeZone })
     onUpdateCoords(task.id, resolved.x, resolved.y)
   }
 

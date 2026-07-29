@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
+import { RC_COLOR, recurringTaskStatus, fmtFrequency } from '../../lib/recurring'
 import { ONGOING_GLYPH } from '../../lib/task-type'
 import {
   BASE_CARD_SHADOW,
@@ -164,7 +164,7 @@ export function GridCard({
   useClickOutside(menuRefs, () => setMenuOpen(false), menuOpen)
 
   // x/y are guaranteed non-null by the caller's filter, but be defensive for the type.
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringTaskStatus(task, { timeZone })
   // Data-space quadrant for this card's (x, y). Drives the border color (when not recurring)
   // and a `data-quadrant` hook so E2E specs can assert placement without reading pixel styles
   // (durable across Stage 5's restyle).

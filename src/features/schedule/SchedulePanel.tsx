@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Recurring } from '../../types/task'
 import { localDateInTZ } from '../../lib/dates'
 import { formatStartDay } from '../../lib/start-date'
-import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
+import { recurringTaskStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
 import { taskType, ONGOING_GLYPH, type TaskType } from '../../lib/task-type'
 import { ReminderPicker } from '../reminders/ReminderPicker'
 import { DueTimezoneHint } from './DueTimezoneHint'
@@ -206,7 +206,9 @@ export function SchedulePanel({
           ? 'weekly'
           : 'custom'
 
-  const status = recurringStatus(recurring)
+  // Due-aware: a due date on a recurring task overrides the cadence when it lands sooner, so the
+  // status the panel shows can never contradict the date picker right below it.
+  const status = recurringTaskStatus({ recurring, due }, { timeZone })
   const statusColor = status ? RC_COLOR[status.code] : RC_COLOR.ok
 
   // The three mutually-exclusive types (Task / Recurring / Ongoing) drive one segmented switch.

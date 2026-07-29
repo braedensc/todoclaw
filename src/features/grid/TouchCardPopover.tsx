@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react'
 import type { Task } from '../../types/task'
 import { SchedulePanel } from '../schedule/SchedulePanel'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RC_COLOR, recurringStatus } from '../../lib/recurring'
+import { RC_COLOR, recurringTaskStatus } from '../../lib/recurring'
 import {
   dueChipStyle,
   gridChipLabel,
@@ -163,7 +163,7 @@ export function TouchCardPopover({
   }, [onClose])
 
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringTaskStatus(task, { timeZone })
   const stale = rc || paused ? null : staleness(task, daysUntilDue)
   const tier = rc || stale || paused ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const frost = stale ? staleBadge(stale) : null

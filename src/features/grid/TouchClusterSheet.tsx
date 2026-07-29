@@ -1,7 +1,7 @@
 import type { Task } from '../../types/task'
 import { BottomSheet } from '../../components/BottomSheet'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RC_COLOR, recurringStatus } from '../../lib/recurring'
+import { RC_COLOR, recurringTaskStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
 import {
   dueChipStyle,
@@ -37,7 +37,7 @@ export function TouchClusterSheet({ group, timeZone, onClose, onPick }: TouchClu
           // GridCard / desktop ClusterPopup rows): staleness gates the warm tier so a row can
           // never contradict the chip and sheet it opens into. (No paused branch: dormant tasks
           // never reach clusters.)
-          const rc = recurringStatus(task.recurring)
+          const rc = recurringTaskStatus(task, { timeZone })
           const d = daysUntil(task.due, { timeZone })
           const stale = rc ? null : staleness(task, d)
           const frost = stale ? staleBadge(stale) : null

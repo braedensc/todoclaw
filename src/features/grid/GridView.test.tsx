@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
+import { localDateInTZ } from '../../lib/dates'
 import { useGrid } from './use-grid'
 import { GridSurface } from './GridSurface'
 import { NewItemStrip } from '../shell/NewItemStrip'
@@ -236,6 +237,32 @@ describe('GridView placement filter', () => {
 
     expect(screen.queryByText('Water the plants')).not.toBeInTheDocument()
     expect(screen.getByText('Take out trash')).toBeInTheDocument()
+  })
+
+  it('shows a mid-cycle recurring task once a due date lands, even one done today', () => {
+    // ADR 2026-07-29-recurring-due-override: a due date on a recurring chore is a deadline for the
+    // CURRENT occurrence, so it beats both the "ok" cadence hide and the done-today hide. Without
+    // it, "put laundry in today's plan" had no way to reach the board (or Plan My Day) at all.
+    const today = localDateInTZ('America/New_York')
+    tasksFixture = [
+      makeTask({
+        id: 'due-override',
+        text: 'Laundry',
+        due: today,
+        recurring: { frequencyDays: 30, lastDoneAt: new Date().toISOString(), doneCount: 4 },
+      }),
+      // Same chore, deadline still a week out → the cadence keeps it hidden.
+      makeTask({
+        id: 'far-due',
+        text: 'Deep clean',
+        due: localDateInTZ('America/New_York', new Date(Date.now() + 7 * 86_400_000)),
+        recurring: { frequencyDays: 30, lastDoneAt: new Date().toISOString(), doneCount: 2 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.getByText('Laundry')).toBeInTheDocument()
+    expect(screen.queryByText('Deep clean')).not.toBeInTheDocument()
   })
 
   it('renders no new-item cards when nothing is staged', () => {

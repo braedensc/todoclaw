@@ -139,6 +139,48 @@ describe('buildPlanRequest', () => {
     expect(req.dayOfWeek).toBe('Wednesday')
     expect(req.today).toBe('Wednesday, June 24, 2026')
   })
+
+  // ADR 2026-07-29-recurring-due-override. NOW is Wed Jun 24 2026, 08:00 in New York; a chore
+  // ticked off that same morning has 7 days of cadence left, so on cadence alone it is invisible
+  // to the planner — which is exactly how a "put laundry in tomorrow's plan" ask used to vanish.
+  describe('a recurring chore with a one-off due date', () => {
+    const doneThisMorning = { frequencyDays: 7, lastDoneAt: '2026-06-24T11:00:00Z', doneCount: 4 }
+
+    it('is left out on cadence alone', () => {
+      const tasks = [task({ id: 'chore', text: 'Laundry', recurring: doneThisMorning })]
+      expect(buildPlanRequest(tasks, [], {}, TZ, NOW).recurringDue).toEqual([])
+    })
+
+    it('is pulled in by a due date that lands sooner than the cadence', () => {
+      const tasks = [
+        task({ id: 'chore', text: 'Laundry', due: '2026-06-24', recurring: doneThisMorning }),
+      ]
+      expect(buildPlanRequest(tasks, [], {}, TZ, NOW).recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'due today' },
+      ])
+    })
+
+    it('keeps its cadence when the due date is further out', () => {
+      const tasks = [
+        task({
+          id: 'chore',
+          text: 'Laundry',
+          due: '2026-08-30',
+          recurring: { frequencyDays: 3, lastDoneAt: '2026-06-19T11:00:00Z', doneCount: 1 },
+        }),
+      ]
+      expect(buildPlanRequest(tasks, [], {}, TZ, NOW).recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'overdue 2d' },
+      ])
+    })
+
+    it('stays a chore — never a plannable task', () => {
+      const tasks = [
+        task({ id: 'chore', text: 'Laundry', due: '2026-06-24', recurring: doneThisMorning }),
+      ]
+      expect(buildPlanRequest(tasks, [], {}, TZ, NOW).tasks).toEqual([])
+    })
+  })
 })
 
 function wrapper() {

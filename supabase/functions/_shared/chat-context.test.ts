@@ -417,3 +417,48 @@ Deno.test(
     assert(!sys.includes('Yesterday thing'))
   },
 )
+
+Deno.test(
+  'loadChatContext: a live due date pulls a done-today recurring chore back into ACTIVE',
+  async () => {
+    // ADR 2026-07-29-recurring-due-override. Setting a deadline on a chore already ticked off today
+    // is a deliberate "another one, today" — the board honors it, so BabyClaw's context must too,
+    // and the cadence phrase must not still read "due again in 7d".
+    const client = fakeClient({
+      user_schedule: [SCHED],
+      tasks: [
+        {
+          id: 'laundry',
+          text: 'Laundry',
+          x: 0.5,
+          y: 0.5,
+          due: '2026-07-04', // today, in the schedule's zone
+          staged: false,
+          recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 3 },
+        },
+        // Same chore shape, no override: stays hidden for the rest of the day as before.
+        {
+          id: 'water',
+          text: 'Water plants',
+          x: 0.4,
+          y: 0.4,
+          due: null,
+          staged: false,
+          recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 3 },
+        },
+      ],
+      daily_state: [{ date: '2026-07-04', done: {}, habit_done: {}, subtask_done: {} }],
+    })
+
+    const { context } = await loadChatContext(client, NOW)
+    const system = buildSystem(context)
+    const active = system.slice(
+      system.indexOf('=== ACTIVE TASKS'),
+      system.indexOf('=== DONE TODAY'),
+    )
+
+    assertStringIncludes(active, 'Laundry')
+    assertStringIncludes(active, 'due today')
+    assert(!active.includes('Water plants'), 'no override → still hidden for the day')
+  },
+)

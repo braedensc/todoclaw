@@ -158,6 +158,27 @@ describe('MobileMatrix', () => {
     expect(screen.queryByText('water the plants')).not.toBeInTheDocument()
   })
 
+  it('keeps a done-today recurring task visible when its due date has arrived', () => {
+    // ADR 2026-07-29-recurring-due-override: a deadline set AFTER ticking the chore off is a
+    // deliberate "another one, today", so it beats the done-today hide. The harness runs in UTC.
+    const today = new Date().toISOString().slice(0, 10)
+    tasksData = [
+      makeTask({
+        id: 'dn-due',
+        text: 'laundry',
+        x: 0.95,
+        y: 0.95,
+        due: today,
+        recurring: { frequencyDays: 7, lastDoneAt: new Date().toISOString(), doneCount: 4 },
+      }),
+    ]
+    doneToday = {}
+    renderMatrix()
+
+    expect(screen.getByLabelText('Do Now, 1 task')).toBeInTheDocument()
+    expect(screen.getByText('laundry')).toBeInTheDocument()
+  })
+
   it('drills into a quadrant focus list on tap, showing only that quadrant', () => {
     tasksData = onerPerQuadrant()
     renderMatrix()
