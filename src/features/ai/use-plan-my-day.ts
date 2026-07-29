@@ -34,7 +34,9 @@ export interface PlanRequest {
     size: TaskSize | null // coarse effort (S/M/L/XL), or null to let the planner infer it
     ongoing: boolean // a standing project — chip away at it, never must-finish-today
   }[]
-  recurringDue: { id: string; text: string; status: string }[]
+  // Recurring chores the cadence ladder does NOT call 'ok'. `daysLeft` rides along (<= 0 means
+  // wanted today) so the server's "chores due today" strip selects on a number, not on the label.
+  recurringDue: { id: string; text: string; status: string; daysLeft: number }[]
   habits: string[]
   // Paused / not-yet-started tasks un-pausing within UPCOMING_WINDOW_DAYS — heads-up material only,
   // never scheduled (they stay OUT of `tasks`).
@@ -83,13 +85,13 @@ export function buildPlanRequest(
       ongoing: t.ongoing,
     }))
 
-  const recurringDue: { id: string; text: string; status: string }[] = []
+  const recurringDue: PlanRequest['recurringDue'] = []
   for (const t of tasks) {
     if (!t.recurring) continue
     if (isDormant(t, timeZone, now)) continue // a paused chore sits out its pause too
-    const s = recurringStatus(t.recurring, { now })
-    if (s && (s.code === 'overdue' || s.code === 'due' || s.code === 'soon')) {
-      recurringDue.push({ id: t.id, text: t.text, status: s.label })
+    const s = recurringStatus(t.recurring, { timeZone, now })
+    if (s && s.code !== 'ok') {
+      recurringDue.push({ id: t.id, text: t.text, status: s.label, daysLeft: s.daysLeft })
     }
   }
 

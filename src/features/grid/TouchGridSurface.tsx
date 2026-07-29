@@ -416,6 +416,7 @@ export function TouchGridSurface({
                   screenY={1 - p.y}
                   daysUntilDue={daysFor(task)}
                   minutesUntilDue={minutesFor(task)}
+                  timeZone={timeZone}
                   paused
                   dimmed={movingId === task.id}
                   lifted={drag.draggingId === task.id}
@@ -445,6 +446,7 @@ export function TouchGridSurface({
                     screenY={1 - p.y}
                     daysUntilDue={daysFor(task)}
                     minutesUntilDue={minutesFor(task)}
+                    timeZone={timeZone}
                     dimmed={movingId === task.id}
                     lifted={drag.draggingId === task.id}
                     chipRef={registerChip(task.id)}

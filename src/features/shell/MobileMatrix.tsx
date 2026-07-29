@@ -146,7 +146,7 @@ export function MobileMatrix({
   // equivalent of the desktop tray drag; it's a no-op value for an already-placed row.
   const handleMove = (dest: QuadrantKey) => {
     if (!moveTask) return
-    const { x, y } = moveToQuadrant(moveTask, dest, active)
+    const { x, y } = moveToQuadrant(moveTask, dest, active, { timeZone })
     updateTask.mutate({ id: moveTask.id, patch: { x, y, staged: false } })
     setMoveTask(null)
   }

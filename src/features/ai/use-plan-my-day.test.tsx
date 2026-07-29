@@ -134,7 +134,9 @@ describe('buildPlanRequest', () => {
     const habits = [habit({ text: 'Stretch' }), habit({ text: 'Inactive', active: false })]
     const req = buildPlanRequest(tasks, habits, {}, TZ, NOW)
 
-    expect(req.recurringDue).toEqual([{ id: 'overdue', text: 'Water', status: 'never done' }])
+    expect(req.recurringDue).toEqual([
+      { id: 'overdue', text: 'Water', status: 'never done', daysLeft: -999 },
+    ])
     expect(req.habits).toEqual(['Stretch'])
     expect(req.dayOfWeek).toBe('Wednesday')
     expect(req.today).toBe('Wednesday, June 24, 2026')
@@ -171,7 +173,9 @@ describe('buildPlanRequest', () => {
       const req = buildPlanRequest([dueOnCadence], [], {}, TZ, NOW)
       // 7 days since a weekly chore → due today. If the anchor leaked in it would read
       // "overdue 23d" (2026-06-01 is 23 days before NOW) and climb every day.
-      expect(req.recurringDue).toEqual([{ id: 'chore', text: 'Laundry', status: 'due today' }])
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'due today', daysLeft: 0 },
+      ])
     })
 
     it('is not hidden by an anchor date in the FUTURE either', () => {
@@ -182,7 +186,52 @@ describe('buildPlanRequest', () => {
         recurring: { frequencyDays: 3, lastDoneAt: '2026-06-19T11:00:00Z', doneCount: 2 },
       })
       const req = buildPlanRequest([overdue], [], {}, TZ, NOW)
-      expect(req.recurringDue).toEqual([{ id: 'chore', text: 'Laundry', status: 'overdue 2d' }])
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'overdue 2d', daysLeft: -2 },
+      ])
+    })
+  })
+
+  // The mechanism that DOES surface a chore on a chosen day (2026-07-29). "I need to do laundry
+  // tomorrow" writes recurring.nextDueOn; the plan reads it through the same recurringStatus every
+  // other surface uses, so the chore reaches the plan card's "chores due today" strip.
+  describe('a recurring chore scheduled onto a specific day', () => {
+    // NOW is 2026-06-24T12:00:00Z = 08:00 in New York, so "today" there is the 24th.
+    const scheduled = (nextDueOn: string | null) =>
+      task({
+        id: 'chore',
+        text: 'Laundry',
+        // Cadence alone = "in 29d" → 'ok' → nowhere near the plan.
+        recurring: {
+          frequencyDays: 30,
+          lastDoneAt: '2026-06-22T11:00:00Z',
+          doneCount: 9,
+          nextDueOn,
+        },
+      })
+
+    it('is absent from the plan on the cadence alone', () => {
+      expect(buildPlanRequest([scheduled(null)], [], {}, TZ, NOW).recurringDue).toEqual([])
+    })
+
+    it('reaches the plan as "due today" on the day it was scheduled for', () => {
+      const req = buildPlanRequest([scheduled('2026-06-24')], [], {}, TZ, NOW)
+      // daysLeft <= 0 is what deriveChores selects on, so this is the row that lands in the strip.
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'due today', daysLeft: 0 },
+      ])
+      expect(req.tasks).toEqual([]) // still never a plannable rock — a chore is not a rock
+    })
+
+    it('is a heads-up, not a chore for today, the day before', () => {
+      const req = buildPlanRequest([scheduled('2026-06-25')], [], {}, TZ, NOW)
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'due tomorrow', daysLeft: 1 },
+      ])
+    })
+
+    it('stays out of the plan entirely while the scheduled day is far off', () => {
+      expect(buildPlanRequest([scheduled('2026-07-20')], [], {}, TZ, NOW).recurringDue).toEqual([])
     })
   })
 })

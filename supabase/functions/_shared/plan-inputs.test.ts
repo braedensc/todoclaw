@@ -212,7 +212,9 @@ Deno.test('a chore due on its cadence reports the cadence status, not the anchor
   ]
   const req = buildPlanRequest(rows, [], {}, TZ, NOW)
   // Would read "overdue 23d" and climb daily if the anchor leaked in.
-  assertEquals(req.recurringDue, [{ id: 'chore', text: 'Laundry', status: 'due today' }])
+  assertEquals(req.recurringDue, [
+    { id: 'chore', text: 'Laundry', status: 'due today', daysLeft: 0 },
+  ])
 })
 
 Deno.test('an anchor date in the FUTURE cannot mute a genuinely overdue chore', () => {
@@ -223,5 +225,7 @@ Deno.test('an anchor date in the FUTURE cannot mute a genuinely overdue chore', 
     }),
   ]
   const req = buildPlanRequest(rows, [], {}, TZ, NOW)
-  assertEquals(req.recurringDue, [{ id: 'chore', text: 'Laundry', status: 'overdue 2d' }])
+  assertEquals(req.recurringDue, [
+    { id: 'chore', text: 'Laundry', status: 'overdue 2d', daysLeft: -2 },
+  ])
 })

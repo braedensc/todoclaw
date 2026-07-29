@@ -269,6 +269,33 @@ describe('GridView placement filter', () => {
     expect(screen.getByText('Take out trash')).toBeInTheDocument()
   })
 
+  // THE reported bug (2026-07-29): "I need to do laundry tomorrow" on a weekly chore. Nothing on
+  // the board read a chosen day, so the chore stayed invisible — the cadence said 'ok' and isPlaced
+  // hides 'ok'. A one-shot `recurring.nextDueOn` is now the mechanism, and because every surface
+  // reads `recurringStatus`, honoring it here took no change to isPlaced at all.
+  it('renders a recurring chore scheduled for TODAY even when its cadence says ok', () => {
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString()
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(new Date())
+    tasksFixture = [
+      // Cadence alone = "in 29d" → 'ok' → off the board. The override puts it on today.
+      makeTask({
+        id: 'scheduled-today',
+        text: 'Laundry',
+        recurring: { frequencyDays: 30, lastDoneAt: yesterday, doneCount: 9, nextDueOn: today },
+      }),
+      // Same cadence, no override → still correctly hidden, so the test can't pass vacuously.
+      makeTask({
+        id: 'not-scheduled',
+        text: 'Descale kettle',
+        recurring: { frequencyDays: 30, lastDoneAt: yesterday, doneCount: 6 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.getByText('Laundry')).toBeInTheDocument()
+    expect(screen.queryByText('Descale kettle')).not.toBeInTheDocument()
+  })
+
   it('renders no new-item cards when nothing is staged', () => {
     tasksFixture = [makeTask({ staged: false })]
     render(<GridHarness />)

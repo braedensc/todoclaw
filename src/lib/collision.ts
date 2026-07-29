@@ -23,6 +23,11 @@ const CLAMP_MAX = 0.96
 const clamp = (v: number): number => Math.min(CLAMP_MAX, Math.max(CLAMP_MIN, v))
 
 export interface CollisionOpts {
+  /**
+   * IANA timezone — the user's `user_schedule.timezone`. Needed because "is this card on the grid"
+   * runs through `recurringStatus`, which reads a wall-clock `nextDueOn` override.
+   */
+  timeZone: string
   /** Injected for deterministic recurring-status checks; defaults to the current instant. */
   now?: Date
 }
@@ -66,7 +71,7 @@ export function resolveCollision(
   y: number,
   tasks: Task[],
   excludeId: string,
-  opts: CollisionOpts = {},
+  opts: CollisionOpts,
 ): { x: number; y: number } {
   if (!overlapsAny(x, y, tasks, excludeId, opts)) {
     return { x: clamp(x), y: clamp(y) }

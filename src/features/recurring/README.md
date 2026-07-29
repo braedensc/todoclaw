@@ -18,18 +18,32 @@ check until 2026-07-29 and kept showing finished chores as outstanding rows.
 ## "I need to do this on Friday" — scheduling an occurrence
 
 A recurring chore's due-ness is **derived, not stored**: `recurringStatus` computes
-`daysLeft = frequencyDays - daysSince(lastDoneAt)`, and every surface reads that one function. So
-the way to put a chore on a chosen day is to **phase its cadence clock** — set the `lastDoneAt`
-whose cycle lands there. `lastDoneAtForOccurrenceOn` (`supabase/functions/_shared/recurring-schedule.ts`)
-is that math: local midnight of the target day minus one cadence, which reads "due today" all
-through that day and "due tomorrow" the day before. BabyClaw exposes it as **`schedule_for_day`**,
-which also covers one-off tasks and ongoing projects (those just get the due date) so the model
-never has to branch on task type. Completing the chore resumes the normal rhythm from that day.
+`daysLeft` and every surface reads that one function. To put a chore on a chosen day, set
+**`recurring.nextDueOn`** — a wall-clock `'YYYY-MM-DD'` meaning "this occurrence is wanted on this
+day". `recurringStatus` prefers it over the cadence clock and runs it through the **same ladder**,
+so it yields the same labels and codes and every reader honors it without knowing it exists.
 
-**A due date is NOT that mechanism.** On a recurring chore `tasks.due` + `due_time` are the
-**reminder anchor** (see below) — nothing reads them for the board or Plan My Day, so setting one
-does not surface the chore. Phasing needs no new column and no reader changes, which is precisely
-why it was chosen over adding one.
+It is a **one-shot**: `recurringCompletion` clears it, so finishing the chore resumes the cadence
+from the *real* completion and the user's rhythm is never permanently moved. It also **retires at
+read time** if a completion has already caught up with it (`lastDoneAt` on or after the scheduled
+day), so a stale row — or a writer that forgets to clear it — can't pin a chore to "due today"
+forever. Same self-healing, no-cron shape as `start_date`/`isDormant`.
+
+Two surfaces write it: BabyClaw's **`schedule_for_day`** (which also covers one-off tasks and
+ongoing projects — those just get the due date — so the model never branches on task type), and the
+**schedule editor's calendar**, which on a chore writes `nextDueOn` and `due` to the same day via
+`useSetDueWithDefaultReminder`, so the occurrence and its reminder agree.
+
+**A due date alone is NOT that mechanism.** On a recurring chore `tasks.due` + `due_time` are the
+**reminder anchor** (see below) — nothing reads them for the board or Plan My Day.
+
+> **Superseded approach (2026-07-29, same day):** the first attempt *phased the cadence clock*
+> instead, writing a fabricated `lastDoneAt` (target day minus one cadence) via a
+> `lastDoneAtForOccurrenceOn` helper. It needed no new field, but it wrote a false completion
+> timestamp into the field that the Done log, the activity log and `recurringDoneToday` all read as
+> fact — and because the phase shift was permanent, a one-off "do it Friday" silently moved the
+> chore's weekly slot to Fridays for good. Replaced by the explicit field, which cost three
+> functions to thread rather than the "every reader" the phasing note had assumed.
 
 ## Ongoing projects (a separate task type)
 

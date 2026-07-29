@@ -6,6 +6,7 @@ import { placeInQuadrant } from '../../lib/quadrant-summary'
 import { BottomSheet } from '../../components/BottomSheet'
 import { AddTaskForm } from './AddTaskForm'
 import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { effectiveReminderDefault } from '../reminders/reminder-offsets'
 
@@ -40,6 +41,7 @@ export function MobileAddSheet({
 }) {
   const { data: tasks } = useTasks()
   const addTask = useAddTask()
+  const timeZone = useTimeZone()
   const reminderWrites = useTaskReminderWrites()
   const reminderDefault = effectiveReminderDefault(
     useUserSchedule().data?.config.notifications?.reminderDefaultMinutes,
@@ -61,7 +63,7 @@ export function MobileAddSheet({
     startDate: string | null,
   ) => {
     const placed = (tasks ?? []).filter((t) => !t.staged)
-    const { x, y } = placeInQuadrant(dest, placed)
+    const { x, y } = placeInQuadrant(dest, placed, { timeZone })
     addTask.mutate(
       {
         text,

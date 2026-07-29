@@ -48,7 +48,7 @@ describe('demo board fixture', () => {
       // A recurring chore is hidden when done today or comfortably 'ok' — the demo one must show.
       if (t.recurring) {
         expect(recurringDoneToday(t.recurring, TZ)).toBe(false)
-        expect(recurringStatus(t.recurring)?.code).not.toBe('ok')
+        expect(recurringStatus(t.recurring, { timeZone: TZ })?.code).not.toBe('ok')
       }
     }
   })

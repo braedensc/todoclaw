@@ -221,7 +221,7 @@ describe('ListView', () => {
     fireEvent.pointerUp(urgency)
 
     // Expected payload is exactly what resolveCollision returns for the same inputs.
-    const expected = resolveCollision(0.9, 0.9, tasksData, 'mover')
+    const expected = resolveCollision(0.9, 0.9, tasksData, 'mover', { timeZone: 'UTC' })
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'mover',
       patch: { x: expected.x, y: expected.y },

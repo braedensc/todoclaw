@@ -14,6 +14,8 @@ import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
 
 interface RecurringSectionProps {
   task: Task
+  /** The user's IANA timezone — `recurringStatus` needs it to read a wall-clock `nextDueOn`. */
+  timeZone: string
   /** Set a fresh recurring schedule of `frequencyDays` days (lastDoneAt null, doneCount 0). */
   onSetRecurring: (frequencyDays: number) => void
   /** Change the cadence of an already-recurring task, preserving lastDoneAt + doneCount. */
@@ -24,6 +26,7 @@ interface RecurringSectionProps {
 
 export function RecurringSection({
   task,
+  timeZone,
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
@@ -42,7 +45,7 @@ export function RecurringSection({
       {recurring ? (
         <RecurringActive
           frequencyDays={recurring.frequencyDays}
-          status={recurringStatus(recurring)}
+          status={recurringStatus(recurring, { timeZone })}
           onSetFrequency={onSetFrequency}
           onRemoveRecurring={onRemoveRecurring}
         />

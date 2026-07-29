@@ -54,7 +54,7 @@ function HistoryRow({
   onDelete,
   busy,
 }: HistoryRowProps) {
-  const rc = recurringStatus(task?.recurring)
+  const rc = recurringStatus(task?.recurring, { timeZone })
   const quadrant = task && task.x != null && task.y != null ? quadrantMeta(task.x, task.y) : null
   const days = task ? daysUntil(task.due, { timeZone }) : null
   // Left accent mirrors the grid card's colored top border: recurring tasks carry their
