@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { Task, Recurring } from '../../types/task'
+
+// The sheet mounts SchedulePanel, which now reaches useLogWork -> lib/supabase. That module THROWS
+// at import time without the VITE_SUPABASE_* env vars, failing the file on CI before any test runs
+// (it passes locally only because a dev .env.local is loaded). Stub the client.
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
+
 import { MobileAddSheet } from './MobileAddSheet'
 import { quadrantMeta } from '../../lib/quadrants'
 

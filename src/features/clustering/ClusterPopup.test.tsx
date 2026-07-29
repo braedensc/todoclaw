@@ -1,6 +1,13 @@
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+
+// The row ⋯ mounts SchedulePanel, which now reaches useLogWork -> lib/supabase. That module THROWS
+// at import time without the VITE_SUPABASE_* env vars, so an untouched CI runner fails the whole
+// file before a single test runs (it passes locally only because a dev .env.local is loaded).
+// Stub the client, exactly as every other supabase-adjacent component test does.
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
+
 import { ClusterPopup } from './ClusterPopup'
 import type { Task } from '../../types/task'
 import type { Recurring } from '../../types/task'

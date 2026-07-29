@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+
+// The ongoing session controls reach useLogWork -> lib/supabase, which THROWS at import time
+// without the VITE_SUPABASE_* env vars — so a CI runner fails this whole file before any test
+// runs, while it passes locally off a dev .env.local. Stub the client like the other tests do.
+vi.mock('../../lib/supabase', () => ({ supabase: {} }))
+
 import { SchedulePanel } from './SchedulePanel'
 import type { Recurring } from '../../types/task'
 
