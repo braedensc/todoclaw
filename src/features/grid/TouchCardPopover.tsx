@@ -5,6 +5,9 @@ import type { Task } from '../../types/task'
 import { SchedulePanel } from '../schedule/SchedulePanel'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
+import { ONGOING_GLYPH, primaryDoneAction } from '../../lib/task-type'
+import { workedDetail, workRecency } from '../../lib/worked'
+import { doneControlCopy } from '../../components/CardActionBar'
 import {
   dueChipStyle,
   gridChipLabel,
@@ -167,6 +170,10 @@ export function TouchCardPopover({
   const stale = rc || paused ? null : staleness(task, daysUntilDue)
   const tier = rc || stale || paused ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const frost = stale ? staleBadge(stale) : null
+  // Session facts for an ONGOING project (null otherwise). The popover carries no ∞ marker of its
+  // own, so the meta line below is what explains why this task's ✓ says "Worked".
+  const recency = workRecency(task, timeZone)
+  const doneCopy = doneControlCopy(primaryDoneAction(task), recency?.workedToday)
 
   const commitRename = () => {
     const text = draft.trim()
@@ -246,17 +253,34 @@ export function TouchCardPopover({
         ) : null}
       </div>
 
+      {/* Ongoing meta line — "∞ ongoing · Last worked 5 days ago". Facts only: a long gap is
+          reported, never characterised. */}
+      {recency && (
+        <div className="-mt-2 mb-3 text-xs text-muted">
+          <span aria-hidden>{ONGOING_GLYPH} </span>ongoing · {workedDetail(recency)}
+        </div>
+      )}
+
       {/* Action row — 44pt targets. Paused cards are read-only on the board: no Done; Schedule
           stays (it is the Resume path) and Delete stays. (No Move here — hold-drag IS the
-          reposition path on the inline grid.) */}
+          reposition path on the inline grid.) An ongoing project's button says "Worked" and fills
+          once today's session is logged — tapping it again un-logs today. */}
       <div className="flex gap-2">
         {!paused && (
           <button
             type="button"
             onClick={onDone}
-            className="min-h-[44px] flex-1 rounded-xl border border-primary bg-card text-sm font-semibold text-primary"
+            // Only the ongoing arm names itself: a plain/recurring button's visible text already
+            // IS its accessible name, and overriding that would rename a control nothing changed.
+            aria-label={recency ? doneCopy.ariaLabel : undefined}
+            title={recency ? doneCopy.title : undefined}
+            aria-pressed={recency ? recency.workedToday : undefined}
+            className={`min-h-[44px] flex-1 rounded-xl border border-primary text-sm font-semibold ${
+              recency?.workedToday ? 'bg-primary text-white' : 'bg-card text-primary'
+            }`}
           >
-            ✓ Done{rc ? ' (resets clock)' : ''}
+            ✓ {doneCopy.label}
+            {rc ? ' (resets clock)' : ''}
           </button>
         )}
         <button
@@ -280,6 +304,7 @@ export function TouchCardPopover({
       {showSchedule && (
         <div className="mt-3 border-t border-border pt-3">
           <SchedulePanel
+            project={task}
             taskText={task.text}
             due={task.due}
             dueTime={task.due_time}

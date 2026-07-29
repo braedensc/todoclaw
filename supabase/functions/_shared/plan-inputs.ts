@@ -4,6 +4,7 @@
 // Faithful to src/features/ai/use-plan-my-day.ts buildPlanRequest + src/lib recurringStatus/daysUntil.
 
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
+import { workRecency, workedPhrase } from './worked.ts'
 import { SIZE_VALUES, UPCOMING_WINDOW_DAYS, type PlanRequest } from './plan-prompt.ts'
 
 const MS_PER_DAY = 86_400_000
@@ -29,6 +30,9 @@ interface TaskRow {
   recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
   // ONGOING project flag (own column since 2026-07-13). Optional so an old-shaped source still fits.
   ongoing?: boolean | null
+  // Session log for an ongoing project: local 'YYYY-MM-DD' days, newest first (2026-07-28). Optional
+  // for the same deploy-skew reason — a source that predates it reads as "no sessions logged".
+  worked_days?: string[] | null
   // Start (pause-until) wall-clock date (2026-07-17). Optional for the same deploy-skew reason —
   // and the dispatch RPC already excludes dormant tasks in SQL, so its rows simply omit it.
   start_date?: string | null
@@ -57,6 +61,11 @@ function recurringStatus(
 // Selection: on-grid = not staged, not done today, not a recurring chore (ONGOING projects ARE
 // included — they are placed tasks flagged so the planner can pace them); plus recurring chores that
 // are overdue/due/soon; plus active habits.
+//
+// A project already worked TODAY stays in `tasks` too, carrying workedToday: it is excluded from the
+// ROCK CANDIDATES at render time (plan-prompt.ts taskLines), NOT here — `tasks` is also what
+// deriveAnchors reads, so dropping one here would strip the fixed-time anchor off an ongoing project
+// due at 2 PM today (the regression PRs #344/#345 closed).
 export function buildPlanRequest(
   tasks: TaskRow[],
   habits: HabitRow[],
@@ -74,17 +83,27 @@ export function buildPlanRequest(
       (t) =>
         !t.staged && !doneMap[t.id] && !t.recurring && !dormant(t) && t.x != null && t.y != null,
     )
-    .map((t) => ({
-      id: t.id, // ties emitted rocks back to the task (resolvePlanTaskIds)
-      text: t.text,
-      importance: Math.round((t.y ?? 0.5) * 100),
-      urgency: Math.round((t.x ?? 0.5) * 100),
-      due: t.due,
-      dueInDays: daysUntilInTZ(t.due, timeZone, now),
-      dueTime: t.due_time,
-      size: toPlanSize(t.size),
-      ongoing: t.ongoing ?? false,
-    }))
+    .map((t) => {
+      // Session recency for an ONGOING project (null for anything else). Derived HERE, once, so the
+      // request carries finished facts and the prompt layer stays a pure renderer — the same split
+      // as importance/urgency/dueInDays. `worked` is deliberately raw fact with no verdict word in
+      // it (see workedPhrase); a never-worked project says so plainly rather than rendering nothing,
+      // because "no signal yet" is itself the thing the planner has to know.
+      const recency = workRecency(t, timeZone, now)
+      return {
+        id: t.id, // ties emitted rocks back to the task (resolvePlanTaskIds)
+        text: t.text,
+        importance: Math.round((t.y ?? 0.5) * 100),
+        urgency: Math.round((t.x ?? 0.5) * 100),
+        due: t.due,
+        dueInDays: daysUntilInTZ(t.due, timeZone, now),
+        dueTime: t.due_time,
+        size: toPlanSize(t.size),
+        ongoing: t.ongoing ?? false,
+        workedToday: recency?.workedToday ?? false,
+        worked: recency ? workedPhrase(recency) || 'no sessions logged yet' : '',
+      }
+    })
 
   const recurringDue: { id: string; text: string; status: string }[] = []
   for (const t of tasks) {

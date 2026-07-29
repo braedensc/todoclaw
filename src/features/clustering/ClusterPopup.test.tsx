@@ -35,6 +35,7 @@ function task(id: string, over: Partial<Task> = {}): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
+    worked_days: null,
     created_at: FRESH_CREATED_AT,
     deleted_at: null,
     completed_at: null,
@@ -128,6 +129,30 @@ describe('ClusterPopup row card-twin styling', () => {
     renderPopup([task('a')])
     const panel = document.querySelector('[data-testid="cluster-popup"]')
     expect(panel?.className).toContain('bg-white')
+  })
+})
+
+// A folded ONGOING project has no ∞ marker in the row's chip lane, so the meta line is what
+// explains why its ✓ says "Worked" — and the pill fills once today's session is banked.
+describe('ClusterPopup ongoing rows', () => {
+  const WORKED_3D_AGO = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10)
+  const TODAY = new Date().toISOString().slice(0, 10)
+
+  it('reads the session log back on the row and labels the ✓ "Worked"', () => {
+    const { row } = renderPopup([task('og', { ongoing: true, worked_days: [WORKED_3D_AGO] })])
+    expect(row('og')?.textContent).toContain('ongoing · Last worked 3 days ago')
+    expect(
+      screen.getByRole('button', { name: 'Log that you worked on this today' }),
+    ).toHaveTextContent('Worked')
+  })
+
+  it('fills the ✓ once today is logged (tapping again undoes it)', () => {
+    renderPopup([task('og', { ongoing: true, worked_days: [TODAY] })])
+    const worked = screen.getByRole('button', { name: 'Worked on this today — click to undo' })
+    // Visible label is stable across both states (see doneControlCopy); the fill and aria-pressed
+    // carry "today" so the pill can't grow and reflow the row.
+    expect(worked).toHaveTextContent('Worked')
+    expect(worked).toHaveAttribute('aria-pressed', 'true')
   })
 })
 

@@ -168,6 +168,11 @@ export function TouchGridChip({
         touchAction: onHoldStart ? 'none' : undefined,
       }}
     >
+      {/* NO last-worked counter here, on purpose (2026-07-28). The chip is ~76px wide with
+          single-occupancy lanes — the corner disc and the one status chip are both already spoken
+          for — so a session counter could only land as a bare glyph, and a cryptic glyph is worse
+          than silence. The count lives one tap away in TouchTaskSheet's ongoing meta line. */}
+
       {/* Top-right overhang disc — GridCard's corner slot, one occupant at a time: ↻ for a
           recurring chip, else the 🔥/❄️/💤 state flag. (Ongoing gets an inline ∞ prefix instead
           of the disc, so an overdue ongoing chip can wear its 🔥.) */}

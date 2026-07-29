@@ -123,6 +123,27 @@ Deno.test('a pure-bookkeeping day is asked about, never congratulated', () => {
   assertStringIncludes(p, 'STILL OPEN FROM THEIR PLAN')
 })
 
+// A session on an ongoing project is real work, but it is NOT a finish — the model must be able to
+// say "nice hour on the novel" without either congratulating them for completing it or implying the
+// project is behind. So sessions ride in their own block, not in FINISHED and not in BOOKKEEPING.
+Deno.test('a logged work session gets its own block — progress, but not a finish', () => {
+  const p = buildRecapUserPrompt({
+    ...base,
+    done: [],
+    activity: [activity('worked', 'Write the novel', { sessions: 4 })],
+  })
+  assertStringIncludes(p, 'WORK SESSIONS TODAY')
+  assertStringIncludes(p, 'logged a work session on "Write the novel"')
+  assertStringIncludes(p, 'NOT finished and are never behind')
+  // Not filed as a finish, and not filed as board upkeep either.
+  assert(!p.includes('ALSO FINISHED TODAY'))
+  assert(!p.includes('BOOKKEEPING'))
+  // And a day with a session is NOT a "nothing was finished, do not congratulate" day.
+  assert(!p.includes('Nothing was actually finished today'))
+  // The session count stays out of the prompt — it is a counter, not a score to do sums on.
+  assert(!p.includes('4 sessions'))
+})
+
 Deno.test('the system prompt makes asking the spine, and bars praising upkeep', () => {
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'You are asking how the day WENT')
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'ASK ABOUT WHAT IS STILL OPEN')
@@ -134,4 +155,7 @@ Deno.test('the system prompt makes asking the spine, and bars praising upkeep', 
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'FIXED COMMITMENT')
   // And an empty-handed day must not reach for praise.
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'Do NOT reach for something to praise')
+  // Sessions are creditable, but an ongoing project is never done and never behind.
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'WORK SESSION')
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'never imply it is behind')
 })

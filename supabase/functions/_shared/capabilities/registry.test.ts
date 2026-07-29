@@ -106,6 +106,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'remove_reminder',
     'make_recurring',
     'make_ongoing',
+    'log_work',
     'clear_recurring',
     'pause_task',
     'resume_task',
@@ -138,6 +139,8 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
 Deno.test('exactly the completion/deletion + delete_memory tools are destructive', () => {
   // propose_memory dropped out of this set: a confident inference now auto-saves (no confirm gate) —
   // see docs/adr/2026-07-22-proactive-memory-inference-autosave.md. delete_memory still confirms.
+  // log_work is deliberately ABSENT: logging a session archives nothing and un-logs with the same
+  // tool, so a confirm gate would put a modal in front of the most frequent gesture in the app.
   assertEquals([...DESTRUCTIVE].sort(), [
     'complete_task',
     'delete_completion',

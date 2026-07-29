@@ -261,6 +261,23 @@ describe('SchedulePanel ongoing project', () => {
     renderPanel({ ongoing: true, due: '2026-07-10' })
     expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
   })
+
+  // The ✓ on an ongoing project logs a session; it does NOT finish it (2026-07-28). The explainer
+  // used to promise the opposite ("just mark it done when it's finished"), so pin the new promise.
+  it('the explainer says the ✓ logs a session, not a completion', () => {
+    renderPanel({ ongoing: true })
+    expect(screen.getByText(/I worked on this today/i)).toBeInTheDocument()
+    expect(screen.queryByText(/mark it done when it/i)).toBeNull()
+  })
+
+  // The session readback + 🏁 Finish / ↩ Undo only exist for a task that EXISTS: without `project`
+  // (the add surfaces) the panel stays a pure editor — and, importantly, provider-free.
+  it('renders no session controls for a task that does not exist yet (the add surfaces)', () => {
+    renderPanel({ ongoing: true })
+    expect(screen.queryByRole('button', { name: /Finish project/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Undo today/ })).toBeNull()
+    expect(screen.queryByText(/sessions logged|Worked today/i)).toBeNull()
+  })
 })
 
 describe('SchedulePanel pause (start later)', () => {

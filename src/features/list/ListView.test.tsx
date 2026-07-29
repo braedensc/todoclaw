@@ -28,6 +28,7 @@ function renderList(props: ListViewProps = {}) {
 const updateMutate = vi.fn()
 const deleteMutate = vi.fn()
 const markDoneMutate = vi.fn()
+const logWorkMutate = vi.fn()
 let tasksData: Task[] = []
 let doneToday: Record<string, true> = {}
 
@@ -43,6 +44,11 @@ vi.mock('../tasks/use-tasks', () => ({
 }))
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: markDoneMutate }),
+}))
+// The ongoing project's ✓ writes through the log_task_work RPC (an optimistic react-query
+// mutation) — mocked to a spy so the session log is assertable without a QueryClient.
+vi.mock('../tasks/use-worked', () => ({
+  useLogWork: () => ({ mutate: logWorkMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'UTC', config: {} } }),
@@ -77,6 +83,7 @@ function makeTask(over: Partial<Task>): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
+    worked_days: null,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
@@ -89,6 +96,7 @@ beforeEach(() => {
   updateMutate.mockClear()
   deleteMutate.mockClear()
   markDoneMutate.mockClear()
+  logWorkMutate.mockClear()
   reminderAdd.mockClear()
   tasksData = []
   doneToday = {}
@@ -102,6 +110,10 @@ const RECENT = new Date(Date.now() - 86_400_000).toISOString()
 // inside the schedule panel's two-week calendar whatever day the suite runs.
 const daysFromNowISO = (n: number) =>
   new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
+// Session-log fixtures are now-relative for the same reason: a hardcoded worked day rots into a
+// different "days ago" every day the suite runs.
+const todayISO = () => daysFromNowISO(0)
+const daysAgoISO = (n: number) => daysFromNowISO(-n)
 
 describe('ListView', () => {
   it('renders rows in descending score order', () => {
@@ -460,20 +472,98 @@ describe('ListView', () => {
       expect(updateMutate).toHaveBeenCalledWith({ id: 'o3', patch: { ongoing: false } })
     })
 
-    it('the ✓ on an ongoing task archives it (done), never a recurring cycle bump', () => {
+    // The ✓ on an ongoing project logs a work SESSION (2026-07-28). It used to archive the
+    // project, which meant there was no way to record progress short of ending it.
+    it('the ✓ on an ongoing project logs today’s session — it never archives or resets a cycle', () => {
       tasksData = [makeTask({ id: 'o4', text: 'learn spanish', bucket: 'oneoff', ongoing: true })]
       renderList()
 
-      fireEvent.click(screen.getByLabelText('Mark done'))
+      fireEvent.click(screen.getByLabelText('Log that you worked on this today'))
 
-      // Ongoing done = archived to the Done log, exactly like a one-off — no recurring patch.
-      expect(updateMutate).not.toHaveBeenCalled()
-      expect(markDoneMutate).toHaveBeenCalledWith({
+      expect(logWorkMutate).toHaveBeenCalledWith({
         taskId: 'o4',
-        text: 'learn spanish',
-        bucket: 'oneoff',
         timeZone: 'UTC',
+        logged: true,
       })
+      // Nothing else moves: no history/daily_state write, no task patch — the row stays put.
+      expect(markDoneMutate).not.toHaveBeenCalled()
+      expect(updateMutate).not.toHaveBeenCalled()
+      expect(screen.getByText('learn spanish')).toBeInTheDocument()
+    })
+
+    it('the ✓ un-logs today once a session is already logged (the same gesture, reversed)', () => {
+      tasksData = [
+        makeTask({
+          id: 'o5',
+          text: 'learn spanish',
+          ongoing: true,
+          worked_days: [todayISO()],
+        }),
+      ]
+      renderList()
+
+      const control = screen.getByLabelText('Worked on this today — click to undo')
+      expect(control).toHaveAttribute('aria-pressed', 'true')
+      fireEvent.click(control)
+
+      expect(logWorkMutate).toHaveBeenCalledWith({ taskId: 'o5', timeZone: 'UTC', logged: false })
+    })
+
+    it('shows the last-worked token beside the ∞ badge, with the full sentence as its label', () => {
+      tasksData = [
+        makeTask({
+          id: 'o6',
+          text: 'learn spanish',
+          ongoing: true,
+          worked_days: [daysAgoISO(3), daysAgoISO(4)],
+        }),
+      ]
+      renderList()
+
+      expect(screen.getByLabelText('Ongoing project')).toBeInTheDocument()
+      expect(
+        screen.getByLabelText('Last worked 3 days ago, 2 days running · 2 sessions logged'),
+      ).toHaveTextContent('3d')
+    })
+
+    it('finishing the project from the schedule panel archives it — but only after the confirm', async () => {
+      tasksData = [makeTask({ id: 'o7', text: 'learn spanish', bucket: 'oneoff', ongoing: true })]
+      renderList()
+
+      fireEvent.click(screen.getByText('learn spanish'))
+      fireEvent.click(screen.getByRole('button', { name: /Finish project/ }))
+
+      // The gate names the project and promises it is recoverable.
+      expect(await screen.findByText('Finish “learn spanish”?')).toBeInTheDocument()
+      expect(markDoneMutate).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: '🏁 Finish project' }))
+      await waitFor(() =>
+        expect(markDoneMutate).toHaveBeenCalledWith({
+          taskId: 'o7',
+          text: 'learn spanish',
+          bucket: 'oneoff',
+          timeZone: 'UTC',
+        }),
+      )
+    })
+
+    it('offers "Undo today’s session" in the schedule panel only when today is logged', () => {
+      tasksData = [makeTask({ id: 'o8', text: 'learn spanish', ongoing: true })]
+      const { unmount } = renderList()
+      fireEvent.click(screen.getByText('learn spanish'))
+      expect(screen.getByText('No sessions logged yet')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Undo today/ })).not.toBeInTheDocument()
+      unmount()
+
+      tasksData = [
+        makeTask({ id: 'o8', text: 'learn spanish', ongoing: true, worked_days: [todayISO()] }),
+      ]
+      renderList()
+      fireEvent.click(screen.getByText('learn spanish'))
+      fireEvent.click(screen.getByRole('button', { name: /Undo today/ }))
+
+      expect(logWorkMutate).toHaveBeenCalledWith({ taskId: 'o8', timeZone: 'UTC', logged: false })
     })
   })
 })

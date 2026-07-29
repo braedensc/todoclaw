@@ -22,6 +22,8 @@ import {
   urgencyTier,
 } from '../../lib/visual-urgency'
 import { isDormant } from '../../lib/start-date'
+import { ONGOING_GLYPH, primaryDoneAction } from '../../lib/task-type'
+import { workedDetail, workRecency } from '../../lib/worked'
 import { CardActionBar } from '../../components/CardActionBar'
 import { useAnchoredMenu } from '../../hooks/use-anchored-menu'
 import { useClickOutside } from '../../hooks/use-click-outside'
@@ -60,7 +62,8 @@ export interface ClusterPopupProps {
   onStopEdit: () => void
   /** Commit a renamed row. */
   onRename: (task: Task, text: string) => void
-  /** Mark a row done (branches recurring vs normal in the parent). */
+  /** Run a row's primary ✓ — the parent's three-way switch (archive / recurring cycle / work
+   *  session for an ongoing project); see useGrid.handleDone. */
   onDone: (task: Task) => void
   /** Delete a row (confirm-gated by the parent). */
   onDelete: (task: Task) => void
@@ -293,6 +296,10 @@ function ClusterPopupRow({
   onClearReminders,
 }: ClusterPopupRowProps) {
   const rc = recurringStatus(task.recurring)
+  // Session facts for an ONGOING row (null for every other type). The row has no ∞ marker of its
+  // own — the meta line below is where a folded project says what it is and when it was last
+  // worked, since the ✓ now says "Worked" here and that would otherwise arrive unexplained.
+  const recency = workRecency(task, timeZone)
   // The grid card's border scheme, mirrored exactly (see GridCard): a solid status-colored TOP
   // border — recurring RC color, else quadrant color — with the terracotta bucket accent on the
   // other three sides (dashed + heavier for a recurring card, its "this repeats" outline).
@@ -489,9 +496,18 @@ function ClusterPopupRow({
       {/* The same action bar the grid card carries — and now the same ⋯ MEANING: it opens the
           shared SchedulePanel (renaming stays on a plain row tap). Delete is confirm-gated
           upstream. Hidden while renaming inline so it doesn't crowd the input. */}
+      {/* Ongoing meta line — "∞ ongoing · Last worked 5 days ago". Purely factual: the gap is a
+          number, never a judgement about it. */}
+      {!editing && recency && (
+        <div className="mt-0.5 text-[9.5px] leading-snug text-muted">
+          <span aria-hidden>{ONGOING_GLYPH} </span>ongoing · {workedDetail(recency)}
+        </div>
+      )}
+
       {!editing && (
         <CardActionBar
-          recurring={task.recurring != null}
+          doneAction={primaryDoneAction(task)}
+          workedToday={recency?.workedToday ?? false}
           onDone={onDone}
           onMenu={toggleMenu}
           onDelete={onDelete}
@@ -524,6 +540,7 @@ function ClusterPopupRow({
                 onClick={(e) => e.stopPropagation()}
               >
                 <SchedulePanel
+                  project={task}
                   taskText={task.text}
                   due={task.due}
                   dueTime={task.due_time}
