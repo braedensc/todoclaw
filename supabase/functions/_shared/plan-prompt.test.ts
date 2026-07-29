@@ -9,10 +9,12 @@ import {
   deriveAnchors,
   MAX_ANCHORS,
   resolvePlanTaskIds,
+  parseEmittedPlan,
   type EmittedNudge,
   type EmittedPlan,
   type EmittedRock,
   type PlanRequest,
+  type PlanResult,
   type ScheduleConfig,
 } from './plan-prompt.ts'
 
@@ -389,6 +391,14 @@ const emittedRock = (task: string, ref: string | null): EmittedRock => ({
   ref,
 })
 
+// resolvePlanTaskIds now returns null for an emit that isn't a usable plan (see parseEmittedPlan),
+// so these ref-resolution tests assert a plan came back and then work with the non-null value.
+function resolved(plan: unknown, req: PlanRequest): PlanResult {
+  const out = resolvePlanTaskIds(plan, req)
+  assert(out, 'expected a resolved plan')
+  return out
+}
+
 const emitted = (
   bigRock: EmittedRock | null,
   smallRocks: EmittedRock[],
@@ -420,7 +430,7 @@ Deno.test('emit_plan schema requires ref on every rock', () => {
 Deno.test(
   'resolvePlanTaskIds: maps T/R refs to real task ids and strips ref from the output',
   () => {
-    const plan = resolvePlanTaskIds(
+    const plan = resolved(
       emitted(emittedRock('File taxes', 'T1'), [
         emittedRock('Water plants', 'R1'),
         emittedRock('Invented errand', null),
@@ -436,7 +446,7 @@ Deno.test(
 )
 
 Deno.test('resolvePlanTaskIds: lowercase refs still resolve (the model may not copy case)', () => {
-  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 't1'), []), withIds)
+  const plan = resolved(emitted(emittedRock('File taxes', 't1'), []), withIds)
   assertEquals(plan.bigRock?.taskId, 'task-1')
 })
 
@@ -447,7 +457,7 @@ Deno.test('resolvePlanTaskIds: a bogus/missing ref falls back to exact text; els
     duration: '~1h',
     when: 'morning',
   } as EmittedRock
-  const plan = resolvePlanTaskIds(
+  const plan = resolved(
     emitted(emittedRock('Read paper', 'T99'), [noRef, emittedRock('Totally new thing', 'R7')]),
     withIds,
   )
@@ -457,7 +467,7 @@ Deno.test('resolvePlanTaskIds: a bogus/missing ref falls back to exact text; els
 })
 
 Deno.test('resolvePlanTaskIds: an id-less request (old cached client) degrades to null ids', () => {
-  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), base)
+  const plan = resolved(emitted(emittedRock('File taxes', 'T1'), []), base)
   assertEquals(plan.bigRock?.taskId, null)
 })
 
@@ -465,17 +475,14 @@ Deno.test(
   'resolvePlanTaskIds: a quiet-day nudge resolves its ref like a rock (and strips ref)',
   () => {
     const nudge: EmittedNudge = { task: 'Read paper', why: 'w', duration: '~30min', ref: 'T2' }
-    const plan = resolvePlanTaskIds(emitted(null, [], nudge), withIds)
+    const plan = resolved(emitted(null, [], nudge), withIds)
     // Relaxed day: no big rock, no small rocks, but the nudge points at a real task.
     assertEquals(plan.bigRock, null)
     assertEquals(plan.smallRocks.length, 0)
     assertEquals(plan.nudge?.taskId, 'task-2')
     assert(plan.nudge && !('ref' in plan.nudge)) // ref stripped, taskId stamped
     // An absent nudge stays null (the common case: a real big rock owns the day).
-    assertEquals(
-      resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), withIds).nudge,
-      null,
-    )
+    assertEquals(resolved(emitted(emittedRock('File taxes', 'T1'), []), withIds).nudge, null)
   },
 )
 
@@ -561,7 +568,7 @@ Deno.test('deriveAnchors: caps the list and tolerates an id-less request', () =>
 
 Deno.test("resolvePlanTaskIds: stamps the day's anchors onto the plan", () => {
   // `base`'s Dentist is due today at 10:30 — an anchor, whatever the model emitted.
-  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), withIds)
+  const plan = resolved(emitted(emittedRock('File taxes', 'T1'), []), withIds)
   assertEquals(plan.anchors, [
     { task: 'Dentist', time: '10:30 AM', duration: null, taskId: 'task-4' },
   ])
@@ -570,7 +577,7 @@ Deno.test("resolvePlanTaskIds: stamps the day's anchors onto the plan", () => {
 Deno.test('resolvePlanTaskIds: a rock the model emitted for an anchored task is dropped', () => {
   // The prompt tells the model not to emit an anchor as a rock; if it does anyway, the anchors
   // strip already shows it, so listing it twice would be noise. Matched by ref-resolved id...
-  const plan = resolvePlanTaskIds(
+  const plan = resolved(
     emitted(emittedRock('File taxes', 'T1'), [
       emittedRock('Dentist', 'T4'),
       emittedRock('Water plants', 'R1'),
@@ -589,7 +596,7 @@ Deno.test(
   'resolvePlanTaskIds: an anchored BIG rock drops to null (an appointment is not a rock)',
   () => {
     // ...and by exact text, for an id-less request where no ref can resolve.
-    const plan = resolvePlanTaskIds(emitted(emittedRock('Dentist', 'T4'), []), base)
+    const plan = resolved(emitted(emittedRock('Dentist', 'T4'), []), base)
     assertEquals(plan.bigRock, null)
     assertEquals(plan.anchors[0].task, 'Dentist')
   },
@@ -650,4 +657,74 @@ Deno.test('a low/low ongoing project does not earn the big rock by default', () 
   assertStringIncludes(SYSTEM_PROMPT, 'not on whether anything else wants the slot')
   assertStringIncludes(SYSTEM_PROMPT, 'is not a reason either')
   assertStringIncludes(SYSTEM_PROMPT, 'leave bigRock null and let the day be light')
+})
+
+// ---- the emitted plan is validated, never cast ------------------------------------------------
+// `toolUse.input` is untyped JSON from the model. Both callers used to cast it straight to
+// EmittedPlan, so a truncated/empty emit sailed through — resolvePlanTaskIds then supplied
+// anchors/bigRock/smallRocks defaults, which made the result look structurally fine while every
+// text field was missing. The client rendered and PERSISTED that as a blank plan card.
+
+Deno.test('parseEmittedPlan rejects an empty emit (the blank-plan-card bug)', () => {
+  assertEquals(parseEmittedPlan({}), null)
+  assertEquals(parseEmittedPlan(null), null)
+  assertEquals(parseEmittedPlan('nope'), null)
+})
+
+Deno.test('parseEmittedPlan rejects a plan with no headline text', () => {
+  const noHeadline = { ...emitted(null, []), headline: '' }
+  assertEquals(parseEmittedPlan(noHeadline), null)
+  assertEquals(parseEmittedPlan({ ...noHeadline, headline: '   ' }), null)
+})
+
+Deno.test('resolvePlanTaskIds returns null for an unusable emit, so callers must handle it', () => {
+  // The type is PlanResult | null precisely so neither caller can skip this check.
+  assertEquals(resolvePlanTaskIds({}, withIds), null)
+  assertEquals(resolvePlanTaskIds({ smallRocks: [] }, withIds), null)
+})
+
+Deno.test('parseEmittedPlan repairs cosmetic fields rather than losing the plan', () => {
+  // A missing why/duration and an out-of-enum slot are not worth throwing a good plan away for.
+  const parsed = parseEmittedPlan({
+    headline: 'Ship it',
+    bigRock: { task: 'File taxes', when: 'midday' },
+    smallRocks: [],
+  })
+  assert(parsed)
+  assertEquals(parsed.headline, 'Ship it')
+  assertEquals(parsed.availableTime, '')
+  assertEquals(parsed.habitNote, '')
+  assertEquals(parsed.bigRock?.why, '')
+  assertEquals(parsed.bigRock?.when, 'morning') // repaired to a real slot
+  assertEquals(parsed.nudge, null)
+})
+
+Deno.test('parseEmittedPlan drops only the malformed small rocks, keeping the good ones', () => {
+  const parsed = parseEmittedPlan({
+    headline: 'Ship it',
+    availableTime: '~4h',
+    habitNote: 'nice',
+    bigRock: null,
+    smallRocks: [
+      { task: 'Water plants', why: 'w', duration: '~10min', when: 'morning', ref: 'R1' },
+      { why: 'no task at all' }, // unusable → dropped
+      null,
+      { task: 'Vacuum', why: 'w', duration: '~20min', when: 'evening', ref: null },
+    ],
+  })
+  assert(parsed)
+  assertEquals(
+    parsed.smallRocks.map((r) => r.task),
+    ['Water plants', 'Vacuum'],
+  )
+})
+
+Deno.test('a valid emit still resolves end to end (no regression from validation)', () => {
+  const plan = resolved(
+    emitted(emittedRock('File taxes', 'T1'), [emittedRock('Vacuum', null)]),
+    withIds,
+  )
+  assertEquals(plan.headline, 'h')
+  assertEquals(plan.bigRock?.taskId, 'task-1')
+  assertEquals(plan.smallRocks.length, 1)
 })

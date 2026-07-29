@@ -19,7 +19,6 @@ import {
   EMIT_PLAN_TOOL,
   buildUserPrompt,
   resolvePlanTaskIds,
-  type EmittedPlan,
   type PlanRequest,
   type ScheduleConfig,
   type PlanResult,
@@ -49,13 +48,19 @@ export async function generatePlan(
     tool_choice: { type: 'tool', name: 'emit_plan' },
   })
   const toolUse = msg.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
+  // A truncated response still carries a tool_use block whose JSON input is cut off, so check the
+  // stop reason before trusting it.
+  if (!toolUse || toolUse.type !== 'tool_use' || msg.stop_reason === 'max_tokens') {
     throw new Error('The planner did not return a plan.')
   }
+  // Validate + resolve each rock's emitted `ref` to a real tasks.id before anything stores or
+  // returns the plan — daily_state.plan only ever holds the resolved shape (taskId, never ref).
+  // This path writes the plan SERVER-side (BabyClaw's generate_plan, the proactive dispatcher), so
+  // it never passes the client's boundary check: a contentless emit has to be caught right here.
+  const plan = resolvePlanTaskIds(toolUse.input, req)
+  if (!plan) throw new Error('The planner did not return a plan.')
   return {
-    // Resolve each rock's emitted `ref` to a real tasks.id before anything stores or returns the
-    // plan — daily_state.plan only ever holds the resolved shape (taskId, never ref).
-    plan: resolvePlanTaskIds(toolUse.input as EmittedPlan, req),
+    plan,
     usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens },
   }
 }

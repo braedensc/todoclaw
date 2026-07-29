@@ -4,6 +4,12 @@ import { z } from 'zod'
 // at every frontend boundary — both the plan-my-day Edge Function response and the persisted
 // `daily_state.plan` jsonb read back on load — and its inferred type IS the app's DayPlan type.
 //
+// The response half is load-bearing, not belt-and-braces: the plan a mutation returns is rendered
+// AND written to daily_state, so anything that gets past this check becomes the user's stored plan.
+// It once wasn't checked at all (just `if (!data?.plan)`), and a truncated emit_plan — truthy, but
+// with no headline — rendered as a permanently blank plan card. Don't weaken it back to a
+// truthiness test.
+//
 // Mirrors the EMIT_PLAN_TOOL output schema in supabase/functions/_shared/plan-prompt.ts (the
 // Deno edge runtime keeps its own copy — the two runtimes can't share a module). Keep them in
 // sync: `when` is the fixed slot enum; bigRock is null on a light/rest day.
