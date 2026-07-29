@@ -417,3 +417,56 @@ Deno.test(
     assert(!sys.includes('Yesterday thing'))
   },
 )
+
+Deno.test(
+  'loadChatContext: a recurring chore’s reminder ANCHOR never reads as a deadline',
+  async () => {
+    // `due`/`due_time` on a recurring chore are the reminder occurrence anchor — next_recurring_
+    // fire_at phases the occurrence grid off them and never advances them, so a chore carrying a
+    // reminder permanently holds a past `due`. BabyClaw's status phrase must come from the cadence
+    // alone, or it tells the user a chore they just did is weeks overdue. Reading the anchor as a
+    // deadline shipped past a green CI once (reverted in #348) because nothing pinned this.
+    const client = fakeClient({
+      user_schedule: [SCHED],
+      tasks: [
+        // Anchored 2026-06-01, done this morning on a weekly cadence → "due again in 7d".
+        {
+          id: 'anchored',
+          text: 'Laundry',
+          x: 0.5,
+          y: 0.5,
+          due: '2026-06-01',
+          due_time: '09:00:00',
+          staged: false,
+          recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 9 },
+        },
+        // Anchor in the future must not mute a chore its cadence calls overdue.
+        {
+          id: 'stale',
+          text: 'Sweep floors',
+          x: 0.4,
+          y: 0.4,
+          due: '2099-12-31',
+          due_time: '09:00:00',
+          staged: false,
+          recurring: { frequencyDays: 2, lastDoneAt: '2026-06-28T13:00:00Z', doneCount: 1 },
+        },
+      ],
+      daily_state: [{ date: '2026-07-04', done: {}, habit_done: {}, subtask_done: {} }],
+    })
+
+    const { context } = await loadChatContext(client, NOW)
+    const system = buildSystem(context)
+
+    // Done today on its cadence → DONE TODAY, and never "overdue 33d" from the anchor.
+    assertStringIncludes(system, '=== DONE TODAY ===\n1 completed today: "Laundry"')
+    assert(!system.includes('overdue 33d'), 'the anchor must not produce an overdue reading')
+    // The overdue-by-cadence chore is still active and overdue despite its future anchor.
+    const active = system.slice(
+      system.indexOf('=== ACTIVE TASKS'),
+      system.indexOf('=== DONE TODAY'),
+    )
+    assertStringIncludes(active, 'Sweep floors')
+    assertStringIncludes(active, 'overdue')
+  },
+)

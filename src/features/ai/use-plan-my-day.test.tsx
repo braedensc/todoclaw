@@ -139,6 +139,52 @@ describe('buildPlanRequest', () => {
     expect(req.dayOfWeek).toBe('Wednesday')
     expect(req.today).toBe('Wednesday, June 24, 2026')
   })
+
+  // ---- the reminder ANCHOR is not a deadline ---------------------------------------------------
+  // On a recurring chore `due`/`due_time` are the reminder occurrence anchor: nextRecurringFireAt
+  // phases the occurrence grid off them and NEVER advances them, so a chore that carries a reminder
+  // permanently holds a `due` date receding into the past. Plan selection must therefore key on the
+  // cadence alone. A change that read that anchor as a deadline shipped past a green CI once
+  // (reverted in #348) precisely because nothing pinned this — these are that pin.
+  describe('a recurring chore whose due date is a reminder anchor', () => {
+    // Anchored 2026-06-01 09:00 (weeks back, as any live reminder anchor is), weekly, done today.
+    const anchored = (over: Partial<Task> = {}) =>
+      task({
+        id: 'chore',
+        text: 'Laundry',
+        due: '2026-06-01',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 7, lastDoneAt: '2026-06-24T11:00:00Z', doneCount: 9 },
+        ...over,
+      })
+
+    it('is NOT dragged into the plan by an anchor date far in the past', () => {
+      const req = buildPlanRequest([anchored()], [], {}, TZ, NOW)
+      expect(req.recurringDue).toEqual([]) // cadence says 7 days out — the anchor must not override
+      expect(req.tasks).toEqual([]) // and a chore is never a plannable task
+    })
+
+    it('reports the cadence status, never an anchor-derived "overdue Nd"', () => {
+      const dueOnCadence = anchored({
+        recurring: { frequencyDays: 7, lastDoneAt: '2026-06-17T11:00:00Z', doneCount: 9 },
+      })
+      const req = buildPlanRequest([dueOnCadence], [], {}, TZ, NOW)
+      // 7 days since a weekly chore → due today. If the anchor leaked in it would read
+      // "overdue 23d" (2026-06-01 is 23 days before NOW) and climb every day.
+      expect(req.recurringDue).toEqual([{ id: 'chore', text: 'Laundry', status: 'due today' }])
+    })
+
+    it('is not hidden by an anchor date in the FUTURE either', () => {
+      // The mirror failure: treating the anchor as a deadline would also mute a genuinely
+      // overdue chore whose anchor happens to sit ahead of today.
+      const overdue = anchored({
+        due: '2026-12-25',
+        recurring: { frequencyDays: 3, lastDoneAt: '2026-06-19T11:00:00Z', doneCount: 2 },
+      })
+      const req = buildPlanRequest([overdue], [], {}, TZ, NOW)
+      expect(req.recurringDue).toEqual([{ id: 'chore', text: 'Laundry', status: 'overdue 2d' }])
+    })
+  })
 })
 
 function wrapper() {
