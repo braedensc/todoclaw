@@ -45,3 +45,54 @@ export function daysUntilInTZ(due: string | null, timeZone: string, now: Date): 
   const nowDay = Date.parse(`${localDateInTZ(timeZone, now)}T00:00:00Z`) / MS_PER_DAY
   return Math.round(dueDay - nowDay)
 }
+
+/**
+ * The wall-clock reading an observer in `timeZone` sees at `instant`, re-encoded as a UTC
+ * epoch-ms value. Ported verbatim from src/lib/dates.ts (private there); the fixed-point loop in
+ * {@link startOfLocalDayInstant} is the only caller.
+ */
+function wallClockAsUTC(timeZone: string, instant: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant)
+
+  const get = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((p) => p.type === type)?.value ?? NaN)
+
+  return Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second'),
+  )
+}
+
+/**
+ * The real instant at which the wall-clock day `date` ('YYYY-MM-DD') BEGINS in `timeZone` —
+ * local midnight, as a UTC instant. Same fixed-point correction as src/lib/dates.ts `dueInstant`
+ * (start from the wall time encoded as UTC, then correct by the zone's observed offset twice so
+ * DST transitions converge); this is that function specialized to 00:00, which is all the
+ * occurrence-scheduling math needs.
+ *
+ * Throws RangeError on an unparseable date, matching its siblings.
+ */
+export function startOfLocalDayInstant(date: string, timeZone: string): Date {
+  const target = Date.parse(`${date.slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(target)) {
+    throw new RangeError(`startOfLocalDayInstant: unparseable date '${date}'`)
+  }
+  let guess = target
+  for (let i = 0; i < 2; i++) {
+    guess += target - wallClockAsUTC(timeZone, new Date(guess))
+  }
+  return new Date(guess)
+}

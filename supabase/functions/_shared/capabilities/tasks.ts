@@ -4,7 +4,8 @@
 // delete_task) are flagged here — the adapter never trusts the model's belief about that.
 
 import { z } from 'npm:zod@4.4.3'
-import { localDateInTZ } from '../dates.ts'
+import { daysUntilInTZ, localDateInTZ } from '../dates.ts'
+import { lastDoneAtForOccurrenceOn } from '../recurring-schedule.ts'
 import { formatOffset } from '../reminder-content.ts'
 import { placeByDue, urgencyToX, importanceToY } from '../placement.ts'
 import { loadReminderDefault } from '../reminder-default.ts'
@@ -389,7 +390,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'set_due_date',
     description:
-      "Set or clear a task's due date, and optionally a due TIME. A new due date re-derives the task's URGENCY (grid x) from how soon it is — importance is never touched — and places a staged task on the board; clearing a due date leaves the card exactly where it is. When the task FIRST gains a due time (and has no reminders yet), the user's default reminder is added automatically — the confirmation tells you what was added. Clearing the due date (or just the time) also removes the task's reminders — a reminder needs both. Set a time when the user names one, or when they want a reminder (a reminder needs a due time).",
+      "Set or clear a task's due date, and optionally a due TIME. A new due date re-derives the task's URGENCY (grid x) from how soon it is — importance is never touched — and places a staged task on the board; clearing a due date leaves the card exactly where it is. CAUTION on a RECURRING chore: its due date is the REMINDER anchor (the occurrence the repeating reminder counts from), NOT a deadline — nothing reads it for the board or Plan My Day, so setting it does NOT surface the chore on that day. Use schedule_for_day for that, and never tell the user a due date will bring a recurring chore forward. When the task FIRST gains a due time (and has no reminders yet), the user's default reminder is added automatically — the confirmation tells you what was added. Clearing the due date (or just the time) also removes the task's reminders — a reminder needs both. Set a time when the user names one, or when they want a reminder (a reminder needs a due time).",
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -793,20 +794,137 @@ export const taskCapabilities: Capability[] = [
   }),
 
   defineCapability({
+    name: 'schedule_for_day',
+    description:
+      'Put an EXISTING task on the board and in the Plan My Day for a specific day — the tool for "I need to do X tomorrow", "do X on Friday", "make sure X is on Monday\'s plan". Works for every task type and picks the right mechanism itself: a RECURRING chore has its next occurrence moved onto that day (even if it was already ticked off this cycle — this is what makes an extra, off-schedule round show up), while a one-off task or ongoing project gets that due date and the matching urgency. A paused task is resumed if the day falls inside its pause. Use create_task instead when the task does not exist yet. Prefer this over set_due_date whenever the user\'s intent is "surface it on that day" — on a recurring chore set_due_date only moves the REMINDER anchor and will not surface anything.',
+    schema: z
+      .object({
+        task_id: uuid.describe('The task id (UUID).'),
+        date: z
+          .string()
+          .describe(
+            'The wall-clock day to surface it on, as ISO YYYY-MM-DD in the user\'s own timezone (resolve "tomorrow" / "Friday" against the current date given in your context).',
+          ),
+      })
+      .strict(),
+    async execute(ctx, i) {
+      const now = ctx.now ?? new Date()
+      const date = i.date.slice(0, 10)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return err("That date didn't look right — use YYYY-MM-DD.")
+      }
+
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text, recurring, start_date')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+
+      const patch: Record<string, unknown> = {}
+
+      // A pause outlasting the target day would hide the task on the very day it is wanted
+      // (isDormant gates every render surface and both planners), so lift it.
+      const startDate = (task.start_date as string | null)?.slice(0, 10) ?? null
+      const resumed = startDate != null && startDate > date
+      if (resumed) patch.start_date = null
+
+      const rec = task.recurring as {
+        frequencyDays?: number
+        lastDoneAt?: string | null
+        doneCount?: number
+      } | null
+
+      if (rec?.frequencyDays) {
+        // Phase the cadence clock so the next occurrence lands on `date`; `due`/`due_time` are
+        // left alone because on a recurring chore they are the REMINDER anchor, not a deadline.
+        patch.recurring = {
+          ...rec,
+          lastDoneAt: lastDoneAtForOccurrenceOn(date, rec.frequencyDays, ctx.timeZone),
+        }
+      } else {
+        // One-off or ongoing: the due date IS the surfacing mechanism, and a new one re-derives
+        // urgency and places a staged card, exactly like set_due_date.
+        patch.due = date
+        patch.x = placeByDue(date, ctx.timeZone, now).x
+        patch.staged = false
+      }
+
+      const result = await updateTaskRow(ctx.client, i.task_id, patch, 'Scheduled')
+      if (result.isError) return result
+
+      const when = daysUntilInTZ(date, ctx.timeZone, now)
+      const day = when === 0 ? 'today' : when === 1 ? 'tomorrow' : date
+      const note = resumed ? ' (its pause was lifted so it can surface)' : ''
+      return ok(
+        `"${task.text}" is set for ${day} — it's on the board and will be picked up by ${
+          when === 0 ? "today's" : "that day's"
+        } Plan My Day${note}.`,
+        ['tasks'],
+        `Scheduled "${task.text}" for ${day}.`,
+      )
+    },
+  }),
+
+  defineCapability({
     name: 'restore_task',
     description:
-      "Un-complete a task so it returns to the active board — works for a task checked off today OR on a past day (it clears the completion marker; the permanent Done-log entry is never removed — that's delete_completion).",
+      "Un-complete a task so it returns to the active board — works for a task checked off today OR on a past day (it clears the completion marker; the permanent Done-log entry is never removed — that's delete_completion). Also rewinds a RECURRING chore ticked off today back onto its previous cycle.",
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
       const now = ctx.now ?? new Date()
       const { data: task, error: selErr } = await ctx.client
         .from('tasks')
-        .select('text')
+        .select('text, recurring')
         .eq('id', i.task_id)
         .is('deleted_at', null)
         .maybeSingle()
       if (selErr) return systemErr(selErr.message)
       if (!task) return err('That task no longer exists.')
+
+      // A recurring chore never enters the daily done map — completing it advances
+      // `recurring.lastDoneAt`/`doneCount` instead (see complete_task). set_task_undone clears the
+      // MAP, so on a recurring task it wrote nothing and the chore stayed hidden while the reply
+      // claimed it was restored. Rewind the cycle instead: drop lastDoneAt back to the completion
+      // BEFORE this one (frequencyDays earlier, so the cadence reads due again) and un-count it.
+      const rec = task.recurring as {
+        frequencyDays?: number
+        lastDoneAt?: string | null
+        doneCount?: number
+      } | null
+      if (rec?.frequencyDays) {
+        if (!rec.lastDoneAt) {
+          return ok(
+            `"${task.text}" is a recurring chore that hasn't been checked off yet — nothing to restore.`,
+            [],
+          )
+        }
+        // Rewinding to "due today" is the same cadence phasing schedule_for_day performs — one
+        // helper so the two can't drift.
+        const rewound = lastDoneAtForOccurrenceOn(
+          localDateInTZ(ctx.timeZone, now),
+          rec.frequencyDays,
+          ctx.timeZone,
+        )
+        const { error } = await ctx.client
+          .from('tasks')
+          .update({
+            recurring: {
+              ...rec,
+              lastDoneAt: rewound,
+              doneCount: Math.max(0, (rec.doneCount ?? 0) - 1),
+            },
+          })
+          .eq('id', i.task_id)
+          .is('deleted_at', null)
+          .select('text')
+          .maybeSingle()
+        if (error) return systemErr(error.message)
+        return ok(`Restored recurring "${task.text}" — it's due again on your board.`, ['tasks'])
+      }
+
       const { error } = await ctx.client.rpc('set_task_undone', {
         p_date: localDateInTZ(ctx.timeZone, now),
         p_task_id: i.task_id,
