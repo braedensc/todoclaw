@@ -30,6 +30,10 @@ export const UPCOMING_WINDOW_DAYS = 3
 // this is already over-committed; the rest still live on the board). Mirrors dispatch.ts TIMES_CAP.
 export const MAX_ANCHORS = 6
 
+// How many due-today recurring chores the plan card lists before it stops — a hedge against a long
+// backlog of overdue chores turning the card into a wall of laundry.
+export const MAX_CHORES = 5
+
 // ---- Client payload (validated at the function boundary) -------------------------------------
 // The frontend builds this from its existing hooks + lib (taskScore / recurringStatus / daysUntil),
 // so the on-grid filtering and scoring stay in one place (src/lib). importance/urgency are 0–100.
@@ -117,11 +121,22 @@ export interface PlanAnchor {
   duration: string | null
   taskId: string | null
 }
+// A recurring chore that is DUE TODAY (overdue / never done / due today). Like an anchor it is NOT
+// a rock and never competes for a rock slot — the user's cadence already decided it happens today.
+// Derived DETERMINISTICALLY from the request (deriveChores), never emitted by the model, so a due
+// chore can't be squeezed off the card by the bigRock/smallRocks caps.
+export interface PlanChore {
+  task: string
+  status: string // the cadence label, e.g. 'due today' / 'overdue 3d'
+  taskId: string | null
+}
 export interface PlanResult {
   headline: string
   availableTime: string
   // Today's fixed times, earliest first. Always derived server-side; [] when nothing is timed today.
   anchors: PlanAnchor[]
+  // Recurring chores due today, derived like anchors — never model-chosen, never capped away.
+  chores: PlanChore[]
   bigRock: Rock | null
   smallRocks: Rock[]
   habitNote: string
@@ -134,7 +149,10 @@ export interface PlanResult {
 // is schema-required, but the tool input arrives as an unchecked cast, so treat it as optional.
 export type EmittedRock = Omit<Rock, 'taskId'> & { ref?: string | null }
 export type EmittedNudge = Omit<Nudge, 'taskId'> & { ref?: string | null }
-export type EmittedPlan = Omit<PlanResult, 'anchors' | 'bigRock' | 'smallRocks' | 'nudge'> & {
+export type EmittedPlan = Omit<
+  PlanResult,
+  'anchors' | 'chores' | 'bigRock' | 'smallRocks' | 'nudge'
+> & {
   bigRock: EmittedRock | null
   smallRocks: EmittedRock[]
   nudge: EmittedNudge | null
@@ -260,8 +278,9 @@ export const SYSTEM_PROMPT = [
   '4. ADD SMALL ROCKS SPARINGLY — quick wins only, each a genuinely SHORT task (S/M, ~<=45min). A long',
   '   task (L/XL, ~1h+) is NEVER a small rock — it is the big rock or it waits for another day. Default',
   '   to EXACTLY ONE quick win — one real focus plus one quick win is the healthy shape of a day — and',
-  '   AT MOST TWO. Add a SECOND only for a concrete reason: another genuinely imminent deadline, or one',
-  '   low-effort recurring chore that truly must happen today. Never stack on more, and never file an',
+  '   AT MOST TWO. Add a SECOND only for a concrete reason: another genuinely imminent deadline.',
+  '   Do NOT spend a slot on a recurring chore that is due today — the app lists those itself (see',
+  '   rule 5). Never stack on more, and never file an',
   '   ongoing-project session here — that is the big rock (rule 3). A quiet day with just the big rock,',
   '   or a pure rest day (bigRock null, no small rocks), is perfectly valid — say so plainly, and never',
   "   pad with filler to look busy. Weigh each task's size (shown below) against your free hours: if the",
@@ -279,6 +298,12 @@ export const SYSTEM_PROMPT = [
   '   You may refer to one naturally where it shapes the day ("after the 2 PM appointment"), but do',
   '   not re-list the times — the strip already does that, and a headline that recites them reads',
   '   like a duplicate.',
+  '   A RECURRING CHORE listed as overdue, never done, or due today works the same way: the cadence',
+  '   the user set already decided it happens today, so the app lists every one of them in its own',
+  '   "chores due today" strip. Do NOT emit one as a bigRock or a smallRock — it would show twice,',
+  '   and it is not a choice the model makes. Count their (usually small) cost against the day, and',
+  '   mention them naturally only where it shapes the plan; a chore due LATER (due tomorrow, in Nd)',
+  '   is not in the strip and may be a rock like anything else.',
   '   Anything else the user can slot whenever it fits.',
   '6. HABITS: acknowledge the active habits encouragingly in habitNote (they always appear).',
   '7. USER PREFERENCES & SAVED MEMORY: the message may include a "USER PLANNING PREFERENCES" block',
@@ -492,6 +517,46 @@ function isAnchored(rock: { task: string; taskId: string | null }, anchors: Plan
 }
 
 /**
+ * Is this recurring chore wanted TODAY — overdue, never done, or due today?
+ *
+ * `status` is the label the recurringStatus ladder produces, and both request builders
+ * (src/lib/recurring.ts via use-plan-my-day, and _shared/plan-inputs.ts) emit the SAME closed set:
+ * 'never done' | 'overdue Nd' | 'due today' | 'due tomorrow' | 'in Nd'. Only the first three mean
+ * "today"; 'due tomorrow' and 'in Nd' are look-aheads and stay out of the strip. Both builders'
+ * label sets are pinned by their own tests, so a renamed label fails loudly rather than silently
+ * emptying this strip.
+ */
+function isDueNow(status: string): boolean {
+  const s = status.trim().toLowerCase()
+  return s === 'due today' || s === 'never done' || s.startsWith('overdue')
+}
+
+/**
+ * The recurring chores that are due TODAY, in request order, capped like anchors.
+ *
+ * Same doctrine as deriveAnchors, for the same reason: rule 4 caps small rocks at two and defaults
+ * to one, so a chore due today had to out-argue the model's other picks for a slot — and lost to
+ * tasks that were not even due yet. A chore on a cadence is not a judgement call: the user already
+ * decided it happens today. So the card lists them itself, deterministically, where the caps can't
+ * reach.
+ */
+export function deriveChores(req: PlanRequest): PlanChore[] {
+  return req.recurringDue
+    .filter((c) => isDueNow(c.status))
+    .slice(0, MAX_CHORES)
+    .map((c) => ({ task: c.text, status: c.status, taskId: c.id ?? null }))
+}
+
+// Does this rock point at the same chore the strip already lists? Same two-step as isAnchored.
+function isChore(rock: { task: string; taskId: string | null }, chores: PlanChore[]): boolean {
+  return chores.some(
+    (c) =>
+      (rock.taskId != null && c.taskId != null && rock.taskId === c.taskId) ||
+      c.task.trim() === rock.task.trim(),
+  )
+}
+
+/**
  * Resolve every rock's (and the nudge's) `ref` in an emitted plan to a real tasks.id, producing the
  * STORED plan shape (items carry `taskId`, never `ref`). An item that can't be tied to a listed one —
  * model said null, cited a bogus ref against an id-less request, or paraphrased the text — degrades
@@ -506,13 +571,19 @@ export function resolvePlanTaskIds(plan: unknown, req: PlanRequest): PlanResult 
   const emitted = parseEmittedPlan(plan)
   if (!emitted) return null
   const anchors = deriveAnchors(req)
+  const chores = deriveChores(req)
   const bigRock = emitted.bigRock ? resolveRef(emitted.bigRock, req) : null
   const smallRocks = emitted.smallRocks.map((r) => resolveRef(r, req))
+  // A rock the model emitted for something the card already lists itself (a fixed time, or a chore
+  // due today) is dropped: it would just show twice. Chores are handled exactly like anchors.
+  const listed = (r: { task: string; taskId: string | null }) =>
+    isAnchored(r, anchors) || isChore(r, chores)
   return {
     ...emitted,
     anchors,
-    bigRock: bigRock && !isAnchored(bigRock, anchors) ? bigRock : null,
-    smallRocks: smallRocks.filter((r) => !isAnchored(r, anchors)),
+    chores,
+    bigRock: bigRock && !listed(bigRock) ? bigRock : null,
+    smallRocks: smallRocks.filter((r) => !listed(r)),
     nudge: emitted.nudge ? resolveRef(emitted.nudge, req) : null,
   }
 }

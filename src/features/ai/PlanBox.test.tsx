@@ -469,4 +469,83 @@ describe('PlanBox', () => {
       expect(screen.queryByText('Fixed times today')).not.toBeInTheDocument()
     })
   })
+
+  // Chores due today (plan.chores) — the regression this section exists for: a recurring chore due
+  // TODAY had to win one of the two capped small-rock slots, and lost to tasks that weren't due for
+  // days. Like anchors, it's derived from the board rather than chosen by the planner, so it always
+  // renders — even on a plan with no rocks at all.
+  describe('chores due today', () => {
+    const CHORED: DayPlan = {
+      ...PLAN,
+      chores: [
+        { task: 'Laundry', status: 'due today', taskId: 'laundry' },
+        { task: 'Take out bins', status: 'overdue 2d', taskId: 'bins' },
+      ],
+    }
+
+    it('lists every due chore alongside the rocks', () => {
+      render(
+        <PlanBox
+          plan={CHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Chores due today')).toBeInTheDocument()
+      expect(screen.getByText('Laundry')).toBeInTheDocument()
+      expect(screen.getByText('due today')).toBeInTheDocument()
+      // An overdue chore says so rather than passing for a fresh one.
+      expect(screen.getByText('Take out bins')).toBeInTheDocument()
+      expect(screen.getByText('overdue 2d')).toBeInTheDocument()
+      // The rocks are untouched — the strip is an addition, not a replacement.
+      expect(screen.getByText('File taxes')).toBeInTheDocument()
+    })
+
+    it('shows chores even when the plan has no rocks at all', () => {
+      render(
+        <PlanBox
+          plan={{ ...CHORED, bigRock: null, smallRocks: [] }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Laundry')).toBeInTheDocument()
+    })
+
+    it('strikes a chore through once its task is done', () => {
+      render(
+        <PlanBox
+          plan={CHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'laundry'}
+        />,
+      )
+      expect(screen.getByText('Laundry').className).toContain('line-through')
+      expect(screen.getByText('Take out bins').className).not.toContain('line-through')
+    })
+
+    it('renders no chores section for a plan without them (or a legacy plan missing the field)', () => {
+      render(
+        <PlanBox
+          plan={PLAN}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText('Chores due today')).not.toBeInTheDocument()
+    })
+  })
 })

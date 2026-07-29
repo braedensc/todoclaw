@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { DayPlan, PlanAnchor, PlanNudge, PlanRock } from '../../types/plan'
+import type { DayPlan, PlanAnchor, PlanChore, PlanNudge, PlanRock } from '../../types/plan'
 
 // Anything the card can strike off once its task is done — a rock or an anchor. Both carry the
 // (task, taskId) pair isPlanRockDone matches on.
@@ -180,6 +180,7 @@ function PlanContent({
 }) {
   const done = (r: Strikeable) => rockDone?.(r) ?? false
   const anchors = plan.anchors ?? []
+  const chores = plan.chores ?? []
   return (
     <div className="flex flex-col">
       <p className="font-serif text-[19px] font-medium leading-snug text-ink">{plan.headline}</p>
@@ -198,6 +199,23 @@ function PlanContent({
           <ul className="mt-1 flex flex-col gap-[3px]">
             {anchors.map((a, i) => (
               <AnchorRow key={i} anchor={a} done={done(a)} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Recurring chores the cadence says are due today. Like the fixed times above, these are
+          derived from the board, not chosen by the planner — the user already decided they happen
+          today, so they can't be squeezed off the card by the rock caps. Struck through as they're
+          completed, same as everything else here. */}
+      {chores.length > 0 && (
+        <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
+            Chores due today
+          </div>
+          <ul className="mt-1 flex flex-col gap-[3px]">
+            {chores.map((c, i) => (
+              <ChoreRow key={i} chore={c} done={done(c)} />
             ))}
           </ul>
         </div>
@@ -256,6 +274,25 @@ function AnchorRow({ anchor, done }: { anchor: PlanAnchor; done: boolean }) {
       {anchor.duration && (
         <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">⏱ {anchor.duration}</span>
       )}
+    </li>
+  )
+}
+
+// One due chore — "Laundry · due today". The cadence label rides along so an overdue chore reads as
+// overdue rather than looking like a fresh one.
+function ChoreRow({ chore, done }: { chore: PlanChore; done: boolean }) {
+  return (
+    <li className={`text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}>
+      {done && (
+        <>
+          <span aria-hidden className="mr-1.5 text-primary">
+            ✓
+          </span>
+          <span className="sr-only">Done: </span>
+        </>
+      )}
+      <span className={done ? 'line-through' : undefined}>{chore.task}</span>
+      <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">{chore.status}</span>
     </li>
   )
 }

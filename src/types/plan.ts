@@ -51,12 +51,24 @@ export const PlanAnchorSchema = z.object({
   taskId: z.string().nullish().catch(null),
 })
 
+// A recurring chore due today (overdue / never done / due today). Like an anchor: derived
+// server-side from the board, never emitted by the model, so the bigRock/smallRocks caps can't
+// squeeze it off the card. See deriveChores in plan-prompt.ts.
+export const PlanChoreSchema = z.object({
+  task: z.string(),
+  status: z.string(), // the cadence label, e.g. 'due today' / 'overdue 3d'
+  taskId: z.string().nullish().catch(null),
+})
+
 export const DayPlanSchema = z.object({
   headline: z.string(),
   availableTime: z.string(),
   // Optional + `.catch(null)` like nudge: plans persisted before anchors existed simply lack the
   // field, and a malformed value degrades to no-anchors instead of nuking the whole plan.
   anchors: z.array(PlanAnchorSchema).nullish().catch(null),
+  // Same optional + `.catch(null)` treatment as anchors, and for the same reasons: plans persisted
+  // before chores existed simply lack the field, and a malformed value degrades to no-chores.
+  chores: z.array(PlanChoreSchema).nullish().catch(null),
   bigRock: PlanRockSchema.nullable(), // null on a light/rest day
   smallRocks: z.array(PlanRockSchema),
   habitNote: z.string(),
@@ -69,5 +81,6 @@ export const DayPlanSchema = z.object({
 export type PlanWhen = z.infer<typeof PlanWhenSchema>
 export type PlanRock = z.infer<typeof PlanRockSchema>
 export type PlanAnchor = z.infer<typeof PlanAnchorSchema>
+export type PlanChore = z.infer<typeof PlanChoreSchema>
 export type PlanNudge = z.infer<typeof PlanNudgeSchema>
 export type DayPlan = z.infer<typeof DayPlanSchema>

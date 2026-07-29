@@ -7,7 +7,9 @@ import {
   SYSTEM_PROMPT,
   buildUserPrompt,
   deriveAnchors,
+  deriveChores,
   MAX_ANCHORS,
+  MAX_CHORES,
   resolvePlanTaskIds,
   parseEmittedPlan,
   type EmittedNudge,
@@ -383,6 +385,14 @@ const withIds: PlanRequest = {
   recurringDue: [{ id: 'chore-1', text: 'Water plants', status: 'due today' }],
 }
 
+// `withIds`, but with the chore due LATER. A chore that is due TODAY is now a strip item and its
+// rock is dropped (see the deriveChores tests), which would mask what these two tests are about:
+// ref resolution and anchor de-duplication.
+const withIdsSoon: PlanRequest = {
+  ...withIds,
+  recurringDue: [{ id: 'chore-1', text: 'Water plants', status: 'in 3d' }],
+}
+
 const emittedRock = (task: string, ref: string | null): EmittedRock => ({
   task,
   why: 'w',
@@ -435,7 +445,7 @@ Deno.test(
         emittedRock('Water plants', 'R1'),
         emittedRock('Invented errand', null),
       ]),
-      withIds,
+      withIdsSoon,
     )
     assertEquals(plan.bigRock?.taskId, 'task-1')
     assertEquals(plan.smallRocks[0].taskId, 'chore-1')
@@ -582,7 +592,7 @@ Deno.test('resolvePlanTaskIds: a rock the model emitted for an anchored task is 
       emittedRock('Dentist', 'T4'),
       emittedRock('Water plants', 'R1'),
     ]),
-    withIds,
+    withIdsSoon,
   )
   assertEquals(
     plan.smallRocks.map((r) => r.task),
@@ -727,4 +737,77 @@ Deno.test('a valid emit still resolves end to end (no regression from validation
   assertEquals(plan.headline, 'h')
   assertEquals(plan.bigRock?.taskId, 'task-1')
   assertEquals(plan.smallRocks.length, 1)
+})
+
+// ---- chores due today are derived, not chosen --------------------------------------------------
+// Rule 4 caps small rocks at two and defaults to one, so a chore due TODAY had to out-argue the
+// model's other picks for a slot — and lost to tasks that weren't even due yet (laundry due today,
+// dropped in favour of tasks due in 3 and 6 days). A cadence is not a judgement call: the user
+// already decided it happens today. Same doctrine as deriveAnchors.
+
+const choreReq = (recurringDue: { id?: string; text: string; status: string }[]): PlanRequest => ({
+  ...base,
+  tasks: [],
+  recurringDue,
+})
+
+Deno.test('deriveChores takes overdue / never done / due today, and nothing later', () => {
+  const chores = deriveChores(
+    choreReq([
+      { id: 'c1', text: 'Laundry', status: 'due today' },
+      { id: 'c2', text: 'Bins', status: 'overdue 3d' },
+      { id: 'c3', text: 'Filters', status: 'never done' },
+      { id: 'c4', text: 'Sheets', status: 'due tomorrow' }, // look-ahead → not today
+      { id: 'c5', text: 'Descale', status: 'in 4d' }, // look-ahead → not today
+    ]),
+  )
+  assertEquals(
+    chores.map((c) => c.task),
+    ['Laundry', 'Bins', 'Filters'],
+  )
+  assertEquals(chores[0].taskId, 'c1')
+  assertEquals(chores[1].status, 'overdue 3d') // the label rides along so overdue still reads overdue
+})
+
+Deno.test('deriveChores caps a long backlog rather than filling the card', () => {
+  const many = Array.from({ length: MAX_CHORES + 4 }, (_, i) => ({
+    id: `c${i}`,
+    text: `Chore ${i}`,
+    status: 'overdue 2d',
+  }))
+  assertEquals(deriveChores(choreReq(many)).length, MAX_CHORES)
+})
+
+Deno.test('a due chore reaches the plan even when the model emits no rocks at all', () => {
+  // The reported failure: the model spent both slots elsewhere and the chore vanished.
+  const plan = resolved(
+    emitted(null, []),
+    choreReq([{ id: 'c1', text: 'Laundry', status: 'due today' }]),
+  )
+  assertEquals(
+    plan.chores.map((c) => c.task),
+    ['Laundry'],
+  )
+})
+
+Deno.test('a chore the model DID emit as a rock is not listed twice', () => {
+  const req = choreReq([{ id: 'c1', text: 'Laundry', status: 'due today' }])
+  // Emitted as the big rock (by ref) and again as a small rock (by text) — both are dropped,
+  // because the strip already lists it.
+  const plan = resolved(emitted(emittedRock('Laundry', 'R1'), [emittedRock('Laundry', null)]), req)
+  assertEquals(plan.chores.length, 1)
+  assertEquals(plan.bigRock, null)
+  assertEquals(plan.smallRocks, [])
+})
+
+Deno.test('a chore due LATER is still allowed to be a rock', () => {
+  const req = choreReq([{ id: 'c1', text: 'Sheets', status: 'due tomorrow' }])
+  const plan = resolved(emitted(emittedRock('Sheets', 'R1'), []), req)
+  assertEquals(plan.chores, []) // not in the strip
+  assertEquals(plan.bigRock?.task, 'Sheets') // so the model may still schedule it
+})
+
+Deno.test('the prompt tells the model the due-chore strip exists and is not its to fill', () => {
+  assertStringIncludes(SYSTEM_PROMPT, 'chores due today')
+  assertStringIncludes(SYSTEM_PROMPT, 'Do NOT emit one as a bigRock or a smallRock')
 })
