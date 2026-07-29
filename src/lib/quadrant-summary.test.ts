@@ -138,7 +138,7 @@ describe('moveToQuadrant', () => {
   it('lands the task in the destination quadrant', () => {
     const task = makeTask({ id: 'm', x: 0.9, y: 0.9 }) // currently Do Now
     for (const dest of QUADRANT_ORDER) {
-      const { x, y } = moveToQuadrant(task, dest, [task])
+      const { x, y } = moveToQuadrant(task, dest, [task], TZ)
       expect(quadrantMeta(x, y).key).toBe(dest)
     }
   })
@@ -148,10 +148,10 @@ describe('moveToQuadrant', () => {
     // A blocker already sitting exactly on the Schedule center.
     const center = QUADRANT_CENTER.schedule
     const blocker = makeTask({ id: 'b', x: center.x, y: center.y })
-    const result = moveToQuadrant(task, 'schedule', [task, blocker])
+    const result = moveToQuadrant(task, 'schedule', [task, blocker], TZ)
 
     // Matches resolveCollision run against the same inputs, and is NOT the raw (occupied) center.
-    expect(result).toEqual(resolveCollision(center.x, center.y, [task, blocker], 'm'))
+    expect(result).toEqual(resolveCollision(center.x, center.y, [task, blocker], 'm', TZ))
     expect(result).not.toEqual({ x: center.x, y: center.y })
     expect(quadrantMeta(result.x, result.y).key).toBe('schedule')
   })
@@ -161,7 +161,7 @@ describe('placeInQuadrant', () => {
   it('lands a new task in the destination quadrant, excluding nothing', () => {
     const existing = makeTask({ id: 'e', x: 0.9, y: 0.9 })
     for (const dest of QUADRANT_ORDER) {
-      const { x, y } = placeInQuadrant(dest, [existing])
+      const { x, y } = placeInQuadrant(dest, [existing], TZ)
       expect(quadrantMeta(x, y).key).toBe(dest)
     }
   })
@@ -169,9 +169,9 @@ describe('placeInQuadrant', () => {
   it('spirals off an occupied quadrant center so the new task never overlaps', () => {
     const center = QUADRANT_CENTER['do-now']
     const blocker = makeTask({ id: 'b', x: center.x, y: center.y })
-    const result = placeInQuadrant('do-now', [blocker])
+    const result = placeInQuadrant('do-now', [blocker], TZ)
 
-    expect(result).toEqual(resolveCollision(center.x, center.y, [blocker], ''))
+    expect(result).toEqual(resolveCollision(center.x, center.y, [blocker], '', TZ))
     expect(result).not.toEqual({ x: center.x, y: center.y })
     expect(quadrantMeta(result.x, result.y).key).toBe('do-now')
   })

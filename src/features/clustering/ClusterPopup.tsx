@@ -292,7 +292,7 @@ function ClusterPopupRow({
   onToggleReminder,
   onClearReminders,
 }: ClusterPopupRowProps) {
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   // The grid card's border scheme, mirrored exactly (see GridCard): a solid status-colored TOP
   // border — recurring RC color, else quadrant color — with the terracotta bucket accent on the
   // other three sides (dashed + heavier for a recurring card, its "this repeats" outline).

@@ -10,7 +10,7 @@ import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import { isDormant } from '../../lib/start-date'
-import { recurringDoneToday } from '../../lib/recurring'
+import { recurringCompletion, recurringDoneToday } from '../../lib/recurring'
 import type { Task } from '../../types/task'
 import { ListRow } from './ListRow'
 import { PausedSection } from '../tasks/PausedSection'
@@ -164,21 +164,13 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleDone = (task: Task) =>
     markDone.mutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
 
-  // Mark a RECURRING task done: reset its cycle — lastDoneAt=now, doneCount+=1 — via the plain
-  // task UPDATE. Deliberately NOT history/daily_state (parity spec: recurring done lives in
-  // lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
+  // Mark a RECURRING task done: advance its cycle via `recurringCompletion` — lastDoneAt=now,
+  // doneCount+=1, and any one-shot `nextDueOn` cleared so the cadence resumes from the REAL
+  // completion — via the plain task UPDATE. Deliberately NOT history/daily_state (recurring done
+  // lives in lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
   const handleDoneRecurring = (task: Task) => {
     if (!task.recurring) return
-    updateTask.mutate({
-      id: task.id,
-      patch: {
-        recurring: {
-          ...task.recurring,
-          lastDoneAt: new Date().toISOString(),
-          doneCount: (task.recurring.doneCount ?? 0) + 1,
-        },
-      },
-    })
+    updateTask.mutate({ id: task.id, patch: { recurring: recurringCompletion(task.recurring) } })
   }
 
   // Recurring set/edit/remove — all write the `recurring` jsonb through the shared task UPDATE.

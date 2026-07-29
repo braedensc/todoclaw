@@ -682,12 +682,17 @@ Deno.test('restore_task rewinds a recurring chore’s cycle instead of the done 
   assert(!res.is_error)
   assertEquals(res.mutated, ['tasks'])
   assertEquals(rpcCalls.length, 0) // set_task_undone would have written nothing
-  const rec = getPatch()?.recurring as { lastDoneAt: string; doneCount: number }
-  // Rewound one full cadence behind local midnight TODAY (2026-07-04 in New York = 04:00Z), via
-  // the same phasing schedule_for_day uses — so the chore reads "due today" for the whole day,
-  // not merely from the moment it happened to be completed. The completion is un-counted.
-  assertEquals(rec.lastDoneAt, '2026-06-27T04:00:00.000Z')
+  const rec = getPatch()?.recurring as {
+    lastDoneAt: string
+    doneCount: number
+    nextDueOn: string | null
+  }
+  // A PURE rewind of the stored stamp by one cadence — 2026-07-04T14:00Z minus 7d. Restoring the
+  // day it was done therefore reads "due today"; restoring two days later reads "overdue 2d",
+  // which is the honest answer rather than forcing it onto today. The completion is un-counted.
+  assertEquals(rec.lastDoneAt, '2026-06-27T14:00:00.000Z')
   assertEquals(rec.doneCount, 3)
+  assertEquals(rec.nextDueOn, null) // a restore never leaves a stale one-shot override behind
 })
 
 Deno.test('restore_task says so when a recurring chore was never checked off', async () => {
@@ -714,7 +719,7 @@ Deno.test('restore_task still clears the done map for a one-off task', async () 
 // The reported use case. makeMutCtx's `now` is 2026-07-04T15:00Z = 11:00 local on Jul 4 in New
 // York, so '2026-07-05' is tomorrow.
 
-Deno.test('schedule_for_day phases a recurring chore onto the chosen day', async () => {
+Deno.test('schedule_for_day gives a recurring chore a one-shot occurrence override', async () => {
   // Weekly laundry ticked off THIS MORNING — cadence alone would say "in 7d" and hide it.
   const { ctx, getPatch } = makeMutCtx({
     text: 'Laundry',
@@ -723,13 +728,36 @@ Deno.test('schedule_for_day phases a recurring chore onto the chosen day', async
   })
   const res = await executeTool('schedule_for_day', { task_id: TASK_ID, date: '2026-07-05' }, ctx)
   assert(!res.is_error)
-  const rec = getPatch()?.recurring as { lastDoneAt: string; frequencyDays: number }
-  // Exactly one cadence before local midnight of the 5th → reads "due today" all that day.
-  assertEquals(rec.lastDoneAt, '2026-06-28T04:00:00.000Z')
+  const rec = getPatch()?.recurring as {
+    nextDueOn: string
+    lastDoneAt: string
+    frequencyDays: number
+    doneCount: number
+  }
+  // The wanted DAY is recorded as itself. It used to write a fabricated lastDoneAt (the target day
+  // minus one cadence) — a false completion timestamp in the field history and the done-today hide
+  // both read as fact, which also re-phased the user's weekly rhythm permanently.
+  assertEquals(rec.nextDueOn, '2026-07-05')
+  assertEquals(rec.lastDoneAt, '2026-07-04T13:00:00Z') // the real completion is left ALONE
   assertEquals(rec.frequencyDays, 7) // cadence itself untouched
+  assertEquals(rec.doneCount, 9)
   // The reminder anchor is NOT touched — on a recurring chore that is what `due` means.
   assertEquals('due' in (getPatch() ?? {}), false)
   assertEquals('due_time' in (getPatch() ?? {}), false)
+})
+
+Deno.test('schedule_for_day refuses a day the chore was already completed on', async () => {
+  // Ticked off this morning, asked for TODAY: the override would retire against that very
+  // completion, so writing it would confirm a change that never shows.
+  const { ctx, getPatch } = makeMutCtx({
+    text: 'Laundry',
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 9 },
+    start_date: null,
+  })
+  const res = await executeTool('schedule_for_day', { task_id: TASK_ID, date: '2026-07-04' }, ctx)
+  assert(!res.is_error)
+  assertEquals(getPatch(), undefined) // nothing written
+  assert(res.content.includes('already checked off today'))
 })
 
 Deno.test('schedule_for_day sets a due date and urgency on a one-off task', async () => {

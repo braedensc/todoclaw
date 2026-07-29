@@ -4,9 +4,8 @@
 // Faithful to src/features/ai/use-plan-my-day.ts buildPlanRequest + src/lib recurringStatus/daysUntil.
 
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
+import { recurringStatus } from './recurring-status.ts'
 import { SIZE_VALUES, UPCOMING_WINDOW_DAYS, type PlanRequest } from './plan-prompt.ts'
-
-const MS_PER_DAY = 86_400_000
 
 // The tasks row comes back untyped (a bare text `size`); narrow it to the S/M/L/XL enum the plan
 // request expects. The DB CHECK guarantees the value, but TS only sees `string | null`, so guard.
@@ -26,7 +25,13 @@ interface TaskRow {
   // an old-shaped source (deploy skew) still satisfy the type — toPlanSize maps a missing value to null.
   size?: string | null
   staged: boolean
-  recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
+  recurring: {
+    frequencyDays: number
+    lastDoneAt: string | null
+    doneCount: number
+    // One-shot occurrence override ("do it on Friday") — read by recurringStatus.
+    nextDueOn?: string | null
+  } | null
   // ONGOING project flag (own column since 2026-07-13). Optional so an old-shaped source still fits.
   ongoing?: boolean | null
   // Start (pause-until) wall-clock date (2026-07-17). Optional for the same deploy-skew reason —
@@ -36,22 +41,6 @@ interface TaskRow {
 interface HabitRow {
   text: string
   active: boolean
-}
-
-// Recurring status, reduced to what the plan request needs (label + whether it's due-ish). Mirrors
-// src/lib/recurring.ts recurringStatus.
-function recurringStatus(
-  recurring: TaskRow['recurring'],
-  now: Date,
-): { label: string; due: boolean } | null {
-  if (!recurring || !recurring.frequencyDays) return null
-  if (recurring.lastDoneAt == null) return { label: 'never done', due: true }
-  const daysSince = Math.floor((now.getTime() - Date.parse(recurring.lastDoneAt)) / MS_PER_DAY)
-  const daysLeft = recurring.frequencyDays - daysSince
-  if (daysLeft < -1) return { label: `overdue ${Math.abs(daysLeft)}d`, due: true }
-  if (daysLeft <= 1) return { label: daysLeft <= 0 ? 'due today' : 'due tomorrow', due: true }
-  if (daysLeft <= 5) return { label: `in ${daysLeft}d`, due: true } // 'soon'
-  return { label: `in ${daysLeft}d`, due: false } // 'ok' — not surfaced to the plan
 }
 
 // Selection: on-grid = not staged, not done today, not a recurring chore (ONGOING projects ARE
@@ -86,11 +75,16 @@ export function buildPlanRequest(
       ongoing: t.ongoing ?? false,
     }))
 
-  const recurringDue: { id: string; text: string; status: string }[] = []
+  // Recurring chores worth mentioning: anything the ladder does NOT call 'ok' (overdue / never done
+  // / due today / due tomorrow / soon). `daysLeft` rides along so the plan card's "chores due today"
+  // strip can select on a NUMBER rather than pattern-matching the display label (deriveChores).
+  const recurringDue: PlanRequest['recurringDue'] = []
   for (const t of tasks) {
     if (dormant(t)) continue // a paused chore sits out its pause too
-    const s = recurringStatus(t.recurring, now)
-    if (s && s.due) recurringDue.push({ id: t.id, text: t.text, status: s.label })
+    const s = recurringStatus(t.recurring, timeZone, now)
+    if (s && s.code !== 'ok') {
+      recurringDue.push({ id: t.id, text: t.text, status: s.label, daysLeft: s.daysLeft })
+    }
   }
 
   // Dormant tasks that un-pause SOON (start within UPCOMING_WINDOW_DAYS): kept OUT of `tasks`

@@ -13,6 +13,13 @@ export const RecurringSchema = z.object({
   frequencyDays: z.number(),
   lastDoneAt: z.string().nullable(),
   doneCount: z.number(),
+  // ONE-SHOT occurrence override (2026-07-29): the wall-clock day ('YYYY-MM-DD', user timezone)
+  // this occurrence is wanted on, regardless of where the cadence clock would have put it. It is
+  // what "I need to do laundry tomorrow" writes. `recurringStatus` prefers it over the cadence
+  // while it is live, so every existing reader honors it without changing; completing the chore
+  // clears it and the cadence resumes from the REAL completion, so the user's rhythm is untouched.
+  // `.nullish()` (not required): rows written before this field existed simply lack it.
+  nextDueOn: z.string().nullish(),
 })
 
 export type Recurring = z.infer<typeof RecurringSchema>

@@ -745,10 +745,15 @@ Deno.test('a valid emit still resolves end to end (no regression from validation
 // dropped in favour of tasks due in 3 and 6 days). A cadence is not a judgement call: the user
 // already decided it happens today. Same doctrine as deriveAnchors.
 
-const choreReq = (recurringDue: { id?: string; text: string; status: string }[]): PlanRequest => ({
+// `status` is the display label and is always sent in production; tests that only care about the
+// numeric selection may omit it, and it defaults to something the label matcher would REJECT so a
+// daysLeft-based test can never pass through the deploy-skew shim by accident.
+const choreReq = (
+  recurringDue: { id?: string; text: string; status?: string; daysLeft?: number }[],
+): PlanRequest => ({
   ...base,
   tasks: [],
-  recurringDue,
+  recurringDue: recurringDue.map((c) => ({ status: 'in 9d', ...c })),
 })
 
 Deno.test('deriveChores takes overdue / never done / due today, and nothing later', () => {
@@ -776,6 +781,56 @@ Deno.test('deriveChores caps a long backlog rather than filling the card', () =>
     status: 'overdue 2d',
   }))
   assertEquals(deriveChores(choreReq(many)).length, MAX_CHORES)
+})
+
+// Selection is a NUMBER comparison on the ladder's own daysLeft, not a pattern match on the display
+// label. The label branch survives only as a deploy-skew shim for a cached client that predates the
+// field (exercised by the tests above, which send no daysLeft).
+Deno.test('deriveChores selects on daysLeft, not on the label text', () => {
+  const chores = deriveChores(
+    choreReq([
+      { id: 'c1', text: 'Laundry', daysLeft: 0 },
+      { id: 'c2', text: 'Bins', daysLeft: -3 },
+      { id: 'c3', text: 'Filters', daysLeft: -999 }, // never done
+      { id: 'c4', text: 'Sheets', daysLeft: 1 }, // due tomorrow → look-ahead
+      { id: 'c5', text: 'Descale', daysLeft: 4 },
+    ]),
+  )
+  assertEquals(
+    chores.map((c) => c.task),
+    ['Filters', 'Bins', 'Laundry'],
+  )
+})
+
+Deno.test('deriveChores trusts daysLeft over a stale or renamed label', () => {
+  // A label the old string matcher would have accepted, with a number that says otherwise — and the
+  // reverse. The number must win both ways, so renaming a label can never empty (or wrongly fill)
+  // the strip again.
+  const chores = deriveChores(
+    choreReq([
+      { id: 'c1', text: 'Not today', status: 'due today', daysLeft: 3 },
+      { id: 'c2', text: 'Actually today', status: 'whatever the badge says', daysLeft: 0 },
+    ]),
+  )
+  assertEquals(
+    chores.map((c) => c.task),
+    ['Actually today'],
+  )
+})
+
+Deno.test('deriveChores keeps the MOST overdue when a backlog exceeds the cap', () => {
+  // Request order is task-creation order, so capping without sorting dropped an arbitrary chore —
+  // and silently: unlike the rocks, nothing tells the user more was due than fits.
+  const many = Array.from({ length: MAX_CHORES + 3 }, (_, i) => ({
+    id: `c${i}`,
+    text: `Chore ${i}`,
+    daysLeft: -i, // Chore 0 is due today, the last one is the most overdue
+  }))
+  const chores = deriveChores(choreReq(many))
+  assertEquals(chores.length, MAX_CHORES)
+  // The three least-urgent (Chore 0..2) are the ones dropped.
+  assertEquals(chores[0].task, `Chore ${MAX_CHORES + 2}`)
+  assertEquals(chores.at(-1)?.task, `Chore 3`)
 })
 
 Deno.test('a due chore reaches the plan even when the model emits no rocks at all', () => {

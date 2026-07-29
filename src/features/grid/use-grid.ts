@@ -5,7 +5,7 @@ import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
-import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
+import { recurringCompletion, recurringDoneToday, recurringStatus } from '../../lib/recurring'
 import { isDormant } from '../../lib/start-date'
 import { quadrantMeta } from '../../lib/quadrants'
 import { urgencyGlowStyle } from '../../lib/visual-urgency'
@@ -55,7 +55,7 @@ function isPlaced(
   if (isDormant(task, timeZone)) return false
   if (doneToday[task.id]) return false
   if (recurringDoneToday(task.recurring, timeZone)) return false
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   if (rc && rc.code === 'ok') return false
   return true
 }
@@ -282,22 +282,17 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
 
   // --- Mark done (shared by grid cards + popup rows) -------------------------------------
   // Normal task: write history + today's daily_state (it leaves the grid). Recurring task:
-  // reset the cycle (lastDoneAt=now, doneCount+1) WITHOUT touching history/daily_state — it is
-  // then hidden from the board for the rest of the local day (recurringDoneToday) and returns the
-  // next day when its cadence next reads due/soon. Closes any open popup.
+  // advance the cycle via `recurringCompletion` (lastDoneAt=now, doneCount+1, any one-shot
+  // `nextDueOn` cleared) WITHOUT touching history/daily_state — it is then hidden from the board
+  // for the rest of the local day (recurringDoneToday) and returns the next day when its cadence
+  // next reads due/soon. Closes any open popup.
   const handleDone = useCallback(
     (task: Task) => {
       selectCluster(null)
       if (task.recurring) {
         updateMutate({
           id: task.id,
-          patch: {
-            recurring: {
-              ...task.recurring,
-              lastDoneAt: new Date().toISOString(),
-              doneCount: (task.recurring.doneCount ?? 0) + 1,
-            },
-          },
+          patch: { recurring: recurringCompletion(task.recurring) },
         })
       } else {
         markDoneMutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })

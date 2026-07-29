@@ -206,7 +206,7 @@ export function SchedulePanel({
           ? 'weekly'
           : 'custom'
 
-  const status = recurringStatus(recurring)
+  const status = recurringStatus(recurring, { timeZone })
   const statusColor = status ? RC_COLOR[status.code] : RC_COLOR.ok
 
   // The three mutually-exclusive types (Task / Recurring / Ongoing) drive one segmented switch.
@@ -275,13 +275,27 @@ export function SchedulePanel({
       {/* Plain header (owner feedback 2026-07-09: the "come back to you" phrasing read unclear) —
           the panel says what it does and gets out of the way. The 🦴 garnish below stays. */}
       <div className="flex flex-col">
-        <span className="text-[13px] font-bold">Set a due date</span>
+        {/* A recurring chore has no deadline — its due-ness is derived from the cadence. Picking a
+            day means "this next happens then" (it writes the one-shot occurrence override alongside
+            the reminder anchor; see use-set-due.ts). Saying "due date" here was the trap: the write
+            was confirmed and the chore stayed invisible, because nothing reads a chore's due date
+            for the board or the plan. */}
+        <span className="text-[13px] font-bold">
+          {currentType === 'recurring' ? 'Do it on a day' : 'Set a due date'}
+        </span>
         <span className="truncate text-[11px] text-muted-light">{taskText}</span>
       </div>
 
       {/* ---- Due: the two-week paper calendar ---- */}
       <div>
         <span className={sectionLabel}>{monthLabel}</span>
+        {currentType === 'recurring' && (
+          <p className="mt-0.5 text-[11px] leading-snug text-muted">
+            Pick the day this next comes up — it lands on your board and that day's plan. Finishing
+            it resumes the {freq ? fmtFrequency(freq) : 'usual'} rhythm from when you actually did
+            it.
+          </p>
+        )}
         <div
           role="group"
           aria-label="Due day"

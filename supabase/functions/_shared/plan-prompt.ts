@@ -62,7 +62,18 @@ export const PlanRequestSchema = z.object({
     )
     .max(200),
   recurringDue: z
-    .array(z.object({ id: z.string().nullish(), text: z.string(), status: z.string() }))
+    .array(
+      z.object({
+        id: z.string().nullish(),
+        text: z.string(),
+        status: z.string(),
+        // Cadence `daysLeft` (<= 0 means wanted TODAY). The chores strip selects on this NUMBER
+        // rather than pattern-matching `status`, which is display text. `.nullish()` for the same
+        // deploy-skew reason as `id`: an old cached client omits it, and deriveChores then falls
+        // back to reading the label (the pre-2026-07-29 behavior).
+        daysLeft: z.number().nullish(),
+      }),
+    )
     .max(100), // overdue/due/soon recurring chores (id lenient for the same deploy-skew reason)
   habits: z.array(z.string()).max(100), // active habit names
   // Paused / not-yet-started tasks whose start date lands within UPCOMING_WINDOW_DAYS — surfaced as
@@ -526,30 +537,38 @@ function isAnchored(rock: { task: string; taskId: string | null }, anchors: Plan
 /**
  * Is this recurring chore wanted TODAY — overdue, never done, or due today?
  *
- * `status` is the label the recurringStatus ladder produces, and both request builders
- * (src/lib/recurring.ts via use-plan-my-day, and _shared/plan-inputs.ts) emit the SAME closed set:
- * 'never done' | 'overdue Nd' | 'due today' | 'due tomorrow' | 'in Nd'. Only the first three mean
- * "today"; 'due tomorrow' and 'in Nd' are look-aheads and stay out of the strip. Both builders'
- * label sets are pinned by their own tests, so a renamed label fails loudly rather than silently
- * emptying this strip.
+ * `daysLeft` is the ladder's own number, so this is a numeric comparison: `<= 0` is today or past
+ * due (never-done is -999), `1` is due tomorrow, higher is a look-ahead. Both request builders
+ * (src/lib/recurring.ts via use-plan-my-day, and _shared/plan-inputs.ts) now send it.
+ *
+ * The `status` branch is a DEPLOY-SKEW SHIM ONLY: a cached frontend from before 2026-07-29 omits
+ * `daysLeft`, and without the fallback its due chores would silently vanish from the strip for the
+ * length of the skew window. It pattern-matches display text, which is exactly why it is not the
+ * primary path — delete it once no client can predate the field.
  */
-function isDueNow(status: string): boolean {
-  const s = status.trim().toLowerCase()
+function isDueNow(chore: { status: string; daysLeft?: number | null }): boolean {
+  if (chore.daysLeft != null) return chore.daysLeft <= 0
+  const s = chore.status.trim().toLowerCase()
   return s === 'due today' || s === 'never done' || s.startsWith('overdue')
 }
 
 /**
- * The recurring chores that are due TODAY, in request order, capped like anchors.
+ * The recurring chores that are due TODAY, hardest-deadline first, capped like anchors.
  *
  * Same doctrine as deriveAnchors, for the same reason: rule 4 caps small rocks at two and defaults
  * to one, so a chore due today had to out-argue the model's other picks for a slot — and lost to
  * tasks that were not even due yet. A chore on a cadence is not a judgement call: the user already
  * decided it happens today. So the card lists them itself, deterministically, where the caps can't
  * reach.
+ *
+ * Sorted before the cap, so when a backlog exceeds MAX_CHORES the ones dropped are the least
+ * overdue — request order (task creation order) would have dropped an arbitrary chore.
  */
 export function deriveChores(req: PlanRequest): PlanChore[] {
   return req.recurringDue
-    .filter((c) => isDueNow(c.status))
+    .filter(isDueNow)
+    .slice()
+    .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0))
     .slice(0, MAX_CHORES)
     .map((c) => ({ task: c.text, status: c.status, taskId: c.id ?? null }))
 }

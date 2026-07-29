@@ -6,6 +6,7 @@
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
+import { recurringDoneToday, recurringStatus } from './recurring-status.ts'
 import { reminderDefaultFromConfig } from './reminder-default.ts'
 import { HABITS_FETCH_LIMIT, REMINDERS_FETCH_LIMIT, TASKS_FETCH_LIMIT } from './write-caps.ts'
 import {
@@ -26,6 +27,8 @@ interface Recurring {
   frequencyDays: number
   lastDoneAt: string | null
   doneCount: number
+  /** One-shot occurrence override ("do it on Friday") — read by the shared cadence ladder. */
+  nextDueOn?: string | null
 }
 
 export interface LoadedChatContext {
@@ -48,27 +51,19 @@ function fmtFrequency(days: number): string {
   return 'every ~3mo'
 }
 
-// Due/overdue phrase for a recurring task (mirrors src/lib/recurring.ts recurringStatus thresholds),
-// so BabyClaw can tell an overdue chore from one that isn't due yet — a recurring task never sits in
-// the daily done map, so without this it would read every recurrence as an active to-do.
-function recurringStatusPhrase(rec: Recurring | null, now: Date): string | null {
-  if (!rec || !rec.frequencyDays) return null
-  if (rec.lastDoneAt == null) return 'never done'
-  const daysSince = Math.floor((now.getTime() - Date.parse(rec.lastDoneAt)) / 86_400_000)
-  const daysLeft = rec.frequencyDays - daysSince
-  if (daysLeft < -1) return `overdue ${Math.abs(daysLeft)}d`
-  if (daysLeft <= 0) return 'due today'
-  if (daysLeft === 1) return 'due tomorrow'
-  return `due again in ${daysLeft}d`
-}
-
-// A recurring task never touches the daily done map — completing it just resets recurring.lastDoneAt
-// — so the grid/mobile board hides it for the rest of the local day by comparing lastDoneAt to today
-// (src/lib/recurring.ts recurringDoneToday). Mirror that here so BabyClaw's context matches what the
-// user sees: a recurring chore ticked off today reads as DONE TODAY, not as still-active.
-function recurringDoneToday(rec: Recurring | null, timeZone: string, now: Date): boolean {
-  if (!rec?.lastDoneAt) return false
-  return localDateInTZ(timeZone, new Date(rec.lastDoneAt)) === localDateInTZ(timeZone, now)
+// Due/overdue phrase for a recurring task, so BabyClaw can tell an overdue chore from one that isn't
+// due yet — a recurring task never sits in the daily done map, so without this it would read every
+// recurrence as an active to-do.
+//
+// The ARITHMETIC comes from the shared ladder (recurring-status.ts); only the wording is local. This
+// file used to re-derive the thresholds itself and had already drifted from the other two copies
+// ('due again in 4d' vs 'in 4d' for the same state) — the reason the ladder now lives in one place.
+// The look-ahead keeps its roomier prose ("due again in 4d") because this text is read by the model
+// in a sentence, not rendered as a compact badge.
+function recurringStatusPhrase(rec: Recurring | null, timeZone: string, now: Date): string | null {
+  const s = recurringStatus(rec, timeZone, now)
+  if (!s) return null
+  return s.code === 'soon' || s.code === 'ok' ? `due again in ${s.daysLeft}d` : s.label
 }
 
 // Compact summary of today's saved Plan My Day (daily_state.plan jsonb, DayPlan shape — see
@@ -314,7 +309,7 @@ export async function loadChatContext(
       dueTime: t.due_time as string | null,
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
-      recurringStatus: recurringStatusPhrase(rec, now),
+      recurringStatus: recurringStatusPhrase(rec, timeZone, now),
       ongoing: (t.ongoing as boolean | null) ?? false,
       size: (t.size as string | null) ?? null,
       // Dormant (paused) = future start date on the user's local calendar. BabyClaw still SEES a
