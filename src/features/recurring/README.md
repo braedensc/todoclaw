@@ -1,9 +1,10 @@
 # recurring
 
-Recurring-task UI (Stage 3 PR8). The repeat-schedule control rendered inside an expanded list
-row, plus the place where a task is **made / un-made** recurring. The recurring _math_
-(status code, cadence label, colors) lives in `src/lib/recurring.ts` and is reused here, never
-reimplemented.
+Recurring-task notes (Stage 3 PR8). **This folder is documentation only** — it holds no component.
+The place where a task is **made / un-made** recurring is the shared `SchedulePanel`, and the
+recurring _math_ (status code, cadence label, colors) lives in `src/lib/recurring.ts` and is reused
+everywhere, never reimplemented. Both are mapped under "Where things live" below; what precedes it
+is the behavior contract for recurring tasks.
 
 A recurring task is a regular task with a `recurring` jsonb field
 (`{ frequencyDays, lastDoneAt, doneCount }` — see `src/types/task.ts`). It is identical to a
@@ -99,25 +100,18 @@ now accepted). The fire-time math is `next_recurring_fire_at` (SQL, the sole pro
 DST-safe and backlog-skipping. Full design: ADR
 `docs/adr/2026-07-09-task-reminders-pg-cron-push.md` (recurring unified 2026-07-12).
 
-## Components
+## Where things live
 
-- **`RecurringSection.tsx`** — the `↻ Recurring` row at the bottom of `ExpandedRow`. Owns no
-  server state; it reads `task.recurring` and calls back into the parent's mutation wiring
-  (`ListView`'s `useUpdateTask`). Two modes:
-  - **Not recurring** → a days number-input + **Set** (writes a fresh
-    `{ frequencyDays, lastDoneAt: null, doneCount: 0 }`). Set is a no-op until a positive
-    integer is entered.
-  - **Recurring** → the cadence via `fmtFrequency`, the live status via `recurringStatus`
-    (label colored by `RC_COLOR[code]`), an editable frequency input (preserves `lastDoneAt` +
-    `doneCount`), and **Remove** (writes `recurring: null`).
-
-## Where the rest lives
-
+- **The editor (set / edit / remove a cadence):** the shared `SchedulePanel`
+  (`src/features/schedule/SchedulePanel.tsx`) — one panel across every surface, whose three-way
+  **Task / Recurring / Ongoing** switch owns the type and the cadence input. A dedicated
+  `RecurringSection.tsx` used to live in this folder; `SchedulePanel` superseded it when it landed
+  (#216, 2026-07-09) and the orphan was deleted, still unimported, on 2026-07-29.
 - **Status/cadence/colors:** `src/lib/recurring.ts` (`recurringStatus`, `RC_COLOR`,
   `fmtFrequency`) — fully unit-tested in `recurring.test.ts`.
 - **Mark-done branch + the set/remove mutation handlers:** `src/features/list/ListView.tsx`
   (recurring done = `useUpdateTask` cycle reset; normal done = `useMarkTaskDone`). The
-  `RecurringSection` and done-control behavior are tested in `ListView.test.tsx`.
+  schedule-editor wiring and done-control behavior are tested in `ListView.test.tsx`.
 - **Un-completing one (BabyClaw's `restore_task`)** REWINDS the cycle — `lastDoneAt` moves back one
   `frequencyDays` and `doneCount` drops by one — rather than touching today's `daily_state` done
   map, which a recurring completion never enters. (It used to call `set_task_undone`, so restoring

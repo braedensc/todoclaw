@@ -146,8 +146,9 @@ a click-to-edit target that fights the drag. Choosing it opens the inline editor
 tap on the title inside the action surface.
 
 **⋯ menu (due + recurring)** — a small popover (`useClickOutside` to dismiss; flips above / aligns
-to the nearer edge so it stays on-canvas) holding the due-date picker + the shared
-`RecurringSection` (set / edit / remove a repeat schedule). Both commit through the one generic
+to the nearer edge so it stays on-canvas) holding the shared `SchedulePanel`
+(`src/features/schedule/`) — due date + time, reminders, and the Task / Recurring / Ongoing switch
+that sets / edits / removes a repeat schedule. All of it commits through the one generic
 `updateMutate({ id, patch })`. Setting a due date writes **`due` only** — unlike BabyClaw's
 `set_due_date`, it never repositions a manually-placed card.
 
