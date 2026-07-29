@@ -24,8 +24,9 @@ due-soon bonus (`src/lib/scoring.ts`).
   both shared `IconButton`s (tooltip + hover intent); delete runs through `useConfirm` first
   (ListView), so it's no longer a silent soft-delete.
 - **`ExpandedRow.tsx`** — the detail panel: urgency/importance sliders (0–100) each paired
-  with a number input, a due-date picker, a **live** quadrant badge (tracks the sliders), and
-  the recurring section (`RecurringSection` from `src/features/recurring/`).
+  with a number input, a **live** quadrant badge (tracks the sliders), and the shared
+  `SchedulePanel` (`src/features/schedule/`) — the same due/repeat/remind editor as the grid
+  card's ⋯ menu, so a schedule reads and edits identically everywhere.
 
 ## Slider commit semantics
 
