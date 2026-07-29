@@ -1,6 +1,6 @@
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RC_COLOR, recurringStatusWithDue } from '../../lib/recurring'
+import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { ONGOING_GLYPH } from '../../lib/task-type'
 import {
   BASE_CARD_SHADOW,
@@ -88,7 +88,7 @@ export function TouchGridChip({
   onTap,
 }: TouchGridChipProps) {
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
-  const rc = recurringStatusWithDue(task.recurring, daysUntilDue)
+  const rc = recurringStatus(task.recurring)
   // Lane gating order mirrors GridCard: paused gates first; staleness is skipped for recurring
   // and paused; the warm tier applies only when no other lane claimed the chip.
   const stale = rc || paused ? null : staleness(task, daysUntilDue)

@@ -667,34 +667,8 @@ Deno.test('set_due_date leaves existing reminders alone when a time is gained', 
   assertEquals(rpcCalls.length, 0) // the 30-min reminder the user already has stands
 })
 
-// ---- the recurring due-date override + a restore that actually restores -----------------------
-// ADR 2026-07-29-recurring-due-override. `now` in makeMutCtx is 2026-07-04T15:00Z = 11:00 local
-// on Jul 4 in New York.
-
-Deno.test('complete_task consumes a recurring task’s one-off due-date override', async () => {
-  const { ctx, getPatch } = makeMutCtx({
-    text: 'Laundry',
-    bucket: 'oneoff',
-    due: '2026-07-04',
-    recurring: { frequencyDays: 7, lastDoneAt: '2026-06-27T00:00:00Z', doneCount: 2 },
-  })
-  const res = await executeTool('complete_task', { task_id: TASK_ID }, ctx)
-  assert(!res.is_error)
-  // The deadline belonged to the occurrence just finished — left set it would read overdue forever.
-  assertEquals(getPatch()?.due, null)
-  assertEquals(getPatch()?.due_time, null)
-})
-
-Deno.test('complete_task leaves an undated recurring task’s due fields untouched', async () => {
-  const { ctx, getPatch } = makeMutCtx({
-    text: 'Laundry',
-    bucket: 'oneoff',
-    due: null,
-    recurring: { frequencyDays: 7, lastDoneAt: '2026-06-27T00:00:00Z', doneCount: 2 },
-  })
-  assert(!(await executeTool('complete_task', { task_id: TASK_ID }, ctx)).is_error)
-  assertEquals('due' in (getPatch() ?? {}), false)
-})
+// ---- restore_task on a recurring chore -------------------------------------------------------
+// `now` in makeMutCtx is 2026-07-04T15:00Z = 11:00 local on Jul 4 in New York.
 
 // The reported bug: restore_task called set_task_undone, which clears today's daily done MAP — but
 // a recurring chore never enters that map (completing it advances lastDoneAt), so the write hit

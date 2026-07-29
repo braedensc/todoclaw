@@ -10,23 +10,6 @@ A recurring task is a regular task with a `recurring` jsonb field
 normal task except: it surfaces on the grid only when due/soon/overdue, and marking it done
 **resets its clock** instead of archiving it (handled in `src/features/list/`, not here).
 
-## A due date on a recurring task (the one-off override)
-
-A recurring task may also carry a `due` date, and it means **"this occurrence needs doing by
-then"** — a one-time pull-forward, not a change to the cadence (ADR
-`docs/adr/2026-07-29-recurring-due-override.md`). The rules, all in `src/lib/recurring.ts`:
-
-- Effective status is the **nearer** of the two clocks — `recurringTaskStatus(task, { timeZone })`.
-  A deadline further out than the cadence changes nothing, so an overdue chore can never be muted
-  by attaching a date to it.
-- A **live** deadline (today or past — `recurringDueLive`) also overrides the done-today board
-  hide: setting a date after ticking the chore off is a deliberate "another one, today".
-- **Completing consumes the override** — every recurring-completion write site clears
-  `due`/`due_time` along with the cycle advance, so a spent deadline can't read overdue forever.
-
-Every surface that reads a recurring task's schedule uses `recurringTaskStatus`; the cadence-only
-`recurringStatus` remains its building block, not a drop-in.
-
 ## Ongoing projects (a separate task type)
 
 An **ongoing project** — a standing, open-ended effort worked on over many sessions (e.g. "redesign
@@ -74,16 +57,20 @@ DST-safe and backlog-skipping. Full design: ADR
     integer is entered.
   - **Recurring** → the cadence via `fmtFrequency`, the live status via `recurringStatus`
     (label colored by `RC_COLOR[code]`), an editable frequency input (preserves `lastDoneAt` +
-    `doneCount`), and **Remove** (writes `recurring: null`). This section has no due date to hand;
-    the shared `SchedulePanel` (which does) shows the due-aware status.
+    `doneCount`), and **Remove** (writes `recurring: null`).
 
 ## Where the rest lives
 
-- **Status/cadence/colors:** `src/lib/recurring.ts` (`recurringTaskStatus` — the due-aware status
-  every surface reads — plus `recurringStatus`, `recurringDueLive`, `RC_COLOR`, `fmtFrequency`) —
-  fully unit-tested in `recurring.test.ts`.
+- **Status/cadence/colors:** `src/lib/recurring.ts` (`recurringStatus`, `RC_COLOR`,
+  `fmtFrequency`) — fully unit-tested in `recurring.test.ts`.
 - **Mark-done branch + the set/remove mutation handlers:** `src/features/list/ListView.tsx`
   (recurring done = `useUpdateTask` cycle reset; normal done = `useMarkTaskDone`). The
   `RecurringSection` and done-control behavior are tested in `ListView.test.tsx`.
+- **Un-completing one (BabyClaw's `restore_task`)** REWINDS the cycle — `lastDoneAt` moves back one
+  `frequencyDays` and `doneCount` drops by one — rather than touching today's `daily_state` done
+  map, which a recurring completion never enters. (It used to call `set_task_undone`, so restoring
+  a recurring chore wrote nothing at all while replying that it had worked.) That rewind is also
+  the supported way to pull a chore back for an extra round off-cycle: undo the completion and it
+  reads due again. See `supabase/functions/_shared/capabilities/tasks.ts`.
 - **Grid visuals** (`code !== 'ok'` visibility filter, `×N` badge): `src/features/grid/`. The
   list row mirrors the same `×N` badge at `doneCount ≥ 3`.

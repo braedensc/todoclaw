@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
-import { RC_COLOR, recurringTaskStatus } from '../../lib/recurring'
+import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
 import {
   BASE_CARD_SHADOW,
@@ -292,7 +292,7 @@ function ClusterPopupRow({
   onToggleReminder,
   onClearReminders,
 }: ClusterPopupRowProps) {
-  const rc = recurringTaskStatus(task, { timeZone })
+  const rc = recurringStatus(task.recurring)
   // The grid card's border scheme, mirrored exactly (see GridCard): a solid status-colored TOP
   // border — recurring RC color, else quadrant color — with the terracotta bucket accent on the
   // other three sides (dashed + heavier for a recurring card, its "this repeats" outline).

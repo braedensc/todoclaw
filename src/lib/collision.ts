@@ -6,7 +6,7 @@
 // spiral, clamped to the grid interior.
 
 import type { Task } from '../types/task'
-import { recurringStatus, recurringTaskStatus } from './recurring'
+import { recurringStatus } from './recurring'
 
 /** Card footprint half-extents for overlap testing (html:127). */
 export const FOOTPRINT_X = 0.16
@@ -25,15 +25,6 @@ const clamp = (v: number): number => Math.min(CLAMP_MAX, Math.max(CLAMP_MIN, v))
 export interface CollisionOpts {
   /** Injected for deterministic recurring-status checks; defaults to the current instant. */
   now?: Date
-  /**
-   * The user's timezone, so a recurring task's DUE-DATE override is read the same way the grid
-   * reads it (a due date pulls a chore back onto the board mid-cycle, so it blocks placements
-   * again). Optional: without it the cadence clock alone decides, which is what the timezone-free
-   * callers (moveToQuadrant / placeInQuadrant, when the caller has no zone to hand) get. The cost
-   * of missing it is only that a due-overridden card may be landed on — and two overlapping cards
-   * simply cluster, exactly as they do on a grid drag.
-   */
-  timeZone?: string
 }
 
 /**
@@ -54,9 +45,7 @@ function overlapsAny(
     if (t.deleted_at) continue
     if (t.staged) continue
     if (t.x == null || t.y == null) continue
-    const status = opts.timeZone
-      ? recurringTaskStatus(t, { timeZone: opts.timeZone, now: opts.now })
-      : recurringStatus(t.recurring, opts)
+    const status = recurringStatus(t.recurring, opts)
     if (status && status.code === 'ok') continue
     if (Math.abs(t.x - px) < FOOTPRINT_X && Math.abs(t.y - py) < FOOTPRINT_Y) {
       return true

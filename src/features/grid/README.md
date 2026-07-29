@@ -50,8 +50,7 @@ like the desktop dormant pass.
   graph-paper lines, the two center axes, and the four corner quadrant labels (each in its
   `quadrantMeta` color). Owns the `surfaceRef` used as the drag/tap coordinate space.
 - **`GridCard.tsx`** — one placed card (112px). The 3px top border encodes status: recurring
-  → `RC_COLOR[recurringTaskStatus().code]` (due-aware — a due date overrides the cadence when it
-  lands sooner), otherwise the quadrant color for its `(x, y)`. Renders
+  → `RC_COLOR[recurringStatus().code]`, otherwise the quadrant color for its `(x, y)`. Renders
   the recurring status badge + `×N` badge (`doneCount ≥ 3`), the **visual-urgency layer** (glow /
   stale ring / due badge — see below), the **recurring indicator** (a ↻ corner chip + dashed accent
   side borders — see below), and the hover action row (done / ⋯ menu / delete).

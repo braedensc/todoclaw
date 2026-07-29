@@ -389,7 +389,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'set_due_date',
     description:
-      "Set or clear a task's due date, and optionally a due TIME. A new due date re-derives the task's URGENCY (grid x) from how soon it is — importance is never touched — and places a staged task on the board; clearing a due date leaves the card exactly where it is. On a RECURRING chore a due date is a one-off deadline for the CURRENT occurrence: it overrides the cadence when it lands sooner (so the chore surfaces on the board and in Plan My Day even mid-cycle, and even if it was already ticked off today), and completing the chore clears it. This is the right tool when the user wants a recurring chore surfaced off-cycle — do NOT tell them a due date won't help. When the task FIRST gains a due time (and has no reminders yet), the user's default reminder is added automatically — the confirmation tells you what was added. Clearing the due date (or just the time) also removes the task's reminders — a reminder needs both. Set a time when the user names one, or when they want a reminder (a reminder needs a due time).",
+      "Set or clear a task's due date, and optionally a due TIME. A new due date re-derives the task's URGENCY (grid x) from how soon it is — importance is never touched — and places a staged task on the board; clearing a due date leaves the card exactly where it is. When the task FIRST gains a due time (and has no reminders yet), the user's default reminder is added automatically — the confirmation tells you what was added. Clearing the due date (or just the time) also removes the task's reminders — a reminder needs both. Set a time when the user names one, or when they want a reminder (a reminder needs a due time).",
     schema: z
       .object({
         task_id: uuid.describe('The task id (UUID).'),
@@ -864,7 +864,7 @@ export const taskCapabilities: Capability[] = [
       const now = ctx.now ?? new Date()
       const { data: task, error: selErr } = await ctx.client
         .from('tasks')
-        .select('text, bucket, recurring, due')
+        .select('text, bucket, recurring')
         .eq('id', i.task_id)
         .is('deleted_at', null)
         .maybeSingle()
@@ -881,12 +881,8 @@ export const taskCapabilities: Capability[] = [
         doneCount?: number
       } | null
       if (rec?.frequencyDays) {
-        // Completing also CONSUMES any one-off due-date override: the deadline applied to the
-        // occurrence just finished, and leaving it set would read overdue forever
-        // (ADR 2026-07-29-recurring-due-override). Mirrors the in-app Done buttons.
         const patch = {
           recurring: { ...rec, lastDoneAt: now.toISOString(), doneCount: (rec.doneCount ?? 0) + 1 },
-          ...(task.due ? { due: null, due_time: null } : {}),
         }
         const { error } = await ctx.client
           .from('tasks')

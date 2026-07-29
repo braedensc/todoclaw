@@ -310,32 +310,6 @@ describe('ListView', () => {
       expect(arg.patch.recurring.doneCount).toBe(3)
       expect(arg.patch.recurring.lastDoneAt).not.toBe(RECENT)
       expect(Number.isNaN(Date.parse(arg.patch.recurring.lastDoneAt))).toBe(false)
-      // No due-date override on this one, so the due fields are left out of the patch entirely.
-      expect('due' in arg.patch).toBe(false)
-    })
-
-    it('consumes a recurring task’s one-off due-date override when marking it done', () => {
-      // ADR 2026-07-29-recurring-due-override: the deadline belonged to the occurrence just
-      // finished — left set, the chore would read overdue forever instead of resuming its cycle.
-      tasksData = [
-        makeTask({
-          id: 'r2',
-          text: 'laundry',
-          due: '2026-07-29',
-          due_time: '09:00:00',
-          recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 2 },
-        }),
-      ]
-      renderList()
-
-      fireEvent.click(screen.getByLabelText('Mark done (resets clock)'))
-
-      const arg = updateMutate.mock.calls[0]![0] as {
-        patch: { due: string | null; due_time: string | null; recurring: { doneCount: number } }
-      }
-      expect(arg.patch.due).toBeNull()
-      expect(arg.patch.due_time).toBeNull()
-      expect(arg.patch.recurring.doneCount).toBe(3) // the cycle still advances
     })
   })
 

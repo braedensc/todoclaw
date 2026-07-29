@@ -40,41 +40,18 @@ interface HabitRow {
 
 // Recurring status, reduced to what the plan request needs (label + whether it's due-ish). Mirrors
 // src/lib/recurring.ts recurringStatus.
-function statusFromDaysLeft(daysLeft: number): { label: string; due: boolean } {
+function recurringStatus(
+  recurring: TaskRow['recurring'],
+  now: Date,
+): { label: string; due: boolean } | null {
+  if (!recurring || !recurring.frequencyDays) return null
+  if (recurring.lastDoneAt == null) return { label: 'never done', due: true }
+  const daysSince = Math.floor((now.getTime() - Date.parse(recurring.lastDoneAt)) / MS_PER_DAY)
+  const daysLeft = recurring.frequencyDays - daysSince
   if (daysLeft < -1) return { label: `overdue ${Math.abs(daysLeft)}d`, due: true }
   if (daysLeft <= 1) return { label: daysLeft <= 0 ? 'due today' : 'due tomorrow', due: true }
   if (daysLeft <= 5) return { label: `in ${daysLeft}d`, due: true } // 'soon'
   return { label: `in ${daysLeft}d`, due: false } // 'ok' — not surfaced to the plan
-}
-
-/**
- * Effective status of a recurring task: the SOONER of its cadence clock and any explicit due
- * date. Mirrors src/lib/recurring.ts recurringTaskStatus — an explicit deadline on a recurring
- * chore is a one-off override for the current occurrence, so it must reach the plan even
- * mid-cycle (ADR 2026-07-29-recurring-due-override). Keep the two in step.
- */
-function recurringStatus(
-  task: Pick<TaskRow, 'recurring' | 'due'>,
-  timeZone: string,
-  now: Date,
-): { label: string; due: boolean; daysLeft: number } | null {
-  const recurring = task.recurring
-  if (!recurring || !recurring.frequencyDays) return null
-
-  const cadence =
-    recurring.lastDoneAt == null
-      ? { label: 'never done', due: true, daysLeft: -999 }
-      : (() => {
-          const daysSince = Math.floor(
-            (now.getTime() - Date.parse(recurring.lastDoneAt as string)) / MS_PER_DAY,
-          )
-          const daysLeft = recurring.frequencyDays - daysSince
-          return { ...statusFromDaysLeft(daysLeft), daysLeft }
-        })()
-
-  const dueLeft = daysUntilInTZ(task.due ?? null, timeZone, now)
-  if (dueLeft == null || dueLeft >= cadence.daysLeft) return cadence
-  return { ...statusFromDaysLeft(dueLeft), daysLeft: dueLeft }
 }
 
 // Selection: on-grid = not staged, not done today, not a recurring chore (ONGOING projects ARE
@@ -112,7 +89,7 @@ export function buildPlanRequest(
   const recurringDue: { id: string; text: string; status: string }[] = []
   for (const t of tasks) {
     if (dormant(t)) continue // a paused chore sits out its pause too
-    const s = recurringStatus(t, timeZone, now)
+    const s = recurringStatus(t.recurring, now)
     if (s && s.due) recurringDue.push({ id: t.id, text: t.text, status: s.label })
   }
 

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { daysUntil } from '../../lib/scoring'
-import { recurringTaskStatus } from '../../lib/recurring'
+import { recurringStatus } from '../../lib/recurring'
 import { isDormant } from '../../lib/start-date'
 import { localDateInTZ } from '../../lib/dates'
 import type { DailyStateMaps } from '../daily-state/use-daily-state'
@@ -86,9 +86,7 @@ export function buildPlanRequest(
   for (const t of tasks) {
     if (!t.recurring) continue
     if (isDormant(t, timeZone, now)) continue // a paused chore sits out its pause too
-    // Due-aware: an explicit due date overrides the cadence (the nearer clock wins), so a chore
-    // the user has given a deadline reaches the plan even mid-cycle.
-    const s = recurringTaskStatus(t, { timeZone, now })
+    const s = recurringStatus(t.recurring, { now })
     if (s && (s.code === 'overdue' || s.code === 'due' || s.code === 'soon')) {
       recurringDue.push({ id: t.id, text: t.text, status: s.label })
     }

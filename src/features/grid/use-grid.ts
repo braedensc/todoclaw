@@ -5,7 +5,7 @@ import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
-import { recurringDoneToday, recurringDueLive, recurringTaskStatus } from '../../lib/recurring'
+import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
 import { isDormant } from '../../lib/start-date'
 import { quadrantMeta } from '../../lib/quadrants'
 import { urgencyGlowStyle } from '../../lib/visual-urgency'
@@ -41,10 +41,6 @@ import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
  * only at status "ok" (daysLeft > 5) meant a short-cadence chore (≤5d) re-read as due/soon the
  * instant it was marked done and never left the grid — "done" looked like a no-op. So we also
  * hide it for the rest of the local day it was done (recurringDoneToday); it returns the next day.
- *
- * A recurring task's DUE DATE overrides its cadence for both gates (recurringTaskStatus takes the
- * nearer clock, and a live deadline beats the done-today hide) — the whole point of the override
- * is to pull a chore onto the board sooner than its cycle would.
  */
 function isPlaced(
   task: Task,
@@ -58,10 +54,8 @@ function isPlaced(
   // wakes at its stored x/y. The list view's Paused group is where it lives meanwhile.
   if (isDormant(task, timeZone)) return false
   if (doneToday[task.id]) return false
-  if (recurringDoneToday(task.recurring, timeZone) && !recurringDueLive(task, { timeZone })) {
-    return false
-  }
-  const rc = recurringTaskStatus(task, { timeZone })
+  if (recurringDoneToday(task.recurring, timeZone)) return false
+  const rc = recurringStatus(task.recurring)
   if (rc && rc.code === 'ok') return false
   return true
 }
@@ -290,9 +284,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // Normal task: write history + today's daily_state (it leaves the grid). Recurring task:
   // reset the cycle (lastDoneAt=now, doneCount+1) WITHOUT touching history/daily_state — it is
   // then hidden from the board for the rest of the local day (recurringDoneToday) and returns the
-  // next day when its cadence next reads due/soon. Completing also CONSUMES any one-off due-date
-  // override (due/due_time cleared) — the deadline belonged to the occurrence just finished.
-  // Closes any open popup.
+  // next day when its cadence next reads due/soon. Closes any open popup.
   const handleDone = useCallback(
     (task: Task) => {
       selectCluster(null)
@@ -305,7 +297,6 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
               lastDoneAt: new Date().toISOString(),
               doneCount: (task.recurring.doneCount ?? 0) + 1,
             },
-            ...(task.due ? { due: null, due_time: null } : {}),
           },
         })
       } else {

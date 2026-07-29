@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Recurring } from '../types/task'
-import {
-  RC_COLOR,
-  fmtFrequency,
-  recurringDoneToday,
-  recurringDueLive,
-  recurringStatus,
-  recurringTaskStatus,
-} from './recurring'
+import { RC_COLOR, fmtFrequency, recurringDoneToday, recurringStatus } from './recurring'
 
 // Fix "now" and align lastDoneAt to the same instant so daysSince === 0; then
 // daysLeft === frequencyDays, letting each frequency drive a specific threshold.
@@ -134,103 +127,5 @@ describe('fmtFrequency', () => {
     expect(fmtFrequency(42)).toBe('every ~5wk')
     expect(fmtFrequency(65)).toBe('every ~2mo')
     expect(fmtFrequency(66)).toBe('every ~3mo')
-  })
-})
-
-// The one-off due-date override (ADR 2026-07-29-recurring-due-override). Eastern in June is
-// UTC-4, so 2026-06-23T15:00Z is 11:00 local on the 23rd — the calendar day every `due` below
-// is measured against.
-describe('recurringTaskStatus', () => {
-  const tz = 'America/New_York'
-  const now = new Date('2026-06-23T15:00:00Z')
-  // Done at 09:00 local today → daysSince 0, so a weekly chore's cadence reads "in 7d" (code ok).
-  const doneToday = rec({ frequencyDays: 7, lastDoneAt: '2026-06-23T13:00:00Z' })
-
-  it('returns null for a non-recurring task, due date or not', () => {
-    expect(recurringTaskStatus({ recurring: null, due: '2026-06-23' }, { timeZone: tz, now })).toBe(
-      null,
-    )
-    expect(recurringTaskStatus({}, { timeZone: tz, now })).toBeNull()
-  })
-
-  it('falls back to the cadence clock when there is no due date', () => {
-    expect(recurringTaskStatus({ recurring: doneToday, due: null }, { timeZone: tz, now })).toEqual(
-      {
-        label: 'in 7d',
-        code: 'ok',
-        daysLeft: 7,
-      },
-    )
-  })
-
-  // The reported bug: a weekly chore ticked off today, then given a due date of today because the
-  // user needs it in today's plan. Cadence alone said "in 7d" and it stayed invisible.
-  it('lets a nearer due date override the cadence', () => {
-    expect(
-      recurringTaskStatus({ recurring: doneToday, due: '2026-06-23' }, { timeZone: tz, now }),
-    ).toEqual({ label: 'due today', code: 'due', daysLeft: 0 })
-    expect(
-      recurringTaskStatus({ recurring: doneToday, due: '2026-06-24' }, { timeZone: tz, now }),
-    ).toEqual({ label: 'due tomorrow', code: 'due', daysLeft: 1 })
-    expect(
-      recurringTaskStatus({ recurring: doneToday, due: '2026-06-26' }, { timeZone: tz, now }),
-    ).toEqual({ label: 'in 3d', code: 'soon', daysLeft: 3 })
-  })
-
-  it('reads a past due date as overdue', () => {
-    expect(
-      recurringTaskStatus({ recurring: doneToday, due: '2026-06-20' }, { timeZone: tz, now }),
-    ).toEqual({ label: 'overdue 3d', code: 'overdue', daysLeft: -3 })
-  })
-
-  // The two clocks combine by taking the NEARER one — a far-out due date must never push a chore
-  // that its own cadence already calls overdue out of sight.
-  it('keeps the cadence when the due date is further away', () => {
-    const overdue = rec({ frequencyDays: 5, lastDoneAt: '2026-06-16T13:00:00Z' })
-    expect(
-      recurringTaskStatus({ recurring: overdue, due: '2026-07-30' }, { timeZone: tz, now }),
-    ).toEqual({ label: 'overdue 2d', code: 'overdue', daysLeft: -2 })
-    // A never-done chore stays deeply overdue too.
-    expect(
-      recurringTaskStatus(
-        { recurring: rec({ lastDoneAt: null }), due: '2026-06-30' },
-        { timeZone: tz, now },
-      ),
-    ).toEqual({ label: 'never done', code: 'overdue', daysLeft: -999 })
-  })
-
-  it('reads the due date as a wall-clock day in the user timezone', () => {
-    // 20:00 local on the 23rd — still the 23rd locally, though it is already the 24th in UTC.
-    const lateEvening = new Date('2026-06-24T00:00:00Z')
-    expect(
-      recurringTaskStatus(
-        { recurring: doneToday, due: '2026-06-23' },
-        { timeZone: tz, now: lateEvening },
-      ),
-    ).toEqual({ label: 'due today', code: 'due', daysLeft: 0 })
-  })
-})
-
-describe('recurringDueLive', () => {
-  const tz = 'America/New_York'
-  const now = new Date('2026-06-23T15:00:00Z')
-
-  it('is true only for a recurring task whose due date has arrived or passed', () => {
-    expect(recurringDueLive({ recurring: rec(), due: '2026-06-23' }, { timeZone: tz, now })).toBe(
-      true,
-    )
-    expect(recurringDueLive({ recurring: rec(), due: '2026-06-01' }, { timeZone: tz, now })).toBe(
-      true,
-    )
-    expect(recurringDueLive({ recurring: rec(), due: '2026-06-24' }, { timeZone: tz, now })).toBe(
-      false,
-    )
-    expect(recurringDueLive({ recurring: rec(), due: null }, { timeZone: tz, now })).toBe(false)
-  })
-
-  it('is false for a non-recurring task (its due date is not an override)', () => {
-    expect(recurringDueLive({ recurring: null, due: '2026-06-23' }, { timeZone: tz, now })).toBe(
-      false,
-    )
   })
 })

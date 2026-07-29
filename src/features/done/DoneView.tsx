@@ -11,7 +11,7 @@ import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { formatDateTime } from '../../lib/dates'
 import { daysUntil } from '../../lib/scoring'
 import { quadrantMeta } from '../../lib/quadrants'
-import { fmtFrequency, RC_COLOR, recurringTaskStatus } from '../../lib/recurring'
+import { fmtFrequency, RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { DUE_BADGE_MUTED, DUE_BADGE_URGENT } from '../../lib/visual-urgency'
 import type { History } from '../../types/history'
 import type { Task } from '../../types/task'
@@ -54,7 +54,7 @@ function HistoryRow({
   onDelete,
   busy,
 }: HistoryRowProps) {
-  const rc = task ? recurringTaskStatus(task, { timeZone }) : null
+  const rc = recurringStatus(task?.recurring)
   const quadrant = task && task.x != null && task.y != null ? quadrantMeta(task.x, task.y) : null
   const days = task ? daysUntil(task.due, { timeZone }) : null
   // Left accent mirrors the grid card's colored top border: recurring tasks carry their

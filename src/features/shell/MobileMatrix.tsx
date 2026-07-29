@@ -7,7 +7,7 @@ import { useNow } from '../../hooks/use-now'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
 import { PAUSED_OPACITY, pausedChipStyle, urgencyTier } from '../../lib/visual-urgency'
-import { recurringDoneToday, recurringDueLive } from '../../lib/recurring'
+import { recurringDoneToday } from '../../lib/recurring'
 import { isDormant } from '../../lib/start-date'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
@@ -100,15 +100,13 @@ export function MobileMatrix({
   // the daily reset); today's done map is a same-day belt-and-suspenders hide. A recurring task
   // marked done today is also hidden for the rest of the local day (recurringDoneToday) — it never
   // sets completed_at, so without this a just-completed chore lingers in the quadrant preview and
-  // "done" reads as a no-op; it returns the next day. A LIVE due-date override beats that hide,
-  // though — a deadline set after ticking the chore off is a deliberate "another one, today".
-  // Mirrors the grid's isPlaced.
+  // "done" reads as a no-op; it returns the next day. Mirrors the grid's isPlaced.
   const doneToday = daily?.done ?? {}
   const active = tasks.filter(
     (t) =>
       !t.completed_at &&
       !doneToday[t.id] &&
-      (!recurringDoneToday(t.recurring, timeZone) || recurringDueLive(t, { timeZone })) &&
+      !recurringDoneToday(t.recurring, timeZone) &&
       // Dormant (paused / future start date): out of the quadrants and counts; the Paused strip
       // below the overview is its mobile home until the start date arrives.
       !isDormant(t, timeZone),

@@ -48,34 +48,14 @@ function fmtFrequency(days: number): string {
   return 'every ~3mo'
 }
 
-// Whole days of cadence left on a recurring task; null for a non-recurring one, -999 for one that
-// has never been done (deeply overdue). Mirrors src/lib/recurring.ts recurringStatus.
-function recurringDaysLeft(rec: Recurring | null, now: Date): number | null {
-  if (!rec || !rec.frequencyDays) return null
-  if (rec.lastDoneAt == null) return -999
-  const daysSince = Math.floor((now.getTime() - Date.parse(rec.lastDoneAt)) / 86_400_000)
-  return rec.frequencyDays - daysSince
-}
-
-// Due/overdue phrase for a recurring task (mirrors src/lib/recurring.ts recurringTaskStatus),
+// Due/overdue phrase for a recurring task (mirrors src/lib/recurring.ts recurringStatus thresholds),
 // so BabyClaw can tell an overdue chore from one that isn't due yet — a recurring task never sits in
 // the daily done map, so without this it would read every recurrence as an active to-do.
-//
-// Due-aware: an explicit due date on a recurring task is a one-off override for the current
-// occurrence, and the NEARER of the two clocks wins (ADR 2026-07-29-recurring-due-override) — so
-// BabyClaw never tells the user a chore they just gave a deadline is "due again in 7d".
-function recurringStatusPhrase(
-  rec: Recurring | null,
-  due: string | null,
-  timeZone: string,
-  now: Date,
-): string | null {
-  const cadenceLeft = recurringDaysLeft(rec, now)
-  if (cadenceLeft == null) return null
-  if (cadenceLeft === -999 && due == null) return 'never done'
-  const dueLeft = daysUntilInTZ(due, timeZone, now)
-  const daysLeft = dueLeft != null && dueLeft < cadenceLeft ? dueLeft : cadenceLeft
-  if (daysLeft === -999) return 'never done'
+function recurringStatusPhrase(rec: Recurring | null, now: Date): string | null {
+  if (!rec || !rec.frequencyDays) return null
+  if (rec.lastDoneAt == null) return 'never done'
+  const daysSince = Math.floor((now.getTime() - Date.parse(rec.lastDoneAt)) / 86_400_000)
+  const daysLeft = rec.frequencyDays - daysSince
   if (daysLeft < -1) return `overdue ${Math.abs(daysLeft)}d`
   if (daysLeft <= 0) return 'due today'
   if (daysLeft === 1) return 'due tomorrow'
@@ -86,19 +66,8 @@ function recurringStatusPhrase(
 // — so the grid/mobile board hides it for the rest of the local day by comparing lastDoneAt to today
 // (src/lib/recurring.ts recurringDoneToday). Mirror that here so BabyClaw's context matches what the
 // user sees: a recurring chore ticked off today reads as DONE TODAY, not as still-active.
-//
-// A LIVE due-date override (a deadline that has arrived or passed) beats the hide, exactly as it
-// does on the board — setting a deadline after ticking the chore off is a deliberate "another one,
-// today", and BabyClaw must see that task as active to plan around it.
-function recurringDoneToday(
-  rec: Recurring | null,
-  due: string | null,
-  timeZone: string,
-  now: Date,
-): boolean {
+function recurringDoneToday(rec: Recurring | null, timeZone: string, now: Date): boolean {
   if (!rec?.lastDoneAt) return false
-  const dueLeft = daysUntilInTZ(due, timeZone, now)
-  if (dueLeft != null && dueLeft <= 0) return false
   return localDateInTZ(timeZone, new Date(rec.lastDoneAt)) === localDateInTZ(timeZone, now)
 }
 
@@ -345,7 +314,7 @@ export async function loadChatContext(
       dueTime: t.due_time as string | null,
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
-      recurringStatus: recurringStatusPhrase(rec, t.due as string | null, timeZone, now),
+      recurringStatus: recurringStatusPhrase(rec, now),
       ongoing: (t.ongoing as boolean | null) ?? false,
       size: (t.size as string | null) ?? null,
       // Dormant (paused) = future start date on the user's local calendar. BabyClaw still SEES a
@@ -359,9 +328,7 @@ export async function loadChatContext(
       // A one-off is done via the daily done map; a recurring chore is done via lastDoneAt=today
       // (it never enters the map) — count either so a recurring task ticked off today leaves ACTIVE
       // and reads as DONE TODAY, exactly as the grid/mobile board hides it.
-      doneToday:
-        doneMap[t.id as string] === true ||
-        recurringDoneToday(rec, t.due as string | null, timeZone, now),
+      doneToday: doneMap[t.id as string] === true || recurringDoneToday(rec, timeZone, now),
       completedAt: (t.completed_at as string | null) ?? null,
     }
   })

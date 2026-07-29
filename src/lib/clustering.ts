@@ -8,7 +8,7 @@
 
 import type { Task } from '../types/task'
 import { quadrantMeta } from './quadrants'
-import { RC_COLOR, recurringTaskStatus } from './recurring'
+import { RC_COLOR, recurringStatus } from './recurring'
 import { daysUntil, taskScore, type ScoringOpts } from './scoring'
 import { STALE_OVERDUE_FLOOR_DAYS } from './visual-urgency'
 
@@ -112,7 +112,7 @@ export function clusterDominant(group: Task[], opts: ScoringOpts): Task {
  */
 export function clusterAccentColor(group: Task[], opts: ScoringOpts): string {
   const dominant = clusterDominant(group, opts)
-  const status = recurringTaskStatus(dominant, opts)
+  const status = recurringStatus(dominant.recurring, opts)
   if (status) return RC_COLOR[status.code]
   return quadrantMeta(dominant.x ?? 0.5, dominant.y ?? 0.5).color
 }

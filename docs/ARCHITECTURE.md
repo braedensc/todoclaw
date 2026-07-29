@@ -65,4 +65,3 @@ supersede it with a new ADR and flip the old one's Status.
 | [ADR 2026-07-22](adr/2026-07-22-proactive-memory-inference-autosave.md) | 2026-07-22 | Proactive memory: confident inferences auto-save (drop `propose_memory`'s confirmation gate) |
 | [ADR 2026-07-22](adr/2026-07-22-capability-keyed-insets-width-keyed-shell.md) | 2026-07-22 | Safe-area insets + touch ergonomics key on capability (`env()` / `pointer: coarse`); locked shell stays width-keyed |
 | [ADR 2026-07-23](adr/2026-07-23-phones-stay-mobile-in-landscape.md) | 2026-07-23 | Phones stay in the mobile layout in both orientations (the gate gains a coarse+short landscape leg; iPads unaffected) |
-| [ADR 2026-07-29](adr/2026-07-29-recurring-due-override.md) | 2026-07-29 | A due date on a recurring task overrides its cadence when nearer (one-off deadline; completing consumes it) |
