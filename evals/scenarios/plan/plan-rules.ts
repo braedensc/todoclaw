@@ -8,6 +8,8 @@
 import { dayOffsetISO, DEFAULT_TZ, instantOffsetISO, PLAN_NOW } from '../../lib/fixture-dates.ts'
 import {
   bigRockNeverS,
+  deadlinesCovered,
+  noFarDatedOverDue,
   nudgeContract,
   planHeadline,
   restDay,
@@ -155,5 +157,76 @@ export const scenarios: PlanScenario[] = [
     rubric:
       'The plants chore is 3 days overdue — the plan should surface it (as a quick win or a ' +
       'clear mention), not silently drop it.',
+  },
+  {
+    kind: 'plan',
+    id: 'plan-deadlines-beat-substance',
+    title: 'Due-today/overdue work gets the slots before undated or far-dated work',
+    tags: ['plan', 'deadlines', 'rules'],
+    persona: 'the reported failure: a juicy ongoing project crowded out what was actually due',
+    // Modelled on the real board that produced it — the planner made the undated ongoing project
+    // the big rock, spent both quick-win slots on tasks due in 3 and 6 days, and dropped the chore
+    // due TODAY. Rule 1 already said due-soon work must appear; nothing measured it.
+    tasks: [
+      task({ id: 'd1', text: 'Send the signed lease back', x: 0.8, y: 0.7, size: 'M', due: D(0) }),
+      task({ id: 'd2', text: 'Pay the parking ticket', x: 0.9, y: 0.5, size: 'S', due: D(-2) }),
+      // The distractors: high-importance, but nothing is due.
+      task({ id: 'f1', text: 'Work on TodoClaw', x: 0.8, y: 0.95, size: 'XL', ongoing: true }),
+      task({
+        id: 'f2',
+        text: 'Email the marathon for a refund',
+        x: 0.6,
+        y: 0.6,
+        size: 'S',
+        due: D(3),
+      }),
+      task({
+        id: 'f3',
+        text: 'Research mountaineering gear',
+        x: 0.5,
+        y: 0.7,
+        size: 'M',
+        due: D(6),
+      }),
+    ],
+    habits: [{ text: 'Drink more water', active: true }],
+    checks: [
+      planHeadline(),
+      deadlinesCovered(['d1', 'd2']),
+      noFarDatedOverDue(['d1', 'd2'], ['f1', 'f2', 'f3']),
+      rocksResolve(),
+    ],
+    rubric:
+      'One task is due today and another is 2 days overdue. Both must be in the plan. An undated ' +
+      'ongoing project or a task due in 3-6 days must not take a slot while either is unplanned — ' +
+      'substance ranks the candidates that deadlines already let in, it does not outrank a deadline.',
+  },
+  {
+    kind: 'plan',
+    id: 'plan-due-chore-not-dropped',
+    title: 'A recurring chore due today survives a board full of tempting undated work',
+    tags: ['plan', 'recurring', 'deadlines'],
+    // The exact reported case: weekly laundry due today, against work with no deadline at all.
+    // The chore reaches the card via the derived chores strip, so it cannot lose a rock slot.
+    tasks: [
+      task({
+        id: 'c1',
+        text: 'Laundry',
+        recurring: { frequencyDays: 7, lastDoneAt: instantOffsetISO(-7, PLAN_NOW), doneCount: 9 },
+      }),
+      task({ id: 'f1', text: 'Work on TodoClaw', x: 0.8, y: 0.95, size: 'XL', ongoing: true }),
+      task({
+        id: 'f2',
+        text: 'Research mountaineering gear',
+        x: 0.5,
+        y: 0.7,
+        size: 'M',
+        due: D(6),
+      }),
+    ],
+    checks: [planHeadline(), deadlinesCovered(['c1']), rocksResolve()],
+    rubric:
+      'Laundry is due today. It must appear on the card — in the chores strip is correct and ' +
+      'expected; what must never happen is it vanishing while undated work fills the plan.',
   },
 ]

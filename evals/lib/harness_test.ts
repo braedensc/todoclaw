@@ -6,13 +6,16 @@ import { assert, assertEquals } from 'jsr:@std/assert@1'
 import { foldTurn, SseAccumulator } from './chat-driver.ts'
 import {
   confirmRequested,
+  deadlinesCovered,
+  noFarDatedOverDue,
   noVisibleLeak,
   statusLineAlways,
   toolCalled,
   toolNotExecuted,
 } from './checks.ts'
 import { detPass, overallPass } from './report.ts'
-import type { ChatTrace, DbSnapshot, ScenarioResult } from './types.ts'
+import type { ChatTrace, DbSnapshot, PlanScenario, ScenarioResult } from './types.ts'
+import type { PlanResult } from '../../supabase/functions/_shared/plan-prompt.ts'
 
 // checks may return one result or a list; every combinator used here returns one
 function one(res: { pass: boolean } | { pass: boolean }[]): { pass: boolean } {
@@ -163,3 +166,79 @@ Deno.test(
     assert(!overallPass(res))
   },
 )
+
+// ---- deadline-coverage checks -----------------------------------------------------------------
+// These exist because rule 1 ("anything due within ~2 days must appear") was in the prompt for
+// months while the planner quietly dropped a due-today item — nothing measured it. A check that
+// cannot fail would repeat that mistake, so pin both directions here.
+
+const planOf = (over: Partial<PlanResult> = {}): PlanResult => ({
+  headline: 'A day',
+  availableTime: '~4h',
+  anchors: [],
+  chores: [],
+  bigRock: null,
+  smallRocks: [],
+  habitNote: '',
+  nudge: null,
+  ...over,
+})
+const rock = (taskId: string) => ({
+  task: taskId,
+  why: 'w',
+  duration: '~30min',
+  when: 'morning' as const,
+  taskId,
+})
+const scOf = () => ({}) as unknown as PlanScenario
+
+Deno.test('deadlinesCovered fails on an empty plan and passes once the task is shown', () => {
+  // The exact shape the mock returns — it must NOT pass.
+  assertEquals(one(deadlinesCovered(['d1'])(planOf(), scOf())).pass, false)
+  assertEquals(one(deadlinesCovered(['d1'])(planOf({ bigRock: rock('d1') }), scOf())).pass, true)
+  assertEquals(
+    one(deadlinesCovered(['d1'])(planOf({ smallRocks: [rock('d1')] }), scOf())).pass,
+    true,
+  )
+  // The derived strips count as shown — that is where a due chore legitimately lands.
+  assertEquals(
+    one(
+      deadlinesCovered(['c1'])(
+        planOf({ chores: [{ task: 'Laundry', status: 'due today', taskId: 'c1' }] }),
+        scOf(),
+      ),
+    ).pass,
+    true,
+  )
+  assertEquals(
+    one(
+      deadlinesCovered(['a1'])(
+        planOf({
+          anchors: [{ task: 'Dentist', time: '2:00 PM', duration: null, taskId: 'a1' }],
+        }),
+        scOf(),
+      ),
+    ).pass,
+    true,
+  )
+})
+
+Deno.test('noFarDatedOverDue catches exactly the reported failure', () => {
+  // Far-dated work took a slot while a due-today task went unplanned → fail.
+  assertEquals(
+    one(noFarDatedOverDue(['d1'], ['f1'])(planOf({ bigRock: rock('f1') }), scOf())).pass,
+    false,
+  )
+  // Same far-dated rock, but the deadline is covered too → fine.
+  assertEquals(
+    one(
+      noFarDatedOverDue(['d1'], ['f1'])(
+        planOf({ bigRock: rock('f1'), smallRocks: [rock('d1')] }),
+        scOf(),
+      ),
+    ).pass,
+    true,
+  )
+  // Nothing far-dated taken → fine even with the deadline unplanned (deadlinesCovered owns that).
+  assertEquals(one(noFarDatedOverDue(['d1'], ['f1'])(planOf(), scOf())).pass, true)
+})
