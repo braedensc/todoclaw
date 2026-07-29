@@ -34,7 +34,13 @@ export interface SeedTask {
   staged?: boolean
   size?: 'S' | 'M' | 'L' | 'XL' | null
   ongoing?: boolean
-  recurring?: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
+  recurring?: {
+    frequencyDays: number
+    lastDoneAt: string | null
+    doneCount: number
+    /** #352 one-shot occurrence override, read BEFORE the cadence clock. */
+    nextDueOn?: string | null
+  } | null
   /** Future date = paused/dormant. */
   startDate?: string | null
   /** Permanent one-off completion instant. */
@@ -131,7 +137,13 @@ export interface DbTaskRow {
   staged: boolean
   size: string | null
   ongoing: boolean
-  recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
+  recurring: {
+    frequencyDays: number
+    lastDoneAt: string | null
+    doneCount: number
+    /** #352 one-shot occurrence override, read BEFORE the cadence clock. */
+    nextDueOn?: string | null
+  } | null
   start_date: string | null
   completed_at: string | null
   deleted_at: string | null
@@ -197,7 +209,13 @@ export interface PlanTaskRow {
   due_time: string | null
   size?: string | null
   staged: boolean
-  recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
+  recurring: {
+    frequencyDays: number
+    lastDoneAt: string | null
+    doneCount: number
+    /** #352 one-shot occurrence override, read BEFORE the cadence clock. */
+    nextDueOn?: string | null
+  } | null
   ongoing?: boolean | null
   start_date?: string | null
 }
