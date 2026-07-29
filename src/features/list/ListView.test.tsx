@@ -269,6 +269,32 @@ describe('ListView', () => {
     expect(screen.getByText(/No tasks yet/i)).toBeInTheDocument()
   })
 
+  it('drops a recurring chore completed today, like it drops a completed one-off', () => {
+    // The bug behind the reported confusion: a recurring completion sets neither completed_at nor
+    // today's done map (it advances recurring.lastDoneAt), so the list kept rendering a finished
+    // chore as a normal un-ticked row — while the grid, MobileMatrix and BabyClaw all hid it. The
+    // list was the only surface still claiming it was outstanding.
+    tasksData = [
+      makeTask({ id: 'keep', text: 'still open' }),
+      makeTask({
+        id: 'done-rec',
+        text: 'laundry',
+        recurring: { frequencyDays: 7, lastDoneAt: new Date().toISOString(), doneCount: 4 },
+      }),
+      // Done on a PRIOR day → back on its cycle, still listed.
+      makeTask({
+        id: 'live-rec',
+        text: 'sweep floors',
+        recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 1 },
+      }),
+    ]
+    renderList()
+
+    expect(screen.getByText('still open')).toBeInTheDocument()
+    expect(screen.getByText('sweep floors')).toBeInTheDocument()
+    expect(screen.queryByText('laundry')).not.toBeInTheDocument()
+  })
+
   describe('done control', () => {
     it('marks a NORMAL task done via useMarkTaskDone (not useUpdateTask)', () => {
       tasksData = [makeTask({ id: 'n1', text: 'normal', bucket: 'oneoff' })]

@@ -683,8 +683,10 @@ Deno.test('restore_task rewinds a recurring chore’s cycle instead of the done 
   assertEquals(res.mutated, ['tasks'])
   assertEquals(rpcCalls.length, 0) // set_task_undone would have written nothing
   const rec = getPatch()?.recurring as { lastDoneAt: string; doneCount: number }
-  // Rewound one full cadence back, so the chore reads due again; the completion is un-counted.
-  assertEquals(rec.lastDoneAt, '2026-06-27T14:00:00.000Z')
+  // Rewound one full cadence behind local midnight TODAY (2026-07-04 in New York = 04:00Z), via
+  // the same phasing schedule_for_day uses — so the chore reads "due today" for the whole day,
+  // not merely from the moment it happened to be completed. The completion is un-counted.
+  assertEquals(rec.lastDoneAt, '2026-06-27T04:00:00.000Z')
   assertEquals(rec.doneCount, 3)
 })
 
@@ -706,4 +708,67 @@ Deno.test('restore_task still clears the done map for a one-off task', async () 
   assertEquals(getPatch(), undefined)
   assertEquals(rpcCalls.length, 1)
   assertEquals(rpcCalls[0].name, 'set_task_undone')
+})
+
+// ---- schedule_for_day: "I need to do X tomorrow" ----------------------------------------------
+// The reported use case. makeMutCtx's `now` is 2026-07-04T15:00Z = 11:00 local on Jul 4 in New
+// York, so '2026-07-05' is tomorrow.
+
+Deno.test('schedule_for_day phases a recurring chore onto the chosen day', async () => {
+  // Weekly laundry ticked off THIS MORNING — cadence alone would say "in 7d" and hide it.
+  const { ctx, getPatch } = makeMutCtx({
+    text: 'Laundry',
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 9 },
+    start_date: null,
+  })
+  const res = await executeTool('schedule_for_day', { task_id: TASK_ID, date: '2026-07-05' }, ctx)
+  assert(!res.is_error)
+  const rec = getPatch()?.recurring as { lastDoneAt: string; frequencyDays: number }
+  // Exactly one cadence before local midnight of the 5th → reads "due today" all that day.
+  assertEquals(rec.lastDoneAt, '2026-06-28T04:00:00.000Z')
+  assertEquals(rec.frequencyDays, 7) // cadence itself untouched
+  // The reminder anchor is NOT touched — on a recurring chore that is what `due` means.
+  assertEquals('due' in (getPatch() ?? {}), false)
+  assertEquals('due_time' in (getPatch() ?? {}), false)
+})
+
+Deno.test('schedule_for_day sets a due date and urgency on a one-off task', async () => {
+  const { ctx, getPatch } = makeMutCtx({ text: 'Call bank', recurring: null, start_date: null })
+  const res = await executeTool('schedule_for_day', { task_id: TASK_ID, date: '2026-07-05' }, ctx)
+  assert(!res.is_error)
+  assertEquals(getPatch()?.due, '2026-07-05')
+  assertEquals(getPatch()?.staged, false) // an unplaced task joins the board
+  assert(typeof getPatch()?.x === 'number') // urgency re-derived from how soon it is
+  assertEquals('recurring' in (getPatch() ?? {}), false)
+})
+
+Deno.test('schedule_for_day lifts a pause that would outlast the chosen day', async () => {
+  const { ctx, getPatch } = makeMutCtx({
+    text: 'Laundry',
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 9 },
+    start_date: '2026-08-01', // paused past the target → would hide it on the day it is wanted
+  })
+  const res = await executeTool('schedule_for_day', { task_id: TASK_ID, date: '2026-07-05' }, ctx)
+  assert(!res.is_error)
+  assertEquals(getPatch()?.start_date, null)
+})
+
+Deno.test('schedule_for_day leaves a pause that ends before the chosen day alone', async () => {
+  const { ctx, getPatch } = makeMutCtx({
+    text: 'Laundry',
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-07-04T13:00:00Z', doneCount: 9 },
+    start_date: '2026-07-05',
+  })
+  assert(
+    !(await executeTool('schedule_for_day', { task_id: TASK_ID, date: '2026-07-06' }, ctx))
+      .is_error,
+  )
+  assertEquals('start_date' in (getPatch() ?? {}), false)
+})
+
+Deno.test('schedule_for_day rejects a malformed date without writing', async () => {
+  const { ctx, getPatch } = makeMutCtx({ text: 'Laundry', recurring: null })
+  const res = await executeTool('schedule_for_day', { task_id: TASK_ID, date: 'friday' }, ctx)
+  assert(res.is_error)
+  assertEquals(getPatch(), undefined)
 })

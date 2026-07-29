@@ -109,6 +109,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'clear_recurring',
     'pause_task',
     'resume_task',
+    'schedule_for_day',
     'restore_task',
     'complete_task',
     'delete_task',

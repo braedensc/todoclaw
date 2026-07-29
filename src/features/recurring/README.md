@@ -10,6 +10,27 @@ A recurring task is a regular task with a `recurring` jsonb field
 normal task except: it surfaces on the grid only when due/soon/overdue, and marking it done
 **resets its clock** instead of archiving it (handled in `src/features/list/`, not here).
 
+Because a recurring completion sets neither `completed_at` nor today's `daily_state.done` map,
+**every surface that hides done tasks must also check `recurringDoneToday`** — grid `isPlaced`,
+`MobileMatrix`, `ListView`, and the edge twin in `_shared/chat-context.ts`. The list missed that
+check until 2026-07-29 and kept showing finished chores as outstanding rows.
+
+## "I need to do this on Friday" — scheduling an occurrence
+
+A recurring chore's due-ness is **derived, not stored**: `recurringStatus` computes
+`daysLeft = frequencyDays - daysSince(lastDoneAt)`, and every surface reads that one function. So
+the way to put a chore on a chosen day is to **phase its cadence clock** — set the `lastDoneAt`
+whose cycle lands there. `lastDoneAtForOccurrenceOn` (`supabase/functions/_shared/recurring-schedule.ts`)
+is that math: local midnight of the target day minus one cadence, which reads "due today" all
+through that day and "due tomorrow" the day before. BabyClaw exposes it as **`schedule_for_day`**,
+which also covers one-off tasks and ongoing projects (those just get the due date) so the model
+never has to branch on task type. Completing the chore resumes the normal rhythm from that day.
+
+**A due date is NOT that mechanism.** On a recurring chore `tasks.due` + `due_time` are the
+**reminder anchor** (see below) — nothing reads them for the board or Plan My Day, so setting one
+does not surface the chore. Phasing needs no new column and no reader changes, which is precisely
+why it was chosen over adding one.
+
 ## Ongoing projects (a separate task type)
 
 An **ongoing project** — a standing, open-ended effort worked on over many sessions (e.g. "redesign
