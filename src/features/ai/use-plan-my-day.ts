@@ -13,6 +13,7 @@ import type { Habit } from '../../types/habit'
 // persisted-plan read boundary too); re-exported here so existing importers keep working.
 export type { PlanWhen, PlanRock, DayPlan } from '../../types/plan'
 import type { DayPlan } from '../../types/plan'
+import { DayPlanSchema } from '../../types/plan'
 
 // Mirror of UPCOMING_WINDOW_DAYS in supabase/functions/_shared/plan-prompt.ts — the frontend build
 // tree can't import from the Deno tree, so the value is re-declared here. Keep the two in step: a
@@ -139,12 +140,17 @@ export function usePlanMyDay(timeZone: string) {
   const queryClient = useQueryClient()
   return useMutation<DayPlan, Error, PlanRequest>({
     mutationFn: async (body) => {
-      const { data, error } = await supabase.functions.invoke<{ plan: DayPlan }>('plan-my-day', {
+      const { data, error } = await supabase.functions.invoke<{ plan: unknown }>('plan-my-day', {
         body,
       })
       if (error) throw error
-      if (!data?.plan) throw new Error('No plan returned')
-      return data.plan
+      // VALIDATE before returning: this result is both rendered and PERSISTED to daily_state, so an
+      // unchecked object becomes a stuck, contentless plan card (a truncated emit once produced a
+      // plan with no headline, which rendered as an empty box). A truthiness check is not enough —
+      // the malformed object was truthy. Failing here surfaces the card's Retry instead.
+      const parsed = DayPlanSchema.safeParse(data?.plan)
+      if (!parsed.success || !parsed.data.headline.trim()) throw new Error('No plan returned')
+      return parsed.data
     },
     onSuccess: async (plan) => {
       const today = localDateInTZ(timeZone)

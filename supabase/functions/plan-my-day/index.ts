@@ -17,7 +17,6 @@ import {
   EMIT_PLAN_TOOL,
   buildUserPrompt,
   resolvePlanTaskIds,
-  type EmittedPlan,
   type ScheduleConfig,
 } from '../_shared/plan-prompt.ts'
 
@@ -91,11 +90,19 @@ Deno.serve(async (req) => {
       'plan_my_day',
     )
 
+    // A truncated response can still carry a tool_use block, but its JSON input is cut off — the
+    // SDK hands back a partial object. Treat it as no plan rather than shipping the fragment.
+    if (msg.stop_reason === 'max_tokens') return json({ error: 'no_plan' }, 502)
+
     const toolUse = msg.content.find((b) => b.type === 'tool_use')
     if (!toolUse || toolUse.type !== 'tool_use') return json({ error: 'no_plan' }, 502)
-    // Resolve emitted refs → real task ids before the client sees (and persists) the plan, so
-    // each rock can be crossed off when its task is completed. See resolvePlanTaskIds.
-    return json({ plan: resolvePlanTaskIds(toolUse.input as EmittedPlan, payload) })
+    // Validate the model's raw tool input, then resolve emitted refs → real task ids before the
+    // client sees (and persists) the plan, so each rock can be crossed off when its task is
+    // completed. Null = the emit wasn't a usable plan; failing here is what stops a contentless
+    // plan reaching daily_state and rendering as a blank card. See resolvePlanTaskIds.
+    const plan = resolvePlanTaskIds(toolUse.input, payload)
+    if (!plan) return json({ error: 'no_plan' }, 502)
+    return json({ plan })
   } catch (e) {
     // Log the real error server-side; return a generic code so no internal detail reaches the client.
     console.error('plan-my-day failed:', e)

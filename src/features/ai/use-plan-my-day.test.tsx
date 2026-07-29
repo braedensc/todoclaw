@@ -227,6 +227,26 @@ describe('usePlanMyDay', () => {
     expect(arg.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
+  // The blank-plan-card bug: a truncated emit_plan reached the client as a structurally plausible
+  // object with no headline. The old `!data?.plan` truthiness check let it through, so the card
+  // rendered empty AND the junk was persisted to daily_state. The response is a boundary — it gets
+  // validated like any other.
+  it.each([
+    ['an empty object', {}],
+    ['a plan with no headline', { ...PLAN_RESULT, headline: '' }],
+    ['a plan whose headline is only whitespace', { ...PLAN_RESULT, headline: '   ' }],
+    ['a contentless shell (the reported shape)', { bigRock: null, smallRocks: [], anchors: [] }],
+    ['a missing plan', undefined],
+  ])('rejects %s, and persists nothing', async (_label, plan) => {
+    invoke.mockResolvedValue({ data: { plan }, error: null })
+    const { result } = renderHook(() => usePlanMyDay(TZ), { wrapper: wrapper() })
+
+    result.current.mutate(buildPlanRequest([], [], {}, TZ, NOW))
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(rpc).not.toHaveBeenCalled() // nothing reaches daily_state
+  })
+
   it('still succeeds (plan stays visible) when persistence fails — best effort', async () => {
     invoke.mockResolvedValue({ data: { plan: PLAN_RESULT }, error: null })
     rpc.mockResolvedValue({ error: { message: 'nope' } })

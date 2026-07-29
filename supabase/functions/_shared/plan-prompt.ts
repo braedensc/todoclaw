@@ -502,18 +502,70 @@ function isAnchored(rock: { task: string; taskId: string | null }, anchors: Plan
  * not to emit one. Dropping the bigRock that way leaves bigRock null, which is the honest read of a
  * day whose only big item is an appointment.
  */
-export function resolvePlanTaskIds(plan: EmittedPlan, req: PlanRequest): PlanResult {
+export function resolvePlanTaskIds(plan: unknown, req: PlanRequest): PlanResult | null {
+  const emitted = parseEmittedPlan(plan)
+  if (!emitted) return null
   const anchors = deriveAnchors(req)
-  const bigRock = plan.bigRock ? resolveRef(plan.bigRock, req) : null
-  const smallRocks = Array.isArray(plan.smallRocks)
-    ? plan.smallRocks.map((r) => resolveRef(r, req))
-    : []
+  const bigRock = emitted.bigRock ? resolveRef(emitted.bigRock, req) : null
+  const smallRocks = emitted.smallRocks.map((r) => resolveRef(r, req))
   return {
-    ...plan,
+    ...emitted,
     anchors,
     bigRock: bigRock && !isAnchored(bigRock, anchors) ? bigRock : null,
     smallRocks: smallRocks.filter((r) => !isAnchored(r, anchors)),
-    nudge: plan.nudge ? resolveRef(plan.nudge, req) : null,
+    nudge: emitted.nudge ? resolveRef(emitted.nudge, req) : null,
+  }
+}
+
+// A rock as emit_plan returns it. Everything except the task text is repaired rather than rejected:
+// a slightly-off `when` or a missing `why` still makes a useful rock, and throwing the whole plan
+// away over a cosmetic field would be worse than showing it. A rock with no task text is not a rock.
+const EmittedRockSchema = z.object({
+  task: z.string().trim().min(1),
+  why: z.string().catch(''),
+  duration: z.string().catch(''),
+  when: z.enum(WHEN_VALUES).catch('morning'),
+  ref: z.string().nullish().catch(null),
+})
+const EmittedNudgeSchema = EmittedRockSchema.omit({ when: true })
+
+// The load-bearing fields, strict: a plan with no headline is not a plan.
+const EmittedPlanSchema = z.object({
+  headline: z.string().trim().min(1),
+  availableTime: z.string().catch(''),
+  habitNote: z.string().catch(''),
+  bigRock: EmittedRockSchema.nullish().catch(null),
+  smallRocks: z.array(z.unknown()).catch([]),
+  nudge: EmittedNudgeSchema.nullish().catch(null),
+})
+
+/**
+ * Validate the raw `emit_plan` tool input. Returns null when it is not a usable plan.
+ *
+ * The tool input arrives as UNTYPED JSON from the model — `toolUse.input` is `unknown`, and both
+ * callers used to cast it straight to `EmittedPlan`. A truncated or empty emit therefore sailed
+ * through as an object with no headline, and `resolvePlanTaskIds` then supplied `anchors` /
+ * `bigRock` / `smallRocks` defaults that made it look structurally fine — so the client rendered
+ * (and persisted) a blank plan card with nothing in it. That is why `resolvePlanTaskIds` now takes
+ * `unknown` and returns `PlanResult | null`: the null is impossible for a caller to skip.
+ *
+ * Malformed small rocks are dropped INDIVIDUALLY rather than failing the plan — one bad entry
+ * should not cost the user the other four.
+ */
+export function parseEmittedPlan(input: unknown): EmittedPlan | null {
+  const parsed = EmittedPlanSchema.safeParse(input)
+  if (!parsed.success) return null
+  const smallRocks: EmittedRock[] = []
+  for (const raw of parsed.data.smallRocks) {
+    const rock = EmittedRockSchema.safeParse(raw)
+    if (rock.success) smallRocks.push(rock.data)
+  }
+  // `.nullish()` admits undefined; the stored shape uses null for "absent", so normalize.
+  return {
+    ...parsed.data,
+    smallRocks,
+    bigRock: parsed.data.bigRock ?? null,
+    nudge: parsed.data.nudge ?? null,
   }
 }
 
