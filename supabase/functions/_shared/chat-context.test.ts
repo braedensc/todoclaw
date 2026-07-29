@@ -224,6 +224,65 @@ Deno.test(
   },
 )
 
+Deno.test(
+  "loadChatContext: an ongoing project's session log becomes ONE raw-fact phrase on its task line",
+  async () => {
+    // worked_days is fetched and collapsed through worked.ts here — the same derivation Plan My Day
+    // uses — so the board, the plan and BabyClaw can never disagree about the same project. NOW is
+    // local 2026-07-04, so these three consecutive days end yesterday.
+    const client = fakeClient({
+      user_schedule: [SCHED],
+      tasks: [
+        {
+          id: 'novel',
+          text: 'Write the novel',
+          x: 0.4,
+          y: 0.9,
+          due: null,
+          staged: false,
+          recurring: null,
+          ongoing: true,
+          worked_days: ['2026-07-03', '2026-07-02', '2026-07-01'],
+        },
+        // A never-worked project: no phrase at all — silence is the honest reading (no signal),
+        // never a zero the model would read as something to correct.
+        {
+          id: 'fresh',
+          text: 'Learn Spanish',
+          x: 0.3,
+          y: 0.8,
+          due: null,
+          staged: false,
+          recurring: null,
+          ongoing: true,
+        },
+      ],
+      daily_state: [{ date: '2026-07-04', done: {}, habit_done: {}, subtask_done: {} }],
+    })
+
+    const { context } = await loadChatContext(client, NOW)
+    assertEquals(
+      context.tasks.find((t) => t.id === 'novel')?.workedPhrase,
+      'worked yesterday, 3 days running',
+    )
+    assertEquals(context.tasks.find((t) => t.id === 'fresh')?.workedPhrase, '')
+
+    const system = buildSystem(context)
+    const active = system.slice(
+      system.indexOf('=== ACTIVE TASKS'),
+      system.indexOf('=== DONE TODAY'),
+    )
+    assertStringIncludes(active, 'ongoing project (worked yesterday, 3 days running)')
+    assertStringIncludes(active, '[fresh] "Learn Spanish"')
+    // The never-worked project's line stays bare — no parenthetical, no invented cadence.
+    assert(
+      !active.includes(
+        'Learn Spanish" — urgency 0.30, importance 0.80 (Schedule); ongoing project (',
+      ),
+    )
+  },
+)
+
 // BabyClaw's Location line prefers the CONFIRMED place (config.locationResolved, what wttr.in's
 // geocoder actually matched) over the raw typed string — so it agrees with the place the plan's
 // weather line describes instead of parroting back whatever was typed.

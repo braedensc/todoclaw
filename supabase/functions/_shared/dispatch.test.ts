@@ -599,6 +599,56 @@ Deno.test('recapPlanItems: splits the plan into done / open; hasPlan flags a rea
   assertEquals(recapPlanItems(inputs(), ctx()).hasPlan, false)
 })
 
+Deno.test('recapPlanItems: a session logged today completes an ONGOING project rock', () => {
+  // An ongoing project is never archived by its everyday ✓ — it logs a work session — so a session
+  // on the user's local day IS that rock's completion. Without this the check-in would re-ask about
+  // a project they spent the afternoon on. Pairs with isPlanRockDone (src/lib/plan-done.ts).
+  const tasks = [
+    {
+      id: 'p',
+      text: 'Novel',
+      x: 0.5,
+      y: 0.5,
+      due: null,
+      due_time: null,
+      staged: false,
+      size: null,
+      recurring: null,
+      ongoing: true,
+      worked_days: ['2026-07-07', '2026-07-05'],
+    },
+    {
+      id: 'q',
+      text: 'Deck',
+      x: 0.5,
+      y: 0.5,
+      due: null,
+      due_time: null,
+      staged: false,
+      size: null,
+      recurring: null,
+      ongoing: true,
+      worked_days: ['2026-07-06'], // worked YESTERDAY — still open tonight
+    },
+  ]
+  const plan: DispatchPlan = {
+    bigRock: { task: 'Novel', taskId: 'p' },
+    smallRocks: [{ task: 'Deck', taskId: 'q' }],
+  }
+  const r = recapPlanItems(inputs({ tasks, plan, done: {} }), ctx())
+  assertEquals(r.done, ['Novel'])
+  assertEquals(r.open, ['Deck'])
+  // The text fallback (a legacy rock with no taskId) sees the same session.
+  const legacy = recapPlanItems(inputs({ tasks, plan: { bigRock: { task: 'Novel' } } }), ctx())
+  assertEquals(legacy.done, ['Novel'])
+  // A stale log on a task that is no longer an ongoing project logs nothing.
+  const notOngoing = recapPlanItems(
+    inputs({ tasks: [{ ...tasks[0], ongoing: false }], plan: { bigRock: { task: 'Novel' } } }),
+    ctx(),
+  )
+  assertEquals(notOngoing.open, ['Novel'])
+})
+
 Deno.test(
   'upcomingItems: due-soon (timed first) + recurring next-cycle, excludes done, drops far',
   () => {

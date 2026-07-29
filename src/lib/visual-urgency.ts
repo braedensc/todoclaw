@@ -23,17 +23,18 @@
 //   - staleness(task, d) + staleRingStyle / staleBadge / clusterStaleness: the COOL-BLUE
 //     "stale" lane — a task that is clearly being IGNORED cools off. A dated task goes stale
 //     once it's sat 3+ weeks past due (the 🔥 has stopped working); an undated task only after
-//     months on the board (it may be a long-term idea). When stale, the card FLIPS lanes: the
-//     hot dress (pulse, tint, 🔥, terracotta chip) is replaced wholesale by the cool one
-//     (azure ring + icy tint + ❄️ + "Stale · Nd" chip) — the two never co-exist on one card.
-//     A cluster bubble takes the ring of its most-stale member, mirroring how its glow takes
-//     the nearest due.
+//     months on the board (it may be a long-term idea). Evidence of ATTENTION — waking from a
+//     pause, or a logged work session — restarts that clock in both lanes. When stale, the card
+//     FLIPS lanes: the hot dress (pulse, tint, 🔥, terracotta chip) is replaced wholesale by the
+//     cool one (azure ring + icy tint + ❄️ + "Stale · Nd" chip) — the two never co-exist on one
+//     card. A cluster bubble takes the ring of its most-stale member, mirroring how its glow
+//     takes the nearest due.
 //
 // Glow/chips are applied only to non-done, non-recurring cards by the caller (a recurring task
 // carries its own RC_COLOR status badge; a done task has left the grid). `daysUntil`
 // (scoring.ts) and `minutesUntilDueTime` (dates.ts) are timezone-aware; the undated stale clock
-// is elapsed-real-time from `created_at`. Priority SCORING is untouched by all of this — display
-// only.
+// is elapsed-real-time from the latest of `created_at` / `start_date` / the last logged session.
+// Priority SCORING is untouched by all of this — display only.
 
 import { formatDueTime } from './dates'
 import { daysUntil, type ScoringOpts } from './scoring'
@@ -287,6 +288,21 @@ function daysSince(iso: string | null, now: Date): number | null {
 }
 
 /**
+ * The most recent 'YYYY-MM-DD' in a session log, or null when there is none. `worked_days` is stored
+ * newest-first, but a max beats trusting the order for a value that gates a whole visual lane (and
+ * 'YYYY-MM-DD' compares correctly as a plain string). Kept local: `src/lib/worked.ts` owns the rich
+ * derivation, and importing it here would drag a timezone argument into a purely elapsed-time file.
+ */
+function latestDay(days: string[] | null | undefined): string | null {
+  let latest: string | null = null
+  for (const d of days ?? []) {
+    const day = typeof d === 'string' ? d.slice(0, 10) : ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && (latest === null || day > latest)) latest = day
+  }
+  return latest
+}
+
+/**
  * One task's staleness — the single decision the whole cool lane (ring, tint, ❄️ badge, corner
  * flag) keys off, so a card flips to the cold dress all at once or not at all.
  */
@@ -307,12 +323,18 @@ export interface StaleInfo {
  *   - dated + >= 21d past due  → stale, measured from the due date (the 🔥 flips to ❄️)
  *   - undated + >= 90d on the board → stale, measured from `created_at`
  *   - future-dated, recently overdue, staged, or unparseable → not stale (null)
+ *   - recently WOKEN (start_date) or recently WORKED (a logged session) → not stale, either lane
  *
  * A staged task never goes stale (it hasn't been "left on the board" yet); the recurring gate (a
  * chore carries its own status clock) stays with the caller, as it does for the warm lane.
  */
 export function staleness(
-  task: { created_at: string | null; staged: boolean; start_date?: string | null },
+  task: {
+    created_at: string | null
+    staged: boolean
+    start_date?: string | null
+    worked_days?: string[] | null
+  },
   daysUntilDue: number | null,
   now: Date = new Date(),
 ): StaleInfo | null {
@@ -324,18 +346,31 @@ export function staleness(
   const sinceStart = task.start_date
     ? daysSince(`${task.start_date.slice(0, 10)}T12:00:00Z`, now)
     : null
+  // Nor is a project you actually WORKED being ignored. An ongoing project chipped at every week
+  // used to ice over at 90 days anyway, because the undated clock only ever read `created_at` — the
+  // app knew about the sessions and said "Stale · 3mo" regardless. A logged session is the loudest
+  // possible evidence of attention, so it restarts the ignored-clock exactly like a wake does.
+  // Same UTC-noon projection: worked_days are wall-clock days like start_date. Deliberately NOT
+  // gated on `ongoing` — only ongoing projects ever accumulate a log, and if one is later switched
+  // back to a one-off the fact that real work happened last week still stands.
+  const lastWorked = latestDay(task.worked_days)
+  const sinceWorked = lastWorked ? daysSince(`${lastWorked}T12:00:00Z`, now) : null
   if (daysUntilDue !== null) {
     const past = -daysUntilDue
     if (past < STALE_OVERDUE_FLOOR_DAYS) return null
-    // Recently (re)started: the user scheduled this comeback, so give it a full floor's worth of
-    // actual board time before the overdue count reads as neglect again.
+    // Recently (re)started or recently worked: the user scheduled this comeback / put time in, so
+    // give it a full floor's worth of board time before the overdue count reads as neglect again.
     if (sinceStart !== null && sinceStart < STALE_OVERDUE_FLOOR_DAYS) return null
+    if (sinceWorked !== null && sinceWorked < STALE_OVERDUE_FLOOR_DAYS) return null
     return { days: past, overdue: true, floor: STALE_OVERDUE_FLOOR_DAYS }
   }
   const created = daysSince(task.created_at, now)
   if (created === null) return null
-  // Undated: board time counts from the LATER of created_at / start_date (min of the two ages).
-  const days = sinceStart !== null ? Math.min(created, sinceStart) : created
+  // Undated: board time counts from the LATEST of created_at / start_date / last session — i.e. the
+  // smallest of the three ages, since "how long has this been sitting untouched" is what stale means.
+  const days = Math.min(
+    ...[created, sinceStart, sinceWorked].filter((n): n is number => n !== null),
+  )
   if (days < STALE_UNDATED_FLOOR_DAYS) return null
   return { days, overdue: false, floor: STALE_UNDATED_FLOOR_DAYS }
 }
@@ -387,6 +422,7 @@ export function clusterStaleness(
     due: string | null
     recurring: unknown
     start_date?: string | null
+    worked_days?: string[] | null
   }>,
   opts: ScoringOpts,
   now: Date = new Date(),

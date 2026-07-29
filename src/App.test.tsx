@@ -32,6 +32,11 @@ vi.mock('./features/tasks/use-tasks', () => ({
   useUpdateTask: () => ({ mutate: vi.fn() }),
   useSoftDeleteTask: () => ({ mutate: vi.fn() }),
 }))
+// The ✓ on an ongoing project logs a work session through the log_task_work RPC (an optimistic
+// react-query mutation) — stubbed like the rest so the shell renders with no QueryClientProvider.
+vi.mock('./features/tasks/use-worked', () => ({
+  useLogWork: () => ({ mutate: vi.fn() }),
+}))
 // GridView's grid mark-done action calls useMarkTaskDone; the Done page/sheet reads useHistory +
 // its restore/delete mutations (Done data layer). Stub them all so the shell renders (incl. the
 // #/done route) without a QueryClientProvider / network.

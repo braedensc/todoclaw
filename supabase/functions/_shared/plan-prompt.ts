@@ -54,6 +54,15 @@ export const PlanRequestSchema = z.object({
         size: z.enum(SIZE_VALUES).nullish(),
         // ONGOING project flag. Lenient for the same deploy-skew reason; absent/false = a normal task.
         ongoing: z.boolean().nullish(),
+        // Work-session recency for an ongoing project, already derived by the request builder
+        // (workRecency/workedPhrase — server: plan-inputs.ts, client: use-plan-my-day.ts).
+        // `workedToday` is the ONE structural pacing rule: a project with a session already logged
+        // today is dropped from the rock candidates entirely (taskLines) and re-listed as
+        // mention-only. `worked` is the raw fact rendered on the task line ("worked yesterday, 3 days
+        // running") — bounded because it crosses the client wire like every other untrusted string,
+        // and generously so: the longest real phrase runs ~40 chars. Both lenient for deploy skew.
+        workedToday: z.boolean().nullish(),
+        worked: z.string().max(120).nullish(),
       }),
     )
     .max(200),
@@ -297,17 +306,35 @@ export const SYSTEM_PROMPT = [
   'ONGOING PROJECTS: a task tagged "ongoing project" is a standing, open-ended effort with no hard',
   'deadline (e.g. "write the novel", "learn Spanish"). It will not pressure you with a due date, so',
   'it is easy to overlook — but chipping away at it regularly is the whole point. On a lighter day, or',
-  'when few deadlines press, PROACTIVELY give one a focused block — and because a real session is',
-  'substantial, PREFER making it the BIG ROCK rather than padding it onto the quick-wins list, paced',
-  'toward its due date if it has one. Only make it a small rock if it is genuinely short (S/M) and',
-  'something bigger already owns the day. Never tell the user to "finish" it or treat it as',
-  'must-finish-today — a session on it is progress, not completion. One caveat, and it is important:',
-  'this is only for a project THE USER has signalled is worth a session. Judge it on ITS OWN',
-  'importance and urgency, not on whether anything else wants the slot. A project sitting LOW on both',
-  'is one they deliberately parked at the bottom of the grid — an empty big-rock slot is not a reason',
-  'to promote it, and "nothing else is competing" is not a reason either. When the only candidate is',
-  'a low/low project, leave bigRock null and let the day be light (see QUIET, LOW-VALUE DAYS) — that',
-  'is the honest read, especially on a day a fixed commitment already owns.',
+  'when few deadlines press, PROACTIVELY give a project that is READY for one a focused block — and',
+  'because a real session is substantial, PREFER making it the BIG ROCK rather than padding it onto',
+  'the quick-wins list, paced toward its due date if it has one. Only make it a small rock if it is',
+  'genuinely short (S/M) and something bigger already owns the day. Never tell the user to "finish" it',
+  'or treat it as must-finish-today — a session on it is progress, not completion.',
+  'WHAT "READY" MEANS. Each ongoing line ends with its session history as plain fact — when it was',
+  'last worked ("worked yesterday", "last worked 9 days ago", "no sessions logged yet"), and how many',
+  'consecutive days it has been worked when that is more than one. Read the rhythm out of those facts;',
+  'do NOT turn them into a fixed every-N-days cadence:',
+  '  • worked yesterday — normally leave it today. Pick it again only if the board is genuinely quiet',
+  '    or they are clearly mid-push on it.',
+  '  • two or three days in a row — a further day is an occasional exception, never the default.',
+  '  • three or more days in a row — let it rest; something else has earned the day.',
+  '  • four or more days ago — fully fresh. Judge it on its own merits, with no catch-up framing.',
+  '  • weeks or months ago — a good one to pick back up when it earns the slot. NEVER name the gap to',
+  '    the user and never imply neglect: putting a project down for a while and coming back to it is',
+  '    normal, healthy use of one.',
+  '  • no sessions logged yet — no signal at all. Judge it purely on where they placed it on the grid,',
+  '    and never push it just to fill an empty slot.',
+  'A project with a session ALREADY LOGGED TODAY is not on the table at all — it is listed separately,',
+  'with no id to cite, purely as context (see "ALREADY WORKED TODAY"). Do not schedule it and do not',
+  'ask for a second session.',
+  'One caveat, and it is important: this is only for a project THE USER has signalled is worth a',
+  'session. Judge it on ITS OWN importance and urgency, not on whether anything else wants the slot. A',
+  'project sitting LOW on both is one they deliberately parked at the bottom of the grid — an empty',
+  'big-rock slot is not a reason to promote it, and "nothing else is competing" is not a reason either.',
+  'When the only candidate is a low/low project, leave bigRock null and let the day be light (see',
+  'QUIET, LOW-VALUE DAYS) — that is the honest read, especially on a day a fixed commitment already',
+  'owns.',
   '',
   'QUIET, LOW-VALUE DAYS: sometimes the board holds only a few LOW-importance, LOW-urgency tasks with',
   'no due dates — nothing that genuinely earns a substantial focused block. On a day like that you do',
@@ -404,10 +431,25 @@ function scheduleContext(dayOfWeek: string, schedule: ScheduleConfig | null): st
   return lines.join('\n')
 }
 
+/**
+ * The ROCK CANDIDATES — every grid task the model may actually schedule today. That is all of
+ * `req.tasks` except an ongoing project with a session already logged today: those are handed over
+ * separately by workedTodayLines, so "worked today ⇒ not schedulable" is structural rather than a
+ * request the model can decline.
+ *
+ * The skip happens HERE and not in the request builder because `req.tasks` is also what deriveAnchors
+ * reads: filter it upstream and an ongoing project due at 2 PM today would silently lose its
+ * fixed-time anchor — the exact regression PRs #344/#345 closed.
+ *
+ * Consequence worth knowing: [T#] is the index into `req.tasks`, NOT into the printed list, so the
+ * printed ids can skip a number. That is deliberate — the ids are the resolveRef contract, and a
+ * renumbered list would map rocks onto the wrong tasks.
+ */
 function taskLines(req: PlanRequest): string {
   if (req.tasks.length === 0) return '(no tasks placed on the grid)'
-  return req.tasks
+  const lines = req.tasks
     .map((t, i) => {
+      if (t.workedToday) return null // handed to the model by workedTodayLines instead
       const dayPart =
         t.due == null
           ? 'no due date'
@@ -422,15 +464,34 @@ function taskLines(req: PlanRequest): string {
       // Size is optional: render it (with its rough-hours hint) only when the task carries one;
       // untagged tasks get nothing here and the model estimates their effort (see SYSTEM_PROMPT).
       const size = t.size ? `, size ${t.size} (${SIZE_HINTS[t.size]})` : ''
-      // Ongoing projects are flagged so the planner can pace them (chip away, never must-finish).
+      // Ongoing projects are flagged so the planner can pace them (chip away, never must-finish),
+      // and carry their session history as raw fact so it can read the rhythm the user actually
+      // keeps ("worked yesterday", "no sessions logged yet"). Never a verdict word — see workedPhrase.
       const ongoing = t.ongoing ? ', ongoing project' : ''
+      const worked = t.worked?.trim() ? `, ${t.worked.trim()}` : ''
       // [T#] is the line id emit_plan rocks cite back via `ref` (see resolvePlanTaskIds). It is
       // positional (1-based array index), NOT the task uuid — short ids are cheap to copy exactly.
       return `- [T${i + 1}] ${t.text} (importance ${Math.round(t.importance)}, urgency ${Math.round(
         t.urgency,
-      )}, ${due}${size}${ongoing})`
+      )}, ${due}${size}${ongoing}${worked})`
     })
-    .join('\n')
+    .filter((line): line is string => line !== null)
+  // Every candidate skipped means the board's only open items were all worked today. Say that
+  // plainly: an empty block would read as "nothing exists" and the ALREADY WORKED TODAY block right
+  // below would contradict it.
+  if (lines.length === 0)
+    return '(nothing on the grid is available today — see ALREADY WORKED TODAY)'
+  return lines.join('\n')
+}
+
+// The ongoing projects with a session already logged today, as a mention-only list. Deliberately
+// WITHOUT the bracketed [T#] every schedulable line carries: resolveRef only maps [T#]/[R#], so a
+// rock physically cannot cite one of these. Mirrors the COMING UP block's shape for the same reason
+// — a thing the model should know about but must not schedule.
+function workedTodayLines(req: PlanRequest): string[] {
+  return req.tasks
+    .filter((t) => t.workedToday)
+    .map((t) => `- ${t.text} — ${t.worked?.trim() || 'worked today'}`)
 }
 
 // ---- Ref resolution --------------------------------------------------------------------------
@@ -491,6 +552,19 @@ function isAnchored(rock: { task: string; taskId: string | null }, anchors: Plan
   )
 }
 
+// Does this rock point at a project already worked today? The worked-today block carries no [T#], so
+// no `ref` can reach one — but resolveRef's TEXT fallback still can, because the model saw the name.
+// Closing that is what makes "worked today ⇒ not schedulable" a structural fact rather than a rule
+// the model is asked to follow. Same two-step match as isAnchored.
+function isWorkedToday(rock: { task: string; taskId: string | null }, req: PlanRequest): boolean {
+  return req.tasks.some(
+    (t) =>
+      !!t.workedToday &&
+      ((rock.taskId != null && t.id != null && rock.taskId === t.id) ||
+        t.text.trim() === rock.task.trim()),
+  )
+}
+
 /**
  * Resolve every rock's (and the nudge's) `ref` in an emitted plan to a real tasks.id, producing the
  * STORED plan shape (items carry `taskId`, never `ref`). An item that can't be tied to a listed one —
@@ -500,20 +574,24 @@ function isAnchored(rock: { task: string; taskId: string | null }, anchors: Plan
  * This is also where `anchors` is stamped on (deriveAnchors). A rock the model emitted for a task
  * that IS an anchor is dropped: the anchors strip already shows it, and the prompt tells the model
  * not to emit one. Dropping the bigRock that way leaves bigRock null, which is the honest read of a
- * day whose only big item is an appointment.
+ * day whose only big item is an appointment. A rock (or nudge) that lands on a project already
+ * worked today is dropped the same way, and for the same reason: the day's work on it is done.
  */
 export function resolvePlanTaskIds(plan: EmittedPlan, req: PlanRequest): PlanResult {
   const anchors = deriveAnchors(req)
+  const keep = (r: { task: string; taskId: string | null }) =>
+    !isAnchored(r, anchors) && !isWorkedToday(r, req)
   const bigRock = plan.bigRock ? resolveRef(plan.bigRock, req) : null
   const smallRocks = Array.isArray(plan.smallRocks)
     ? plan.smallRocks.map((r) => resolveRef(r, req))
     : []
+  const nudge = plan.nudge ? resolveRef(plan.nudge, req) : null
   return {
     ...plan,
     anchors,
-    bigRock: bigRock && !isAnchored(bigRock, anchors) ? bigRock : null,
-    smallRocks: smallRocks.filter((r) => !isAnchored(r, anchors)),
-    nudge: plan.nudge ? resolveRef(plan.nudge, req) : null,
+    bigRock: bigRock && keep(bigRock) ? bigRock : null,
+    smallRocks: smallRocks.filter(keep),
+    nudge: nudge && !isWorkedToday(nudge, req) ? nudge : null,
   }
 }
 
@@ -580,6 +658,19 @@ export function buildUserPrompt(
     )
   }
   blocks.push(`=== TASKS ON THE GRID ===\n(importance 0–100, urgency 0–100)\n${taskLines(req)}`)
+  // Ongoing projects the user already put time into today. Context ONLY: they are absent from the
+  // list above and carry no id, so nothing here can become a rock (see SYSTEM_PROMPT "ONGOING
+  // PROJECTS"). Omitted when empty — the common case.
+  const workedToday = workedTodayLines(req)
+  if (workedToday.length) {
+    blocks.push(
+      '=== ALREADY WORKED TODAY (a session is logged — NOT available today, never schedule) ===\n' +
+        workedToday.join('\n') +
+        '\nThe user has already put time into these today, so they are done for the day: do not ' +
+        'schedule one and do not ask for a second session. If that leaves the board thin, a light ' +
+        'or relaxed day is the honest answer — never backfill with something they parked.',
+    )
+  }
   // The same timed-today tasks the card lists on its own (deriveAnchors), called out here so the
   // model can plan around them instead of over them. Explicitly NOT rock material — see rule 5.
   const anchors = deriveAnchors(req)

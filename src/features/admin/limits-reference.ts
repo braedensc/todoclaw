@@ -98,6 +98,12 @@ export const LIMIT_GROUPS: LimitGroup[] = [
       { name: 'Task / habit text', value: '2000 chars', scope: 'per row', kind: 'fixed' },
       { name: 'Chat message', value: '4000 chars', scope: 'per request', kind: 'fixed' },
       { name: 'Saved memory', value: '240 chars', scope: 'per row', kind: 'fixed' },
+      {
+        name: 'Work-session log',
+        value: '14 days / ongoing project',
+        scope: 'per row',
+        kind: 'fixed',
+      },
       { name: 'Location', value: '120 chars', scope: 'per row', kind: 'fixed' },
       { name: 'Plan notes / instructions', value: '500 chars', scope: 'per row', kind: 'fixed' },
       { name: 'Tool steps per chat turn', value: '8', scope: 'per request', kind: 'fixed' },

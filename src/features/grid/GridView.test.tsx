@@ -40,6 +40,7 @@ function GridHarness() {
 const updateMutate = vi.fn()
 const softDeleteMutate = vi.fn()
 const markDoneMutate = vi.fn()
+const logWorkMutate = vi.fn()
 let tasksFixture: Task[] = []
 let doneTodayFixture: Record<string, boolean> = {}
 
@@ -55,6 +56,11 @@ vi.mock('../tasks/use-tasks', () => ({
 }))
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: markDoneMutate }),
+}))
+// An ongoing project's ✓ logs a work SESSION through the log_task_work RPC (an optimistic
+// react-query mutation) — mocked to a spy so it is assertable without a QueryClient.
+vi.mock('../tasks/use-worked', () => ({
+  useLogWork: () => ({ mutate: logWorkMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'America/New_York', config: {} } }),
@@ -95,6 +101,7 @@ function makeTask(over: Partial<Task>): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
+    worked_days: null,
     // Fresh by construction: derived from the SAME real clock GridCard's staleness check reads
     // (it injects no `now`), so a default undated card stays well under the 90-day stale floor
     // and never silently crosses a tier as real time passes. A fixed date here would rot.
@@ -638,6 +645,61 @@ describe('GridView grid mark-done', () => {
     expect(call.patch.recurring.frequencyDays).toBe(3)
     expect(call.patch.recurring.doneCount).toBe(3) // 2 + 1
     expect(call.patch.recurring.lastDoneAt).not.toBeNull() // cycle reset to now
+  })
+
+  // The third arm (2026-07-28): an ONGOING project's ✓ logs a work session. Before this it fell
+  // through to the archive arm, so the everyday ✓ silently ended the project.
+  it('logs a work session on an ongoing card — no history, no patch, and the card stays put', () => {
+    tasksFixture = [makeTask({ id: 'og', text: 'Learn piano', ongoing: true, staged: false })]
+    render(<GridHarness />)
+
+    fireEvent.click(screen.getByLabelText('Log that you worked on this today'))
+
+    expect(logWorkMutate).toHaveBeenCalledWith({
+      taskId: 'og',
+      timeZone: 'America/New_York',
+      logged: true,
+    })
+    expect(markDoneMutate).not.toHaveBeenCalled()
+    expect(updateMutate).not.toHaveBeenCalled()
+    expect(screen.getByTestId('grid-card')).toBeInTheDocument()
+  })
+
+  it('a second ✓ on the same day un-logs it (the control is a toggle, and reads pressed)', () => {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    tasksFixture = [
+      makeTask({ id: 'og', text: 'Learn piano', ongoing: true, worked_days: [today] }),
+    ]
+    render(<GridHarness />)
+
+    const control = screen.getByLabelText('Worked on this today — click to undo')
+    expect(control).toHaveAttribute('aria-pressed', 'true')
+    // Same word in both states — a wider "Worked today" wrapped and made the card taller the moment
+    // a session was logged (see doneControlCopy). Fill + aria-pressed carry the state instead.
+    expect(control).toHaveTextContent('Worked')
+    fireEvent.click(control)
+
+    expect(logWorkMutate).toHaveBeenCalledWith({
+      taskId: 'og',
+      timeZone: 'America/New_York',
+      logged: false,
+    })
+  })
+
+  it('reads the session log back on the ∞ block as a second line', () => {
+    const days = [3, 4].map((n) =>
+      new Date(Date.now() - n * 86_400_000).toLocaleDateString('en-CA', {
+        timeZone: 'America/New_York',
+      }),
+    )
+    tasksFixture = [makeTask({ id: 'og', text: 'Learn piano', ongoing: true, worked_days: days })]
+    render(<GridHarness />)
+
+    const badge = screen.getByLabelText(
+      'Ongoing project — Last worked 3 days ago, 2 days running · 2 sessions logged',
+    )
+    expect(badge).toHaveTextContent('∞ ongoing')
+    expect(badge).toHaveTextContent('3d')
   })
 })
 

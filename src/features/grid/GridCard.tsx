@@ -4,7 +4,8 @@ import type { CSSProperties, PointerEvent } from 'react'
 import type { Task } from '../../types/task'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus, fmtFrequency } from '../../lib/recurring'
-import { ONGOING_GLYPH } from '../../lib/task-type'
+import { ONGOING_GLYPH, primaryDoneAction } from '../../lib/task-type'
+import { workedDetail, workedShort, workRecency } from '../../lib/worked'
 import {
   BASE_CARD_SHADOW,
   dueChipStyle,
@@ -68,7 +69,8 @@ export interface GridCardProps {
   onPointerDown: (event: PointerEvent) => void
   onRename: (text: string) => void
   onDelete: () => void
-  /** Mark this task done — caller branches recurring (reset cycle) vs normal (write history). */
+  /** Run this task's primary ✓ — the caller's three-way switch (archive / recurring cycle /
+   *  work session for an ongoing project); see useGrid.handleDone. */
   onDone: () => void
   /** Commit a due date (ISO 'YYYY-MM-DD' or null) — writes `due` ONLY, never repositions. */
   /** Write due date + time ('YYYY-MM-DD' / 'HH:MM', null to clear). Always both columns —
@@ -118,8 +120,9 @@ const stopDrag = (e: PointerEvent) => e.stopPropagation()
  * done", not "already done") plus small ⋯ menu / × delete icons on the right. The ⋯ menu holds the
  * Rename item above the shared SchedulePanel (two-week calendar + time chips + remind + repeats —
  * the one schedule editor) — setting a due date writes `due` only and never moves the card. Every
- * control stopPropagation so clicking it never starts a drag. Done marks a normal task complete for
- * today (it leaves the grid) or resets a recurring task's cycle.
+ * control stopPropagation so clicking it never starts a drag. The ✓ does whatever this task's type
+ * says it does (primaryDoneAction): a one-off is completed and leaves the grid, a chore resets its
+ * cycle, and an ONGOING project logs a work session — the card doesn't move, the pill just fills.
  */
 export function GridCard({
   task,
@@ -175,6 +178,13 @@ export function GridCard({
   const sideColor = rc ? borderColor : BUCKET_DOT
 
   const showBadge = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
+
+  // Session facts for an ONGOING project (null for every other type — see workRecency). They drive
+  // the second line of the ∞ block and the ✓ pill's "worked today" state; a project with no logged
+  // session yet renders no counter at all rather than an apologetic zero.
+  const recency = workRecency(task, timeZone)
+  const workedToken = workedShort(recency)
+  const workedTitle = workedDetail(recency)
 
   // Paused (dormant) gates FIRST and hardest — the set-aside lane wins over every other. A paused
   // card is neither due nor ignored, so it wears NONE of the hot/stale dress: gating the tier to
@@ -371,10 +381,22 @@ export function GridCard({
       )}
 
       {/* Ongoing project badge — a standing effort (no cadence/status clock). Outlined accent so it
-          reads as "persistent", distinct from the filled, status-colored recurring block. */}
+          reads as "persistent", distinct from the filled, status-colored recurring block. Two lines,
+          the same shape the recurring block above uses: the marker, then the last session as the
+          quiet second line ("✓ today" / "3d"), with the full sentence on hover + for screen readers.
+          Deliberately factual — a gap is never dressed as neglect. */}
       {task.ongoing && (
-        <div className="mb-0.5 block rounded-[3px] border border-primary px-1 py-px text-[8.5px] font-bold leading-tight text-primary">
-          {ONGOING_GLYPH} ongoing
+        <div
+          className="mb-0.5 block rounded-[3px] border border-primary px-1 py-px text-[8.5px] font-bold leading-tight text-primary"
+          title={workedTitle}
+          aria-label={`Ongoing project — ${workedTitle}`}
+        >
+          <span>{ONGOING_GLYPH} ongoing</span>
+          {workedToken && (
+            <span className="block text-[7px] font-normal tracking-[0.03em] opacity-80">
+              {workedToken}
+            </span>
+          )}
         </div>
       )}
 
@@ -449,7 +471,8 @@ export function GridCard({
           bar's ⋯ wrapper via `menuRef` and gated on `menuOpen`. Hidden while renaming inline. */}
       {!editing && (
         <CardActionBar
-          recurring={task.recurring != null}
+          doneAction={primaryDoneAction(task)}
+          workedToday={recency?.workedToday ?? false}
           onDone={onDone}
           onMenu={toggleMenu}
           onDelete={onDelete}
@@ -498,6 +521,7 @@ export function GridCard({
                 {/* The ONE schedule editor (workshop direction B) — calendar + time chips +
                     remind + repeats, shared with the list/add surfaces so they can't drift. */}
                 <SchedulePanel
+                  project={task}
                   taskText={task.text}
                   due={task.due}
                   dueTime={task.due_time}

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { daysUntil } from '../../lib/scoring'
 import { recurringStatus } from '../../lib/recurring'
 import { isDormant } from '../../lib/start-date'
+import { workRecency, type WorkRecency } from '../../lib/worked'
 import { localDateInTZ } from '../../lib/dates'
 import type { DailyStateMaps } from '../daily-state/use-daily-state'
 import type { Task, TaskSize } from '../../types/task'
@@ -19,6 +20,26 @@ import type { DayPlan } from '../../types/plan'
 // dormant task un-pausing within this many days is surfaced as a "coming up" heads-up.
 const UPCOMING_WINDOW_DAYS = 3
 
+// The model-facing wording for an ongoing project's session history — the client mirror of
+// workedPhrase in supabase/functions/_shared/worked.ts (same reason as UPCOMING_WINDOW_DAYS above:
+// the frontend build tree can't import from the Deno tree). Deliberately NOT workedDetail from
+// src/lib/worked.ts: that is the UI sentence ("Worked today · 4 sessions logged"), and the two
+// audiences want different things — the planner needs the run length, not the lifetime count.
+//
+// RAW FACTS ONLY, no verdict word ("resting", "due for a session"): a verdict reads to the model as
+// a switch and produces a mechanical every-N-days cadence. A project with no sessions says so —
+// "no signal yet" is exactly what the planner has to know about it. Keep in step with the twin.
+function workedFact(recency: WorkRecency | null): string {
+  if (!recency) return ''
+  if (recency.daysSince === null) return 'no sessions logged yet'
+  const when = recency.workedToday
+    ? 'worked today'
+    : recency.daysSince === 1
+      ? 'worked yesterday'
+      : `last worked ${recency.daysSince} days ago`
+  return recency.streak >= 2 ? `${when}, ${recency.streak} days running` : when
+}
+
 export interface PlanRequest {
   today: string
   dayOfWeek: string
@@ -32,6 +53,11 @@ export interface PlanRequest {
     dueTime: string | null
     size: TaskSize | null // coarse effort (S/M/L/XL), or null to let the planner infer it
     ongoing: boolean // a standing project — chip away at it, never must-finish-today
+    // Session recency for an ongoing project (empty/false for anything else). workedToday is the one
+    // structural pacing rule — the server drops such a project from the rock candidates entirely —
+    // and `worked` is the raw fact rendered on its task line.
+    workedToday: boolean
+    worked: string
   }[]
   recurringDue: { id: string; text: string; status: string }[]
   habits: string[]
@@ -70,17 +96,26 @@ export function buildPlanRequest(
         t.x != null &&
         t.y != null,
     )
-    .map((t) => ({
-      id: t.id,
-      text: t.text,
-      importance: Math.round((t.y ?? 0.5) * 100),
-      urgency: Math.round((t.x ?? 0.5) * 100),
-      due: t.due,
-      dueInDays: daysUntil(t.due, { timeZone, now }),
-      dueTime: t.due_time,
-      size: t.size ?? null,
-      ongoing: t.ongoing,
-    }))
+    .map((t) => {
+      // Derived here, once, so the request carries finished facts (like importance/dueInDays) and
+      // the server only renders them. A project worked TODAY still ships — the server needs it in
+      // `tasks` to derive today's fixed-time anchors — flagged so it is dropped from the rock
+      // candidates there. Mirrors the server twin, supabase/functions/_shared/plan-inputs.ts.
+      const recency = workRecency(t, timeZone, now)
+      return {
+        id: t.id,
+        text: t.text,
+        importance: Math.round((t.y ?? 0.5) * 100),
+        urgency: Math.round((t.x ?? 0.5) * 100),
+        due: t.due,
+        dueInDays: daysUntil(t.due, { timeZone, now }),
+        dueTime: t.due_time,
+        size: t.size ?? null,
+        ongoing: t.ongoing,
+        workedToday: recency?.workedToday ?? false,
+        worked: workedFact(recency),
+      }
+    })
 
   const recurringDue: { id: string; text: string; status: string }[] = []
   for (const t of tasks) {

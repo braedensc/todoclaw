@@ -50,6 +50,11 @@ vi.mock('../tasks/use-tasks', () => ({
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: vi.fn() }),
 }))
+// ListView also logs work sessions on ongoing projects (an optimistic react-query mutation) —
+// stubbed so this suite needs no QueryClient.
+vi.mock('../tasks/use-worked', () => ({
+  useLogWork: () => ({ mutate: vi.fn() }),
+}))
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'UTC' } }),
 }))
@@ -76,6 +81,7 @@ function makeTask(over: Partial<Task>): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
+    worked_days: null,
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
