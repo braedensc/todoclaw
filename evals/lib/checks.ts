@@ -347,6 +347,65 @@ export function rocksResolve(): PlanCheck {
   }
 }
 
+/**
+ * Deadline coverage (prompt rule 1): every task the fixture marks OVERDUE or DUE TODAY must land
+ * somewhere the user sees — a rock, or the derived anchors/chores strips.
+ *
+ * This is the check whose absence let the reported failure through: the planner spent both quick-win
+ * slots on tasks due in 3 and 6 days and dropped one due today, while rule 1 already said due-soon
+ * work "must appear". A rule nothing measures is a rule that quietly stops holding.
+ *
+ * `dueIds` are fixture ids the scenario declares as due-now, so the check stays a lookup rather than
+ * re-deriving date math the fixtures already pin.
+ */
+export function deadlinesCovered(dueIds: string[]): PlanCheck {
+  return (plan) => {
+    const shown = new Set(
+      [
+        plan.bigRock?.taskId,
+        ...plan.smallRocks.map((rock) => rock.taskId),
+        ...(plan.anchors ?? []).map((a) => a.taskId),
+        ...(plan.chores ?? []).map((c) => c.taskId),
+      ].filter(Boolean) as string[],
+    )
+    const missing = dueIds.filter((id) => !shown.has(id))
+    return r(
+      'every overdue / due-today task appears',
+      missing.length === 0,
+      missing.length ? `missing: ${missing.join(', ')}` : undefined,
+    )
+  }
+}
+
+/**
+ * No rock may resolve to a task the fixture marks as undated or far-dated while a due-now task went
+ * unplanned. The precedence half of rule 1: covering deadlines beats picking the juiciest project.
+ */
+export function noFarDatedOverDue(dueIds: string[], farIds: string[]): PlanCheck {
+  return (plan) => {
+    const rockIds = [plan.bigRock, ...plan.smallRocks]
+      .filter(Boolean)
+      .map((rock) => rock!.taskId)
+      .filter(Boolean) as string[]
+    const covered = new Set(
+      [
+        ...rockIds,
+        ...(plan.anchors ?? []).map((a) => a.taskId),
+        ...(plan.chores ?? []).map((c) => c.taskId),
+      ].filter(Boolean) as string[],
+    )
+    const uncovered = dueIds.filter((id) => !covered.has(id))
+    const farTaken = rockIds.filter((id) => farIds.includes(id))
+    return r(
+      'no undated/far-dated rock while something due-now is unplanned',
+      uncovered.length === 0 || farTaken.length === 0,
+      uncovered.length && farTaken.length
+        ? `took ${farTaken.join(', ')} but left ${uncovered.join(', ')} unplanned`
+        : undefined,
+    )
+  }
+}
+
 // ---------- recap ----------
 
 export function recapSignoff(): RecapCheck {
