@@ -397,6 +397,26 @@ describe('ListView', () => {
       expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
     })
 
+    it('shows the cadence status, not the reminder anchor, on a recurring row', () => {
+      // `due`/`due_time` on a recurring chore are the reminder occurrence anchor, so a chore that
+      // carries a reminder permanently holds a past `due`. The row's single trailing badge must be
+      // the cadence status — never an anchor-derived overdue chip (the reverted #348 behavior,
+      // which no test caught). Anchored 2024-01-15 but done yesterday on a 7-day cadence.
+      tasksData = [
+        makeTask({
+          id: 'anch',
+          text: 'anchored chore',
+          due: '2024-01-15',
+          due_time: '09:00:00',
+          recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 4 },
+        }),
+      ]
+      renderList()
+
+      expect(screen.getByText('in 6d')).toBeInTheDocument()
+      expect(screen.queryByText(/overdue/i)).not.toBeInTheDocument()
+    })
+
     it('renders the cadence (fmtFrequency) and status label for a recurring task', () => {
       // 7-day cadence done yesterday → "weekly" + an in-Nd "soon"/"ok" status label.
       tasksData = [

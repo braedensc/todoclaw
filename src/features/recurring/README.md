@@ -51,6 +51,23 @@ parent handlers keep the two types exclusive in one write). BabyClaw sets it via
 flag — just `task_id`) or `create_task`'s `ongoing` boolean, and clears it via `clear_recurring` —
 see `supabase/functions/_shared/capabilities/tasks.ts`.
 
+### The anchor is not a deadline — and it is pinned
+
+Because the anchor is **never advanced** (the occurrence grid rolls forward *from* it), a chore
+with a long-lived reminder legitimately carries a `due` date years in the past. Any reader that
+treats that as a deadline therefore reads every such chore as ever-more overdue, pins it to the
+board, and force-feeds it into every plan. That change once shipped past a green CI and was
+reverted (#348) — nothing had pinned the invariant. It is now pinned on both sides:
+
+| Side | Where |
+|---|---|
+| The anchor still drives reminders, however stale | `src/lib/recurring-reminders.test.ts` |
+| Plan selection ignores it (client + server twins) | `use-plan-my-day.test.tsx`, `_shared/plan-inputs.test.ts` |
+| BabyClaw's context ignores it | `_shared/chat-context.test.ts` |
+| Board + list ignore it | `GridView.test.tsx`, `ListView.test.tsx` |
+
+Search `anchor` across the test tree to find the whole set before touching this area.
+
 ## Reminders (offset before each occurrence)
 
 A recurring **chore** carries reminders the **same way a one-off does** — lead-time **offsets**

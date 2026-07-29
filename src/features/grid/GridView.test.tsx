@@ -238,6 +238,37 @@ describe('GridView placement filter', () => {
     expect(screen.getByText('Take out trash')).toBeInTheDocument()
   })
 
+  it('ignores a recurring task’s reminder ANCHOR when deciding what is on the grid', () => {
+    // `due`/`due_time` on a recurring chore are the reminder occurrence anchor, not a deadline —
+    // nextRecurringFireAt phases the grid off them and never advances them, so a chore carrying a
+    // reminder permanently holds a past `due`. isPlaced must key on the cadence alone. Reading the
+    // anchor as a deadline once shipped past a green CI (reverted in #348) because nothing pinned
+    // this: it pinned every such chore to the board, reading ever-more overdue.
+    const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString()
+    tasksFixture = [
+      // Anchor years back, but the cadence says "not due for a month" → stays off the grid.
+      makeTask({
+        id: 'anchored-ok',
+        text: 'Descale kettle',
+        due: '2024-01-15',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 30, lastDoneAt: twoDaysAgo, doneCount: 6 },
+      }),
+      // Anchor far in the FUTURE, but the cadence says overdue → must still show.
+      makeTask({
+        id: 'anchored-overdue',
+        text: 'Take out trash',
+        due: '2099-12-31',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 1, lastDoneAt: twoDaysAgo, doneCount: 3 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.queryByText('Descale kettle')).not.toBeInTheDocument()
+    expect(screen.getByText('Take out trash')).toBeInTheDocument()
+  })
+
   it('renders no new-item cards when nothing is staged', () => {
     tasksFixture = [makeTask({ staged: false })]
     render(<GridHarness />)

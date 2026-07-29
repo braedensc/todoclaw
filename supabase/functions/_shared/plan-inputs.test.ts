@@ -174,3 +174,54 @@ Deno.test(
     })
   },
 )
+
+// ---- the reminder ANCHOR is not a deadline ----------------------------------------------------
+// On a recurring chore `due`/`due_time` are the reminder occurrence anchor: next_recurring_fire_at
+// phases the occurrence grid off them and NEVER advances them, so a chore carrying a reminder
+// permanently holds a `due` date receding into the past. Server-side plan selection must key on the
+// cadence alone — the twin of the client assertions in src/features/ai/use-plan-my-day.test.tsx.
+// A change that read the anchor as a deadline shipped past a green CI once (reverted in #348)
+// because nothing pinned this.
+
+function anchoredChore(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'chore',
+    text: 'Laundry',
+    x: 0.5,
+    y: 0.5,
+    due: '2026-06-01', // weeks behind NOW, as any live anchor is
+    due_time: '09:00:00',
+    size: null,
+    staged: false,
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-06-24T11:00:00.000Z', doneCount: 9 },
+    ...overrides,
+  }
+}
+
+Deno.test('an anchor date far in the past does not drag a chore into the plan', () => {
+  const req = buildPlanRequest([anchoredChore()], [], {}, TZ, NOW)
+  assertEquals(req.recurringDue, []) // cadence says 7 days out
+  assertEquals(req.tasks, []) // and a chore is never a plannable task
+})
+
+Deno.test('a chore due on its cadence reports the cadence status, not the anchor', () => {
+  const rows = [
+    anchoredChore({
+      recurring: { frequencyDays: 7, lastDoneAt: '2026-06-17T11:00:00.000Z', doneCount: 9 },
+    }),
+  ]
+  const req = buildPlanRequest(rows, [], {}, TZ, NOW)
+  // Would read "overdue 23d" and climb daily if the anchor leaked in.
+  assertEquals(req.recurringDue, [{ id: 'chore', text: 'Laundry', status: 'due today' }])
+})
+
+Deno.test('an anchor date in the FUTURE cannot mute a genuinely overdue chore', () => {
+  const rows = [
+    anchoredChore({
+      due: '2026-12-25',
+      recurring: { frequencyDays: 3, lastDoneAt: '2026-06-19T11:00:00.000Z', doneCount: 2 },
+    }),
+  ]
+  const req = buildPlanRequest(rows, [], {}, TZ, NOW)
+  assertEquals(req.recurringDue, [{ id: 'chore', text: 'Laundry', status: 'overdue 2d' }])
+})
