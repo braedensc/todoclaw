@@ -100,6 +100,33 @@ export const DEFINER_GRANT_ALLOWLIST = {
     writesScopedToAuthUid: 'no',
     note: 'Writes edge_ip_events — an IP-keyed rate-limit bucket (no user_id), reachable ONLY via this DEFINER fn (table has RLS on, no grants). Runs pre-auth so there is no auth.uid() to scope by; it bounds abuse and fails open. Non-sensitive throttle state. Reviewed (#311).',
   },
+  // At-rest content encryption (PR #274): the columns became ciphertext, so the client's former direct
+  // SELECTs move to these DEFINER read RPCs, each fenced `where user_id = auth.uid()` and decrypting
+  // only the caller's own rows. save_daily_plan flipped INVOKER→DEFINER so it can reach the Vault key.
+  chat_load_messages: {
+    writesScopedToAuthUid: 'read-only',
+    note: 'Reads + decrypts the caller’s own transcript (session fenced `join chat_sessions s … where s.user_id = auth.uid()`); no writes.',
+  },
+  chat_list_sessions: {
+    writesScopedToAuthUid: 'read-only',
+    note: 'Reads + decrypts the caller’s own chat_sessions (title/pending) `where s.user_id = auth.uid()`; no writes.',
+  },
+  chat_load_session: {
+    writesScopedToAuthUid: 'read-only',
+    note: 'Reads + decrypts one session’s pending state `where s.id = p_session and s.user_id = auth.uid()`; no writes.',
+  },
+  messages_list: {
+    writesScopedToAuthUid: 'read-only',
+    note: 'Reads + decrypts the caller’s own inbox messages (title/body) `where m.user_id = auth.uid()`; no writes.',
+  },
+  daily_state_get: {
+    writesScopedToAuthUid: 'read-only',
+    note: 'Reads the caller’s own daily_state row (completion maps + decrypted plan) `where ds.user_id = auth.uid()`; no writes.',
+  },
+  save_daily_plan: {
+    writesScopedToAuthUid: 'yes',
+    note: 'Flipped INVOKER→DEFINER (PR #274) so it can read the Vault key to encrypt the plan; both the insert and the update are fenced to auth.uid() (own daily_state row only) — identical scoping to the prior INVOKER version.',
+  },
 }
 
 // ─── scan ───────────────────────────────────────────────────────────────────────────────────────

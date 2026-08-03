@@ -22,11 +22,9 @@ export interface InboxMessage {
 }
 
 async function fetchMessages(): Promise<InboxMessage[]> {
-  const { data, error } = await supabase
-    .from('messages')
-    .select('id, kind, local_date, title, body, read_at, created_at, session_id')
-    .order('created_at', { ascending: false })
-    .limit(50)
+  // title + body are encrypted at rest; messages_list (DEFINER, fenced to auth.uid()) returns them
+  // decrypted, newest-first. mark_message_read still touches only read_at (no decrypt needed there).
+  const { data, error } = await supabase.rpc('messages_list', { p_limit: 50 })
   if (error) throw error
   return (data ?? []) as InboxMessage[]
 }
