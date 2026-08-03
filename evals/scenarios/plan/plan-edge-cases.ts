@@ -6,6 +6,7 @@
 import { dayOffsetISO, DEFAULT_TZ, instantOffsetISO, PLAN_NOW } from '../../lib/fixture-dates.ts'
 import {
   bigRockNeverS,
+  deadlinesCovered,
   planHeadline,
   restDay,
   rocksExclude,
@@ -13,6 +14,15 @@ import {
   smallRocksAtMost,
   smallRocksOnlySM,
 } from '../../lib/checks.ts'
+// The #345 anchor/chore combinators live with the family that introduced them (evals/lib is shared
+// ground that per-family authors don't edit); `anchored` moved there too rather than exist twice.
+import {
+  anchored,
+  anchorDurationIs,
+  choresExclude,
+  choresListed,
+  noSchemaVocabulary,
+} from './plan-anchors-and-load.ts'
 import type { PlanCheck, PlanResult, PlanScenario, PlanTaskRow } from '../../lib/types.ts'
 
 const D = (n: number) => dayOffsetISO(n, DEFAULT_TZ, PLAN_NOW)
@@ -103,28 +113,16 @@ function rockTextMatchesId(pairs: Record<string, string>, label: string): PlanCh
   }
 }
 
-/** If the task appears as a rock at all, it must sit in the given slot (vacuous pass otherwise —
- * whether it SHOULD appear is the rubric's call). */
-function rockSlotIfScheduled(id: string, slot: Rock['when'], label: string): PlanCheck {
-  return (plan) => {
-    const rock = allRocks(plan).find((r) => r.taskId === id)
-    if (!rock) return { name: label, pass: true, detail: 'not emitted as a rock (vacuous)' }
-    return { name: label, pass: rock.when === slot, detail: `slot: ${rock.when}` }
-  }
-}
-
-/** A task due today at a set time must land in the deterministic `anchors` strip — the fixed-times
- * list the card always renders, derived from the request rather than emitted by the model. */
-function anchored(id: string, label: string): PlanCheck {
-  return (plan) => {
-    const anchor = plan.anchors.find((a) => a.taskId === id)
-    return {
-      name: label,
-      pass: anchor != null,
-      detail: anchor ? `${anchor.time} — ${anchor.task}` : `anchors: ${plan.anchors.length}`,
-    }
-  }
-}
+// There is deliberately NO slot-window check here any more. pedge-timed-anchor used to assert that
+// its flexible task landed in `afternoon` or `evening`, but a plan scenario only gets a SCHEDULE &
+// AVAILABILITY block when it supplies a `schedule` (plan-prompt.ts scheduleContext: `if (!schedule)
+// return ''`) — and that block is the ONLY place morning/lunch/afternoon/evening are given any
+// meaning. Without it the model picks a `when` out of four bare enum values, so "draft the release
+// notes in the morning, then you're clear for the 3 PM demo" — a plainly correct plan — hard-failed.
+// Adding a schedule does not rescue it either: no named window contains a single 3 PM point in a way
+// that makes one slot unambiguously a collision and another unambiguously safe. The intent (flexible
+// work fits AROUND the fixed time) now lives in that scenario's rubric, where a judgment call
+// belongs. Re-add a deterministic slot check only if the prompt ever gains real slot boundaries.
 
 /** Substring probe over the WHOLE emitted plan (headline, availableTime, rocks, habitNote). */
 function planMentions(needle: string, label: string): PlanCheck {
@@ -259,13 +257,24 @@ export const scenarios: PlanScenario[] = [
       // the rock caps used to be the only home for it, which is how a timed commitment could get
       // squeezed off the card entirely by a couple of due-today errands.
       anchored('t1', 'timed demo is a fixed-time anchor'),
+      // #345 gave PlanAnchor a duration from the task's own size — t1 is M, so the strip says ~45m.
+      anchorDurationIs('t1', '~45m', 'the strip carries the demo’s rough cost'),
       rocksExclude(['t1'], 'the anchor is not also emitted as a rock'),
-      rockSlotIfScheduled('t2', 'afternoon', 'flexible work still respects the afternoon window'),
+      deadlinesCovered(['t1', 't2']),
+      // #345: the reported headline read "…as a fixed anchor at 2pm" — scaffolding, verbatim.
+      noSchemaVocabulary(),
     ],
+    // No `schedule`, so the prompt carries no SCHEDULE & AVAILABILITY block and the four `when`
+    // values are unlabeled to the model — which is why "the release notes go in a window clear of
+    // 3 PM" is a rubric line here and not a deterministic check (see the note above planMentions).
     rubric:
-      'The demo is fixed at 3pm today: the plan must treat it as an afternoon anchor — never ' +
-      'suggest doing it this morning or "getting it out of the way early" — and slot the ' +
-      'flexible release notes around it.',
+      'The demo is fixed at 3pm today: the plan must treat it as a fixed point — never suggest ' +
+      'doing it this morning or "getting it out of the way early" — and fit the flexible release ' +
+      'notes around it rather than on top of it (whichever part of the day it picks, the two must ' +
+      'not read as happening at once). It may refer to the demo naturally where it shapes the day ' +
+      '("after the 3 PM demo"), but must not recite the time as if announcing it (the card already ' +
+      'lists it), and must never use internal words like "anchor", "big rock", or "quick win" in ' +
+      'what the user reads.',
   },
   {
     kind: 'plan',
@@ -293,8 +302,18 @@ export const scenarios: PlanScenario[] = [
   {
     kind: 'plan',
     id: 'pedge-recurring-due-vs-recent',
-    title: 'Recurring chore due today may surface; one done recently stays invisible',
+    title: 'Recurring chore due today rides the chores strip; one done recently never reaches it',
     tags: ['plan', 'edge', 'recurring'],
+    // The subject is the CADENCE LADDER'S CUT, measured on both sides in one request: q1 (7-day
+    // cadence, last done 7 days ago) is 'due today' and must reach the derived chores strip; q2
+    // (14-day cadence, last done 2 days ago) is 'ok', so buildPlanRequest drops it before the
+    // request is even built and it must reach nothing.
+    //
+    // What this scenario does NOT measure, despite an earlier check title claiming it did: whether
+    // the model also handed q1 out as a quick win. resolvePlanTaskIds filters chore-matching rocks
+    // out (plan-prompt.ts `listed = isAnchored || isChore`) BEFORE the checks ever see the plan, so
+    // that assertion is unfailable on the model's behavior — it is only a pin on the filter itself,
+    // and it is labeled as one below.
     tasks: [
       task({
         id: 'q1',
@@ -311,12 +330,24 @@ export const scenarios: PlanScenario[] = [
     checks: [
       planHeadline(),
       rocksResolve(),
+      choresListed(['q1'], 'the due-today chore reaches the chores strip'),
+      // The other side of the ladder's cut, and the check this scenario was missing: a chore done
+      // 2 days into a 14-day cadence is 'ok', so it must not appear in the strip either. Widen
+      // 'ok' and the card starts nagging about a chore the user just did.
+      choresExclude(['q2'], 'the recently-done chore never reaches the chores strip'),
+      // A pin on resolvePlanTaskIds' duplicate filter, NOT on the model: a rock naming q1 is
+      // dropped before checks run, so this can only fail if that drop regresses and the chore
+      // starts showing twice. (deadlinesCovered(['q1']) used to sit here too — the strip is one of
+      // the surfaces it scans, so choresListed above already implied it, one line earlier.)
+      rocksExclude(['q1'], 'a rock duplicating the chore strip is dropped, not shown twice'),
       rocksExclude(['q2'], 'recently-done chore never scheduled'),
       planNotMentions('family photos', 'recently-done chore not mentioned anywhere'),
     ],
     rubric:
-      'Only the fish-tank chore is due (the photos backup ran 2 days ago). The plan may surface ' +
-      'the fish tank as a quick win or mention, and must not bring up the photos backup at all.',
+      'Only the fish-tank chore is due (the photos backup ran 2 days ago). The card lists the fish ' +
+      'tank itself in its chores strip, so the plan must not also emit it as a quick win — it ' +
+      'would show twice — and must not let it disappear either; a natural mention where it shapes ' +
+      'the day is fine. The photos backup must not come up at all. The bookshelf is the natural focus.',
   },
   {
     kind: 'plan',

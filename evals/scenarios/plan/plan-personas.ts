@@ -8,6 +8,8 @@
 import { dayOffsetISO, DEFAULT_TZ, PLAN_NOW } from '../../lib/fixture-dates.ts'
 import {
   bigRockNeverS,
+  deadlinesCovered,
+  noFarDatedOverDue,
   planHeadline,
   rocksExclude,
   rocksResolve,
@@ -115,8 +117,12 @@ export const scenarios: PlanScenario[] = [
       task({ id: 'g8', text: 'Reorganize the bookshelf', x: 0.3, y: 0.3, size: 'M' }),
       task({ id: 'g9', text: 'Build a birdhouse', x: 0.15, y: 0.35, size: 'L' }),
       task({ id: 'g10', text: 'Start a compost bin', x: 0.2, y: 0.45, size: 'S' }),
+      // NOT an "anchor" in this codebase's sense (#344 gave that word a precise meaning: a task due
+      // TODAY at a set clock time, derived into PlanResult.anchors). This is a plain deadline, due
+      // tomorrow and untimed — it must NOT be in the anchors strip. Fixture id renamed accordingly;
+      // the scenario id stays pplan-idea-garden-anchor so saved baselines still diff against it.
       task({
-        id: 'anchor',
+        id: 'permit',
         text: 'Submit the building permit application',
         x: 0.75,
         y: 0.8,
@@ -127,7 +133,7 @@ export const scenarios: PlanScenario[] = [
     checks: [
       planHeadline(),
       rocksResolve(),
-      rocksInclude('anchor', 'due-tomorrow permit is scheduled'),
+      rocksInclude('permit', 'due-tomorrow permit is scheduled'),
       smallRocksAtMost(2),
     ],
     rubric:
@@ -163,13 +169,28 @@ export const scenarios: PlanScenario[] = [
       bigRockNeverS(),
       smallRocksOnlySM(),
       smallRocksAtMost(2),
+      // This fixture is literally the #351 shape — an undated L against due-today smalls — and the
+      // size checks alone passed a plan that made the kitchen the focus, took one errand, and
+      // dropped the other. Rule 1 now makes both due-today errands mandatory.
+      deadlinesCovered(['e3', 'e5']),
+      noFarDatedOverDue(['e3', 'e5'], ['e1', 'e2', 'e4', 'e6', 'e7']),
       rocksResolve(),
     ],
+    // ONE-ITEM-PER-TASK is the contract, and the rubric used to argue with it. It rewarded
+    // "batching", but a merged quick win ("Errand run: dog food + prescription") carries a single
+    // `ref`, so resolvePlanTaskIds ties it to ONE task id — the other errand resolves to nothing,
+    // the card can never strike it through when it is done, and deadlinesCovered + noFarDatedOverDue
+    // both hard-fail a plan that is otherwise perfectly sensible. The checks encode the shipped
+    // ref→taskId contract, so the rubric now asks for the batching as PROSE around two real items
+    // rather than as one merged item.
     rubric:
-      'An errand-heavy board: the due-today errands are the natural quick wins, and the only ' +
-      'substantive candidate for the big rock is the kitchen deep-clean. Turning a 15-minute ' +
-      'errand into the centerpiece of the day is a fail; suggesting the errands be batched ' +
-      'sensibly is a plus.',
+      'An errand-heavy board: BOTH errands due today (dog food, prescription) must appear — two ' +
+      'quick wins is exactly what a second imminent deadline earns — and the only substantive ' +
+      'candidate for the big rock is the kitchen deep-clean, which is undated and may only take ' +
+      'what is left over. Each errand must be its own item with its own reference back to the task; ' +
+      'noting in the wording that they can be run in a single trip is a plus, merging them into one ' +
+      'combined "errand run" item is not (the card can only cross off what it can identify). ' +
+      'Turning a 15-minute errand into the centerpiece of the day is a fail.',
   },
   {
     kind: 'plan',
@@ -314,7 +335,16 @@ export const scenarios: PlanScenario[] = [
         size: 'M',
       }),
     ],
-    checks: [planHeadline(), smallRocksOnlySM(), smallRocksAtMost(2), rocksResolve()],
+    // NOTE for future editors: og1 sits at importance 75 / urgency 30, so it is NOT the low/low
+    // parked project #345's caveat targets — promoting it to the big rock stays correct here. The
+    // only thing that was stale is that og2's deadline lived in prose with nothing measuring it.
+    checks: [
+      planHeadline(),
+      smallRocksOnlySM(),
+      smallRocksAtMost(2),
+      deadlinesCovered(['og2']),
+      rocksResolve(),
+    ],
     rubric:
       'Learn Spanish is an ongoing XL project: if it gets time today it should be the big rock ' +
       'as a bounded session (e.g. "~45min of Spanish practice"), with pacing language — chip ' +
@@ -413,13 +443,23 @@ export const scenarios: PlanScenario[] = [
       bigRockNeverS(),
       smallRocksOnlySM(),
       smallRocksAtMost(2),
+      // Ten items are overdue or due today and there are at most three slots, so the "uncovered"
+      // side of this check can never be empty — it reduces to rule 1's hard floor: with deadlines
+      // going unplanned, an UNDATED task may not take a slot. o7/o13 are dated near-term and stay
+      // out of the far list deliberately (rule 1 speaks to undated and several-days-out work).
+      noFarDatedOverDue(
+        ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o10', 'o11', 'o12', 'o15'],
+        ['o8', 'o9', 'o14'],
+      ),
       rocksResolve(),
     ],
     rubric:
-      'A swamped board — nine tasks overdue. The plan must still pick ONE defensible focus (the ' +
-      'due-today self-review is a strong candidate) and at most two quick wins, acknowledging ' +
-      'the backlog honestly without enumerating all fifteen tasks or guilt-tripping. A plan that ' +
-      'reads as a task dump, or pretends the day is light, is a fail.',
+      'A swamped board — nine tasks overdue plus one due today. The plan must still pick ONE ' +
+      'defensible focus (the due-today self-review is a strong candidate) and at most two quick ' +
+      'wins, every slot drawn from the overdue/due-today set, hardest deadline first. Because far ' +
+      'more is due than fits, the headline must say that plainly rather than implying the list is ' +
+      'handled. Acknowledge the backlog honestly without enumerating all fifteen tasks or ' +
+      'guilt-tripping. A plan that reads as a task dump, or pretends the day is light, is a fail.',
   },
   {
     kind: 'plan',

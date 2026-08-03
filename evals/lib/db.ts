@@ -15,7 +15,24 @@ import type { DbSnapshot, DbTaskRow, EvalEnvLike, SeedIds, SeedSpec } from './db
 export type Sql = ReturnType<typeof postgres>
 
 export function connectDb(dbUrl: string): Sql {
-  return postgres(dbUrl, { onnotice: () => {}, max: 4 })
+  return postgres(dbUrl, {
+    onnotice: () => {},
+    max: 4,
+    // postgres.js parses OID 1082 (`date`) into a JS Date by default — its `date` handler lists
+    // 1082 in `from` and parses with `new Date(x)`, and user types merge ON TOP of the defaults.
+    // But `tasks.due` / `tasks.start_date` are wall-clock date columns that DbTaskRow types as
+    // 'YYYY-MM-DD' strings, so the default silently broke every date check: `row.due === iso` was
+    // never true, and `row.start_date.slice(0, 10)` threw (killing the whole scenario, not just
+    // one check). Keep `date` raw; timestamps (1114/1184) still parse to Date, which is correct.
+    types: {
+      wallClockDate: {
+        to: 1082,
+        from: [1082],
+        serialize: (x: string | Date) => (x instanceof Date ? x.toISOString().slice(0, 10) : x),
+        parse: (x: string) => x,
+      },
+    },
+  })
 }
 
 // ---------- provisioning ----------
