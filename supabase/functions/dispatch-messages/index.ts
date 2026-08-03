@@ -12,6 +12,7 @@ import { adminClient } from '../_shared/admin.ts'
 import { anthropic } from '../_shared/anthropic.ts'
 import { precheckForUser, recordUsageForUser } from '../_shared/guardrails-system.ts'
 import { generatePlan } from '../_shared/run-plan.ts'
+import { generateRecap } from '../_shared/run-recap.ts'
 import { buildPlanRequest } from '../_shared/plan-inputs.ts'
 import { dayNameInTZ, localDateInTZ } from '../_shared/dates.ts'
 import {
@@ -19,14 +20,19 @@ import {
   buildMorningMessage,
   buildRecapMessage,
   dueKind,
+  greetName,
   isEmptyDigest,
   localHourInTZ,
   normalizePlan,
+  recapPlanItems,
+  upcomingItems,
   type DispatchInputs,
   type DispatchPlan,
   type MessageContent,
   type NotificationPrefs,
+  type RecapContext,
 } from '../_shared/dispatch.ts'
+import { normalizeActivity, type ActivityRow } from '../_shared/activity.ts'
 import { sendWebPush, type PushSubscription, type VapidKeys } from '../_shared/web-push.ts'
 import type { ScheduleConfig } from '../_shared/plan-prompt.ts'
 
@@ -96,28 +102,46 @@ Deno.serve(async (req) => {
       // The plan came through opaque jsonb — normalize once; builders re-guard but this keeps the
       // "does a plan exist?" branch honest against mis-typed rows.
       const existingPlan = normalizePlan(inputs.plan)
+      const recapCtx: RecapContext = {
+        dayName: dayNameInTZ(c.timezone, now),
+        timeZone: c.timezone,
+        localDate,
+      }
+
+      // The evening recap narrates the day's task actions. Fetch them for the recap only (the
+      // morning push doesn't use them). Best-effort: a failed read degrades to no-activity — the
+      // recap still works from the plan — so it never blocks the send (unlike the inputs read).
+      let activity: ActivityRow[] = []
+      if (kind === 'recap') {
+        const { data: actJson, error: actError } = await admin.rpc('task_activity_for_user', {
+          p_user_id: c.user_id,
+          p_local_date: localDate,
+        })
+        if (actError) console.error('task_activity_for_user failed for', c.user_id, actError)
+        else activity = normalizeActivity(actJson)
+      }
 
       // Opt-in "quiet when empty" (config.notifications.quietWhenEmpty): if this digest would have
-      // nothing to say — an empty clear-slate morning, or a no-plan / empty-board evening — skip it
-      // HERE, before claiming or generating, so an empty day costs no AI call and no low-value push.
-      if ((c.notifications?.quietWhenEmpty ?? false) && isEmptyDigest(kind, inputs, localDate)) {
+      // nothing to say — an empty clear-slate morning, or a no-plan / empty-board / no-activity
+      // evening — skip it HERE, before claiming or generating, so an empty day costs no AI call.
+      if (
+        (c.notifications?.quietWhenEmpty ?? false) &&
+        isEmptyDigest(kind, inputs, localDate, activity)
+      ) {
         skipped++
         continue
       }
 
       // Initial content. Morning with a plan already on file (user planned early, or a prior partial
       // run generated it) formats the real plan immediately; otherwise the deterministic message —
-      // upgraded below if generation succeeds. Evening builds its check-in from the morning's plan.
+      // upgraded below if generation succeeds. Evening builds its deterministic check-in from the
+      // plan + today's activity, upgraded to the AI-written recap below.
       let content: MessageContent =
         kind === 'plan'
           ? existingPlan
             ? buildMorningFromPlan(existingPlan, inputs, localDate)
             : buildMorningMessage(inputs, localDate)
-          : buildRecapMessage(inputs, {
-              dayName: dayNameInTZ(c.timezone, now),
-              timeZone: c.timezone,
-              localDate,
-            })
+          : buildRecapMessage(inputs, recapCtx, activity)
 
       // The atomic claim: null ⇒ this (user, day, kind) already went out ⇒ skip (no double-send).
       // Claiming BEFORE any AI spend keeps overlapping runs from double-charging the budget.
@@ -150,6 +174,24 @@ Deno.serve(async (req) => {
           })
           if (enrichError) console.error('enrich_message failed for', c.user_id, enrichError)
           else content = rich
+        }
+      }
+
+      // Evening: upgrade the claimed deterministic recap to the AI-written one (budget-gated). Same
+      // shape as the morning enrich — title stays deterministic, only the body is rewritten; a paused
+      // budget or failed generation leaves the deterministic body in place. If enrich fails, push the
+      // stored (deterministic) body so the notification and the chat row never diverge.
+      if (kind === 'recap') {
+        const body = await maybeGenerateRecap(admin, c.user_id, inputs, recapCtx, activity)
+        if (body) {
+          const { error: enrichError } = await admin.rpc('enrich_message', {
+            p_id: msgId,
+            p_title: content.title,
+            p_body: body,
+          })
+          if (enrichError)
+            console.error('enrich_message (recap) failed for', c.user_id, enrichError)
+          else content = { title: content.title, body }
         }
       }
 
@@ -201,6 +243,41 @@ async function maybeGeneratePlan(
     return plan as DispatchPlan
   } catch (e) {
     console.error('plan generation failed for', userId, e)
+    return null
+  }
+}
+
+// Generate the AI-written evening recap body for one user, gated by the same budget/rate ledger as
+// Plan My Day (one claimed recap/user/day — the claim already bounds it, so it reuses the plan_my_day
+// key rather than a separate feature). Persists nothing (the caller enriches the claimed message).
+// Returns null on a paused budget or any failure, so the deterministic recap stands.
+async function maybeGenerateRecap(
+  admin: SupabaseClient,
+  userId: string,
+  inputs: DispatchInputs,
+  recapCtx: RecapContext,
+  activity: ActivityRow[],
+): Promise<string | null> {
+  const gate = await precheckForUser(admin, userId, 'plan_my_day')
+  if (!gate.ok) return null
+  try {
+    const { done, open } = recapPlanItems(inputs, recapCtx)
+    const habitsKept = inputs.habits
+      .filter((h) => h.active && inputs.habit_done[h.id])
+      .map((h) => h.text)
+    const { body, usage } = await generateRecap(anthropic(), {
+      dayName: recapCtx.dayName,
+      name: greetName(inputs),
+      done,
+      open,
+      activity,
+      upcoming: upcomingItems(inputs, recapCtx),
+      habitsKept,
+    })
+    await recordUsageForUser(admin, userId, usage.input, usage.output)
+    return body
+  } catch (e) {
+    console.error('recap generation failed for', userId, e)
     return null
   }
 }

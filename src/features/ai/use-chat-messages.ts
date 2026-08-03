@@ -1,12 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { ChatMessageRowSchema, type ChatMessageRow } from '../../types/chat'
+import { assistantText } from './assistant-text'
 import type { ChatItem } from './use-ai-chat'
 
 // Load one session's persisted transcript (oldest-first) for HYDRATION — the base history shown when
-// a saved chat is opened/resumed. It is frozen for the visit (staleTime Infinity, no window-focus
-// refetch): live streaming this visit is appended as `liveItems` in use-ai-chat, so refetching the
-// base mid-visit would double-render turns already streamed. A full reload remounts → fresh fetch.
+// a saved chat is opened/resumed. It never refetches ON ITS OWN (staleTime Infinity, no window-focus
+// refetch): live streaming this visit is appended as `liveItems` in use-ai-chat, so a background
+// refetch would double-render turns already streamed. It refetches only when use-ai-chat explicitly
+// invalidates it — openSession does so in the same act that wipes liveItems (so turns streamed since
+// the last hydration aren't lost on reopen), and a backgrounded stream does so when its turn lands.
 export const chatMessagesKey = (sessionId: string) => ['chat_messages', sessionId] as const
 
 async function fetchMessages(sessionId: string): Promise<ChatMessageRow[]> {
@@ -32,22 +35,6 @@ export function useChatMessages(sessionId: string | null) {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   })
-}
-
-interface AssistantBlock {
-  type?: string
-  text?: string
-}
-
-// Concatenate an assistant turn's text blocks (skip tool_use/other blocks). Defensive against a
-// string content (shouldn't happen for assistant, but never throw on a stored row).
-function assistantText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return (content as AssistantBlock[])
-    .filter((b) => b?.type === 'text' && typeof b.text === 'string')
-    .map((b) => b.text as string)
-    .join('')
 }
 
 // Map persisted rows → the ChatItems the conversation renders. Pure + unit-tested.

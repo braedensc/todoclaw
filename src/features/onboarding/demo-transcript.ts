@@ -135,8 +135,8 @@ export const DEMO_MORNING_INPUTS = {
   plan: DEMO_PLAN,
 }
 
-// The evening snapshot: by check-in time the big rock got done during the day, so the recap lists
-// the three remaining plan items.
+// The evening snapshot: by check-in time the big rock got done during the day, so the recap
+// acknowledges it (✓ crossed off) and lists the three remaining plan items.
 export const DEMO_EVENING_INPUTS = {
   ...DEMO_MORNING_INPUTS,
   done: { 'demo-invoice': true } as Record<string, boolean>,
@@ -164,9 +164,10 @@ export const DEMO_MORNING = {
 export const DEMO_RECAP = {
   title: 'Wrapping up Monday 👋',
   body:
-    'Which of these did you knock out today?\n\n' +
+    'Nice work today — already crossed off:\n✓ Send the invoice\n\n' +
+    "Still open from this morning's plan:\n" +
     '1. Book the dentist\n2. Water the plants\n3. Book the campsite\n\n' +
-    "Reply with the numbers or names and I'll mark them done. No worries if today was a rest day 🙂\n\n" +
+    "Reply with the numbers or names and I'll mark them done. No worries if that's where today ends 🙂\n\n" +
     '— BabyClaw 🐾',
 }
 
@@ -180,3 +181,17 @@ export const DEMO_EVENING_TOOL_NOTES = [
 ]
 export const DEMO_EVENING_CLOSE =
   'Nice — two more knocked out 🎉 “Water the plants” will be waiting tomorrow. Enjoy your evening!'
+
+// A plain, un-prompted exchange — the tour's "chat runs the whole app" panel. Deliberately NOT a
+// check-in: it shows the thing the check-ins only hint at, which is that you can say anything to
+// BabyClaw at any time and he does it on the board. Two asks in one turn (an add and a
+// reschedule) so the receipts show a real action, not a chat reply. The ✓ notes use the same
+// wording the real add_task / set_due tools return, so a first-run user recognises them later.
+export const DEMO_ASK = 'add dentist Friday 2pm, and push the invoice to Monday'
+export const DEMO_ASK_TOOL_NOTES = [
+  'Added "Dentist" for Friday, 2:00 PM, with a reminder 1 hour before.',
+  'Moved "Send the invoice" to Monday.',
+]
+export const DEMO_ASK_REPLY =
+  'Done — “Dentist” is on the board for Friday at 2 PM (I’ll nudge you an hour before), and the ' +
+  'invoice now sits on Monday. Anything else?'

@@ -1,6 +1,6 @@
 # ADR-0003 — Env-var strategy: anon key client-side, service-role server-only
 
-**Date:** 2026-06-23 · **Stage:** 1 (PR #1)
+**Date:** 2026-06-23 · **Stage:** 1 (PR #1) · **Status:** Accepted
 
 Only `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` reach the frontend (typed in
 `src/vite-env.d.ts`). The anon key is public by design — **Row Level Security is the real

@@ -6,10 +6,38 @@ is inverted from data-y**: a card at data `(x, y)` renders at `left: x*100%`, `t
 high importance sits at the top. New tasks are added from the widget above the grid and surface as
 draggable **new-item cards** there (card-in-place, B2 — there is no staging tray).
 
-> **Mobile (< 720px) never mounts this feature** (ADR-0028): `WorkArea` renders `MobileMatrix`
+> **Mobile (< 720px) never mounts the INLINE grid** (ADR-0028): `WorkArea` renders `MobileMatrix`
 > (quadrant overview → focus lists) instead, and repositioning is the tap-based Move-to-quadrant
-> sheet. The tap-to-place branches referenced below are desktop-era code that only ran when the
-> grid was still rendered on phones; they are unreachable today.
+> sheet. Since the touch-grid workshop (2026-07-22), phones DO get a grid — but only as the
+> fullscreen **grid-only** takeover (`TouchGridSurface`, below), entered from the More sheet's
+> "Grid view" row. `useGrid`'s own legacy tap-to-place branch (`togglePlacing`/
+> `handleGridPointerDown`) is still unreachable — the touch surface implements its own.
+
+## Touch grid (grid-only on phones + coarse-pointer devices)
+
+Grid-only mode renders one of two presentations (`WorkArea`): the desktop overlay for fine
+pointers, or **`TouchGridSurface`** for phones and any coarse-pointer device at desktop widths
+(landscape phones, iPads). The touch surface is a `fixed inset-0 z-50` takeover whose safe-area
+box IS the canvas (fills the screen's aspect — coords are normalized so no scoring/clustering
+math changes; only the cluster threshold's on-screen ellipse). Tasks render as 76px
+**`TouchGridChip`s** (one-line title + one status chip, same visual grammar/lane gating as
+`GridCard` — including the 🔥/❄️/💤 corner flags, the recurring ×N count, an inline ∞ for
+ongoing, and the done paw-stamp + paw-trail flourishes); tap → **`TouchTaskSheet`** (Done / inline `SchedulePanel` / Move / rename / delete —
+delete confirm-gated, due writes through `useSetDueWithDefaultReminder`); cluster bubbles →
+**`TouchClusterSheet`** (member list → task sheet). Repositioning is **press-and-hold drag**
+(`use-hold-drag.ts`: ~250ms hold lifts the chip with a haptic, it then rides ~56px above the
+finger — the finger-offset pattern — with crosshairs + a quadrant outline painted per frame by
+direct DOM, release drops it; a lift that never moves is a no-op, Escape aborts without exiting
+grid-only). **Move** in the sheet stays the tap-to-place precision path (own implementation over
+`toNormalized`).
+Floating chrome: ✕ exit (grid-only holds a history entry — `../shell/use-grid-only.ts` — so the
+system Back gesture exits too), ＋ → `MobileAddSheet`, 🐾 → chat (`ChatRail` steps into the z-50
+band on the desktop side — after the overlay in DOM order but before the body-portaled sheets, so
+it clears the grid while sheets still cover it). The canvas `onPointerDown` (tap-to-place commit)
+guards `event.target === event.currentTarget` — the floating chrome lives inside the canvas and a
+tap's pointerdown would otherwise commit a move at the button's position before its click runs.
+Dormant (paused) tasks render as read-only `data-paused` chips behind the active pass, exactly
+like the desktop dormant pass.
 
 ## Files
 
@@ -45,6 +73,14 @@ draggable new-item card in the add widget instead.
 - **Reposition a placed card:** drag it (raw pointer events via `useFreeDrag`). A live "ghost"
   position tracks the pointer; on drop we commit `x`/`y` via `useUpdateTask`. **No collision
   resolution on drag** — overlaps are expected and absorbed by clustering.
+- **iPad hybrid (coarse pointer on the DESKTOP layout):** `useFreeDrag`'s `holdToLift` mode makes
+  reposition a **press-and-hold** drag (an instant drag would steal every tap; the touch
+  grammar — hold, finger-offset ghost, jitter slop, Escape abort — is shared with the fullscreen
+  grid's `use-hold-drag`), which frees a **tap** to open `TouchCardPopover`: the anchored,
+  44pt-control presentation of the card actions (Done / Schedule / Delete / rename), the
+  iPad-native counterpart to the phone's `TouchTaskSheet` (the DoneSheet/DonePage split). Wired in
+  `use-grid` (`holdToLift`/`tappedCardId`) and rendered by `GridSurface`. Fine-pointer desktop is
+  byte-identical: eager drag, no tap semantics, the desktop ⋯ menu.
 - **New-item card → grid (desktop):** drag a new-item card onto the canvas → it materializes
   under the pointer and commits `{ x, y, staged: false }` on drop.
 - **New-item card → grid (tap-to-place):** `use-grid.ts` still carries a tap-to-select →
@@ -103,13 +139,16 @@ accidental click can't silently soft-delete. The row is **always visible** (an o
 though the grid itself is desktop-only now (ADR-0028). Each control stops pointer/click
 propagation so it never starts a drag.
 
-**Inline rename** is triggered by **double-clicking the text** (there is no ✎ button — the whole
-card is the drag handle, and a motionless double-click can't be confused with a drag). Enter/blur
-commits `text`; Escape cancels.
+**Rename** lives behind the **⋯ menu** (a "Rename task" item above the SchedulePanel), not a click
+on the card text — the whole card is the drag handle, so the title is inert and can't be turned into
+a click-to-edit target that fights the drag. Choosing it opens the inline editor on the card
+(Enter/blur commits `text`; Escape cancels). This mirrors the touch sheet/popover, where rename is a
+tap on the title inside the action surface.
 
 **⋯ menu (due + recurring)** — a small popover (`useClickOutside` to dismiss; flips above / aligns
-to the nearer edge so it stays on-canvas) holding the due-date picker + the shared
-`RecurringSection` (set / edit / remove a repeat schedule). Both commit through the one generic
+to the nearer edge so it stays on-canvas) holding the shared `SchedulePanel`
+(`src/features/schedule/`) — due date + time, reminders, and the Task / Recurring / Ongoing switch
+that sets / edits / removes a repeat schedule. All of it commits through the one generic
 `updateMutate({ id, patch })`. Setting a due date writes **`due` only** — unlike BabyClaw's
 `set_due_date`, it never repositions a manually-placed card.
 

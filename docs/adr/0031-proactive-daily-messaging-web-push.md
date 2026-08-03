@@ -1,11 +1,11 @@
 # ADR-0031 — Proactive daily messaging + end-of-day chat (Web Push)
 
-**Date:** 2026-07-07 · **Stage:** post-launch (notifications)
+**Date:** 2026-07-07 · **Stage:** post-launch (notifications) · **Status:** Accepted
 
 ## Context
 
 EisenClaw's two most-loved Telegram behaviors were a **morning "plan my day" nudge** and an
-**end-of-day recap**, each of which opened a two-way chat to adjust todos. Todoclaw already has the AI
+**end-of-day recap**, each of which opened a two-way chat to adjust todos. TodoClaw already has the AI
 generation (`plan-my-day`, `ai-chat`) and an in-app chat (BabyClaw), but nothing **proactive**: the
 app can only speak when the user opens it. This ADR records the architecture for the whole proactive
 stack — scheduling, per-user timing, system-context AI spend, idempotent delivery, Web Push transport,

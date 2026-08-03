@@ -8,9 +8,11 @@ const PORT = 5173
 
 export default defineConfig({
   testDir: './e2e',
-  // The DB-backed golden suite (e2e/golden/**) is a LOCAL workflow with its own config
-  // (playwright.golden.config.ts); keep it out of this smoke run so CI stays no-DB (ADR-0011).
-  testIgnore: '**/golden/**',
+  // The DB-backed suites are LOCAL workflows with their own configs — the golden suite
+  // (e2e/golden/**, playwright.golden.config.ts) and the device lab (e2e/device-lab/**,
+  // playwright.device-lab.config.ts). Keep both out of this smoke run so CI stays no-DB
+  // (ADR-0011); anything added under e2e/ with its own config needs an entry here too.
+  testIgnore: ['**/golden/**', '**/device-lab/**'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

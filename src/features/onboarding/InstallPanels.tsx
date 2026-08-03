@@ -232,7 +232,7 @@ export function ChromeInstallBar() {
   )
 }
 
-/** A dock strip with the Todoclaw paw icon highlighted — "open it from HERE from now on". */
+/** A dock strip with the TodoClaw paw icon highlighted — "open it from HERE from now on". */
 export function DockScene() {
   return (
     <Frame viewBox="0 0 300 74">
@@ -241,7 +241,7 @@ export function DockScene() {
       <rect x="48" y="26" width="24" height="24" rx="6" fill="#efe9da" />
       <rect x="82" y="26" width="24" height="24" rx="6" fill="#e7e0cf" />
       <rect x="116" y="26" width="24" height="24" rx="6" fill="#efe9da" />
-      {/* Todoclaw: warm-paper tile with the paw */}
+      {/* TodoClaw: warm-paper tile with the paw */}
       <rect
         x="152"
         y="23"
@@ -261,7 +261,7 @@ export function DockScene() {
       <rect x="192" y="26" width="24" height="24" rx="6" fill="#e7e0cf" />
       <rect x="226" y="26" width="24" height="24" rx="6" fill="#efe9da" />
       <text x="167" y="12" textAnchor="middle" fontSize="11" fontWeight="600" fill={ACCENT}>
-        open Todoclaw here
+        open TodoClaw here
       </text>
     </Frame>
   )

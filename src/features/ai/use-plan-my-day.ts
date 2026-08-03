@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { daysUntil } from '../../lib/scoring'
 import { recurringStatus } from '../../lib/recurring'
+import { isDormant } from '../../lib/start-date'
 import { localDateInTZ } from '../../lib/dates'
 import type { DailyStateMaps } from '../daily-state/use-daily-state'
 import type { Task, TaskSize } from '../../types/task'
@@ -12,11 +13,18 @@ import type { Habit } from '../../types/habit'
 // persisted-plan read boundary too); re-exported here so existing importers keep working.
 export type { PlanWhen, PlanRock, DayPlan } from '../../types/plan'
 import type { DayPlan } from '../../types/plan'
+import { DayPlanSchema } from '../../types/plan'
+
+// Mirror of UPCOMING_WINDOW_DAYS in supabase/functions/_shared/plan-prompt.ts — the frontend build
+// tree can't import from the Deno tree, so the value is re-declared here. Keep the two in step: a
+// dormant task un-pausing within this many days is surfaced as a "coming up" heads-up.
+const UPCOMING_WINDOW_DAYS = 3
 
 export interface PlanRequest {
   today: string
   dayOfWeek: string
   tasks: {
+    id: string // tasks.id — lets the server tie each emitted rock back to its task (taskId)
     text: string
     importance: number
     urgency: number
@@ -26,8 +34,19 @@ export interface PlanRequest {
     size: TaskSize | null // coarse effort (S/M/L/XL), or null to let the planner infer it
     ongoing: boolean // a standing project — chip away at it, never must-finish-today
   }[]
-  recurringDue: { text: string; status: string }[]
+  // Recurring chores the cadence ladder does NOT call 'ok'. `daysLeft` rides along (<= 0 means
+  // wanted today) so the server's "chores due today" strip selects on a number, not on the label.
+  recurringDue: { id: string; text: string; status: string; daysLeft: number }[]
   habits: string[]
+  // Paused / not-yet-started tasks un-pausing within UPCOMING_WINDOW_DAYS — heads-up material only,
+  // never scheduled (they stay OUT of `tasks`).
+  upcoming: {
+    id: string
+    text: string
+    startsInDays: number
+    startDate: string
+    due: string | null
+  }[]
 }
 
 // Build the request payload from the same data the grid/list use, reusing src/lib scoring +
@@ -49,10 +68,13 @@ export function buildPlanRequest(
         !t.completed_at &&
         !doneMap[t.id] &&
         !t.recurring &&
+        // Dormant (paused / future start date): never planned — mirrors the server-side gates.
+        !isDormant(t, timeZone, now) &&
         t.x != null &&
         t.y != null,
     )
     .map((t) => ({
+      id: t.id,
       text: t.text,
       importance: Math.round((t.y ?? 0.5) * 100),
       urgency: Math.round((t.x ?? 0.5) * 100),
@@ -63,12 +85,33 @@ export function buildPlanRequest(
       ongoing: t.ongoing,
     }))
 
-  const recurringDue: { text: string; status: string }[] = []
+  const recurringDue: PlanRequest['recurringDue'] = []
   for (const t of tasks) {
     if (!t.recurring) continue
-    const s = recurringStatus(t.recurring, { now })
-    if (s && (s.code === 'overdue' || s.code === 'due' || s.code === 'soon')) {
-      recurringDue.push({ text: t.text, status: s.label })
+    if (isDormant(t, timeZone, now)) continue // a paused chore sits out its pause too
+    const s = recurringStatus(t.recurring, { timeZone, now })
+    if (s && s.code !== 'ok') {
+      recurringDue.push({ id: t.id, text: t.text, status: s.label, daysLeft: s.daysLeft })
+    }
+  }
+
+  // Dormant tasks that un-pause SOON (start within UPCOMING_WINDOW_DAYS): NOT scheduled — kept out
+  // of `tasks` — but collected as gentle "coming up" heads-ups. Mirrors the server twin in
+  // supabase/functions/_shared/plan-inputs.ts. isDormant ⇒ start_date is set and future, so
+  // startsInDays >= 1; completed tasks are skipped so a finished-but-paused row can't surface.
+  const upcoming: PlanRequest['upcoming'] = []
+  for (const t of tasks) {
+    if (t.completed_at) continue
+    if (!isDormant(t, timeZone, now)) continue
+    const startsInDays = daysUntil(t.start_date ?? null, { timeZone, now })
+    if (startsInDays != null && startsInDays <= UPCOMING_WINDOW_DAYS) {
+      upcoming.push({
+        id: t.id,
+        text: t.text,
+        startsInDays,
+        startDate: (t.start_date as string).slice(0, 10),
+        due: t.due,
+      })
     }
   }
 
@@ -81,6 +124,7 @@ export function buildPlanRequest(
     tasks: planTasks,
     recurringDue,
     habits: habits.filter((h) => h.active).map((h) => h.text),
+    upcoming,
   }
 }
 
@@ -98,12 +142,17 @@ export function usePlanMyDay(timeZone: string) {
   const queryClient = useQueryClient()
   return useMutation<DayPlan, Error, PlanRequest>({
     mutationFn: async (body) => {
-      const { data, error } = await supabase.functions.invoke<{ plan: DayPlan }>('plan-my-day', {
+      const { data, error } = await supabase.functions.invoke<{ plan: unknown }>('plan-my-day', {
         body,
       })
       if (error) throw error
-      if (!data?.plan) throw new Error('No plan returned')
-      return data.plan
+      // VALIDATE before returning: this result is both rendered and PERSISTED to daily_state, so an
+      // unchecked object becomes a stuck, contentless plan card (a truncated emit once produced a
+      // plan with no headline, which rendered as an empty box). A truthiness check is not enough —
+      // the malformed object was truthy. Failing here surfaces the card's Retry instead.
+      const parsed = DayPlanSchema.safeParse(data?.plan)
+      if (!parsed.success || !parsed.data.headline.trim()) throw new Error('No plan returned')
+      return parsed.data
     },
     onSuccess: async (plan) => {
       const today = localDateInTZ(timeZone)

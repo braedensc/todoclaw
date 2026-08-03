@@ -37,6 +37,14 @@ interface DueReminder {
   offset_minutes: number
 }
 
+// Per-run bounds so one user's backlog — or a batch of slow push endpoints — can't wedge the
+// every-minute sweep. BATCH_LIMIT caps how many reminders one run pulls (also clamped in-SQL);
+// RUN_DEADLINE_MS stops claiming new ones once the run has spent too long (each push is already
+// individually bounded by web-push's AbortController). Anything left is drained by the next minute's
+// run — it stays within due_task_reminders' 60-minute freshness window and is ordered oldest-first.
+const BATCH_LIMIT = 500
+const RUN_DEADLINE_MS = 50_000
+
 Deno.serve(async (req) => {
   // The only gate: the shared secret. verify_jwt is off (config.toml) because there is no user JWT.
   const secret = Deno.env.get('DISPATCH_SECRET')
@@ -55,7 +63,7 @@ Deno.serve(async (req) => {
   const { data: expired, error: expireError } = await admin.rpc('expire_stale_reminders')
   if (expireError) console.error('expire_stale_reminders failed:', expireError)
 
-  const { data: dueRows, error } = await admin.rpc('due_task_reminders')
+  const { data: dueRows, error } = await admin.rpc('due_task_reminders', { p_limit: BATCH_LIMIT })
   if (error) {
     console.error('due_task_reminders failed:', error)
     return json({ error: 'due_reminders_failed' }, 500)
@@ -64,8 +72,16 @@ Deno.serve(async (req) => {
   let sent = 0
   let skipped = 0
   let failed = 0
+  let deferred = 0
+  const startedAt = now.getTime()
 
   for (const r of (dueRows ?? []) as DueReminder[]) {
+    // Out of time budget: stop claiming new reminders and let the next run drain the rest, rather
+    // than overrunning into the next minute's invocation.
+    if (Date.now() - startedAt > RUN_DEADLINE_MS) {
+      deferred++
+      continue
+    }
     try {
       // The exactly-once claim — null ⇒ another (overlapping) run already took this one.
       const { data: claimed } = await admin.rpc('claim_task_reminder', { p_id: r.id })
@@ -92,7 +108,14 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ due: (dueRows ?? []).length, sent, skipped, failed, expired: expired ?? 0 })
+  return json({
+    due: (dueRows ?? []).length,
+    sent,
+    skipped,
+    failed,
+    deferred,
+    expired: expired ?? 0,
+  })
 })
 
 // Push to every subscription the user has; a subscription the push service reports gone

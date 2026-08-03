@@ -13,9 +13,18 @@ import type { AppRoute } from '../../lib/route'
 // iPhones). Lifted clear of the iPhone home indicator by a safe-area inset plus a little breathing
 // room (needs viewport-fit=cover in index.html or the inset resolves to 0).
 //
+// The on-screen keyboard never moves it either: interactive-widget=resizes-visual (index.html)
+// keeps the keyboard an OVERLAY on every platform, so the 100dvh column — and this bar with it —
+// stays put while typing (the bar simply sits behind the keys). Keyboard-aware surfaces re-fit to
+// the visible area via useKeyboardViewport instead; App's useLockedViewportGuard clears any iOS
+// focus-scroll residue that would otherwise leave the bar floating above the screen bottom.
+//
 // Labelled <nav aria-label="Account"> with a real "Done" button so the golden `openDone` helper —
 // getByRole('navigation', {name:'Account'}).getByRole('button', {name:'Done'}) — keeps working; on
 // mobile this is the ONLY Account nav (the desktop header one is not rendered).
+//
+// data-tour="options": the feature tour's closing panel spotlights this REAL bar directly (no
+// look-alike copy mounted inside DemoScene).
 
 function NavItem({
   glyph,
@@ -35,7 +44,11 @@ function NavItem({
   active?: boolean
   /** Unread indicator — a small slate dot on the glyph (the Chat tab, for unread plan/recap). */
   badge?: boolean
-  /** Optional FeatureTour anchor name (`data-tour`); no live tour step targets the nav tabs today. */
+  /**
+   * Optional FeatureTour anchor name (`data-tour`). The demo tour's `also` call-out rings the tab
+   * a panel is about (Add, Chat) while the panel itself holds the spotlight, so a phone user learns
+   * both the surface and the button that opens it.
+   */
   tour?: string
 }) {
   return (
@@ -100,11 +113,22 @@ export function MobileBottomNav({
   return (
     <nav
       aria-label="Account"
-      // In normal flow (flex child), full-width, never shrinking. px-3 keeps the outer tabs off the
-      // screen's rounded corners; divide-x draws a hairline between tabs; the bottom padding stacks
-      // a little breathing room on top of the home-indicator inset (which is 0 on non-notch devices).
-      className="z-40 flex shrink-0 items-stretch divide-x divide-border border-t border-border bg-panel/95 px-3 backdrop-blur"
-      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5px)' }}
+      data-tour="options"
+      // In normal flow (flex child), full-width, never shrinking. divide-x draws a hairline between
+      // tabs; the bottom padding stacks a little breathing room on top of the home-indicator inset.
+      // The negative side margins cancel body's unconditional env(safe-area-inset-left/right)
+      // padding so the bar's background/border reach the PHYSICAL screen edges in landscape (a
+      // notched phone insets body's content box ~59px otherwise); the matching side padding — the
+      // old px-3 plus the inset — keeps the outer tabs clear of the notch and rounded corners.
+      // Portrait insets are 0, so both collapse to the original edge-to-edge px-3.
+      className="z-40 flex shrink-0 items-stretch divide-x divide-border border-t border-border bg-panel/95 backdrop-blur"
+      style={{
+        marginLeft: 'calc(-1 * env(safe-area-inset-left, 0px))',
+        marginRight: 'calc(-1 * env(safe-area-inset-right, 0px))',
+        paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
+        paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5px)',
+      }}
     >
       <NavItem glyph="⌂" label="Home" onClick={onHome} active={route === 'home'} />
       <NavItem glyph="✚" label="Add" onClick={onAdd} primary tour="nav-add" />
@@ -117,6 +141,7 @@ export function MobileBottomNav({
           onClick={onChat}
           active={route === 'chat'}
           badge={unread > 0}
+          tour="nav-chat"
         />
       )}
       <NavItem glyph="✓" label="Done" onClick={onDone} active={route === 'done'} />

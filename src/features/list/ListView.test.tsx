@@ -33,23 +33,34 @@ let doneToday: Record<string, true> = {}
 
 vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksData, isLoading: false, isError: false }),
-  useUpdateTask: () => ({ mutate: updateMutate }),
+  // Due writes go through the shared setDue hook's mutateAsync; forwarding it to the same spy
+  // keeps every write-path assertion on the one updateMutate ledger.
+  useUpdateTask: () => ({
+    mutate: updateMutate,
+    mutateAsync: async (vars: unknown) => updateMutate(vars),
+  }),
   useSoftDeleteTask: () => ({ mutate: deleteMutate }),
 }))
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: markDoneMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
-  useUserSchedule: () => ({ data: { timezone: 'UTC' } }),
+  useUserSchedule: () => ({ data: { timezone: 'UTC', config: {} } }),
 }))
 vi.mock('../daily-state/use-daily-state', () => ({
   useDailyState: () => ({
     data: { done: doneToday, done_at: {}, habit_done: {}, subtask_done: {} },
   }),
 }))
+const reminderAdd = vi.fn()
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
+  useTaskReminderWrites: () => ({
+    add: reminderAdd,
+    remove: vi.fn(),
+    clear: vi.fn(),
+    toggle: vi.fn(),
+  }),
 }))
 
 // A complete Task row with sensible defaults; override per test.
@@ -69,6 +80,7 @@ function makeTask(over: Partial<Task>): Task {
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }
@@ -77,6 +89,7 @@ beforeEach(() => {
   updateMutate.mockClear()
   deleteMutate.mockClear()
   markDoneMutate.mockClear()
+  reminderAdd.mockClear()
   tasksData = []
   doneToday = {}
 })
@@ -84,6 +97,11 @@ beforeEach(() => {
 // A recent ISO timestamp (yesterday) so a recurring task with a real frequency reads as a
 // live cycle rather than "never done". Used by the recurring-section tests.
 const RECENT = new Date(Date.now() - 86_400_000).toISOString()
+
+// A wall-clock day N days out (UTC slice — matches the mocked 'UTC' timezone). Small N keeps it
+// inside the schedule panel's two-week calendar whatever day the suite runs.
+const daysFromNowISO = (n: number) =>
+  new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
 
 describe('ListView', () => {
   it('renders rows in descending score order', () => {
@@ -127,23 +145,43 @@ describe('ListView', () => {
   })
 
   it('expanded-row due editors write BOTH due columns; clearing the date clears the time', () => {
-    tasksData = [makeTask({ id: 'x', text: 'timed task', due: '2026-08-01', due_time: '15:00:00' })]
+    // Computed ~6 weeks out so the due always sits OFF the SchedulePanel's two-week grid — that
+    // (dueOffGrid) is what auto-reveals the raw "Due date" input this test drives. A hardcoded
+    // date rotted INTO the grid as real time passed, hiding the input behind the More… toggle.
+    const farDue = new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10)
+    tasksData = [makeTask({ id: 'x', text: 'timed task', due: farDue, due_time: '15:00:00' })]
     renderList()
     fireEvent.click(screen.getByText('timed task'))
 
     // Badge surfaces the time for near dates via dueLabel — here just assert the inputs hydrate
     // from the wire formats ('YYYY-MM-DD' / 'HH:MM:SS' → 'HH:MM').
-    expect(screen.getByLabelText('Due date')).toHaveValue('2026-08-01')
+    expect(screen.getByLabelText('Due date')).toHaveValue(farDue)
     expect(screen.getByLabelText('Due time')).toHaveValue('15:00')
 
     fireEvent.change(screen.getByLabelText('Due time'), { target: { value: '09:30' } })
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'x',
-      patch: { due: '2026-08-01', due_time: '09:30' },
+      patch: { due: farDue, due_time: '09:30' },
     })
 
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '' } })
     expect(updateMutate).toHaveBeenCalledWith({ id: 'x', patch: { due: null, due_time: null } })
+  })
+
+  it('a first due time on a reminder-less task seeds the default reminder', async () => {
+    tasksData = [makeTask({ id: 'seed-me', text: 'dated, no time', due: daysFromNowISO(3) })]
+    renderList()
+    fireEvent.click(screen.getByText('dated, no time'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Noon' }))
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'seed-me',
+      patch: { due: daysFromNowISO(3), due_time: '12:00' },
+    })
+    // The user's default (1 hour, config untouched) arms AFTER the due write lands — the same
+    // behavior as the add forms and BabyClaw's set_due_date.
+    await waitFor(() => expect(reminderAdd).toHaveBeenCalledWith('seed-me', 60))
   })
 
   it('single-clicking the row body toggles the expanded detail panel', () => {
@@ -183,7 +221,7 @@ describe('ListView', () => {
     fireEvent.pointerUp(urgency)
 
     // Expected payload is exactly what resolveCollision returns for the same inputs.
-    const expected = resolveCollision(0.9, 0.9, tasksData, 'mover')
+    const expected = resolveCollision(0.9, 0.9, tasksData, 'mover', { timeZone: 'UTC' })
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'mover',
       patch: { x: expected.x, y: expected.y },
@@ -229,6 +267,32 @@ describe('ListView', () => {
     tasksData = []
     renderList()
     expect(screen.getByText(/No tasks yet/i)).toBeInTheDocument()
+  })
+
+  it('drops a recurring chore completed today, like it drops a completed one-off', () => {
+    // The bug behind the reported confusion: a recurring completion sets neither completed_at nor
+    // today's done map (it advances recurring.lastDoneAt), so the list kept rendering a finished
+    // chore as a normal un-ticked row — while the grid, MobileMatrix and BabyClaw all hid it. The
+    // list was the only surface still claiming it was outstanding.
+    tasksData = [
+      makeTask({ id: 'keep', text: 'still open' }),
+      makeTask({
+        id: 'done-rec',
+        text: 'laundry',
+        recurring: { frequencyDays: 7, lastDoneAt: new Date().toISOString(), doneCount: 4 },
+      }),
+      // Done on a PRIOR day → back on its cycle, still listed.
+      makeTask({
+        id: 'live-rec',
+        text: 'sweep floors',
+        recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 1 },
+      }),
+    ]
+    renderList()
+
+    expect(screen.getByText('still open')).toBeInTheDocument()
+    expect(screen.getByText('sweep floors')).toBeInTheDocument()
+    expect(screen.queryByText('laundry')).not.toBeInTheDocument()
   })
 
   describe('done control', () => {
@@ -331,6 +395,26 @@ describe('ListView', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Task' }))
 
       expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
+    })
+
+    it('shows the cadence status, not the reminder anchor, on a recurring row', () => {
+      // `due`/`due_time` on a recurring chore are the reminder occurrence anchor, so a chore that
+      // carries a reminder permanently holds a past `due`. The row's single trailing badge must be
+      // the cadence status — never an anchor-derived overdue chip (the reverted #348 behavior,
+      // which no test caught). Anchored 2024-01-15 but done yesterday on a 7-day cadence.
+      tasksData = [
+        makeTask({
+          id: 'anch',
+          text: 'anchored chore',
+          due: '2024-01-15',
+          due_time: '09:00:00',
+          recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 4 },
+        }),
+      ]
+      renderList()
+
+      expect(screen.getByText('in 6d')).toBeInTheDocument()
+      expect(screen.queryByText(/overdue/i)).not.toBeInTheDocument()
     })
 
     it('renders the cadence (fmtFrequency) and status label for a recurring task', () => {
@@ -503,5 +587,58 @@ describe('ListView quadrantFilter', () => {
 
     expect(screen.getByText(/Nothing in this quadrant yet/i)).toBeInTheDocument()
     expect(screen.queryByText('do now task')).not.toBeInTheDocument()
+  })
+})
+
+describe('paused (start-later) tasks', () => {
+  // isDormant compares wall-clock dates against the real clock here (ListView passes no test
+  // seam), so the fixtures use unambiguous far-future / far-past start dates.
+
+  it('a dormant task leaves the ranking and lives in the collapsed Paused strip', () => {
+    tasksData = [
+      makeTask({ id: 'live', text: 'Live task' }),
+      makeTask({ id: 'p1', text: 'Paused project', start_date: '2999-01-01' }),
+    ]
+    renderList()
+    // Out of the ranked list, hidden behind the collapsed strip header…
+    expect(screen.queryByText('Paused project')).toBeNull()
+    const header = screen.getByRole('button', { name: /Paused · 1/ })
+    // …and revealed (with its slate ⏸ "starts <day>" chip) when the strip expands.
+    fireEvent.click(header)
+    expect(screen.getByText('Paused project')).toBeInTheDocument()
+    expect(screen.getByText(/^⏸ starts /)).toBeInTheDocument()
+  })
+
+  it('Resume clears start_date (the task wakes at its stored spot)', () => {
+    tasksData = [makeTask({ id: 'p1', text: 'Paused project', start_date: '2999-01-01' })]
+    renderList()
+    fireEvent.click(screen.getByRole('button', { name: /Paused · 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Resume Paused project' }))
+    expect(updateMutate).toHaveBeenCalledWith({ id: 'p1', patch: { start_date: null } })
+  })
+
+  it('a past start date is just a live task — ranked normally, no strip', () => {
+    tasksData = [makeTask({ id: 't1', text: 'Started long ago', start_date: '2000-01-01' })]
+    renderList()
+    expect(screen.getByText('Started long ago')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Paused ·/ })).toBeNull()
+  })
+
+  it('the strip still renders when EVERY task is paused (else pausing reads as deletion)', () => {
+    tasksData = [makeTask({ id: 'p1', text: 'Only paused', start_date: '2999-01-01' })]
+    renderList()
+    expect(screen.getByText(/No tasks yet|Nothing in this quadrant/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Paused · 1/ })).toBeInTheDocument()
+  })
+
+  it('a quadrant focus list scopes dormant tasks out and never shows the strip', () => {
+    tasksData = [
+      makeTask({ id: 'live', text: 'Live task', x: 0.9, y: 0.9 }),
+      makeTask({ id: 'p1', text: 'Paused project', start_date: '2999-01-01', x: 0.9, y: 0.9 }),
+    ]
+    renderList({ quadrantFilter: 'do-now' })
+    expect(screen.getByText('Live task')).toBeInTheDocument()
+    expect(screen.queryByText('Paused project')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Paused ·/ })).toBeNull()
   })
 })

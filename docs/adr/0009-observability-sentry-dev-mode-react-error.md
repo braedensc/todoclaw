@@ -1,6 +1,6 @@
 # ADR-0009 — Observability: Sentry (dev mode) + React error boundaries + Sentry MCP
 
-**Date:** 2026-06-23 · **Stage:** 2 (PR #3)
+**Date:** 2026-06-23 · **Stage:** 2 (PR #3) · **Status:** Accepted
 
 - **Sentry SDK — "dev mode".** `@sentry/react` is initialized in `src/main.tsx` **only when
   `VITE_SENTRY_DSN` is set** (`environment: import.meta.env.MODE`). With no DSN it is a no-op, so

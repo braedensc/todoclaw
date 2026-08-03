@@ -1,11 +1,12 @@
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Task } from '../../types/task'
 import { useGrid } from './use-grid'
 import { GridSurface } from './GridSurface'
 import { NewItemStrip } from '../shell/NewItemStrip'
 import { ConfirmProvider } from '../../components/use-confirm'
+import { BACKGROUND_DISMISS_ATTR } from '../../hooks/use-background-dismiss'
 
 // The grid was split (B8): the drag/placement orchestration lives in `useGrid`, the canvas render
 // in `GridSurface`, and the not-yet-placed "new item" cards (card-in-place, B2 — replacing the old
@@ -44,23 +45,40 @@ let doneTodayFixture: Record<string, boolean> = {}
 
 vi.mock('../tasks/use-tasks', () => ({
   useTasks: () => ({ data: tasksFixture }),
-  useUpdateTask: () => ({ mutate: updateMutate }),
+  // Due writes go through the shared setDue hook's mutateAsync; forwarding it to the same spy
+  // keeps every write-path assertion on the one updateMutate ledger.
+  useUpdateTask: () => ({
+    mutate: updateMutate,
+    mutateAsync: async (vars: unknown) => updateMutate(vars),
+  }),
   useSoftDeleteTask: () => ({ mutate: softDeleteMutate }),
 }))
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: markDoneMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
-  useUserSchedule: () => ({ data: { timezone: 'America/New_York' } }),
+  useUserSchedule: () => ({ data: { timezone: 'America/New_York', config: {} } }),
 }))
 vi.mock('../daily-state/use-daily-state', () => ({
   useDailyState: () => ({
     data: { done: doneTodayFixture, done_at: {}, habit_done: {}, subtask_done: {} },
   }),
 }))
+const reminderAdd = vi.fn()
 vi.mock('../reminders/use-task-reminders', () => ({
   useTaskReminders: () => ({ data: new Map() }),
-  useTaskReminderWrites: () => ({ add: vi.fn(), remove: vi.fn(), clear: vi.fn(), toggle: vi.fn() }),
+  useTaskReminderWrites: () => ({
+    add: reminderAdd,
+    remove: vi.fn(),
+    clear: vi.fn(),
+    toggle: vi.fn(),
+  }),
+}))
+// The iPad hybrid flips on this capability (hold-to-lift reposition + tap → actions popover).
+// Default false so every pre-existing test exercises the untouched fine-pointer paths.
+const mockIsCoarse = vi.fn(() => false)
+vi.mock('../../hooks/use-is-coarse-pointer', () => ({
+  useIsCoarsePointer: () => mockIsCoarse(),
 }))
 
 // Build a Task with sane defaults; override per test.
@@ -85,6 +103,7 @@ function makeTask(over: Partial<Task>): Task {
     created_at: new Date(Date.now() - 86_400_000).toISOString(), // ~1 day ago
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }
@@ -93,6 +112,8 @@ beforeEach(() => {
   updateMutate.mockClear()
   softDeleteMutate.mockClear()
   markDoneMutate.mockClear()
+  // vi.clearAllMocks() in afterEach wipes implementations too — re-arm the capability default.
+  mockIsCoarse.mockReturnValue(false)
   tasksFixture = []
   doneTodayFixture = {}
 })
@@ -215,6 +236,64 @@ describe('GridView placement filter', () => {
 
     expect(screen.queryByText('Water the plants')).not.toBeInTheDocument()
     expect(screen.getByText('Take out trash')).toBeInTheDocument()
+  })
+
+  it('ignores a recurring task’s reminder ANCHOR when deciding what is on the grid', () => {
+    // `due`/`due_time` on a recurring chore are the reminder occurrence anchor, not a deadline —
+    // nextRecurringFireAt phases the grid off them and never advances them, so a chore carrying a
+    // reminder permanently holds a past `due`. isPlaced must key on the cadence alone. Reading the
+    // anchor as a deadline once shipped past a green CI (reverted in #348) because nothing pinned
+    // this: it pinned every such chore to the board, reading ever-more overdue.
+    const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString()
+    tasksFixture = [
+      // Anchor years back, but the cadence says "not due for a month" → stays off the grid.
+      makeTask({
+        id: 'anchored-ok',
+        text: 'Descale kettle',
+        due: '2024-01-15',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 30, lastDoneAt: twoDaysAgo, doneCount: 6 },
+      }),
+      // Anchor far in the FUTURE, but the cadence says overdue → must still show.
+      makeTask({
+        id: 'anchored-overdue',
+        text: 'Take out trash',
+        due: '2099-12-31',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 1, lastDoneAt: twoDaysAgo, doneCount: 3 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.queryByText('Descale kettle')).not.toBeInTheDocument()
+    expect(screen.getByText('Take out trash')).toBeInTheDocument()
+  })
+
+  // THE reported bug (2026-07-29): "I need to do laundry tomorrow" on a weekly chore. Nothing on
+  // the board read a chosen day, so the chore stayed invisible — the cadence said 'ok' and isPlaced
+  // hides 'ok'. A one-shot `recurring.nextDueOn` is now the mechanism, and because every surface
+  // reads `recurringStatus`, honoring it here took no change to isPlaced at all.
+  it('renders a recurring chore scheduled for TODAY even when its cadence says ok', () => {
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString()
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(new Date())
+    tasksFixture = [
+      // Cadence alone = "in 29d" → 'ok' → off the board. The override puts it on today.
+      makeTask({
+        id: 'scheduled-today',
+        text: 'Laundry',
+        recurring: { frequencyDays: 30, lastDoneAt: yesterday, doneCount: 9, nextDueOn: today },
+      }),
+      // Same cadence, no override → still correctly hidden, so the test can't pass vacuously.
+      makeTask({
+        id: 'not-scheduled',
+        text: 'Descale kettle',
+        recurring: { frequencyDays: 30, lastDoneAt: yesterday, doneCount: 6 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.getByText('Laundry')).toBeInTheDocument()
+    expect(screen.queryByText('Descale kettle')).not.toBeInTheDocument()
   })
 
   it('renders no new-item cards when nothing is staged', () => {
@@ -347,6 +426,83 @@ describe('GridView card visuals', () => {
   })
 })
 
+// A dormant task (future start_date) is hidden from the ACTIVE board but still rendered as its own
+// read-only "set aside" pass: a paused card at its stored x/y, dimmed with the ⏸ slate chip, out of
+// the clustering / drag machinery. (isPlaced excludes dormant; useGrid.dormantPlaced re-adds them.)
+describe('GridView paused (dormant) cards', () => {
+  // Now-relative so the fixture can't rot across the daily boundary — a month out is firmly future.
+  const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+
+  it('renders a dormant placed task as a draggable, dimmed card with the ⏸ paused chip', () => {
+    tasksFixture = [
+      makeTask({ id: 'zzz', text: 'Book the venue', x: 0.3, y: 0.7, start_date: future }),
+    ]
+    render(<GridHarness />)
+
+    const card = screen.getByTestId('grid-card')
+    expect(within(card).getByText('Book the venue')).toBeInTheDocument()
+    // The ⏸ slate chip says when it comes back (formatStartDay day), not a due date.
+    expect(within(card).getByText(/^⏸ starts /)).toBeInTheDocument()
+    // The 💤 corner flag — the paused member of the 🔥/❄️ family. It shares its spelled-out title
+    // with the chip, so query for the flag as the 💤-only element among them (stale-test pattern).
+    const sleepBits = within(card).getAllByTitle(/^Paused — starts /)
+    expect(sleepBits.some((el) => el.textContent === '💤')).toBe(true)
+    // The slate dress threads onto the node: full-alpha slate ring + slate tint (#e7ebf2).
+    expect(card.style.boxShadow).toContain('rgba(100,116,139,1)')
+    expect(card.style.background).toBe('rgb(231, 235, 242)')
+    // Draggable like any card (parity with the touch grid) — dragging just sets where it lands on
+    // wake. The slate dress is flagged for E2E/style hooks via data-paused.
+    expect(card).toHaveAttribute('data-paused')
+    expect(card.className).toContain('cursor-grab')
+    // Dimmed whole (set-aside cue), but still legible.
+    expect(card.style.opacity).not.toBe('')
+    expect(parseFloat(card.style.opacity)).toBeLessThan(1)
+    // The empty-state is gated on BOTH lists: a board with only a paused card is not "empty".
+    expect(screen.queryByText('No tasks placed — add one above and drag it here.')).toBeNull()
+    // …and the legend below the grid decodes the lane (slate swatch + the 💤 note).
+    const legend = screen.getByTestId('urgency-legend')
+    expect(within(legend).getByText('paused (dimmed)')).toBeInTheDocument()
+    expect(within(legend).getByText(/asleep until its start date/)).toBeInTheDocument()
+  })
+
+  it('suppresses the due chip on a paused card — its deadline is intentionally deferred', () => {
+    // Even an overdue due date shows NO warm chip while paused (the paused lane gates it, like a
+    // recurring card suppresses its due chip).
+    tasksFixture = [
+      makeTask({ id: 'zzz', text: 'Renew passport', due: '2000-01-01', start_date: future }),
+    ]
+    render(<GridHarness />)
+
+    const card = screen.getByTestId('grid-card')
+    expect(within(card).queryByText(/Overdue/)).toBeNull()
+    expect(within(card).queryByText(/Stale/)).toBeNull()
+    expect(card.style.animation).toBe('') // no urgency pulse
+    // The ⏸ chip is the only status chip on the card.
+    expect(within(card).getByText(/^⏸ starts /)).toBeInTheDocument()
+  })
+
+  it('keeps a dormant card OUT of clustering — it never folds into an active bubble', () => {
+    // A paused card sharing an active card's coords must NOT merge into a cluster bubble: both
+    // render as standalone cards. Dormancy affects CLUSTERING, not drag — both are draggable.
+    tasksFixture = [
+      makeTask({ id: 'active', text: 'Live task', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'zzz', text: 'Paused task', x: 0.5, y: 0.5, start_date: future }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.queryByTestId('cluster-bubble')).toBeNull()
+    const cards = screen.getAllByTestId('grid-card')
+    expect(cards).toHaveLength(2)
+    const pausedCard = cards.find((c) => c.hasAttribute('data-paused'))!
+    const activeCard = cards.find((c) => !c.hasAttribute('data-paused'))!
+    expect(within(pausedCard).getByText('Paused task')).toBeInTheDocument()
+    expect(within(activeCard).getByText('Live task')).toBeInTheDocument()
+    // Both draggable; only the paused one wears the slate dress.
+    expect(activeCard.className).toContain('cursor-grab')
+    expect(pausedCard.className).toContain('cursor-grab')
+  })
+})
+
 describe('GridView card action bar', () => {
   it('shows a persistent OUTLINED "Done" pill (label + green border/text, not filled) plus ⋯/× on every card', () => {
     tasksFixture = [makeTask({ id: 'x', text: 'Do a thing', staged: false })]
@@ -379,13 +535,19 @@ describe('GridView card action bar', () => {
     await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('del-me'))
   })
 
-  it('double-clicking the text edits it inline and commits a rename on Enter', () => {
+  it('renames via the ⋯ menu (not by clicking the text) and commits on Enter', () => {
     tasksFixture = [makeTask({ id: 'edit-me', text: 'Old name', staged: false })]
     render(<GridHarness />)
-    // No ✎ button anymore — the text itself is the edit trigger (owner's pick, batch-2 item 5).
+
+    // The card text is a pure drag handle now — clicking/double-clicking it must NOT open an
+    // editor (so the card stays easily draggable). Rename lives behind the ⋯ menu instead.
+    fireEvent.doubleClick(screen.getByText('Old name'))
     expect(screen.queryByLabelText('Edit task')).not.toBeInTheDocument()
 
-    fireEvent.doubleClick(screen.getByText('Old name'))
+    // Open the ⋯ menu and start the rename from there.
+    fireEvent.click(screen.getByLabelText('Due date and recurring'))
+    fireEvent.click(screen.getByRole('button', { name: 'Rename task' }))
+
     const input = screen.getByLabelText('Edit task') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'New name' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -424,7 +586,7 @@ describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
     expect(patches.some((p) => 'x' in p || 'y' in p)).toBe(false)
   })
 
-  it('time presets: disabled until a date exists, write both columns; No date clears both', () => {
+  it('time presets: disabled until a date exists, write both columns; No date clears both', async () => {
     tasksFixture = [makeTask({ id: 'm', x: 0.3, y: 0.7, staged: false })]
     const noDate = render(<GridHarness />)
     fireEvent.click(screen.getByLabelText('Due date and recurring'))
@@ -441,6 +603,9 @@ describe('GridView on-card ⋯ menu (the SchedulePanel)', () => {
       id: 'm',
       patch: { due: '2026-08-01', due_time: '18:00' },
     })
+    // First due time on a reminder-less task → the user's default reminder (1 hour) is seeded
+    // after the write lands, same as the add forms and BabyClaw.
+    await waitFor(() => expect(reminderAdd).toHaveBeenCalledWith('m', 60))
 
     // Clearing the date clears the time with it (the DB CHECK forbids a dangling time).
     fireEvent.click(screen.getByRole('button', { name: 'No date' }))
@@ -637,6 +802,20 @@ describe('GridView clustering', () => {
   })
 })
 
+// Pressing inert background closes the open desktop chat rail (useBackgroundDismiss). That hook
+// matches the pressed element EXACTLY, so what matters here is WHICH element carries the marker:
+// the canvas must, and the cards sitting on it must not — otherwise starting a drag would close
+// the drawer out from under you.
+describe('GridView background-dismiss marker', () => {
+  it('marks the canvas as background, and never a card on it', () => {
+    tasksFixture = [makeTask({ id: 'a', text: 'Clean kitchen', x: 0.5, y: 0.5 })]
+    render(<GridHarness />)
+
+    expect(screen.getByTestId('grid-canvas')).toHaveAttribute(BACKGROUND_DISMISS_ATTR)
+    expect(screen.getByTestId('grid-card')).not.toHaveAttribute(BACKGROUND_DISMISS_ATTR)
+  })
+})
+
 // Item 16: a plain TAP on a popup row opens it for inline editing; only a real DRAG tears the card
 // out onto the grid. Delete is confirm-gated (B9). The popup itself is portaled to <body>.
 describe('GridView cluster popup rework', () => {
@@ -737,5 +916,222 @@ describe('GridView cluster popup rework', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(softDeleteMutate).toHaveBeenCalledWith('a'))
+  })
+})
+
+describe('GridView iPad hybrid (coarse pointer, desktop layout)', () => {
+  const cardFor = (text: string) =>
+    screen.getByText(text).closest('[data-testid="grid-card"]') as HTMLElement
+
+  it('a tap on a card opens the touch actions popover instead of dragging', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'p1', text: 'Tap me' })]
+    render(<GridHarness />)
+    const card = cardFor('Tap me')
+    // A real tap: pointerdown, pointerup, then the browser's trailing click (detail 1).
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(card, { detail: 1 })
+    const popover = screen.getByTestId('touch-card-popover')
+    expect(within(popover).getByRole('button', { name: /✓ Done/ })).toBeInTheDocument()
+    expect(within(popover).getByRole('button', { name: /⋯ Schedule/ })).toBeInTheDocument()
+    expect(within(popover).getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
+    expect(updateMutate).not.toHaveBeenCalled() // the tap never repositioned the card
+  })
+
+  it('Done in the popover marks the task done and closes it', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'p2', text: 'Finish me' })]
+    render(<GridHarness />)
+    const card = cardFor('Finish me')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(
+      within(screen.getByTestId('touch-card-popover')).getByRole('button', { name: /✓ Done/ }),
+    )
+    expect(markDoneMutate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+  })
+
+  it('a schedule write from the popover routes through setDue and never carries x/y', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'p3', text: 'Schedule me' })]
+    render(<GridHarness />)
+    const card = cardFor('Schedule me')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    const popover = screen.getByTestId('touch-card-popover')
+    fireEvent.click(within(popover).getByRole('button', { name: /⋯ Schedule/ }))
+    const calendar = within(popover).getByTestId('schedule-calendar')
+    const tomorrow = new Date(Date.now() + 86_400_000)
+    const dayButton = within(calendar)
+      .getAllByRole('button')
+      .find((b) => b.textContent?.trim() === String(tomorrow.getDate()))
+    expect(dayButton).toBeDefined()
+    fireEvent.click(dayButton!)
+    expect(updateMutate).toHaveBeenCalled()
+    for (const call of updateMutate.mock.calls) {
+      const patch = (call[0] as { patch: Record<string, unknown> }).patch
+      expect('x' in patch).toBe(false)
+      expect('y' in patch).toBe(false)
+    }
+  })
+
+  it('hold + move + release repositions with the finger offset; no popover opens', () => {
+    vi.useFakeTimers()
+    try {
+      mockIsCoarse.mockReturnValue(true)
+      tasksFixture = [makeTask({ id: 'p4', text: 'Hold me', x: 0.2, y: 0.2 })]
+      render(<GridHarness />)
+      const canvas = screen.getByTestId('grid-canvas')
+      canvas.getBoundingClientRect = () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 400,
+          height: 800,
+          right: 400,
+          bottom: 800,
+          x: 0,
+          y: 0,
+        }) as DOMRect
+      const card = cardFor('Hold me')
+      fireEvent.pointerDown(card, { clientX: 100, clientY: 600 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      // The card rides 56px above the finger — finger at y = 200 + 56 drops the CARD at y 200.
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      fireEvent.pointerUp(window, { clientX: 300, clientY: 256 })
+      const repositionCall = updateMutate.mock.calls.find((c) => {
+        const patch = (c[0] as { patch: Record<string, unknown> }).patch
+        return 'x' in patch
+      })
+      expect(repositionCall).toBeDefined()
+      const patch = (repositionCall![0] as { patch: { x: number; y: number } }).patch
+      expect(patch.x).toBeCloseTo(0.75, 2)
+      expect(patch.y).toBeCloseTo(0.75, 2)
+      expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+
+  it('a tap on a PAUSED card opens the popover in paused mode: Schedule + Delete, no Done', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [makeTask({ id: 'pz', text: 'Sleep tap', start_date: future })]
+    render(<GridHarness />)
+    const card = cardFor('Sleep tap')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(card, { detail: 1 })
+    const popover = screen.getByTestId('touch-card-popover')
+    // Paused mode: no Done (a dormant task isn't active to complete); Schedule (Resume) + Delete stay.
+    expect(within(popover).queryByRole('button', { name: /✓ Done/ })).toBeNull()
+    expect(within(popover).getByRole('button', { name: /⋯ Schedule/ })).toBeInTheDocument()
+    expect(within(popover).getByRole('button', { name: 'Delete task' })).toBeInTheDocument()
+  })
+
+  it('hold + move + release repositions a PAUSED card too — x/y only, stays dormant', () => {
+    vi.useFakeTimers()
+    try {
+      mockIsCoarse.mockReturnValue(true)
+      tasksFixture = [
+        makeTask({ id: 'pz2', text: 'Hold sleepy', x: 0.2, y: 0.2, start_date: future }),
+      ]
+      render(<GridHarness />)
+      const canvas = screen.getByTestId('grid-canvas')
+      canvas.getBoundingClientRect = () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 400,
+          height: 800,
+          right: 400,
+          bottom: 800,
+          x: 0,
+          y: 0,
+        }) as DOMRect
+      const card = cardFor('Hold sleepy')
+      fireEvent.pointerDown(card, { clientX: 100, clientY: 600 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
+      fireEvent.pointerUp(window, { clientX: 300, clientY: 256 })
+      const repositionCall = updateMutate.mock.calls.find(
+        (c) => 'x' in (c[0] as { patch: Record<string, unknown> }).patch,
+      )
+      expect(repositionCall).toBeDefined()
+      const patch = (repositionCall![0] as { patch: Record<string, unknown> }).patch
+      expect(patch.x).toBeCloseTo(0.75, 2)
+      expect(patch.y).toBeCloseTo(0.75, 2)
+      // A reposition never touches start_date — the card stays dormant, just relocated.
+      expect('start_date' in patch).toBe(false)
+      expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('fine pointers never see the popover — a plain click on a card does nothing new', () => {
+    tasksFixture = [makeTask({ id: 'p5', text: 'Desktop card' })]
+    render(<GridHarness />)
+    const card = cardFor('Desktop card')
+    fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+    fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+    fireEvent.click(card, { detail: 1 })
+    expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+  })
+
+  it('starting a hold-drag on the tapped card closes its popover (no detached float)', () => {
+    vi.useFakeTimers()
+    try {
+      mockIsCoarse.mockReturnValue(true)
+      tasksFixture = [makeTask({ id: 'p7', text: 'Move after tap' })]
+      render(<GridHarness />)
+      const card = cardFor('Move after tap')
+      // Open the popover.
+      fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+      fireEvent.click(card, { detail: 1 })
+      expect(screen.getByTestId('touch-card-popover')).toBeInTheDocument()
+      // Now press-and-hold the same card to reposition — the lift must close the popover.
+      fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+      act(() => {
+        vi.advanceTimersByTime(300)
+      })
+      expect(screen.queryByTestId('touch-card-popover')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('tapping a second card moves the popover to it (capture-phase dismiss beats stopPropagation)', () => {
+    mockIsCoarse.mockReturnValue(true)
+    tasksFixture = [
+      makeTask({ id: 'a1', text: 'First card', x: 0.2, y: 0.2 }),
+      makeTask({ id: 'b1', text: 'Second card', x: 0.8, y: 0.8 }),
+    ]
+    render(<GridHarness />)
+    const tap = (text: string) => {
+      const card = cardFor(text)
+      fireEvent.pointerDown(card, { clientX: 200, clientY: 200 })
+      fireEvent.pointerUp(window, { clientX: 200, clientY: 200 })
+      fireEvent.click(card, { detail: 1 })
+    }
+    tap('First card')
+    expect(screen.getByRole('dialog', { name: 'Task: First card' })).toBeInTheDocument()
+    tap('Second card')
+    expect(screen.queryByRole('dialog', { name: 'Task: First card' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Task: Second card' })).toBeInTheDocument()
+  })
+
+  it('the action bar carries the coarse-halo marker (index.css grows 44pt tap targets off it)', () => {
+    tasksFixture = [makeTask({ id: 'p6', text: 'Halo card' })]
+    render(<GridHarness />)
+    expect(cardFor('Halo card').querySelector('[data-card-actions]')).not.toBeNull()
   })
 })

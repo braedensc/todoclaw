@@ -38,11 +38,13 @@ export function scheduleSummary(
   dueTime: string | null,
   recurring: Recurring | null,
   ongoing: boolean,
+  startDate: string | null = null,
 ): string | null {
   const parts: string[] = []
   if (due) parts.push(due.slice(5) + (dueTime ? ` · ${formatDueTime(dueTime)}` : ''))
   if (recurring) parts.push(fmtFrequency(recurring.frequencyDays))
   else if (ongoing) parts.push('ongoing')
+  if (startDate) parts.push(`⏸ until ${startDate.slice(5)}`)
   return parts.length ? parts.join(' · ') : null
 }
 
@@ -52,6 +54,7 @@ export function AddTaskForm({
   reminderDefault,
   onOpenChat,
   inputRef,
+  defaultScheduleOpen = false,
 }: {
   defaultQuadrant: QuadrantKey | null
   /** Create the task: text + quadrant + optional recurring + optional due date/time + any number
@@ -64,6 +67,7 @@ export function AddTaskForm({
     due: string | null,
     dueTime: string | null,
     reminderMinutes: number[],
+    startDate: string | null,
   ) => void
   /** The add-flow reminder default (from settings) — pre-selects the picker once a time is set. */
   reminderDefault: number | null
@@ -72,6 +76,13 @@ export function AddTaskForm({
   /** The text field, exposed so the caller can focus it explicitly if ever needed (NOT focused
    *  on open — the keyboard must not pop until the user asks for it). */
   inputRef?: RefObject<HTMLInputElement>
+  /**
+   * Start with the schedule disclosure already open. Off for the real add flow (capture stays one
+   * screen tall); the tour's example day turns it on so the Task / Recurring / Ongoing switch —
+   * the three kinds of task, in the actual add UI — is on screen without a tap the scenery can't
+   * take. Initial state only; the user still folds it away normally.
+   */
+  defaultScheduleOpen?: boolean
 }) {
   const [text, setText] = useState('')
   const [selected, setSelected] = useState<QuadrantKey | null>(defaultQuadrant)
@@ -81,21 +92,22 @@ export function AddTaskForm({
   const [dueTime, setDueTime] = useState<string | null>(null)
   const [recurring, setRecurring] = useState<Recurring | null>(null)
   const [ongoing, setOngoing] = useState(false)
+  const [startDate, setStartDate] = useState<string | null>(null)
   const [reminderMinutes, setReminderMinutes] = useState<number[]>(
     reminderDefault != null ? [reminderDefault] : [],
   )
-  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(defaultScheduleOpen)
   const timeZone = useTimeZone()
 
   const canAdd = text.trim().length > 0 && selected != null
-  const summary = scheduleSummary(due, dueTime, recurring, ongoing)
+  const summary = scheduleSummary(due, dueTime, recurring, ongoing, startDate)
 
   function submit(e: FormEvent) {
     e.preventDefault()
     if (!canAdd || selected == null) return
     // A time never ships without a date (DB CHECK) — the panel guarantees it, this guards it.
     const dt = due ? dueTime : null
-    onAdd(text.trim(), selected, recurring, ongoing, due, dt, dt ? reminderMinutes : [])
+    onAdd(text.trim(), selected, recurring, ongoing, due, dt, dt ? reminderMinutes : [], startDate)
   }
 
   return (
@@ -196,6 +208,8 @@ export function AddTaskForm({
                 setOngoing(on)
                 if (on) setRecurring(null)
               }}
+              startDate={startDate}
+              onSetStartDate={setStartDate}
               reminderOffsets={reminderMinutes}
               onToggleReminder={(m) =>
                 setReminderMinutes((cur) =>

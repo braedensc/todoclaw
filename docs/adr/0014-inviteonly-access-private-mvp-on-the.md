@@ -1,6 +1,6 @@
 # ADR-0014 — Invite-only access (private MVP on the owner's key)
 
-**Date:** 2026-06-24 · **Stage:** 4 (PR1)
+**Date:** 2026-06-24 · **Stage:** 4 (PR1) · **Status:** Accepted
 
 The Stage 4 MVP is a **private, invite-only app** (Braeden + a small circle of friends/family)
 running AI on Braeden's own Anthropic key. Access is closed at two layers:

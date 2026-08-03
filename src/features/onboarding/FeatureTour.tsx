@@ -6,7 +6,7 @@ import { useIsMobile } from '../../hooks/use-is-mobile'
 // pattern, hand-rolled: no dependency carries its weight for five steps). Each step names a
 // `data-tour="…"` anchor somewhere in the mounted shell; the overlay dims everything except a
 // breathing-room cutout around that element and floats a small parchment card with the step's
-// copy + Back/Next/Skip. Launched from the setup guide's "See how Todoclaw works" step (and,
+// copy + Back/Next/Skip. Launched from the setup guide's "See how TodoClaw works" step (and,
 // with a single step, as the "Show me where" spotlight on the Task Manager widget).
 //
 // Robustness rules:
@@ -24,6 +24,15 @@ export interface TourStep {
   body: string
   /** Optional bulleted list shown under `body` — each item is a bold lead-in plus its detail. */
   bullets?: { lead: string; rest: string }[]
+  /**
+   * A SECOND anchor to call out alongside the spotlight — the control the panel is about, when
+   * that control lives somewhere else on screen. The mobile bottom bar is the reason it exists:
+   * the "add a task" and "chat" panels show the surface, but the tab you actually reach for is
+   * down in the nav, so both need to light up at once. It gets a ring plus a brightened backdrop
+   * (lifting it out of the dimmer) rather than a second cutout — one hole stays the focal point.
+   * Missing anchors are ignored, so a step can name one that only exists on one breakpoint.
+   */
+  also?: string
 }
 
 interface SpotRect {
@@ -70,6 +79,9 @@ export function FeatureTour({
   const available = useMemo(() => steps.filter((s) => findAnchor(s.target)), [steps])
   const [index, setIndex] = useState(0)
   const [rect, setRect] = useState<SpotRect | null>(null)
+  // The step's secondary call-out (`also`), measured alongside the spotlight. Null whenever the
+  // step doesn't name one or its anchor isn't on this breakpoint.
+  const [alsoRect, setAlsoRect] = useState<SpotRect | null>(null)
   // The card's real rendered height — measured post-render so desktop placement can keep the whole
   // card (Next button included) on screen even when a step's copy runs long. Null until first measure
   // (the constants above are the first-paint fallback).
@@ -85,21 +97,24 @@ export function FeatureTour({
     if (empty) onClose(false)
   }, [empty, onClose])
 
-  // Measure the current target, and keep measuring as the page scrolls/resizes under the overlay.
+  // Measure the current target (and the step's secondary call-out), and keep measuring as the page
+  // scrolls/resizes under the overlay.
   useEffect(() => {
     if (!step) return
     const el = findAnchor(step.target)
     if (!el) return
+    const alsoEl = step.also ? findAnchor(step.also) : null
     // scrollIntoView is absent under jsdom — optional-call it (same as SettingsPanel).
     el.scrollIntoView?.({ block: 'center', behavior: 'auto' })
+    const pad = (r: DOMRect): SpotRect => ({
+      top: r.top - PAD,
+      left: r.left - PAD,
+      width: r.width + PAD * 2,
+      height: r.height + PAD * 2,
+    })
     const measure = () => {
-      const r = el.getBoundingClientRect()
-      setRect({
-        top: r.top - PAD,
-        left: r.left - PAD,
-        width: r.width + PAD * 2,
-        height: r.height + PAD * 2,
-      })
+      setRect(pad(el.getBoundingClientRect()))
+      setAlsoRect(alsoEl ? pad(alsoEl.getBoundingClientRect()) : null)
     }
     measure()
     window.addEventListener('resize', measure)
@@ -195,6 +210,24 @@ export function FeatureTour({
             width: rect.width,
             height: rect.height,
             boxShadow: '0 0 0 200vmax rgba(46, 42, 36, 0.5)',
+          }}
+        />
+      )}
+
+      {/* The step's secondary call-out — the control the panel is about, when it lives elsewhere
+          on screen (the mobile bottom bar's Add / Chat tabs). Painted AFTER the dimmer so its
+          backdrop-brightness lifts it back out of the dim without punching a second hole; the ring
+          is what says "and this is the button". */}
+      {alsoRect && (
+        <div
+          aria-hidden
+          data-testid="tour-also"
+          className="pointer-events-none fixed rounded-[14px] border-2 border-accent backdrop-brightness-[1.85] transition-all duration-200 ease-out"
+          style={{
+            top: alsoRect.top,
+            left: alsoRect.left,
+            width: alsoRect.width,
+            height: alsoRect.height,
           }}
         />
       )}

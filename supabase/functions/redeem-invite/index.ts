@@ -16,6 +16,7 @@
 import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
 import { adminClient } from '../_shared/admin.ts'
+import { clientIp } from '../_shared/client-ip.ts'
 
 const RedeemSchema = z.object({
   code: z.string().min(1).max(64),
@@ -54,9 +55,11 @@ Deno.serve(async (req) => {
 
   const admin = adminClient()
 
-  // Throttle by client IP. x-forwarded-for may be absent (e.g. local serve) — the RPC treats a
-  // missing IP as "allow, don't record" so it neither bypasses nor locks out redemption.
-  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()
+  // Throttle by client IP. clientIp() reads a spoof-resistant source (cf-connecting-ip / x-real-ip,
+  // else the RIGHTMOST X-Forwarded-For hop) so an abuser can't defeat the throttle by rotating a
+  // prepended XFF entry. May be empty (e.g. local serve) — the RPC treats a missing IP as "allow,
+  // don't record" so it neither bypasses nor locks out redemption.
+  const ip = clientIp(req)
   const { data: allowed, error: throttleErr } = await admin.rpc('invite_throttle', {
     p_ip: ip,
     p_limit: THROTTLE_LIMIT,

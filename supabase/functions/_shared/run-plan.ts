@@ -8,20 +8,26 @@
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { precheck, recordUsage } from './guardrails.ts'
+import { adminClient } from './auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from './anthropic.ts'
 import { getWeather } from './weather.ts'
 import { localDateInTZ } from './dates.ts'
 import { buildPlanRequest } from './plan-inputs.ts'
+import { HABITS_FETCH_LIMIT, TASKS_FETCH_LIMIT } from './write-caps.ts'
 import {
   SYSTEM_PROMPT,
   EMIT_PLAN_TOOL,
   buildUserPrompt,
+  resolvePlanTaskIds,
   type PlanRequest,
   type ScheduleConfig,
   type PlanResult,
 } from './plan-prompt.ts'
 
-export type PlanRunResult = { ok: true; headline: string } | { ok: false; reason: string }
+// The generated plan comes back WHOLE, not just its headline: BabyClaw's generate_plan tool result
+// is the model's only window onto what it just produced, and a headline alone left it narrating the
+// plan's contents from imagination (and then insisting a dropped item was "still in the plan panel").
+export type PlanRunResult = { ok: true; plan: PlanResult } | { ok: false; reason: string }
 
 // The pure Anthropic call: build the prompt, force emit_plan, return the structured plan + token
 // usage. Shared by the interactive path (runPlanForUser) and the proactive dispatcher (ADR-0031),
@@ -42,11 +48,19 @@ export async function generatePlan(
     tool_choice: { type: 'tool', name: 'emit_plan' },
   })
   const toolUse = msg.content.find((b) => b.type === 'tool_use')
-  if (!toolUse || toolUse.type !== 'tool_use') {
+  // A truncated response still carries a tool_use block whose JSON input is cut off, so check the
+  // stop reason before trusting it.
+  if (!toolUse || toolUse.type !== 'tool_use' || msg.stop_reason === 'max_tokens') {
     throw new Error('The planner did not return a plan.')
   }
+  // Validate + resolve each rock's emitted `ref` to a real tasks.id before anything stores or
+  // returns the plan — daily_state.plan only ever holds the resolved shape (taskId, never ref).
+  // This path writes the plan SERVER-side (BabyClaw's generate_plan, the proactive dispatcher), so
+  // it never passes the client's boundary check: a contentless emit has to be caught right here.
+  const plan = resolvePlanTaskIds(toolUse.input, req)
+  if (!plan) throw new Error('The planner did not return a plan.')
   return {
-    plan: toolUse.input as PlanResult,
+    plan,
     usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens },
   }
 }
@@ -74,12 +88,16 @@ export async function runPlanForUser(
       client.from('user_schedule').select('config').maybeSingle(),
       client
         .from('tasks')
-        .select('id, text, x, y, due, due_time, staged, recurring, size, ongoing')
+        .select('id, text, x, y, due, due_time, staged, recurring, size, ongoing, start_date')
         .is('deleted_at', null)
         // Exclude permanently completed one-off tasks (tasks.completed_at) so a task done on a prior
         // day can't reappear in a generated plan — mirrors the dispatch RPC's completed_at filter.
-        .is('completed_at', null),
-      client.from('habits').select('text, active').is('deleted_at', null),
+        .is('completed_at', null)
+        // Bounded fetch (write-caps.ts), newest first so truncation for an at-cap account drops
+        // the stalest tail, not arbitrary rows.
+        .order('created_at', { ascending: false })
+        .limit(TASKS_FETCH_LIMIT),
+      client.from('habits').select('text, active').is('deleted_at', null).limit(HABITS_FETCH_LIMIT),
       client.from('daily_state').select('done').eq('date', date).maybeSingle(),
       // Saved memories (RLS-scoped). Always fetched (≤30 rows); only USED when memory is on.
       client.from('assistant_memories').select('content').order('created_at', { ascending: true }),
@@ -93,8 +111,11 @@ export async function runPlanForUser(
       : []
     const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
     // No location set → skip the weather line entirely (don't default to any city's weather).
+    // The weather_cache is server-only (service_role): pass adminClient(), NOT the caller's client —
+    // getWeather uses it solely for the cache RPCs (never a user table). See weather.ts / migration
+    // 20260722000000.
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
-    const weather = location ? await getWeather(client, location) : null
+    const weather = location ? await getWeather(adminClient(), location) : null
 
     const req = buildPlanRequest(tasksRes.data ?? [], habitsRes.data ?? [], doneMap, timeZone, now)
 
@@ -107,7 +128,7 @@ export async function runPlanForUser(
       console.error('save_daily_plan failed:', error)
       return { ok: false, reason: "I couldn't save your plan just now — please try again." }
     }
-    return { ok: true, headline: plan.headline }
+    return { ok: true, plan }
   } catch (e) {
     console.error('plan run failed:', e)
     return { ok: false, reason: "I couldn't plan your day just now — please try again." }

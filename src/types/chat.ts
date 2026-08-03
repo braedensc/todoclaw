@@ -32,22 +32,40 @@ export const ChatSessionSchema = z.object({
 })
 export type ChatSession = z.infer<typeof ChatSessionSchema>
 
+// A message's UI-only sidecar, written by the server: bare user words for a seed turn, per-tool
+// display lines for a tool_result turn. Read defensively — a legacy/partial shape degrades to null
+// rather than wedging the row.
+export const ChatMessageMetaSchema = z
+  .object({
+    display: z.string().optional(),
+    tools: z.array(z.object({ text: z.string(), ok: z.boolean() })).optional(),
+    // A server-seeded context turn that primes the model but is never shown to the person (the
+    // hidden framing turn a proactive/inbox session opens with). rowsToChatItems skips it.
+    hidden: z.boolean().optional(),
+  })
+  .nullable()
+  .catch(null)
+export type ChatMessageMeta = z.infer<typeof ChatMessageMetaSchema>
+
 // One persisted message. `content` is the raw Anthropic MessageParam content (string | block[]);
-// `meta` is a UI-only sidecar the server wrote (bare user words for a seed turn, per-tool display
-// lines for a tool_result turn). Both are read defensively (unknown) — the mapper shapes them.
+// both it and `meta` are read defensively (unknown) — the mapper shapes them.
 export const ChatMessageRowSchema = z.object({
   seq: z.number(),
   role: z.enum(['user', 'assistant']),
   content: z.unknown(),
-  meta: z
-    .object({
-      display: z.string().optional(),
-      tools: z.array(z.object({ text: z.string(), ok: z.boolean() })).optional(),
-      // A server-seeded context turn that primes the model but is never shown to the person (the
-      // hidden framing turn a proactive/inbox session opens with). rowsToChatItems skips it.
-      hidden: z.boolean().optional(),
-    })
-    .nullable()
-    .catch(null),
+  meta: ChatMessageMetaSchema,
 })
 export type ChatMessageRow = z.infer<typeof ChatMessageRowSchema>
+
+// One row of the chat-list preview read (chat_list_previews): the last USER-VISIBLE message of a
+// session plus how many user-visible messages it holds. Server-seeded hidden framing turns are
+// excluded by the RPC, so `msg_count` is what the person would actually count on screen — 1 for a
+// check-in they have only received, >1 once they have replied.
+export const ChatPreviewSchema = z.object({
+  session_id: z.string().uuid(),
+  msg_count: z.number(),
+  last_role: z.enum(['user', 'assistant']),
+  last_content: z.unknown(),
+  last_meta: ChatMessageMetaSchema,
+})
+export type ChatPreview = z.infer<typeof ChatPreviewSchema>

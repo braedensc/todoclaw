@@ -1,6 +1,6 @@
 # Collaboration & Multi-Agent Workflow
 
-How multiple people — and multiple Claude Code sessions — work on Todoclaw at the
+How multiple people — and multiple Claude Code sessions — work on TodoClaw at the
 same time without stepping on each other.
 
 **Key mental model:** Claude Code does **not** coordinate across machines. Each

@@ -3,7 +3,7 @@
 // (count / insert / update / delete), and tasks+habits (the provenance corpus). We prove the
 // SECURITY-load-bearing behaviors: the code provenance gate (task text can't be laundered into a
 // memory), the count cap, dedup, the kill switch, and that propose_memory skips the provenance gate
-// (its provenance is the human confirm the destructive gate already ran).
+// (an inference isn't user-verbatim text; it now auto-saves — no confirmation gate).
 // Run: deno test --no-check supabase/functions/_shared/capabilities/memories.test.ts
 import { assert, assertEquals, assertStringIncludes } from 'jsr:@std/assert@1'
 import { executeTool } from '../chat-tools.ts'
@@ -153,21 +153,19 @@ Deno.test('KILL SWITCH: save/update refuse when memory is off; the model is told
   assertStringIncludes(String(upd.content), 'turned off')
 })
 
-Deno.test(
-  'propose_memory SKIPS the provenance gate (the human confirm is its provenance)',
-  async () => {
-    // An inference legitimately isn't something the user said verbatim, and it may relate to a task —
-    // so the provenance gate does NOT apply here; the destructive confirm gate already got the click.
-    const { ctx, getInserted } = makeCtx({ tasks: ['batches errands on saturdays every week'] })
-    const res = await executeTool(
-      'propose_memory',
-      { content: 'batches errands on saturdays every week' },
-      ctx,
-    )
-    assert(!res.is_error) // would be rejected by save_memory, but propose_memory writes it
-    assertEquals(getInserted(), 'batches errands on saturdays every week')
-  },
-)
+Deno.test('propose_memory SKIPS the provenance gate and auto-saves (no confirmation)', async () => {
+  // An inference legitimately isn't something the user said verbatim, and it may relate to a task —
+  // so the provenance gate does NOT apply here. propose_memory is no longer destructive: a confident
+  // inference writes straight through (see the proactive-memory-inference-autosave ADR).
+  const { ctx, getInserted } = makeCtx({ tasks: ['batches errands on saturdays every week'] })
+  const res = await executeTool(
+    'propose_memory',
+    { content: 'batches errands on saturdays every week' },
+    ctx,
+  )
+  assert(!res.is_error) // would be rejected by save_memory, but propose_memory writes it
+  assertEquals(getInserted(), 'batches errands on saturdays every week')
+})
 
 Deno.test('update_memory reports not-found for a stale/hallucinated id', async () => {
   const { ctx } = makeCtx({ updateRow: null })

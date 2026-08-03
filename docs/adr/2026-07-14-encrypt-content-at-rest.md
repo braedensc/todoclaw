@@ -11,7 +11,9 @@ ADR encrypts those columns at rest so a dump is ciphertext.
 
 ## Decision 1 — encrypt the free-text content columns with pgcrypto + a Vault-held key
 
-`20260714130000_encrypt_content_at_rest.sql` converts eight columns to `bytea` ciphertext and
+`20260803120000_encrypt_content_at_rest.sql` (re-timestamped to run last, after the migrations main
+added since — it must redefine every function that touches these columns) converts eight columns to
+`bytea` ciphertext and
 backfills existing rows in place:
 
 - `chat_messages.content` / `meta`, `chat_sessions.title` / `pending`

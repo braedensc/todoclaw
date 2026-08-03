@@ -19,8 +19,10 @@ Email/password authentication via Supabase Auth (GoTrue).
   the code and creates the account via the admin API — `enable_signup` stays off), then
   signs in. The only client path that ends in a new account, and it needs a valid
   owner-generated code.
-- **`use-is-owner.ts`** — `useIsOwner()`: reveals the owner-only "Invite someone" UI
-  (`VITE_OWNER_USER_ID`). Display-only; the real gate is server-side (`OWNER_USER_ID`).
+- **`use-is-owner.ts`** — `useIsOwner()`: reveals the owner-only admin entry + "Invite someone" UI.
+  Display-only, and derived from the **server** — it asks the `admin` Edge Function's `whoami`
+  action whether the caller is the owner, so the owner's user id is never shipped to the client
+  (no `VITE_OWNER_USER_ID`). Fails closed. The real gate is server-side (`OWNER_USER_ID`).
 
 ## Notes
 

@@ -68,7 +68,7 @@ export function markPlanTried(): void {
   emit()
 }
 
-/** Mark the "See how Todoclaw works" tour finished on this device. */
+/** Mark the "See how TodoClaw works" tour finished on this device. */
 export function markTourDone(): void {
   writeFlag(TOUR_DONE_KEY, true)
   emit()

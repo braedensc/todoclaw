@@ -10,6 +10,12 @@ const mockSession = vi.fn<() => { session: unknown; loading: boolean }>()
 vi.mock('./features/auth/use-session', () => ({
   useSession: () => mockSession(),
 }))
+// useIsOwner now asks the server via react-query (the `admin` whoami action); stub it so the shell
+// renders without a QueryClientProvider / network, like the data hooks below. Non-owner by default —
+// the owner-only Admin entry isn't under test here.
+vi.mock('./features/auth/use-is-owner', () => ({
+  useIsOwner: () => false,
+}))
 // jsdom has no matchMedia, so the real useIsMobile always reports desktop; this mock lets the
 // mobile-presentation tests below flip the breakpoint. Default: desktop.
 const mockIsMobile = vi.fn<() => boolean>(() => false)
@@ -143,6 +149,36 @@ describe('App shell', () => {
     // The first-run setup guide shows for a fresh device (nothing dismissed in this jsdom's
     // localStorage; the install step is hidden because jsdom's UA is neither Apple nor Chromium).
     expect(screen.getByRole('region', { name: 'Setup guide' })).toBeInTheDocument()
+  })
+
+  // The feature tour's closing panel spotlights `[data-tour="options"]` directly — the real Account
+  // nav on desktop, the real bottom bar on mobile (DemoScene mounts no look-alike copy of either).
+  it('tags the real Account nav as the tour\'s "options" anchor on desktop', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    render(<App />)
+    const options = document.querySelector('[data-tour="options"]')
+    expect(options).not.toBeNull()
+    expect(
+      within(options as HTMLElement).getByRole('button', { name: /Settings/ }),
+    ).toBeInTheDocument()
+    // Exactly one — a stray second anchor would make the tour spotlight whichever comes first.
+    expect(document.querySelectorAll('[data-tour="options"]')).toHaveLength(1)
+  })
+
+  it('tags the real bottom bar as the tour\'s "options" anchor on mobile', () => {
+    mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+    mockIsMobile.mockReturnValue(true)
+    try {
+      render(<App />)
+      const options = document.querySelector('[data-tour="options"]')
+      expect(options).not.toBeNull()
+      expect(
+        within(options as HTMLElement).getByRole('button', { name: 'Done' }),
+      ).toBeInTheDocument()
+      expect(document.querySelectorAll('[data-tour="options"]')).toHaveLength(1)
+    } finally {
+      mockIsMobile.mockReturnValue(false)
+    }
   })
 
   it('renders the "Grid-only view" header pill next to Plan My Day', () => {

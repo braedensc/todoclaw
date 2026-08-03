@@ -1,7 +1,7 @@
 import type { Task } from '../types/task'
 import { quadrantMeta, type QuadrantKey } from './quadrants'
 import { taskScore } from './scoring'
-import { resolveCollision } from './collision'
+import { resolveCollision, type CollisionOpts } from './collision'
 
 // Per-quadrant rollup for the mobile overview (Concept C). The 2×2 minimap needs, for each
 // Eisenhower quadrant: how many tasks sit there (count badge + density bar) and the single
@@ -45,10 +45,21 @@ export interface QuadrantsOverview {
 }
 
 /**
+ * Whether a task has no real grid position yet (still staged, or missing coords) — it carries no
+ * quadrant. The one shared predicate for every surface that must treat unplaced tasks specially:
+ * the bucketing skip below, the mobile Unplaced strip (UnplacedSection), and the move-picker's
+ * "no current quadrant" case.
+ */
+export function isUnplaced(t: Task): boolean {
+  return t.staged || t.x == null || t.y == null
+}
+
+/**
  * Bucket PLACED tasks into their Eisenhower quadrants: a total count plus the top-scored few for
  * the mobile overview's preview cards. Staged/unplaced tasks (null x/y) carry no real quadrant and
- * are skipped — the mobile overview surfaces those separately. Callers pass the already-active set
- * (done-today removed).
+ * are skipped — on mobile they surface in the overview's Unplaced strip (UnplacedSection); on
+ * desktop, in the "Drag new item to grid" tray. Callers pass the already-active set (done-today
+ * removed).
  */
 export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): QuadrantsOverview {
   const groups: Record<QuadrantKey, Task[]> = {
@@ -59,7 +70,8 @@ export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): Q
   }
 
   for (const t of tasks) {
-    if (t.staged || t.x == null || t.y == null) continue
+    // isUnplaced is the semantic gate; the null re-checks only narrow x/y for the compiler.
+    if (isUnplaced(t) || t.x == null || t.y == null) continue
     groups[quadrantMeta(t.x, t.y).key].push(t)
   }
 
@@ -69,6 +81,35 @@ export function summarizeQuadrants(tasks: Task[], opts: { timeZone: string }): Q
     buckets[key] = { count: ranked.length, top: ranked.slice(0, QUADRANT_PREVIEW_COUNT) }
   }
   return { buckets }
+}
+
+/**
+ * Bucket PLACED DORMANT (paused / future start_date) tasks into their Eisenhower quadrants — the
+ * set-aside preview that rides ALONGSIDE {@link summarizeQuadrants} in the mobile overview. Ordered
+ * soonest-returning-first (by start_date, string-comparable wall-clock dates), matching the Paused
+ * strip, so "what comes back next" heads each cell. Unplaced dormant tasks (null coords) carry no
+ * quadrant and are skipped — they live only in the strip. Kept here beside summarizeQuadrants so the
+ * two bucketing rules can't drift; the caller passes the already-dormant, already-placed set.
+ *
+ * Deliberately SEPARATE from the active summary: dormant tasks are excluded from the active count
+ * badges and the due ("on fire") counts, so they can never read as due/overdue or inflate a
+ * quadrant's total — they only surface as a dimmed ⏸ preview + a paused sub-count.
+ */
+export function dormantByQuadrant(tasks: Task[]): Record<QuadrantKey, Task[]> {
+  const groups: Record<QuadrantKey, Task[]> = {
+    'do-now': [],
+    schedule: [],
+    errands: [],
+    someday: [],
+  }
+  for (const t of tasks) {
+    if (isUnplaced(t) || t.x == null || t.y == null) continue
+    groups[quadrantMeta(t.x, t.y).key].push(t)
+  }
+  for (const key of QUADRANT_ORDER) {
+    groups[key].sort((a, b) => (a.start_date ?? '').localeCompare(b.start_date ?? ''))
+  }
+  return groups
 }
 
 /**
@@ -82,9 +123,10 @@ export function moveToQuadrant(
   task: Task,
   dest: QuadrantKey,
   allTasks: Task[],
+  opts: CollisionOpts,
 ): { x: number; y: number } {
   const center = QUADRANT_CENTER[dest]
-  return resolveCollision(center.x, center.y, allTasks, task.id)
+  return resolveCollision(center.x, center.y, allTasks, task.id, opts)
 }
 
 /**
@@ -93,7 +135,11 @@ export function moveToQuadrant(
  * it resolves against every active card. The caller writes these as the new task's x/y with
  * staged=false (already placed).
  */
-export function placeInQuadrant(dest: QuadrantKey, allTasks: Task[]): { x: number; y: number } {
+export function placeInQuadrant(
+  dest: QuadrantKey,
+  allTasks: Task[],
+  opts: CollisionOpts,
+): { x: number; y: number } {
   const center = QUADRANT_CENTER[dest]
-  return resolveCollision(center.x, center.y, allTasks, '')
+  return resolveCollision(center.x, center.y, allTasks, '', opts)
 }

@@ -49,6 +49,14 @@ const STALE_SWATCHES: Swatch[] = [
   },
 ]
 
+// Dot-scaled echo of the SLATE pausedRingStyle ring — same slate hue (100,116,139), halo scaled to
+// ~1/3 for the dot. One rung (the paused lane is binary): a card with a future start date sleeps,
+// dimmed, at its spot until the date arrives. Keep in step with lib/visual-urgency.ts.
+const PAUSED_SWATCH: Swatch = {
+  label: 'paused (dimmed)',
+  shadow: '0 0 0 2px rgba(100,116,139,1), 0 0 7px 3px rgba(100,116,139,0.45)',
+}
+
 function SwatchItem({ label, shadow }: Swatch) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -83,6 +91,14 @@ export function GridLegend() {
       ))}
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
         <span aria-hidden>❄️</span> how long it&apos;s been ignored
+      </span>
+      {/* Divider between the cool stale lane and the slate paused lane. */}
+      <span aria-hidden className="text-border">
+        |
+      </span>
+      <SwatchItem {...PAUSED_SWATCH} />
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span aria-hidden>💤</span> asleep until its start date
       </span>
     </div>
   )

@@ -1,6 +1,6 @@
 # ADR-0026 — Mobile chrome: slim top bar + thumb-zone bottom nav (Concept D)
 
-**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign)
+**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign) · **Status:** Accepted
 
 On a phone the signed-in header stacked eight blocks — wordmark, Plan, Grid-only pill, a marketing
 tagline, a five-link account nav, plan card, reminders, input — before any task was visible. Concept

@@ -45,7 +45,7 @@ describe('TimezoneMismatchBanner', () => {
     const banner = screen.getByRole('status')
     expect(banner.textContent).toContain('Auckland')
     expect(banner.textContent).toContain('New York') // underscore stripped from the IANA id
-    expect(banner.textContent).toContain('follow the Todoclaw timezone')
+    expect(banner.textContent).toContain('follow the TodoClaw timezone')
   })
 
   it('Switch saves the device zone with the existing config untouched', () => {

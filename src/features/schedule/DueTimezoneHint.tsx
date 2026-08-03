@@ -16,7 +16,7 @@ export function DueTimezoneHint({
   if (!stored || stored === deviceZone) return null
   return (
     <p className="text-[11px] leading-snug text-muted-light">
-      Times are in {zoneLabel(stored)} time — your Todoclaw timezone.
+      Times are in {zoneLabel(stored)} time — your TodoClaw timezone.
     </p>
   )
 }

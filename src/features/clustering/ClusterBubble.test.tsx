@@ -38,6 +38,7 @@ function task(id: string): Task {
     created_at: '2026-07-01T00:00:00Z',
     deleted_at: null,
     completed_at: null,
+    start_date: null,
   }
 }
 

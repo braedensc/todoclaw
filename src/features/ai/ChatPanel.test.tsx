@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen, fireEvent } from '@testing-library/react'
+import { useState } from 'react'
 import type { ChatItem, PendingConfirm } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
+import type { ChatView } from './ChatConversation'
 // ChatConversation now imports ChatSessionList → use-chat-sessions → lib/supabase (import-throws
 // without VITE env in CI). Stub the module, and mock the list to a marker so these shell tests need
 // no QueryClientProvider (the list's own data layer is covered in ChatSessionList.test.tsx).
@@ -13,6 +15,12 @@ vi.mock('./ChatSessionList', () => ({
       <button onClick={onNew}>list new chat</button>
     </div>
   ),
+}))
+// jsdom has no matchMedia, so the real useIsMobile always reports desktop; this mock lets the
+// composer Enter-key tests flip the breakpoint. Default: desktop.
+const mockIsMobile = vi.fn<() => boolean>(() => false)
+vi.mock('../../hooks/use-is-mobile', () => ({
+  useIsMobile: () => mockIsMobile(),
 }))
 import { ChatPanel } from './ChatPanel'
 
@@ -39,7 +47,23 @@ function chat(over: Partial<ChatController> = {}): ChatController {
   }
 }
 
+// The drawer's view is CONTROLLED by App now (the entry point picks the face — nav Chat opens the
+// list, the widget's "Open chat" opens a conversation), so exercising the in-drawer switcher means
+// holding that state the way App does.
+function ControlledPanel({
+  c,
+  initial = 'conversation',
+}: {
+  c: ChatController
+  initial?: ChatView
+}) {
+  const [view, setView] = useState<ChatView>(initial)
+  return <ChatPanel chat={c} onClose={vi.fn()} view={view} onViewChange={setView} />
+}
+
 describe('ChatPanel', () => {
+  beforeEach(() => mockIsMobile.mockReturnValue(false))
+
   it('renders user/assistant bubbles and tool notes', () => {
     render(
       <ChatPanel
@@ -113,6 +137,48 @@ describe('ChatPanel', () => {
     expect(c.send).toHaveBeenCalledWith('hello')
   })
 
+  describe('the composer Enter key', () => {
+    it('sends on desktop, and Shift+Enter newlines instead', () => {
+      const c = chat()
+      render(<ChatPanel chat={c} onClose={vi.fn()} />)
+      const input = screen.getByLabelText('Message')
+
+      fireEvent.change(input, { target: { value: 'hello' } })
+      fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+      expect(c.send).not.toHaveBeenCalled()
+
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(c.send).toHaveBeenCalledWith('hello')
+    })
+
+    it('never sends on desktop while an IME candidate is being committed', () => {
+      const c = chat()
+      render(<ChatPanel chat={c} onClose={vi.fn()} />)
+      const input = screen.getByLabelText('Message')
+      fireEvent.change(input, { target: { value: 'にほん' } })
+      fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+      expect(c.send).not.toHaveBeenCalled()
+    })
+
+    it('newlines on mobile — the thumb keyboard Return must never send; the paw button does', () => {
+      mockIsMobile.mockReturnValue(true)
+      const c = chat()
+      render(<ChatPanel chat={c} onClose={vi.fn()} />)
+      const input = screen.getByLabelText('Message')
+
+      fireEvent.change(input, { target: { value: 'a line' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(c.send).not.toHaveBeenCalled()
+      // The keyboard's own return key is hinted as a newline, not a send.
+      expect(input).toHaveAttribute('enterkeyhint', 'enter')
+
+      // The multi-line message still goes out whole when the paw button is tapped.
+      fireEvent.change(input, { target: { value: 'a line\nanother line' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+      expect(c.send).toHaveBeenCalledWith('a line\nanother line')
+    })
+  })
+
   it('shows the paused notice and disables input when AI is paused', () => {
     render(<ChatPanel chat={chat({ paused: true })} onClose={vi.fn()} />)
     expect(screen.getByText(/AI is paused for this month/i)).toBeInTheDocument()
@@ -121,7 +187,7 @@ describe('ChatPanel', () => {
 
   it('toggles the in-drawer history list on mobile; New chat lives in the list, not the header', () => {
     const c = chat()
-    render(<ChatPanel chat={c} onClose={vi.fn()} />)
+    render(<ControlledPanel c={c} />)
     // Conversation view first — no history list, and NO ＋ New chat button in the header.
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'New chat' })).not.toBeInTheDocument()
@@ -133,5 +199,176 @@ describe('ChatPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'list new chat' }))
     expect(c.newChat).toHaveBeenCalled()
     expect(screen.queryByText('session list')).not.toBeInTheDocument()
+  })
+
+  it('opens straight onto the chats list when the shell asks for it', () => {
+    // What the nav Chat entry does: App sets view='history' as it opens, so the drawer must come up
+    // on the list rather than whatever conversation the controller happens to hold.
+    render(<ControlledPanel c={chat({ sessionId: 'resumed-session' })} initial="history" />)
+    expect(screen.getByText('Your chats')).toBeInTheDocument()
+    expect(screen.getByText('session list')).toBeInTheDocument()
+    // The composer belongs to the conversation face — it must not be on screen.
+    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument()
+  })
+
+  it('the view is the shell’s to own — the panel never overrides it', () => {
+    // Regression guard for the desktop rail, which stays mounted between opens: if the drawer kept
+    // its own view state, a later "open on the list" could be swallowed by a stale local value.
+    const { rerender } = render(<ChatPanel chat={chat()} onClose={vi.fn()} view="conversation" />)
+    expect(screen.queryByText('session list')).not.toBeInTheDocument()
+    rerender(<ChatPanel chat={chat()} onClose={vi.fn()} view="history" />)
+    expect(screen.getByText('session list')).toBeInTheDocument()
+  })
+
+  // Scrolling the history must never dismiss the sheet. The shared hook hands a downward pull to the
+  // sheet whenever the scroller sits at scrollTop 0 — right for the short, form-like sheets that use
+  // BottomSheet/ConfirmDialog, wrong for a panel that is almost entirely one long scroller, where
+  // the top of the history is somewhere you arrive at by scrolling up.
+  describe('the swipe gesture', () => {
+    beforeEach(() => mockIsMobile.mockReturnValue(true))
+
+    function touch(el: Element, type: string, clientY: number): void {
+      const t = { identifier: 1, target: el, clientX: 180, clientY }
+      const ev = new Event(type, { bubbles: true, cancelable: true })
+      Object.assign(ev, { touches: type === 'touchend' ? [] : [t], changedTouches: [t] })
+      el.dispatchEvent(ev)
+    }
+
+    it('never dismisses on a body swipe — that pull belongs to the message list', () => {
+      const onClose = vi.fn()
+      render(<ChatPanel chat={chat()} onClose={onClose} />)
+      const sheet = screen.getByLabelText('Chat')
+      // A long, deliberate downward pull on the sheet body — far past every dismiss threshold.
+      touch(sheet, 'touchstart', 200)
+      for (let y = 200; y <= 600; y += 40) touch(sheet, 'touchmove', y)
+      touch(sheet, 'touchend', 600)
+      expect(onClose).not.toHaveBeenCalled()
+      expect(sheet.getAttribute('style') ?? '').not.toMatch(/translateY/)
+    })
+
+    it('still dismisses on a deliberate pull of the grab handle', () => {
+      const onClose = vi.fn()
+      render(<ChatPanel chat={chat()} onClose={onClose} />)
+      // The handle is the explicit affordance and keeps working — the point is to move the gesture
+      // off the body, not to strand the sheet with no swipe out.
+      fireEvent.pointerDown(screen.getByTestId('sheet-grabber'), { clientY: 100, button: 0 })
+      fireEvent.pointerMove(window, { clientY: 200 })
+      fireEvent.pointerUp(window, { clientY: 300 })
+      expect(onClose).toHaveBeenCalled()
+    })
+
+    it('makes the whole header band the drag handle, not just the 12px pill', () => {
+      const onClose = vi.fn()
+      render(<ChatPanel chat={chat()} onClose={onClose} />)
+      // The header band (the region carrying the BabyClaw title) is wired as a handle, distinct from
+      // the little pill. A pull that starts on its non-button surface dismisses.
+      const header = screen.getByText('BabyClaw').closest('[data-sheet-handle]')
+      expect(header).not.toBeNull()
+      expect(header).not.toBe(screen.getByTestId('sheet-grabber')) // it's the header, not the pill
+      fireEvent.pointerDown(screen.getByText('BabyClaw'), { clientY: 100, button: 0 })
+      fireEvent.pointerMove(window, { clientY: 200 })
+      fireEvent.pointerUp(window, { clientY: 300 })
+      expect(onClose).toHaveBeenCalled()
+    })
+  })
+
+  // The keyboard re-fit (#263/#275) pins the sheet into the visible band, which makes it full-bleed
+  // to that band's top — and viewport-fit=cover puts that under the status bar / Dynamic Island. At
+  // 92dvh the 8% gap clears the notch on its own, so the inset belongs to the re-fitted state only.
+  // jsdom has no visualViewport; install a controllable fake, as use-keyboard-viewport.test.ts does.
+  describe('the keyboard re-fit and the safe area', () => {
+    const INNER = 800
+    let listeners: Set<() => void>
+    let vv: { height: number; offsetTop: number }
+
+    beforeEach(() => {
+      mockIsMobile.mockReturnValue(true)
+      listeners = new Set()
+      vv = { height: INNER, offsetTop: 0 }
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: {
+          get height() {
+            return vv.height
+          },
+          get offsetTop() {
+            return vv.offsetTop
+          },
+          addEventListener: (_t: string, cb: () => void) => listeners.add(cb),
+          removeEventListener: (_t: string, cb: () => void) => listeners.delete(cb),
+        },
+      })
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER })
+    })
+    afterEach(() => {
+      Reflect.deleteProperty(window, 'visualViewport')
+    })
+
+    function openKeyboard(height: number): void {
+      vv.height = INNER - height
+      act(() => listeners.forEach((cb) => cb()))
+    }
+
+    // Installed PWA (Home Screen): iOS shrinks the LAYOUT viewport too, so innerHeight drops with
+    // vv.height and the old `innerHeight - vv.height` overlap collapses to ~0 — the reporter's bug.
+    function openKeyboardStandalone(height: number): void {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER - height })
+      vv.height = INNER - height
+      act(() => listeners.forEach((cb) => cb()))
+    }
+
+    it('keeps the sheet clear of the status bar while the keyboard is up', () => {
+      render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
+      const sheet = screen.getByLabelText('Chat')
+      // Keyboard down: the sheet sits at 92dvh, whose top gap already clears the notch — an inset
+      // here would just eat height for nothing.
+      expect(sheet.className).not.toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+
+      openKeyboard(336)
+      // Re-fitted onto the visible band — anchored by TOP + height straight from visualViewport
+      // (bottom released to auto; the old bottom-inset form derived from innerHeight, which the
+      // installed-PWA keyboard shrinks and iOS pans — see use-keyboard-viewport). (Asserted via
+      // the style attribute: jsdom's CSS parser silently DROPS an inline `env()`, which is why
+      // the top safe-area inset below is a class, not a style.)
+      const style = sheet.getAttribute('style') ?? ''
+      expect(style).toMatch(/top:\s*0px/)
+      expect(style).toMatch(/bottom:\s*auto/)
+      expect(style).toMatch(/height:\s*464px/)
+      // …and held below the status bar. Without this the grab handle and the BabyClaw header render
+      // behind it — invisible but still touch-live, so a finger reaching for the header grabbed the
+      // hidden handle and dragged the whole sheet down.
+      expect(sheet.className).toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+    })
+
+    // The reporter's case: in the installed PWA the keyboard shrank innerHeight too, so the old
+    // overlap read ~0 and the sheet never re-fitted — the composer stayed behind the keys. The
+    // baseline-based detection now trips, and the sheet overlays the visible band (top 0 +
+    // height, valid whether or not the layout viewport shrank).
+    it('re-fits the sheet in an installed PWA where innerHeight also shrinks', () => {
+      render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
+      const sheet = screen.getByLabelText('Chat')
+      openKeyboardStandalone(336)
+      const style = sheet.getAttribute('style') ?? ''
+      expect(style).toMatch(/top:\s*0px/)
+      expect(style).toMatch(/bottom:\s*auto/)
+      expect(style).toMatch(/height:\s*464px/)
+      expect(sheet.className).toMatch(/pt-\[env\(safe-area-inset-top\)\]/)
+    })
+
+    // Composite installed-PWA state (the "unusable composer" screenshot): keyboard shrink AND an
+    // iOS focus-scroll pan at once. The bottom anchor clamps to 0 and loses the pan; `top` is
+    // offsetTop verbatim, so the sheet still lands exactly on the visible band.
+    it('follows the iOS focus-scroll pan while re-fitted (top = offsetTop)', () => {
+      render(<ChatPanel chat={chat()} onClose={vi.fn()} />)
+      const sheet = screen.getByLabelText('Chat')
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: INNER - 336 })
+      vv.height = INNER - 336 - 60
+      vv.offsetTop = 60
+      act(() => listeners.forEach((cb) => cb()))
+      const style = sheet.getAttribute('style') ?? ''
+      expect(style).toMatch(/top:\s*60px/)
+      expect(style).toMatch(/bottom:\s*auto/)
+      expect(style).toMatch(/height:\s*404px/)
+    })
   })
 })

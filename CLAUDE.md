@@ -6,23 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Todoclaw is a standalone, multi-tenant-ready web app — a ground-up rebuild that *originated* from EisenClaw, an older personal Eisenhower-matrix planner. Tasks live on a free-canvas 2D grid (urgency × importance). The app is fully usable without AI; AI features are opt-in.
+TodoClaw is a standalone, multi-tenant-ready web app — a personal planner where tasks live on a free-canvas 2D grid (urgency × importance). The app is fully usable without AI; AI features are opt-in.
 
-**Todoclaw is its own product — EisenClaw is NOT the spec (parity retired 2026-07-09).** The app has fully eclipsed EisenClaw. Its own code, its `src/lib` Vitest suite, these docs, and product judgment are the **sole authority** for behavior, UX, and what "done" means. Do **not** judge a feature by "parity" or try to "match EisenClaw" — when something is wrong, fix it on Todoclaw's own merits. `planning/` survives only as **historical origin** and as provenance for constants that were already ported (scoring weights, clustering thresholds, collision step); those live in code and are pinned by `src/lib/*.test.ts`, which is the oracle — not the EisenClaw docs.
+**TodoClaw is its own product.** Its own code, its `src/lib` Vitest suite, these docs, and product judgment are the **sole authority** for behavior, UX, and what "done" means — when something is wrong, fix it on TodoClaw's own merits, not by chasing legacy "parity." The scoring/clustering/collision constants (weights, thresholds, collision step) live in code and are pinned by `src/lib/*.test.ts`, which is the **oracle** for them.
 
-**Historical reference material** (all under `planning/`, gitignored — read for origin/provenance, never commit, never treat as a target):
-- `eisenclaw-export/docs/eisenclaw.md` — the original behavior write-up (historical, not a spec)
-- `EISENCLAW-LOGIC-TO-PORT.md` — where the ported constants/formulas came from, with file:line cites (provenance; the `src/lib` tests are authoritative)
-- `eisenclaw-export/scripts/planner.html` — original client (all UI + logic, 943 lines)
-- `eisenclaw-export/scripts/planner-server.js` — original Node server (sync, backups, Plan My Day)
-- `eisenclaw-export/data/user-schedule-braeden.json` — schedule config shape (→ `user_schedule` table)
-- `eisenclaw-export/pics/Todopic{1-6}.jpeg` — screenshots of the original UI (historical; see `docs/STYLE.md`)
-
-**Run the original UI:** `npm run legacy-ui` boots the old EisenClaw app locally at
-http://localhost:3333 (`?user=fan` = empty profile) — a **historical reference** for how the original
-behaved, not a target to match. It runs the gitignored reference server via a temp `.cjs` copy
-(nothing under `planning/` is modified). "Plan My Day" is stubbed with a deterministic local **mock**
-so its UX renders without an Anthropic key. See `scripts/legacy-ui.ts` (+ `scripts/legacy-ui-mock-plan.cjs`).
+> **Maintainer note:** TodoClaw originated from an earlier planner (EisenClaw). That origin story, the gitignored `planning/` reference files, and the `npm run legacy-ui` runner are maintainer-local and documented in `CLAUDE.local.md` (gitignored) — they aren't part of a fresh clone.
 
 ---
 
@@ -62,6 +50,7 @@ npm run typecheck      # tsc -b (no emit)
 npm test               # Vitest (unit + component, jsdom)
 npm run test:e2e       # Playwright (added in Stage 2 PR #5)
 npm run test:watch     # Vitest watch mode
+npm run device-lab     # Phone-matrix layout lab (local, needs `supabase start`) → device-lab-report/index.html
 
 # DB
 supabase migration new <name>    # New migration
@@ -121,7 +110,7 @@ planning/             # Reference only — gitignored, never published
 
 **PRs (all future work):** bodies must be scannable in under a minute — 2–3 plain sentences of what/why, one-line bullets for changes, one verification line. Everything deeper (rationale, edge cases, review writeups) goes in a `<details>` block, never the visible body. Target ≤ ~150 visible words.
 
-**Docs (right-sized, post-launch):** fix any doc a change makes **stale** in the same PR — but don't expand docs proactively. A new ADR is warranted only for a decision that changes architecture, a security boundary, or an external service; routine features and fixes need none. (The bootstrap-era "ADR per PR" density was deliberate scaffolding and is retired — 2026-07-03.) Co-located READMEs for system-specific notes; `docs/` for cross-cutting concerns.
+**Docs (right-sized, post-launch):** fix any doc a change makes **stale** in the same PR — but don't expand docs proactively. A new ADR is warranted only for a decision that changes architecture, a security boundary, or an external service; routine features and fixes need none. (The bootstrap-era "ADR per PR" density was deliberate scaffolding and is retired — 2026-07-03.) Co-located READMEs for system-specific notes; `docs/` for cross-cutting concerns. New ADRs are one file per decision named `docs/adr/YYYY-MM-DD-slug.md` (no sequence number — avoids parallel-session collisions) and carry a `**Status:**` field (`Accepted`, or `Superseded by …` when a later ADR replaces it); full convention in docs/ARCHITECTURE.md's "How to add an ADR".
 
 ---
 
@@ -175,6 +164,11 @@ These apply every session without exception:
 
 At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw SQL — Supabase query builder only. Input validated with Zod at every boundary.
 
+Two hard rules that RLS does **not** cover — each has a deterministic CI guard so a violation cannot merge unnoticed:
+
+- **RLS is a *who* check, not a *how much* check.** Every user-writable table needs a **per-user row cap** (a `before insert` trigger that counts the caller's own rows and raises over a limit) **and a size `CHECK`** on any unbounded text/jsonb column. Without them, one user can storage-bomb a table or fold an unbounded blob into an LLM prompt. Enforced by the **volume-bound guard** (`scripts/check-write-caps.mjs`, CI job "Volume-bound coverage (static)"); a genuinely-bounded-by-other-means table goes in that script's reviewed allowlist with a one-line reason.
+- **An invariant enforced only inside an RPC is bypassable.** If a cap or scoping rule lives only in a `SECURITY DEFINER` function, the underlying table still needs a **backstop** (a trigger/`CHECK`) or the **direct write grant must be revoked** so the RPC is the only path. And any `SECURITY DEFINER` function granted to `authenticated` **must scope its writes to `auth.uid()`** — a DEFINER function bypasses the RLS of the tables it writes (the weather_cache_put hole, #310). Enforced by the **DEFINER-scope guard** (`scripts/check-definer-grants.mjs`, CI job "DEFINER-scope coverage (static)"), which forces a human to classify every such function's scoping before it can merge.
+
 ---
 
 ## Key Design Decisions
@@ -182,11 +176,13 @@ At the database layer: **RLS on every table** (`user_id = auth.uid()`). No raw S
 - **Grid coords:** `x` = urgency (0–1 left→right), `y` = importance (0–1 bottom→top — y is inverted from screen coords). Split at 0.5 for quadrants.
 - **Priority score:** `x×0.45 + y×0.55 + (daysUntil(due) ≤ 2 ? 0.18 : 0)` — importance weighted above urgency.
 - **Due dates are wall-clock, never instants** (ADR 2026-07-08-due-dates-wall-clock): `tasks.due` is a floating `date` ('YYYY-MM-DD', the day the user picked) and `tasks.due_time` an optional local `time`, both interpreted in `user_schedule.timezone` (same authority as the daily reset). Project to a real instant ONLY via `dueInstant()` in `src/lib/dates.ts` (countdowns, reminder fire times); day-diff via `daysUntil` (client) / `daysUntilInTZ` (edge functions) — never `new Date('YYYY-MM-DD')`, which lands on the previous local day west of UTC.
+- **Start dates / pause (2026-07-17):** `tasks.start_date` is a wall-clock date like `due`. While `start_date > today-in-user-tz` the task is **dormant**: hidden from every render surface (grid placed+staged, list, MobileMatrix), excluded from all planning readers (run-plan, dispatch RPC, chat-context ACTIVE, client buildPlanRequest, `list_tasks` marks it `paused_until`), and its reminders are suppressed (`due_task_reminders` gate). Pause = set a future `start_date` (SchedulePanel "Pause", BabyClaw `pause_task`); resume = null. Dormant tasks surface ONLY in the collapsed Paused strip (list + mobile overview) and the chat PAUSED block; they self-wake (read-time predicate `isDormant` in `src/lib/start-date.ts` — no cron). **Any new task-reading surface must apply this predicate.**
+- **Recurring: due-ness is derived; `nextDueOn` schedules an occurrence, `due` is only the reminder anchor (2026-07-29).** A recurring chore surfaces via `recurringStatus`, which reads **`recurring.nextDueOn` first** (a one-shot wall-clock day — "do laundry tomorrow") and falls back to the cadence clock (`frequencyDays - daysSince(lastDoneAt)`). Both branches produce the SAME labels/codes, so all ~11 readers honor an override with no changes of their own. The override is **consumed by the next completion** (`recurringCompletion` clears it, so the user's rhythm resumes from the real completion) and also **retires at read time** once a completion caught up with it — self-healing, no cron, like `isDormant`. `tasks.due`/`due_time` on a chore remain the **reminder occurrence anchor** (`next_recurring_fire_at` phases off them and never advances them), NOT a deadline; no board/plan reader consults them, and `duePhrase` must not report one as a deadline. The schedule editor's calendar writes both on a chore (`useSetDueWithDefaultReminder`) so the occurrence and its reminder land on one day. The cadence ladder lives in exactly **two** places — `src/lib/recurring.ts` and `_shared/recurring-status.ts` (the trees can't import from each other); never re-derive it a third time, and never branch on a status *label* (`daysLeft` is the number to test). A recurring completion sets neither `completed_at` nor the `daily_state.done` map, so **every surface that hides done tasks must also check `recurringDoneToday`** (grid `isPlaced`, MobileMatrix, ListView, `_shared/chat-context.ts`).
 - **Clustering:** seed-based, non-transitive. `CX=0.09, CY=0.07` overlap thresholds. A "bridge" card move cannot cascade-regroup distant clusters.
 - **Collision resolution:** spiral outward from target, step `0.016`, clamp to `[0.04, 0.96]`. Only called on list-view slider commit — NOT on grid drag (overlap→cluster handles it there).
 - **Daily reset:** computed against the user's stored timezone, not server UTC. The `user_schedule.timezone` column (hoisted out of `config` jsonb — see ADR-0007) is authoritative; `daily_state` is one row per `(user_id, local-date)`, so the reset is non-destructive (today = today's row).
 - **Realtime conflict:** higher `_clientRev` (epoch ms) wins. Ignore Realtime events that originated from this client.
-- **Mobile breakpoint:** `< 720px` (`useIsMobile` / Tailwind `wide`). Mobile has no grid (ADR-0028): `MobileMatrix` (quadrant overview → focus lists) is the only task surface, repositioning is the tap-based Move-to-quadrant sheet, adding is the bottom-nav ➕ sheet.
+- **Mobile layout gate:** `(max-width: 719px), ((pointer: coarse) and (min-aspect-ratio: 8/5) and (max-width: 1023px))` — narrow viewports PLUS landscape phones (ADR 2026-07-23-phones-stay-mobile-in-landscape); iPads stay desktop in both orientations. The leg is aspect+width, NEVER height: the iOS keyboard shrinks the layout viewport in installed PWAs, so a height ceiling flips the shell mid-typing on a landscape iPad (and iPad tab chrome makes their viewports phone-short anyway). Lockstep homes pinned by use-is-mobile.test.ts: `MOBILE_MEDIA_QUERY`, the index.css locked-shell block, Tailwind's `wide` (the complement). Three lockstep homes: `MOBILE_MEDIA_QUERY` (`useIsMobile`), the index.css locked-shell block, and Tailwind's `wide` screen (the exact complement, spelled without `not()`). Mobile has no INLINE grid (ADR-0028): `MobileMatrix` is the everyday surface (grid-only mode's TouchGridSurface is the takeover exception), repositioning is the Move-to-quadrant sheet, adding is the bottom-nav ➕ sheet. **The gate decides layout ONLY** (ADR 2026-07-22-capability-keyed-insets-width-keyed-shell): safe-area insets are unconditional `env()` on body, touch ergonomics key on `(max-width: 719px), (pointer: coarse)`, and standalone JS logic keys on `navigator.standalone` — never `matchMedia('(display-mode: standalone)')`, which iOS 26 home-screen apps do NOT match.
 - **Drag/drop implementation:** spike @dnd-kit vs. raw pointer events before committing — the free-canvas model (continuous coords, custom clustering) cuts against @dnd-kit's sortable grain. Touch/mobile is the hard requirement.
 - **History:** completion log (newest-first). Not append-only: `×` removes a completion record (owner-scoped `DELETE` on `history`, added 2026-07-05). Restore (↩) returns any completion whose task is still live to the grid — it clears today's `done` flag (the only thing hiding a task) so the task reappears at its stored x/y. Recurring tasks do NOT go to history — they reset `lastDoneAt`.
 

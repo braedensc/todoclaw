@@ -1,6 +1,6 @@
 # ADR-0008 — Dev tooling: ESLint (flat) + Prettier + Vitest + React Testing Library
 
-**Date:** 2026-06-23 · **Stage:** 2 (PR #2)
+**Date:** 2026-06-23 · **Stage:** 2 (PR #2) · **Status:** Accepted
 
 The lint/format tooling deferred from Stage 1 (ADR-0001) plus the unit/component test
 harness, in one cohesive PR (so we don't lint code in one PR and re-touch it for tests in

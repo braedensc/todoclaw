@@ -1,6 +1,6 @@
 # ADR-0018 — Golden-path E2E harness: DB-backed local suite, mocked AI, CI stays smoke-only
 
-**Date:** 2026-06-25 · **Stage:** 4.5 (PR1)
+**Date:** 2026-06-25 · **Stage:** 4.5 (PR1) · **Status:** Accepted
 
 Stage 4.5 stands up a **golden-path** Playwright suite — a real regression net before Stage 5's
 restyle — that drives the app against the **running local Supabase stack** (auth → RLS → render

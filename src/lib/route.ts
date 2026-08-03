@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-// Client-side routing for the SPA (ADR-0027). Todoclaw is a single-screen shell; "Done" and
+// Client-side routing for the SPA (ADR-0027). TodoClaw is a single-screen shell; "Done" and
 // "Daily reminders" are the two surfaces that graduated from modal overlays to full pages, so the
 // route space is tiny — everything else is 'home'.
 //

@@ -28,7 +28,9 @@ import { PawSteps } from '../../components/Thinking'
 //    When BabyClaw STOPS on a question or a destructive-tool confirmation, the whole frame turns
 //    terracotta and breathes, and a "waiting on your reply" strip (with inline Yes/No for
 //    confirmations) makes the blocked state unmissable — even from Manual mode, where the
-//    BabyClaw tab grows an attention dot. Full history opens in the chat drawer via "Open chat".
+//    BabyClaw tab grows an attention dot. "Open chat" opens the drawer on whatever the WIDGET is
+//    doing: this visit's conversation if one is going, else a brand-new chat (never the shared
+//    controller's auto-resumed session, which the widget had no part in).
 
 type Mode = 'manual' | 'babyclaw'
 
@@ -46,6 +48,20 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
   // Status reads THIS visit's live items only (not hydrated history) — else opening the app cold on
   // a resumed session would replay last night's "waiting on you" as if BabyClaw were actively stopped.
   const status = deriveBabyClawStatus({ ...chat, items: chat.liveItems })
+
+  // "Open chat" follows THE WIDGET, not whatever session the controller happens to hold. The shared
+  // controller auto-resumes the newest < 24h conversation at mount (use-ai-chat), so an untouched
+  // widget used to open last night's history — a chat the user never started from here. Same
+  // liveItems rule as the status line above: a live thread is this visit's streamed turns, plus a
+  // confirmation still awaiting an answer (that one is restored from the resumed row and has no
+  // liveItems of its own, so the waiting strip's "open the full chat" link must land ON the
+  // question rather than wipe it). Nothing live → start a fresh chat, so the drawer opens where the
+  // widget actually is. Sending still resumes as before; only this button re-anchors.
+  const hasLiveThread = chat.liveItems.length > 0 || chat.pending !== null
+  const handleOpenChat = () => {
+    if (!hasLiveThread) chat.newChat()
+    onOpenChat()
+  }
 
   return (
     // mt-2.5 reserves room for the title pill straddling the top border. The section landmark
@@ -84,8 +100,12 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
             />
             <button
               type="button"
-              onClick={onOpenChat}
-              title="Open the full BabyClaw conversation"
+              onClick={handleOpenChat}
+              title={
+                hasLiveThread
+                  ? 'Open the full BabyClaw conversation'
+                  : 'Start a new BabyClaw conversation'
+              }
               className={
                 'rounded px-2 py-0.5 text-[11px] transition-colors ' +
                 (status.waiting
@@ -99,7 +119,7 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
           {mode === 'manual' ? (
             <ManualInput grid={grid} canPlace={canPlace} />
           ) : (
-            <BabyClawInput chat={chat} status={status} onOpenChat={onOpenChat} />
+            <BabyClawInput chat={chat} status={status} onOpenChat={handleOpenChat} />
           )}
         </div>
       </div>
@@ -193,6 +213,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
   const [dueTime, setDueTime] = useState<string | null>(null)
   const [recurring, setRecurring] = useState<Recurring | null>(null)
   const [ongoing, setOngoing] = useState(false)
+  const [startDate, setStartDate] = useState<string | null>(null)
   const [reminderMinutes, setReminderMinutes] = useState<number[]>(
     reminderDefault != null ? [reminderDefault] : [],
   )
@@ -217,6 +238,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
         due_time: dt,
         recurring,
         ongoing,
+        start_date: startDate,
       },
       {
         onSuccess: (created) => {
@@ -231,6 +253,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           setReminderMinutes(reminderDefault != null ? [reminderDefault] : [])
           setRecurring(null)
           setOngoing(false)
+          setStartDate(null)
         },
       },
     )
@@ -251,9 +274,9 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           {/* One Schedule chip → the shared SchedulePanel in a popover. The chip label echoes
               the drafted schedule ("07-11 3:00 PM · weekly") once one exists. */}
           <ChipPopover
-            label={scheduleSummary(due, dueTime, recurring, ongoing) ?? 'Schedule'}
+            label={scheduleSummary(due, dueTime, recurring, ongoing, startDate) ?? 'Schedule'}
             icon="📅"
-            active={due != null || recurring != null || ongoing}
+            active={due != null || recurring != null || ongoing || startDate != null}
             open={scheduleOpen}
             onToggle={() => setScheduleOpen((o) => !o)}
             onClose={() => setScheduleOpen(false)}
@@ -287,6 +310,8 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
                     setOngoing(on)
                     if (on) setRecurring(null)
                   }}
+                  startDate={startDate}
+                  onSetStartDate={setStartDate}
                   reminderOffsets={reminderMinutes}
                   onToggleReminder={(m) =>
                     setReminderMinutes((cur) =>
@@ -362,7 +387,11 @@ function ChipPopover({
         {label}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 min-w-max rounded-xl border border-border-strong bg-card p-3 shadow-xl ring-1 ring-black/5">
+        // Height-capped + scrollable: the schedule panel outgrew short viewports (the Pause
+        // section made it ~700px tall), and an absolutely-positioned panel that runs off the
+        // bottom has no way to reach its lower controls. 70vh keeps the whole panel usable on a
+        // 13" laptop without touching the roomy-desktop layout.
+        <div className="absolute left-0 top-full z-30 mt-1.5 max-h-[70vh] min-w-max overflow-y-auto rounded-xl border border-border-strong bg-card p-3 shadow-xl ring-1 ring-black/5">
           {children(onClose)}
         </div>
       )}

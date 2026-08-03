@@ -1,6 +1,6 @@
 # ADR-0015 — Owner-key AI architecture + rate-limit/budget guardrails
 
-**Date:** 2026-06-24 · **Stage:** 4 (PR2)
+**Date:** 2026-06-24 · **Stage:** 4 (PR2) · **Status:** Accepted
 
 All Stage 4 AI runs on the **owner's** Anthropic key, **server-side only**, in Supabase Edge
 Functions (Deno 2). This ADR records the architecture every AI feature (Plan My Day → PR3, chat

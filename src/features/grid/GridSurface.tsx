@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
@@ -6,6 +6,7 @@ import { minutesUntilDueTime } from '../../lib/dates'
 import { clusterStaleness, staleRingStyle, urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
+import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -13,6 +14,7 @@ import { useElementSize } from '../../hooks/use-element-size'
 import { boxClampBounds, clampPoint } from '../../hooks/use-free-drag'
 import { GridCanvas } from './GridCanvas'
 import { GridCard } from './GridCard'
+import { TouchCardPopover } from './TouchCardPopover'
 import { GridAxes } from './GridAxes'
 import { GridLegend } from './GridLegend'
 import { PawPrintShape } from './PawTrail'
@@ -63,14 +65,18 @@ export function GridSurface({
   const {
     timeZone,
     placedTasks,
+    dormantPlaced,
     clusters,
     draggedTask,
     draggingId,
     registerCardNode,
+    getCardNode,
     startReposition,
     updateMutate,
     softDeleteMutate,
     handleDone,
+    tappedCardId,
+    clearCardTap,
     openClusterId,
     selectCluster,
     startPopupRowDrag,
@@ -93,6 +99,10 @@ export function GridSurface({
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
 
+  // Due writes (card ⋯ menu + cluster rows) go through the shared setDue so a task gaining its
+  // first due time picks up the user's default reminder, like every other schedule surface.
+  const setDue = useSetDueWithDefaultReminder()
+
   // Set/clear the ongoing-project flag (shared by a card's ⋯ menu and a cluster row). Setting it
   // true also clears any recurring schedule, keeping the two types exclusive in a single mutation.
   const setOngoing = (task: Task, on: boolean) =>
@@ -100,6 +110,11 @@ export function GridSurface({
       id: task.id,
       patch: on ? { ongoing: true, recurring: null } : { ongoing: false },
     })
+
+  // Pause (future start date) / resume (null) — shared by a card's ⋯ menu and a cluster row. A
+  // paused card leaves the grid on the next render; the list's Paused strip is where it lives.
+  const setStartDate = (task: Task, startDate: string | null) =>
+    updateMutate({ id: task.id, patch: { start_date: startDate } })
 
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
@@ -143,11 +158,38 @@ export function GridSurface({
       softDeleteMutate(task.id)
   }
 
-  // One placed card. Shared by the singleton-cluster render and the standalone dragged-card
-  // render so both stay byte-for-byte identical (same handlers, same node registration). All of
-  // due/recurring/rename reuse the one generic updateMutate({ id, patch }); a due write sets `due`
-  // ONLY — it never touches x/y, so setting a due date on a manually-placed card can't move it.
-  const renderGridCard = (task: Task & { x: number; y: number }) => {
+  // iPad hybrid (workshop PR 4): on coarse-pointer desktop, a TAP on a card (freed up by the
+  // hold-to-lift reposition — use-grid) opens the touch actions popover anchored to that card.
+  // Resolved against BOTH passes — active placedTasks AND dormant cards (which are now draggable +
+  // tappable too; the popover has its own paused mode: Schedule/Delete, no Done). A task that
+  // leaves either set — completed or deleted elsewhere — drops out here, so tappedTask goes null
+  // and the popover unmounts cleanly.
+  const tappedTask = tappedCardId
+    ? (placedTasks.find((t) => t.id === tappedCardId) ??
+      dormantPlaced.find((t) => t.id === tappedCardId) ??
+      null)
+    : null
+  const tappedPaused = tappedTask != null && dormantPlaced.some((t) => t.id === tappedTask.id)
+  // A STABLE getter the popover measures against — not a node prop (would trip
+  // set-state-in-effect) and not a render-written ref (trips react-compiler's no-refs-in-render).
+  // getCardNode is a stable useCallback; tappedCardId is fixed for a popover instance (keyed).
+  const getPopoverAnchor = useCallback(
+    () => (tappedCardId ? getCardNode(tappedCardId) : null),
+    [getCardNode, tappedCardId],
+  )
+
+  // One placed card. Shared by the singleton-cluster render, the standalone dragged-card render,
+  // and the dormant "set aside" pass so all three stay byte-for-byte identical (same handlers,
+  // same schedule wiring). recurring/rename reuse the one generic updateMutate({ id, patch }); a
+  // due write goes through setDue and sets `due`/`due_time` ONLY — it never touches x/y, so setting
+  // a due date on a manually-placed card can't move it.
+  //
+  // `paused` renders the dormant lane's SLATE DRESS (ring / ⏸ chip / 💤 flag / dim) inside GridCard,
+  // but the card stays fully interactive: same reposition drag + node registration + tap→popover as
+  // an active card (dragging a dormant card just moves WHERE it will land on wake — the drop writes
+  // x/y only, never start_date, so it stays dormant). Every write handler stays wired so the ⋯
+  // SchedulePanel can Resume it.
+  const renderGridCard = (task: Task & { x: number; y: number }, paused = false) => {
     // Re-clamp the stored coords to the card's bounding box at the current grid width (screen
     // position only — task.x/task.y and clustering are unchanged).
     const p = clampPoint(task.x, task.y, cardBounds)
@@ -155,6 +197,7 @@ export function GridSurface({
       <GridCard
         key={task.id}
         task={task}
+        paused={paused}
         screenX={p.x}
         screenY={1 - p.y}
         timeZone={timeZone}
@@ -166,13 +209,14 @@ export function GridSurface({
         onRename={(text) => updateMutate({ id: task.id, patch: { text } })}
         onDelete={() => handleDelete(task)}
         onDone={() => doneWithStamp(task)}
-        onSetDue={(due, due_time) => updateMutate({ id: task.id, patch: { due, due_time } })}
+        onSetDue={(due, due_time) => setDue(task, due, due_time)}
         reminderOffsets={reminders?.get(task.id) ?? []}
         onToggleReminder={(minutes) =>
           reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
         }
         onClearReminders={() => reminderWrites.clear(task.id)}
         onSetOngoing={(on) => setOngoing(task, on)}
+        onSetStartDate={(startDate) => setStartDate(task, startDate)}
         onSetRecurring={(frequencyDays) =>
           updateMutate({
             id: task.id,
@@ -213,17 +257,22 @@ export function GridSurface({
       }
     >
       {/* Grid-only exit — the fullscreen overlay covers the header (and its entry pill), so this
-          labelled ✕ pill pinned to the viewport corner, plus Esc, are the ways back. Tinted in the
-          same brand green as the entry pill (soft fill so it stays legible over the grid cards). */}
+          labelled ✕ pill pinned to the viewport corner, plus Esc, are the ways back. A SOLID,
+          elevated control (was a faint 10%-tint pill that read poorly over the warm/quadrant-tinted
+          grid) — solid brand green, white glyph + label, a ring for edge definition, and a raised
+          shadow, matching the touch grid's exit pill (#336) and the solid entry pill it returns to. */}
       {gridOnly && (
         <button
           type="button"
           onClick={onExitGridOnly}
           aria-label="Exit grid-only view"
           title="Exit grid-only view (Esc)"
-          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary shadow-sm hover:bg-primary/20"
+          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg ring-1 ring-black/10 hover:opacity-90"
         >
-          <span aria-hidden>✕</span> Exit grid-only
+          <span aria-hidden className="text-base leading-none">
+            ✕
+          </span>{' '}
+          Exit grid-only
         </button>
       )}
 
@@ -264,7 +313,7 @@ export function GridSurface({
         />
 
         <GridCanvas surfaceRef={gridRef} onBackgroundPointerDown={handleGridPointerDown}>
-          {placedTasks.length === 0 && (
+          {placedTasks.length === 0 && dormantPlaced.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted">
               <p>No tasks placed — add one above and drag it here.</p>
               {onSeeExample && (
@@ -278,6 +327,13 @@ export function GridSurface({
               )}
             </div>
           )}
+
+          {/* Dormant (paused / future start_date) cards — their OWN pass, rendered FIRST so they
+              paint BEHIND the active clustered cards (all cards are absolutely positioned; DOM
+              order is paint order). They stay out of `groups`/clustering entirely (a paused card
+              can never fold into an active bubble), but are draggable/tappable like any card — the
+              slate ⏸ dress just marks WHERE they will land when they wake. */}
+          {dormantPlaced.map((task) => renderGridCard(task, true))}
 
           {groups.map((group) => {
             // A singleton group renders as a normal, draggable card.
@@ -332,9 +388,7 @@ export function GridSurface({
                     onRowPointerDown={startPopupRowDrag}
                     // Row ⋯ schedule menu — the SAME write wiring renderGridCard gives a card's
                     // ⋯ (a due write never touches x/y; Daily/Weekly preserve recurring history).
-                    onSetDue={(task, due, due_time) =>
-                      updateMutate({ id: task.id, patch: { due, due_time } })
-                    }
+                    onSetDue={(task, due, due_time) => setDue(task, due, due_time)}
                     onSetRecurring={(task, frequencyDays) =>
                       updateMutate({
                         id: task.id,
@@ -355,6 +409,7 @@ export function GridSurface({
                       updateMutate({ id: task.id, patch: { recurring: null } })
                     }
                     onSetOngoing={setOngoing}
+                    onSetStartDate={setStartDate}
                     reminderOffsetsFor={(task) => reminders?.get(task.id) ?? []}
                     onToggleReminder={(task, minutes) =>
                       reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
@@ -381,6 +436,56 @@ export function GridSurface({
           ))}
         </GridCanvas>
       </div>
+
+      {/* iPad hybrid touch actions (portaled, anchored to the tapped card; keyed by task id so
+          rename draft / schedule disclosure reset per task — the TouchTaskSheet precedent). */}
+      {tappedTask && (
+        <TouchCardPopover
+          key={tappedTask.id}
+          task={tappedTask}
+          paused={tappedPaused}
+          getAnchor={getPopoverAnchor}
+          reflowKey={reflowKey}
+          daysUntilDue={daysUntil(tappedTask.due, { timeZone })}
+          minutesUntilDue={minutesUntilDueTime(tappedTask.due, tappedTask.due_time, timeZone, now)}
+          timeZone={timeZone}
+          reminderOffsets={reminders?.get(tappedTask.id) ?? []}
+          onClose={clearCardTap}
+          onDone={() => {
+            doneWithStamp(tappedTask)
+            clearCardTap()
+          }}
+          onDelete={() => {
+            void handleDelete(tappedTask)
+            clearCardTap()
+          }}
+          onRename={(text) => updateMutate({ id: tappedTask.id, patch: { text } })}
+          onSetDue={(due, dueTime) => setDue(tappedTask, due, dueTime)}
+          onSetRecurring={(frequencyDays) =>
+            updateMutate({
+              id: tappedTask.id,
+              patch: {
+                recurring: { frequencyDays, lastDoneAt: null, doneCount: 0 },
+                ongoing: false,
+              },
+            })
+          }
+          onSetFrequency={(frequencyDays) => {
+            if (tappedTask.recurring)
+              updateMutate({
+                id: tappedTask.id,
+                patch: { recurring: { ...tappedTask.recurring, frequencyDays } },
+              })
+          }}
+          onRemoveRecurring={() => updateMutate({ id: tappedTask.id, patch: { recurring: null } })}
+          onSetOngoing={(on) => setOngoing(tappedTask, on)}
+          onSetStartDate={(startDate) => setStartDate(tappedTask, startDate)}
+          onToggleReminder={(minutes) =>
+            reminderWrites.toggle(tappedTask.id, minutes, reminders?.get(tappedTask.id) ?? [])
+          }
+          onClearReminders={() => reminderWrites.clear(tappedTask.id)}
+        />
+      )}
 
       {/* Urgency-ladder legend — below the frame, clear of the URGENCY axis arrow that lives in
           the bottom gutter (absolute at the frame's bottom edge; mt-7 steps past it). */}

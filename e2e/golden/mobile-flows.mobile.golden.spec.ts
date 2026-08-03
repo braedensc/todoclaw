@@ -93,10 +93,14 @@ test('the add sheet is a slide-up bottom sheet: no keyboard pop, repeats control
   const submit = (await sheet.getByRole('button', { name: 'Add task' }).boundingBox())!
   expect(submit.y + submit.height).toBeLessThanOrEqual(viewport.height)
 
-  // Unfolding the disclosure reveals the SchedulePanel (calendar + Repeats presets).
+  // Unfolding the disclosure reveals the SchedulePanel: the calendar and the Task/Recurring/Ongoing
+  // type switch. The cadence presets are NOT top-level — Repeats is nested under the Recurring type
+  // (2026-07-13), so picking that type is what reveals them.
   await disclosure.tap()
-  await expect(sheet.getByRole('group', { name: 'Repeats' })).toBeVisible()
   await expect(sheet.getByTestId('schedule-calendar')).toBeVisible()
+  await expect(sheet.getByRole('group', { name: 'Task type' })).toBeVisible()
+  await sheet.getByRole('button', { name: 'Recurring', exact: true }).tap()
+  await expect(sheet.getByRole('group', { name: 'Repeats' })).toBeVisible()
   await disclosure.tap()
 
   // A swipe-down dismisses (scrim tap / Back too — there is no ✕).
@@ -113,18 +117,25 @@ test('a Daily repeat from the add sheet creates a live recurring task', async ({
   await sheet.getByLabel('Task text').fill('Morning stretch')
   await sheet.getByRole('button', { name: 'Do Now' }).tap()
   await sheet.getByRole('button', { name: /Add schedule/ }).tap()
-  await sheet.getByRole('button', { name: 'Daily' }).tap()
+  // Repeats lives under the Recurring type: pick the type (which seeds a weekly cadence), then tune
+  // it down to Daily — the preset re-frequencies the seeded schedule rather than starting a fresh one.
+  await sheet.getByRole('button', { name: 'Recurring', exact: true }).tap()
+  await sheet.getByRole('button', { name: 'Daily', exact: true }).tap()
   await sheet.getByRole('button', { name: 'Add task' }).tap()
   await expect(sheet).toBeHidden()
 
-  // The task lands in the quadrant as a RECURRING row (the ↻ badge names its status).
+  // The task lands in the quadrant as a RECURRING row (the ↻ badge names its status). Assert the
+  // CADENCE too, not just recurring-ness: picking the type seeds `weekly`, so a Daily preset that
+  // silently failed to re-frequency it would still leave a "Recurring, never done" badge here — the
+  // badge's title is the only surface that carries the cadence through the round-trip.
   await page.getByRole('button', { name: /Do Now, \d+ task/ }).tap()
   const row = page.getByRole('listitem').filter({ hasText: 'Morning stretch' })
   await expect(row).toBeVisible()
   await expect(row.getByLabel(/^Recurring,/)).toBeVisible()
+  await expect(row.getByLabel(/^Recurring,/)).toHaveAttribute('title', /^every 1d ·/)
 })
 
-test('an Ongoing project from the add sheet: the explicit mode opens its editor and creates the task', async ({
+test('an Ongoing project from the add sheet: the type switch marks it and creates the task', async ({
   page,
 }) => {
   await page.getByRole('navigation', { name: 'Account' }).getByRole('button', { name: 'Add' }).tap()
@@ -135,17 +146,23 @@ test('an Ongoing project from the add sheet: the explicit mode opens its editor 
   await sheet.getByRole('button', { name: 'Do Now' }).tap()
   await sheet.getByRole('button', { name: /Add schedule/ }).tap()
 
-  // The explicit, touch-sized "Ongoing project" entry swaps in the project editor + help text.
-  await sheet.getByRole('button', { name: /Ongoing project/ }).tap()
-  await expect(sheet.getByText(/ongoing · 0 sessions/i)).toBeVisible()
-  await expect(sheet.getByRole('button', { name: /End ongoing/ })).toBeVisible()
+  // Ongoing is one of the three mutually-exclusive types, not an editor of its own: it shares the
+  // due/reminder controls above, and a project has no cadence — so no Repeats comes with it.
+  const ongoing = sheet.getByRole('button', { name: 'Ongoing', exact: true })
+  await ongoing.tap()
+  await expect(ongoing).toHaveAttribute('aria-pressed', 'true')
+  await expect(sheet.getByRole('group', { name: 'Repeats' })).toHaveCount(0)
 
   await sheet.getByRole('button', { name: 'Add task' }).tap()
   await expect(sheet).toBeHidden()
 
-  // It lands as a live task in the quadrant (an ongoing project is recurring under the hood).
+  // It lands in the quadrant flagged as an ongoing project — a STANDALONE flag, not a recurring
+  // schedule wearing a different badge (the two types stay exclusive through the round-trip).
   await page.getByRole('button', { name: /Do Now, \d+ task/ }).tap()
-  await expect(page.getByRole('listitem').filter({ hasText: 'Redesign the site' })).toBeVisible()
+  const row = page.getByRole('listitem').filter({ hasText: 'Redesign the site' })
+  await expect(row).toBeVisible()
+  await expect(row.getByLabel('Ongoing project')).toBeVisible()
+  await expect(row.getByLabel(/^Recurring,/)).toHaveCount(0)
 })
 
 test('add via the bottom-nav "+" (manual → quadrant) and the task lands in that quadrant', async ({

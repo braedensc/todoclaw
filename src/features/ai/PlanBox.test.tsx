@@ -118,6 +118,59 @@ describe('PlanBox', () => {
     expect(screen.queryByRole('button', { name: /dismiss plan/i })).not.toBeInTheDocument()
   })
 
+  it('renders the quiet-day nudge as a distinct, no-pressure element (no Big rock pill)', () => {
+    render(
+      <PlanBox
+        plan={{
+          headline: 'Nothing pressing today — enjoy the breathing room.',
+          availableTime: '~4.5h free this afternoon',
+          bigRock: null,
+          smallRocks: [],
+          habitNote: 'Keep the water habit going.',
+          nudge: {
+            task: 'Write the novel',
+            why: 'A relaxed hour would move it along.',
+            duration: '~1h',
+            taskId: 'task-9',
+          },
+        }}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    // The soft lead-in, the task, its why, and the "no pressure" chip all render…
+    expect(screen.getByText(/If you're looking for something/i)).toBeInTheDocument()
+    expect(screen.getByText('Write the novel')).toBeInTheDocument()
+    expect(screen.getByText(/A relaxed hour would move it along\./)).toBeInTheDocument()
+    expect(screen.getByText(/no pressure/i)).toBeInTheDocument()
+    // …but it is NOT dressed up as a Big rock (that's the whole point).
+    expect(screen.queryByText('Big rock')).not.toBeInTheDocument()
+  })
+
+  it('suppresses the nudge when a big rock exists (contract: nudge is a no-big-rock-day thing)', () => {
+    render(
+      <PlanBox
+        // A malformed/persisted plan carrying BOTH — the card shows the big rock, hides the nudge.
+        plan={{
+          ...PLAN,
+          nudge: { task: 'Tidy the garage', why: 'w', duration: '~1h', taskId: null },
+        }}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect(screen.getByText('Big rock')).toBeInTheDocument()
+    expect(screen.getByText('File taxes')).toBeInTheDocument()
+    expect(screen.queryByText('Tidy the garage')).not.toBeInTheDocument()
+    expect(screen.queryByText(/If you're looking for something/i)).not.toBeInTheDocument()
+  })
+
   it('uses bullets for small rocks when there is no big rock', () => {
     render(
       <PlanBox
@@ -191,5 +244,308 @@ describe('PlanBox', () => {
       />,
     )
     expect(screen.getByText(/AI is paused for this month/i)).toBeInTheDocument()
+  })
+
+  it('scratches a rock off (✓ + line-through + a11y "Done:") once rockDone says so', () => {
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        // The big rock and the FIRST small rock are done; the second small rock stays open.
+        rockDone={(rock) => rock.task === 'File taxes' || rock.task === 'Email landlord'}
+      />,
+    )
+    // Struck: the task text itself carries line-through, with a leading ✓ and a screen-reader
+    // "Done:" (line-through alone is invisible to a11y tech).
+    expect(screen.getByText('File taxes').className).toContain('line-through')
+    expect(screen.getByText('Email landlord').className).toContain('line-through')
+    expect(screen.getAllByText('✓')).toHaveLength(2)
+    expect(screen.getAllByText('Done:')).toHaveLength(2)
+    // The open rock is untouched — no strike, still ink-colored.
+    expect(screen.getByText('Book dentist').className).not.toContain('line-through')
+    // Chips/why remain visible on a struck rock (dimmed, not removed).
+    expect(screen.getByText(/Due tomorrow\./)).toBeInTheDocument()
+  })
+
+  it('collapses to a one-line summary that hides the body + dismiss, and expands on click', () => {
+    const onToggleCollapse = vi.fn()
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        collapsed
+        onToggleCollapse={onToggleCollapse}
+      />,
+    )
+    // The headline stays as the summary…
+    expect(screen.getByText('A focused but gentle day.')).toBeInTheDocument()
+    // …but the plan body and the delete path are hidden while collapsed.
+    expect(screen.queryByText('File taxes')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /dismiss/i })).not.toBeInTheDocument()
+    // The summary is a collapsed toggle; clicking it expands (does NOT dismiss/delete).
+    const summary = screen.getByRole('button', { expanded: false })
+    fireEvent.click(summary)
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  it('expanded: offers a Collapse toggle (distinct from Dismiss) that fires onToggleCollapse', () => {
+    const onToggleCollapse = vi.fn()
+    const onDismiss = vi.fn()
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={onDismiss}
+        collapsed={false}
+        onToggleCollapse={onToggleCollapse}
+      />,
+    )
+    // Full plan is shown, plus a Collapse control separate from the Dismiss ×.
+    expect(screen.getByText('File taxes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /collapse plan/i }))
+    expect(onToggleCollapse).toHaveBeenCalledTimes(1)
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('without onToggleCollapse (DemoScene), a collapsed flag is ignored — the plan renders in full', () => {
+    render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        collapsed
+      />,
+    )
+    // No toggle wired → the card can't collapse; the body stays visible and no collapse control.
+    expect(screen.getByText('File taxes')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /collapse plan/i })).not.toBeInTheDocument()
+  })
+
+  it('renders no strikethrough at all without a rockDone prop (DemoScene) or when nothing is done', () => {
+    const { rerender } = render(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+      />,
+    )
+    expect(screen.queryByText('✓')).not.toBeInTheDocument()
+    rerender(
+      <PlanBox
+        plan={PLAN}
+        paused={false}
+        isPending={false}
+        isError={false}
+        onRetry={noop}
+        onDismiss={noop}
+        rockDone={() => false}
+      />,
+    )
+    expect(screen.queryByText('✓')).not.toBeInTheDocument()
+    expect(screen.getByText('File taxes').className).not.toContain('line-through')
+  })
+
+  // Fixed times today (plan.anchors) — the regression this section exists for: an appointment due
+  // today at a set hour used to be squeezed out of the card entirely by the bigRock/smallRocks caps.
+  // It's derived from the board, not the model, so it always renders — even on a plan with no rocks.
+  describe('fixed times today', () => {
+    const ANCHORED: DayPlan = {
+      ...PLAN,
+      anchors: [
+        { task: 'Timing belt & water pump', time: '2:00 PM', duration: '~half-day', taskId: 'car' },
+        { task: 'Call with Sam', time: '9:30 AM', duration: null, taskId: 'sam' },
+      ],
+    }
+
+    it('lists every anchor alongside the rocks', () => {
+      render(
+        <PlanBox
+          plan={ANCHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Fixed times today')).toBeInTheDocument()
+      expect(screen.getByText(/Timing belt & water pump/)).toBeInTheDocument()
+      expect(screen.getByText('2:00 PM')).toBeInTheDocument()
+      expect(screen.getByText(/Call with Sam/)).toBeInTheDocument()
+      // The rocks are untouched — anchors are an addition, not a replacement.
+      expect(screen.getByText('File taxes')).toBeInTheDocument()
+    })
+
+    it('shows how much of the day an anchor eats, and omits it when unsized', () => {
+      render(
+        <PlanBox
+          plan={ANCHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      // Seeing "~half-day" next to 2 PM is what makes a light plan underneath it read as correct.
+      expect(screen.getByText('⏱ ~half-day')).toBeInTheDocument()
+      // Exactly one anchor carries a length — the unsized 9:30 one gets no chip, not a made-up one.
+      const strip = screen.getByText('Fixed times today').parentElement!
+      expect(strip.querySelectorAll('li')).toHaveLength(2)
+      expect(strip.textContent).not.toMatch(/⏱ null|⏱ undefined/)
+      expect(strip.textContent!.match(/⏱/g)).toHaveLength(1)
+    })
+
+    it('shows anchors even when the plan has no rocks at all', () => {
+      render(
+        <PlanBox
+          plan={{ ...ANCHORED, bigRock: null, smallRocks: [] }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText(/Timing belt & water pump/)).toBeInTheDocument()
+    })
+
+    it('strikes an anchor off once its task is done', () => {
+      render(
+        <PlanBox
+          plan={ANCHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'car'}
+        />,
+      )
+      expect(screen.getByText(/Timing belt & water pump/).className).toContain('line-through')
+      expect(screen.getByText(/Call with Sam/).className).not.toContain('line-through')
+      expect(screen.getByText('Done:')).toBeInTheDocument()
+    })
+
+    it('renders no fixed-times section for a plan without anchors (or a legacy plan missing them)', () => {
+      const { rerender } = render(
+        <PlanBox
+          plan={PLAN}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText('Fixed times today')).not.toBeInTheDocument()
+      rerender(
+        <PlanBox
+          plan={{ ...PLAN, anchors: [] }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText('Fixed times today')).not.toBeInTheDocument()
+    })
+  })
+
+  // Chores due today (plan.chores) — the regression this section exists for: a recurring chore due
+  // TODAY had to win one of the two capped small-rock slots, and lost to tasks that weren't due for
+  // days. Like anchors, it's derived from the board rather than chosen by the planner, so it always
+  // renders — even on a plan with no rocks at all.
+  describe('chores due today', () => {
+    const CHORED: DayPlan = {
+      ...PLAN,
+      chores: [
+        { task: 'Laundry', status: 'due today', taskId: 'laundry' },
+        { task: 'Take out bins', status: 'overdue 2d', taskId: 'bins' },
+      ],
+    }
+
+    it('lists every due chore alongside the rocks', () => {
+      render(
+        <PlanBox
+          plan={CHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Chores due today')).toBeInTheDocument()
+      expect(screen.getByText('Laundry')).toBeInTheDocument()
+      expect(screen.getByText('due today')).toBeInTheDocument()
+      // An overdue chore says so rather than passing for a fresh one.
+      expect(screen.getByText('Take out bins')).toBeInTheDocument()
+      expect(screen.getByText('overdue 2d')).toBeInTheDocument()
+      // The rocks are untouched — the strip is an addition, not a replacement.
+      expect(screen.getByText('File taxes')).toBeInTheDocument()
+    })
+
+    it('shows chores even when the plan has no rocks at all', () => {
+      render(
+        <PlanBox
+          plan={{ ...CHORED, bigRock: null, smallRocks: [] }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Laundry')).toBeInTheDocument()
+    })
+
+    it('strikes a chore through once its task is done', () => {
+      render(
+        <PlanBox
+          plan={CHORED}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'laundry'}
+        />,
+      )
+      expect(screen.getByText('Laundry').className).toContain('line-through')
+      expect(screen.getByText('Take out bins').className).not.toContain('line-through')
+    })
+
+    it('renders no chores section for a plan without them (or a legacy plan missing the field)', () => {
+      render(
+        <PlanBox
+          plan={PLAN}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText('Chores due today')).not.toBeInTheDocument()
+    })
   })
 })

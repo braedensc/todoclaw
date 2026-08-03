@@ -1,6 +1,6 @@
 # Contributor License Agreement
 
-Thank you for your interest in contributing to Todoclaw (the "Project"), which is
+Thank you for your interest in contributing to TodoClaw (the "Project"), which is
 maintained by Braeden Collins (the "Maintainer").
 
 To keep the Project's licensing clear and to preserve the Maintainer's ability to

@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react'
-import type { DayPlan, PlanRock } from '../../types/plan'
+import type { DayPlan, PlanAnchor, PlanChore, PlanNudge, PlanRock } from '../../types/plan'
+
+// Anything the card can strike off once its task is done — a rock or an anchor. Both carry the
+// (task, taskId) pair isPlanRockDone matches on.
+type Strikeable = Pick<PlanRock, 'task' | 'taskId'>
 
 // The inline "Plan My Day" card — a PERSISTENT parchment box above the grid (not a modal). It
 // hydrates from daily_state.plan on load, stays for the whole local day, and disappears after
@@ -22,6 +26,9 @@ export function PlanBox({
   onRetry,
   onDismiss,
   mobile = false,
+  rockDone,
+  collapsed = false,
+  onToggleCollapse,
 }: {
   plan: DayPlan | null
   paused: boolean
@@ -32,10 +39,22 @@ export function PlanBox({
   // Mobile swaps the tiny corner ✕ (a fiddly touch target) for a full-width footer "Dismiss"
   // button beneath the plan. Desktop keeps the corner ✕.
   mobile?: boolean
+  // Is this rock's task already completed? A matching rock renders scratched off (✓ + struck,
+  // dimmed text) so the card tracks the day's progress live. Optional: the onboarding DemoScene
+  // shows its canned morning plan untouched.
+  rockDone?: (rock: Strikeable) => boolean
+  // Collapse the plan to a one-line summary to free vertical space — a view toggle, NOT a delete
+  // (Dismiss is still the delete path). Omit onToggleCollapse to render without the toggle (the
+  // DemoScene's static card): then the card always shows expanded.
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }) {
   // Idle with no plan → render nothing at all. App gates the wrapper on the same condition so no
   // empty margin is left behind.
   if (!plan && !isPending && !isError && !paused) return null
+
+  const canCollapse = plan != null && onToggleCollapse != null
+  const isCollapsed = canCollapse && collapsed
 
   return (
     <section
@@ -43,20 +62,49 @@ export function PlanBox({
       className="relative rounded-[14px] border border-border bg-panel px-5 py-3.5"
     >
       {plan ? (
-        // Leave room for the corner ✕ on desktop; on mobile the dismiss is a footer button, no gap.
-        <div className={mobile ? 'flex flex-col' : 'flex flex-col pr-6'}>
-          {isError && (
-            // A regenerate failed but the saved plan is still shown — offer a quiet retry.
-            <p className="mb-2 text-[13px] text-accent">
-              Couldn't refresh —{' '}
-              <button type="button" onClick={onRetry} className="underline hover:text-ink">
-                try again
-              </button>
-              .
-            </p>
-          )}
-          <PlanContent plan={plan} />
-        </div>
+        isCollapsed ? (
+          // Collapsed: a compact one-line summary. Tapping it (or the ▾) expands — the plan itself
+          // is untouched (still in daily_state); this only reclaims space. Dismiss/delete lives in
+          // the expanded view, so a collapse can never silently discard the plan.
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-expanded={false}
+            className="flex w-full items-center gap-2 text-left"
+          >
+            <span
+              aria-hidden
+              className="shrink-0 rounded-md bg-accent px-[7px] py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
+            >
+              Plan
+            </span>
+            <span className="min-w-0 flex-1 truncate font-serif text-[15px] font-medium text-ink">
+              {plan.headline}
+            </span>
+            <span aria-hidden className="shrink-0 text-sm text-muted">
+              ▾
+            </span>
+          </button>
+        ) : (
+          // Leave room in the corner for the ✕ (desktop) and the collapse chevron.
+          <div
+            className={`flex flex-col ${
+              mobile ? (canCollapse ? 'pr-8' : '') : canCollapse ? 'pr-12' : 'pr-6'
+            }`}
+          >
+            {isError && (
+              // A regenerate failed but the saved plan is still shown — offer a quiet retry.
+              <p className="mb-2 text-[13px] text-accent">
+                Couldn't refresh —{' '}
+                <button type="button" onClick={onRetry} className="underline hover:text-ink">
+                  try again
+                </button>
+                .
+              </p>
+            )}
+            <PlanContent plan={plan} rockDone={rockDone} />
+          </div>
+        )
       ) : isPending ? (
         <p className="text-[14px] text-muted">Planning your day…</p>
       ) : isError ? (
@@ -78,7 +126,24 @@ export function PlanBox({
         </p>
       )}
 
+      {/* Collapse chevron — a corner control distinct from Dismiss (which deletes). Shown only in
+          the expanded view; the collapsed summary carries its own expand affordance. */}
+      {plan && !isCollapsed && canCollapse && (
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          aria-expanded
+          aria-label="Collapse plan"
+          className={`absolute top-2.5 flex h-7 w-7 items-center justify-center rounded text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            mobile ? 'right-2.5' : 'right-9'
+          }`}
+        >
+          <span aria-hidden>▴</span>
+        </button>
+      )}
+
       {plan &&
+        !isCollapsed &&
         (mobile ? (
           // Mobile: a full-width, tap-friendly footer button (the corner ✕ was too small to hit).
           <button
@@ -104,8 +169,18 @@ export function PlanBox({
   )
 }
 
-// The rendered plan: headline, available time, big rock, small rocks, habit note.
-function PlanContent({ plan }: { plan: DayPlan }) {
+// The rendered plan: headline, available time, today's fixed times, big rock, small rocks, habit
+// note. Rocks whose task is already completed (rockDone) render scratched off.
+function PlanContent({
+  plan,
+  rockDone,
+}: {
+  plan: DayPlan
+  rockDone?: (rock: Strikeable) => boolean
+}) {
+  const done = (r: Strikeable) => rockDone?.(r) ?? false
+  const anchors = plan.anchors ?? []
+  const chores = plan.chores ?? []
   return (
     <div className="flex flex-col">
       <p className="font-serif text-[19px] font-medium leading-snug text-ink">{plan.headline}</p>
@@ -113,12 +188,45 @@ function PlanContent({ plan }: { plan: DayPlan }) {
         <p className="mt-1 text-[12.5px] text-muted">⏰ {plan.availableTime}</p>
       )}
 
+      {/* Today's fixed times, above the rocks: these aren't chosen work, they're the shape of the
+          day everything else fits around. Derived from the board (never from the model), so a timed
+          appointment always appears — it can't lose a rock slot to a couple of quick errands. */}
+      {anchors.length > 0 && (
+        <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
+            Fixed times today
+          </div>
+          <ul className="mt-1 flex flex-col gap-[3px]">
+            {anchors.map((a, i) => (
+              <AnchorRow key={i} anchor={a} done={done(a)} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Recurring chores the cadence says are due today. Like the fixed times above, these are
+          derived from the board, not chosen by the planner — the user already decided they happen
+          today, so they can't be squeezed off the card by the rock caps. Struck through as they're
+          completed, same as everything else here. */}
+      {chores.length > 0 && (
+        <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
+            Chores due today
+          </div>
+          <ul className="mt-1 flex flex-col gap-[3px]">
+            {chores.map((c, i) => (
+              <ChoreRow key={i} chore={c} done={done(c)} />
+            ))}
+          </ul>
+        </div>
+      )}
+
       {plan.bigRock && (
         <div className="mt-3 flex items-start gap-2.5">
           <span className="mt-0.5 shrink-0 rounded-md bg-accent px-[7px] py-1 text-[10px] font-bold uppercase tracking-wider text-white">
             Big rock
           </span>
-          <RockBody rock={plan.bigRock} emphasis />
+          <RockBody rock={plan.bigRock} emphasis done={done(plan.bigRock)} />
         </div>
       )}
 
@@ -128,31 +236,122 @@ function PlanContent({ plan }: { plan: DayPlan }) {
           <span className="mt-[3px] w-[34px] shrink-0 text-[12px] font-semibold text-muted-light">
             {plan.bigRock ? (i === 0 ? 'then' : 'also') : '•'}
           </span>
-          <RockBody rock={r} />
+          <RockBody rock={r} done={done(r)} />
         </div>
       ))}
+
+      {/* The optional quiet-day nudge — a deliberately soft, no-pressure suggestion, NOT a rock: no
+          orange BIG ROCK pill, no then/also slotting, no strike-through (it's a choice, not a
+          commitment). The server only sets it on a no-big-rock day; the `!plan.bigRock` guard keeps
+          a malformed persisted plan (jsonb is client-writable) from ever showing both. */}
+      {!plan.bigRock && plan.nudge && <NudgeBody nudge={plan.nudge} />}
 
       {plan.habitNote && <p className="mt-3 text-[13px] italic text-primary">↻ {plan.habitNote}</p>}
     </div>
   )
 }
 
-function RockBody({ rock, emphasis }: { rock: PlanRock; emphasis?: boolean }) {
+// One fixed time — "2:00 PM — Timing belt & water pump". Strikes off like a rock once its task is
+// completed, so the day's anchors track progress too.
+function AnchorRow({ anchor, done }: { anchor: PlanAnchor; done: boolean }) {
   return (
-    <div className="flex-1">
-      <div
-        className={
-          emphasis
-            ? 'text-[15.5px] font-semibold leading-snug text-ink'
-            : 'text-[14px] font-medium leading-snug text-ink'
-        }
-      >
-        {rock.task}
+    <li className={`text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}>
+      {done && (
+        <>
+          <span aria-hidden className="mr-1.5 text-primary">
+            ✓
+          </span>
+          <span className="sr-only">Done: </span>
+        </>
+      )}
+      <span className={done ? 'line-through' : undefined}>
+        <span className="font-semibold tabular-nums">{anchor.time}</span>
+        {' — '}
+        {anchor.task}
+      </span>
+      {/* How much of the day it eats. Shown because an appointment is a block, not a moment: seeing
+          "~half-day" next to 2 PM is what makes a light plan underneath it read as correct. */}
+      {anchor.duration && (
+        <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">⏱ {anchor.duration}</span>
+      )}
+    </li>
+  )
+}
+
+// One due chore — "Laundry · due today". The cadence label rides along so an overdue chore reads as
+// overdue rather than looking like a fresh one.
+function ChoreRow({ chore, done }: { chore: PlanChore; done: boolean }) {
+  return (
+    <li className={`text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}>
+      {done && (
+        <>
+          <span aria-hidden className="mr-1.5 text-primary">
+            ✓
+          </span>
+          <span className="sr-only">Done: </span>
+        </>
+      )}
+      <span className={done ? 'line-through' : undefined}>{chore.task}</span>
+      <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">{chore.status}</span>
+    </li>
+  )
+}
+
+function RockBody({
+  rock,
+  emphasis,
+  done,
+}: {
+  rock: PlanRock
+  emphasis?: boolean
+  done?: boolean
+}) {
+  const size = emphasis
+    ? 'text-[15.5px] font-semibold leading-snug'
+    : 'text-[14px] font-medium leading-snug'
+  return (
+    // Scratched-off = the whole rock dims, the task text strikes through, a green ✓ leads it
+    // (with a screen-reader "Done:" — line-through alone is invisible to a11y tech).
+    <div className={done ? 'flex-1 opacity-75' : 'flex-1'}>
+      <div className={`${size} ${done ? 'text-muted' : 'text-ink'}`}>
+        {done && (
+          <>
+            <span aria-hidden className="mr-1.5 text-primary">
+              ✓
+            </span>
+            <span className="sr-only">Done: </span>
+          </>
+        )}
+        <span className={done ? 'line-through' : undefined}>{rock.task}</span>
       </div>
       {rock.why && <div className="mt-0.5 text-[12.5px] text-muted">{rock.why}</div>}
       <div className="mt-[5px] flex flex-wrap gap-[5px]">
         {rock.duration && <Chip>⏱ {rock.duration}</Chip>}
         {rock.when && <Chip>◎ {rock.when}</Chip>}
+      </div>
+    </div>
+  )
+}
+
+// The quiet-day nudge: a gentle, clearly-optional "if you're looking for something" card. Softer
+// than any rock — no bold accent pill, a muted lead-in, and a "no pressure" chip — so it reads as an
+// invitation, not an assignment. Rendered only when the plan has no big rock.
+function NudgeBody({ nudge }: { nudge: PlanNudge }) {
+  return (
+    <div className="mt-3 flex items-start gap-2.5">
+      <span aria-hidden className="mt-0.5 shrink-0 text-[15px]">
+        💡
+      </span>
+      <div className="flex-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
+          If you're looking for something
+        </div>
+        <div className="mt-[3px] text-[14px] font-medium leading-snug text-ink">{nudge.task}</div>
+        {nudge.why && <div className="mt-0.5 text-[12.5px] text-muted">{nudge.why}</div>}
+        <div className="mt-[5px] flex flex-wrap gap-[5px]">
+          {nudge.duration && <Chip>⏱ {nudge.duration}</Chip>}
+          <Chip>no pressure</Chip>
+        </div>
       </div>
     </div>
   )

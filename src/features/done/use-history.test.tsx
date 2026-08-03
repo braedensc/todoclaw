@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+import { ToastProvider } from '../../components/use-toast'
 
 // We mock the Supabase client so the hooks exercise their query/rpc + invalidation logic
 // under jsdom with no network. The REAL rpc behaviour (atomic jsonb merge, history insert)
@@ -33,8 +34,12 @@ function makeWrapper() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   const invalidateSpy = vi.spyOn(qc, 'invalidateQueries')
+  // Render alongside ToastProvider's <Snackbar> so a failed write's onError toast lands in the
+  // document (portaled to <body>) where screen queries can see it.
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    <QueryClientProvider client={qc}>
+      <ToastProvider>{children}</ToastProvider>
+    </QueryClientProvider>
   )
   return { wrapper, invalidateSpy }
 }
@@ -88,13 +93,14 @@ describe('useMarkTaskDone', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] })
   })
 
-  it('throws when the rpc errors', async () => {
+  it('throws AND toasts when the rpc errors', async () => {
     rpc.mockResolvedValue({ error: { message: 'boom' } })
     const { wrapper } = makeWrapper()
     const { result } = renderHook(() => useMarkTaskDone(), { wrapper })
 
     result.current.mutate({ taskId: 't1', text: 'x', bucket: null, timeZone: 'UTC' })
     await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(await screen.findByText("Couldn't mark that done — try again.")).toBeInTheDocument()
   })
 })
 
@@ -117,6 +123,16 @@ describe('useRestoreTask', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] })
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['history'] })
   })
+
+  it('throws AND toasts when the rpc errors', async () => {
+    rpc.mockResolvedValue({ error: { message: 'boom' } })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useRestoreTask(), { wrapper })
+
+    result.current.mutate({ taskId: 't1', timeZone: 'UTC' })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(await screen.findByText("Couldn't restore that task — try again.")).toBeInTheDocument()
+  })
 })
 
 describe('useDeleteHistoryEntry', () => {
@@ -134,12 +150,13 @@ describe('useDeleteHistoryEntry', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['history'] })
   })
 
-  it('throws when the delete errors', async () => {
+  it('throws AND toasts when the delete errors', async () => {
     eq.mockResolvedValue({ error: { message: 'boom' } })
     const { wrapper } = makeWrapper()
     const { result } = renderHook(() => useDeleteHistoryEntry(), { wrapper })
 
     result.current.mutate('h1')
     await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(await screen.findByText("Couldn't remove that entry — try again.")).toBeInTheDocument()
   })
 })

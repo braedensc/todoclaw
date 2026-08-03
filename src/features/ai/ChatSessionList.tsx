@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useChatSessions, useDeleteChatSession } from './use-chat-sessions'
+import { useChatPreviews } from './use-chat-previews'
+import { previewText, assistantSnippet } from './chat-preview'
 import {
   useMessages,
   useMarkMessageRead,
+  useMarkAllMessagesRead,
   useOpenMessageChat,
   type InboxMessage,
 } from '../notifications/use-messages'
@@ -20,6 +23,10 @@ import { SleepingPuppy } from '../../components/SleepingPuppy'
 //     represented by their message row above, so they're filtered out here to avoid duplicates).
 // Rendered only inside ChatConversation's in-drawer history view (both shells), never the look-only
 // demo — so it may freely use the messages/sessions query hooks.
+//
+// Every row carries a snippet of its last message (chat_list_previews) so you can tell which chat
+// said what without opening it, and BabyClaw's check-ins carry a message count once you've replied —
+// the tell for which of his openers you actually picked up.
 
 function relTime(iso: string): string {
   const then = Date.parse(iso)
@@ -54,11 +61,71 @@ function BellGlyph() {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+// `action` is an optional right-aligned control on the label row (e.g. "Mark all read") — it undoes
+// the label's uppercase itself so it reads as an action, not part of the heading.
+function GroupLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <p className="mt-3 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
+    <p className="mt-3 flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-light first:mt-1">
       {children}
+      {action}
     </p>
+  )
+}
+
+// How many messages one of BabyClaw's check-ins holds — shown only once you've actually said
+// something back. A check-in you've merely received sits at exactly 1 (chat_list_previews excludes
+// the server-seeded hidden framing turn), so >1 is precisely "I've used this one"; the number then
+// says how far the conversation went. Absent on your own chats — those are used by definition.
+function ReplyBadge({ count }: { count: number }) {
+  if (count <= 1) return null
+  return (
+    <span
+      aria-label={`${count} messages`}
+      className="shrink-0 rounded-full bg-puppy/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-puppy"
+    >
+      {count}
+    </span>
+  )
+}
+
+// One row's text column: name and time on the first line, last-message snippet on the second. The
+// snippet gets a line to itself (rather than sharing with the time) because it's the part that has
+// something to say; `truncate` does the ellipsis, so it adapts to the drawer's width.
+//
+// A DOT IN THIS LIST MEANS EXACTLY ONE THING: unread (the puppy dot at the row's trailing edge).
+// The open conversation used to get a second, leading accent dot here — visually identical to a
+// "new message" marker, and it appeared on a chat the moment you came back out of it, which read as
+// the app forgetting you'd just been reading. The open row is already carried by its card
+// background + ring (and `aria-current` for assistive tech), so the dot is gone.
+function RowText({
+  title,
+  time,
+  preview,
+  bold,
+}: {
+  title: string
+  time: string
+  preview: string
+  bold?: boolean
+}) {
+  return (
+    <span className="min-w-0 flex-1">
+      <span className="flex items-baseline gap-2">
+        <span
+          className={
+            'min-w-0 flex-1 truncate text-sm ' + (bold ? 'font-semibold text-ink' : 'text-ink')
+          }
+        >
+          {title}
+        </span>
+        <span className="shrink-0 text-[10px] text-muted-light">{time}</span>
+      </span>
+      {/* No snippet (a turn with nothing user-visible, or a chat with no messages yet) → the row
+          simply stays one line rather than reserving an empty one. */}
+      {preview && (
+        <span className="mt-0.5 block truncate text-[11px] text-muted-light">{preview}</span>
+      )}
+    </span>
   )
 }
 
@@ -73,20 +140,63 @@ export function ChatSessionList({
 }) {
   const { data: sessions, isLoading: sessionsLoading } = useChatSessions()
   const { data: messages, isLoading: messagesLoading } = useMessages()
+  const { data: previews } = useChatPreviews()
   const del = useDeleteChatSession()
   const openMsg = useOpenMessageChat()
   const markRead = useMarkMessageRead()
+  const markAll = useMarkAllMessagesRead()
   const toast = useToast()
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
-  // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't
-  // pile up forever (they arrive newest-first). Your own chats are shown in full, above.
-  const MAX_PROACTIVE = 3
-  const inbox = (messages ?? []).slice(0, MAX_PROACTIVE)
+  // Cap BabyClaw's daily check-ins to the few most recent so the morning/evening cadence can't pile
+  // up forever — but only the READ ones (see the union in the inbox memo: every UNREAD check-in stays
+  // visible regardless of the cap, so the nav "Chat N" badge — which counts all unread — always lands
+  // on a row). Your own chats are shown in full, above. This is a DISPLAY cap on rows — not a
+  // retention window: nothing is deleted (`messages` has no DELETE grant and no prune job; a row
+  // outlives the cap and dies only with the account).
+  const MAX_PROACTIVE = 5
+  // Rank a check-in by its LAST MESSAGE, not its arrival. `messages` arrives newest-first by
+  // created_at, which is when BabyClaw SENT it — so replying to Monday's plan today left it sitting
+  // three days down, and a naive cap could drop the very conversation you were mid-reply in. Once
+  // a check-in is opened it has a session, whose updated_at is the last-message clock
+  // (chat_append_message bumps it every turn); an unopened one has no session, so its arrival time
+  // IS its last message. Sorting must happen BEFORE the cap or it keeps the wrong ones.
+  const inbox = useMemo(() => {
+    const byId = new Map((sessions ?? []).map((s) => [s.id, s]))
+    const lastActivity = (m: InboxMessage) =>
+      (m.session_id ? byId.get(m.session_id)?.updated_at : null) ?? m.created_at
+    const ranked = [...(messages ?? [])].sort(
+      (a, b) => Date.parse(lastActivity(b)) - Date.parse(lastActivity(a)),
+    )
+    // Keep the MAX_PROACTIVE most recent — plus EVERY unread one. The nav badge counts all unread, and
+    // opened check-ins get bumped up by their session's updated_at, which is exactly what buries an
+    // older never-opened one past position 5: the badge would then say "3" over a list with no unread
+    // dots (the mismatch this fixes). So the cap trims only READ history. Union keeps the recency order.
+    const keep = new Set(ranked.slice(0, MAX_PROACTIVE).map((m) => m.id))
+    for (const m of ranked) if (!m.read_at) keep.add(m.id)
+    return ranked.filter((m) => keep.has(m.id)).map((m) => ({ msg: m, time: lastActivity(m) }))
+  }, [messages, sessions])
+  // The note earns its place only when the cap actually hides an older (read) check-in — with nothing
+  // held back there's nothing to explain, and a standing footnote would just be noise.
+  const proactiveHidden = (messages?.length ?? 0) - inbox.length
+  // Whether the "Mark all read" action shows — exactly when the nav badge is non-zero, because it IS
+  // that badge's bulk escape hatch: unread check-ins are exempt from the display cap (above), so
+  // ignoring them piles them up; this clears the pile without opening each one. Marking them read
+  // also returns them to the cap's custody, so the list tidies back down on the refetch — intended.
+  const anyUnread = (messages ?? []).some((mm) => !mm.read_at)
   // Proactive sessions are shown via their message row, so keep only person-started chats.
   const userSessions = (sessions ?? []).filter((s) => s.origin === 'user')
   const loading = sessionsLoading || messagesLoading
   const empty = !loading && inbox.length === 0 && userSessions.length === 0
+
+  // session id → what to show under its name, and how many messages it holds. Previews load on their
+  // own (they're a second read); until they arrive, rows render as a name + time, exactly as before.
+  const previewBySession = useMemo(() => {
+    const m = new Map<string, { text: string; count: number }>()
+    for (const p of previews ?? [])
+      m.set(p.session_id, { text: previewText(p), count: p.msg_count })
+    return m
+  }, [previews])
 
   // Open an inbox message in its own conversation: mark read, then materialise/reopen its session.
   const openMessage = (m: InboxMessage) => {
@@ -142,6 +252,7 @@ export function ChatSessionList({
         {userSessions.map((s) => {
           const title = s.title?.trim() || 'Untitled chat'
           const active = s.id === currentId
+          const preview = previewBySession.get(s.id)?.text ?? ''
           return (
             <div
               key={s.id}
@@ -154,20 +265,13 @@ export function ChatSessionList({
                 type="button"
                 onClick={() => onOpen(s.id)}
                 title={title}
+                aria-current={active ? 'true' : undefined}
                 className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-2 text-left"
               >
                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                   <PawPrint className="h-3.5 w-3.5" />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-ink">
-                    {active && <span className="mr-1 text-accent">●</span>}
-                    {title}
-                  </span>
-                  <span className="block text-[11px] text-muted-light">
-                    {relTime(s.updated_at)}
-                  </span>
-                </span>
+                <RowText title={title} time={relTime(s.updated_at)} preview={preview} />
               </button>
               {confirmingId === s.id ? (
                 <span className="flex shrink-0 items-center gap-1">
@@ -201,41 +305,70 @@ export function ChatSessionList({
         })}
 
         {/* From BabyClaw — his daily check-ins, capped to the most recent few (below your chats). */}
-        {inbox.length > 0 && <GroupLabel>From BabyClaw</GroupLabel>}
-        {inbox.map((m) => {
+        {inbox.length > 0 && (
+          <GroupLabel
+            action={
+              anyUnread ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    markAll.mutate(undefined, {
+                      onError: () => toast("Couldn't mark those read — try again.", 'error'),
+                    })
+                  }
+                  className="ml-auto shrink-0 font-medium normal-case tracking-normal text-puppy hover:text-ink"
+                >
+                  Mark all read
+                </button>
+              ) : undefined
+            }
+          >
+            From BabyClaw
+          </GroupLabel>
+        )}
+        {inbox.map(({ msg: m, time: lastAt }) => {
           const active = !!m.session_id && m.session_id === currentId
           const unread = !m.read_at
           // Day-stamp his daily check-ins ("Monday morning plan") so it's obvious which day each is;
           // reminders keep their own task-specific title.
           const dayTitle = proactiveDayLabel(m.kind, m.local_date)
           const title = dayTitle ?? m.title
-          const subtitle = dayTitle
-            ? relTime(m.created_at)
-            : `${kindLabel(m.kind)} · ${relTime(m.created_at)}`
+          // A day-stamped title already says which check-in this is; a reminder's title is the task,
+          // so it keeps its kind label. The stamp is the row's last message (the same clock it's
+          // ranked by) — showing the arrival time here would read "3d ago" on a chat you just replied to.
+          const time = dayTitle ? relTime(lastAt) : `${kindLabel(m.kind)} · ${relTime(lastAt)}`
+          // Once opened, preview where the conversation actually got to. Until then there is no
+          // session to read, and the check-in's own body IS its last (only) message.
+          const seen = m.session_id ? previewBySession.get(m.session_id) : undefined
+          const preview = seen?.text || assistantSnippet(m.body)
+          // You've said something back (>1 visible message — the RPC drops the hidden framing turn,
+          // so a check-in you merely received sits at exactly 1). Tints the whole row, which is what
+          // makes engaged-vs-untouched legible down the GROUP at a glance; the count badge only
+          // answers the question row by row, once you're already looking at that row.
+          const engaged = (seen?.count ?? 0) > 1
           return (
             <button
               key={m.id}
               type="button"
               onClick={() => openMessage(m)}
               title={title}
+              aria-current={active ? 'true' : undefined}
               className={
                 'flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ' +
-                (active ? 'bg-card ring-1 ring-border' : 'hover:bg-card')
+                // The open conversation still wins the row's background — it's the stronger state,
+                // and stacking both would just muddy each.
+                (active
+                  ? 'bg-card ring-1 ring-border'
+                  : engaged
+                    ? 'bg-puppy/[0.07] hover:bg-card'
+                    : 'hover:bg-card')
               }
             >
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-puppy/10 text-puppy">
                 <BellGlyph />
               </span>
-              <span className="min-w-0 flex-1">
-                <span
-                  className={
-                    'block truncate text-sm ' + (unread ? 'font-semibold text-ink' : 'text-ink')
-                  }
-                >
-                  {title}
-                </span>
-                <span className="block truncate text-[11px] text-muted-light">{subtitle}</span>
-              </span>
+              <RowText title={title} time={time} preview={preview} bold={unread} />
+              <ReplyBadge count={seen?.count ?? 0} />
               {unread && (
                 <span
                   aria-label="unread"
@@ -245,6 +378,13 @@ export function ChatSessionList({
             </button>
           )
         })}
+        {/* The hidden rows are older check-ins you've already opened (unread ones always show) — the
+            cap tidies them away, it does not delete them. */}
+        {proactiveHidden > 0 && (
+          <p className="px-2 pb-1 pt-1.5 text-[10px] leading-snug text-muted-light">
+            Older check-ins are tucked away — nothing’s deleted.
+          </p>
+        )}
       </div>
     </div>
   )

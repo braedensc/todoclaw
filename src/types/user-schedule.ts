@@ -102,9 +102,10 @@ const notificationsSchema = z.object({
   // "clear slate" morning or a no-plan-nothing-on-the-board evening (see dispatch.ts). Absent =
   // send always (current behavior); the dispatcher reads it off config.notifications.
   quietWhenEmpty: z.boolean().optional(),
-  // Per-task reminder default (ADR 2026-07-09): minutes before a timed task is due to pre-select
-  // in the add flow. `null` = off (no auto reminder); ABSENT = the app default (1 hour) — so an
-  // untouched config never has to store it. Bounded to 28 days, like task_reminders.offset_minutes.
+  // Per-task reminder default (ADR 2026-07-09): minutes-before applied when a task gains a due
+  // time (pre-selected in the add flow, seeded by the schedule editor and BabyClaw). `null` = off
+  // (no auto reminder); ABSENT = the app default (1 hour) — so an untouched config never has to
+  // store it. Bounded to 28 days, like task_reminders.offset_minutes.
   reminderDefaultMinutes: z.number().int().min(0).max(40320).nullable().optional(),
 })
 
@@ -116,10 +117,26 @@ const notificationsSchema = z.object({
 // opened from the Home Screen instead of Safari. See setup-guide-store.ts.
 const onboardingSchema = z.object({
   tourSeen: z.boolean().optional(),
+  // "I'm done with the first-run setup guide" — account-level for the same reason as `tourSeen`,
+  // plus one more: finishing setup is a fact about the PERSON, and a device-local dismissal meant
+  // installing the app (a fresh storage partition) or clearing site data brought the checklist back
+  // to someone who'd already finished it. Set by any dismissal, including the silent auto-dismiss
+  // for an already-complete user; cleared only by Settings → "Show the setup guide".
+  setupDismissed: z.boolean().optional(),
 })
 
 export const ScheduleConfigSchema = z.object({
   location: shortText.optional(),
+  // The place wttr.in's geocoder actually matched for `location` (resolve-location Edge Function),
+  // stored so Settings can keep showing "✓ Portland, Oregon, …" after a save/reload instead of
+  // re-resolving on every open. Display only — the plan still fetches weather by `location`, so an
+  // absent value (every config written before this existed) costs nothing but the confirmation line.
+  //
+  // Written ONLY alongside `location` by the Settings editor, which clears it the moment the typed
+  // location changes — the two can't drift. `.catch(undefined)` because this value is SERVER-derived:
+  // the whole config parses under `.catch({})` (see UserScheduleSchema), so an over-cap or malformed
+  // label here would silently wipe the user's ENTIRE config rather than just drop a cosmetic string.
+  locationResolved: shortText.optional().catch(undefined),
   onboarding: onboardingSchema.optional(),
   weekday: weekdaySchema.optional(),
   weekend: z

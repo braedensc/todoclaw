@@ -1,6 +1,6 @@
 # ADR-0025 — Mobile matrix: overview→focus reinterpretation (Concept C)
 
-**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign)
+**Date:** 2026-07-06 · **Stage:** post-launch (mobile redesign) · **Status:** Superseded in part by [ADR-0028](0028-mobile-list-only-no-grid-single-add-sheet.md) — the mobile grid was later removed; the overview→focus model still holds
 
 The `eisenclaw.md` parity spec models one free-canvas 2D grid. On a phone that grid is a poor fit
 for a thumb — 112px cards on a ~375px viewport, 18px controls, overlaps collapsing into cluster

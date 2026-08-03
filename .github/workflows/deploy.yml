@@ -237,6 +237,16 @@ jobs:
       # response/timeout), or 5xx (deployed but crashing); PASS on anything else it actually answered
       # with (401/403/400/2xx). Deeper CORS/ALLOWED_ORIGIN verification is a separate manual step
       # (needs the prod origin) — see docs/SERVICES.md.
+      #
+      # Retry with backoff (issue #324): a function's FIRST hit after deploy is a COLD isolate boot,
+      # and admin / generate-invite additionally run a pre-auth per-IP throttle RPC (ip-throttle.ts)
+      # before they can answer — so one cold probe can exceed --max-time and 000 an otherwise-healthy
+      # deploy. #324 was exactly that: a docs-only deploy that failed here alone because generate-invite
+      # didn't answer the single 20s probe in time. So probe each function up to $TRIES times with
+      # linear backoff — the first attempt doubles as a warmup, and only a function STILL failing on
+      # its LAST attempt fails the step. A persistently-absent (404) or crashing (5xx) function still
+      # fails: retry absorbs cold-start jitter, it does not paper over a real outage. Worst case
+      # (a total outage — every fn, every attempt) stays within this job's timeout-minutes.
       - name: Smoke — functions reachable
         if: steps.pre.outputs.configured == 'true'
         env:
@@ -244,13 +254,31 @@ jobs:
           FNS: ${{ steps.discover.outputs.fns }}
         run: |
           base="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1"
+          TRIES=3
           failed=""
           for fn in $FNS; do
-            # `|| true` + default keeps a curl timeout/connection error (non-zero exit, code 000)
-            # from aborting the loop under `set -e`, so every function is probed and reported.
-            code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST --max-time 20 \
-              -H 'content-type: application/json' -d '{}' "$base/$fn" || true)
-            code=${code:-000}
+            code=000
+            attempt=1
+            while [ "$attempt" -le "$TRIES" ]; do
+              # `|| true` + default keeps a curl timeout/connection error (non-zero exit, code 000)
+              # from aborting the loop under `set -e`, so every function is probed and reported.
+              code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST --max-time 20 \
+                -H 'content-type: application/json' -d '{}' "$base/$fn" || true)
+              code=${code:-000}
+              case "$code" in
+                # Not-deployed / no-response / crash — treat as a cold-boot transient: back off and
+                # retry, unless this was the last attempt (then it falls through to fail below).
+                404|000|5??)
+                  if [ "$attempt" -lt "$TRIES" ]; then
+                    echo "retry: $fn → HTTP $code (attempt $attempt/$TRIES)"
+                    sleep $((attempt * 2))
+                  fi
+                  ;;
+                # Any real answer (401/403/400/2xx) → reachable; stop retrying.
+                *) break ;;
+              esac
+              attempt=$((attempt + 1))
+            done
             case "$code" in
               404) echo "::error::$fn → HTTP 404 (function not deployed)"; failed="$failed $fn" ;;
               000) echo "::error::$fn → no response / unreachable (curl 000)"; failed="$failed $fn" ;;

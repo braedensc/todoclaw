@@ -44,10 +44,15 @@ the DB, never trust in the model**:
   content derived from stored task/habit/step text, so a task the user merely stored can't launder an
   instruction into a durable memory (the prompt rule alone can't enforce that; `isDerivedFromStoredText`
   does). This is the difference from the preference note, whose "only from chat" rule is prompt-only.
-- **`propose_memory`** (inference) is **destructive** → it rides the human-confirmation gate, so an
-  inferred memory is never written without the user's click (the click is its provenance; the
-  provenance code-gate is skipped for it). **`delete_memory`** is destructive too (a hard, irreversible
-  delete — the structural backstop against an injected "forget everything about me").
+- **`propose_memory`** (inference) is **not destructive** — a confident inference **auto-saves**, like
+  `save_memory`, and BabyClaw mentions it in its reply (the owner chose ChatGPT-style proactive memory).
+  Its human-confirmation gate was **removed**; the layers that remain are **prompt scoping** (durability
+  test, no sensitive data, no laundering stored text), the **DB caps** below, **render-time defanging**
+  (`sanitizeForPrompt`), and the user **pruning** the Settings list — recorded in
+  [ADR 2026-07-22-proactive-memory-inference-autosave](../../../docs/adr/2026-07-22-proactive-memory-inference-autosave.md).
+  It still **skips the provenance code-gate** (an inference isn't user-verbatim text). **`delete_memory`**
+  remains destructive (a hard, irreversible delete — the structural backstop against an injected
+  "forget everything about me").
 - **Caps are DB-enforced** regardless of what the model passes: 240 chars (CHECK), 30 rows/user
   (trigger), dedup (unique index on `lower(btrim(content))`), plus a per-request write brake in ai-chat.
 - **Kill switch** (`config.assistant.memoryEnabled`): off ⇒ ai-chat filters the memory tools out of the
@@ -56,9 +61,9 @@ the DB, never trust in the model**:
   memory can't forge a `=== SECTION ===` header, a `"""` fence, or a `[[status:]]` marker.
 
 Memories are **not** in `create_backup`/`restore_backup` (AI meta, not planner content) and are
-excluded from the external pg_dump. **Reader scope:** chat only for now — Plan My Day does NOT yet read
-memories; adding it later means the "three readers" change (run-plan select + `dispatch_inputs_for_user`
-RPC + plan prompt) together, or the morning push silently drops them.
+excluded from the external pg_dump. **Reader scope:** chat **and Plan My Day** — `run-plan.ts` now
+fetches memories (RLS-scoped, ≤30 rows) and folds them into the plan prompt when memory is on. Any
+*new* reader must fetch them under the caller's own JWT (RLS) and honor the `memoryEnabled` kill switch.
 
 Each capability is `{ name, description, schema (zod), destructive, execute(ctx, input) }`. The
 **zod schema is the one source of truth**: it validates input at execution *and* — via

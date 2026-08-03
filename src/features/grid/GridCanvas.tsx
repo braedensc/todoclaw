@@ -1,5 +1,6 @@
 import type { CSSProperties, PointerEvent, ReactNode, RefObject } from 'react'
 import { quadrantMeta } from '../../lib/quadrants'
+import { BACKGROUND_DISMISS_ATTR } from '../../hooks/use-background-dismiss'
 import { AXIS_COLOR, GRIDLINE_COLOR, QUADRANT_TINT } from './grid-constants'
 import { PawTrail } from './PawTrail'
 
@@ -54,6 +55,10 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
     <div
       ref={surfaceRef}
       data-testid="grid-canvas"
+      // Empty canvas is background: pressing it closes the open desktop chat rail. Only a press on
+      // the canvas ITSELF counts (every layer below is pointer-events-none), so a card, cluster
+      // bubble, or menu sitting on top is untouched by this — see useBackgroundDismiss.
+      {...{ [BACKGROUND_DISMISS_ATTR]: true }}
       onPointerDown={onBackgroundPointerDown}
       className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card shadow-[0_1px_2px_rgba(46,42,36,0.05),0_16px_40px_-18px_rgba(46,42,36,0.28)] wide:h-auto wide:aspect-[1046/640]"
       style={PAPER_STYLE}

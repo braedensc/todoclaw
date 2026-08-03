@@ -1,10 +1,6 @@
 import { Client } from 'pg'
-import { insertEisenclawState } from '../../scripts/eisenclaw-seed/insert'
-import {
-  readPlannerState,
-  readUserSchedule,
-  resolveEisenclawDataDir,
-} from '../../scripts/eisenclaw-seed/source'
+import { DEMO_STATE } from '../../scripts/demo-seed/data'
+import { insertSeedState } from '../../scripts/demo-seed/insert'
 import { TEST_USER } from './constants'
 
 // App tables that accumulate per-user state across runs. `history` is append-only at the app
@@ -47,15 +43,14 @@ export async function resetTestUserData(dbUrl: string): Promise<void> {
 }
 
 /**
- * Load Braeden's real EisenClaw tasks/habits/history/schedule (planning/eisenclaw-export/data —
- * gitignored reference data, mapped by scripts/eisenclaw-seed/) into the test user's rows, for
+ * Load the checked-in demo dataset (scripts/demo-seed/data.ts) into the test user's rows, for
  * specs that want to exercise the app against realistic data instead of an empty slate.
  *
  * Opt-in per spec: call `resetTestUserData()` (already done by the `page` fixture) then this,
  * inside the test body — NOT wired into the shared fixture, so existing golden specs keep
  * running against an empty slate unless they explicitly ask for this data.
  */
-export async function seedEisenclawFixtures(dbUrl: string): Promise<void> {
+export async function seedDemoFixtures(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl })
   await client.connect()
   try {
@@ -69,10 +64,7 @@ export async function seedEisenclawFixtures(dbUrl: string): Promise<void> {
         `Test user ${TEST_USER.email} not found — run the golden setup project first.`,
       )
 
-    const dataDir = resolveEisenclawDataDir()
-    const planner = readPlannerState(dataDir)
-    const schedule = readUserSchedule(dataDir)
-    await insertEisenclawState(client, userRow.id, planner, schedule)
+    await insertSeedState(client, userRow.id, DEMO_STATE)
   } finally {
     await client.end()
   }

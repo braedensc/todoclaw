@@ -1,6 +1,6 @@
 # ADR 2026-07-08 — Due dates are wall-clock: floating DATE + optional local TIME
 
-**Date:** 2026-07-08 · **Post-launch** (reminders roadmap, PR 1 of 6)
+**Date:** 2026-07-08 · **Post-launch** (reminders roadmap, PR 1 of 6) · **Status:** Accepted
 
 `tasks.due` was `timestamptz`, but every writer (date picker, chat `set_due_date`) stores a bare
 `'YYYY-MM-DD'` — persisted as midnight UTC and returned by PostgREST as

@@ -1,6 +1,6 @@
 # ADR-0017 — Streaming chat: manual tool loop, client-held history, confirm-before-destructive
 
-**Date:** 2026-06-25 · **Stage:** 4 (PR4)
+**Date:** 2026-06-25 · **Stage:** 4 (PR4) · **Status:** Superseded by [ADR 2026-07-13 — persistent chats](2026-07-13-persistent-chats.md)
 
 The chat (`ai-chat` Edge Function + `ChatPanel`) is the largest, most security-sensitive surface:
 conversational AI with tools that mutate the caller's tasks. Decisions:

@@ -6,10 +6,14 @@
 
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
+import { recurringDoneToday, recurringStatus } from './recurring-status.ts'
+import { reminderDefaultFromConfig } from './reminder-default.ts'
+import { HABITS_FETCH_LIMIT, REMINDERS_FETCH_LIMIT, TASKS_FETCH_LIMIT } from './write-caps.ts'
 import {
   DEFAULT_ASSISTANT_CONFIG,
   type AssistantConfig,
   type ChatContext,
+  type PromptActivity,
   type PromptHabit,
   type PromptMemory,
   type PromptPlan,
@@ -23,6 +27,8 @@ interface Recurring {
   frequencyDays: number
   lastDoneAt: string | null
   doneCount: number
+  /** One-shot occurrence override ("do it on Friday") — read by the shared cadence ladder. */
+  nextDueOn?: string | null
 }
 
 export interface LoadedChatContext {
@@ -45,57 +51,91 @@ function fmtFrequency(days: number): string {
   return 'every ~3mo'
 }
 
-// Due/overdue phrase for a recurring task (mirrors src/lib/recurring.ts recurringStatus thresholds),
-// so BabyClaw can tell an overdue chore from one that isn't due yet — a recurring task never sits in
-// the daily done map, so without this it would read every recurrence as an active to-do.
-function recurringStatusPhrase(rec: Recurring | null, now: Date): string | null {
-  if (!rec || !rec.frequencyDays) return null
-  if (rec.lastDoneAt == null) return 'never done'
-  const daysSince = Math.floor((now.getTime() - Date.parse(rec.lastDoneAt)) / 86_400_000)
-  const daysLeft = rec.frequencyDays - daysSince
-  if (daysLeft < -1) return `overdue ${Math.abs(daysLeft)}d`
-  if (daysLeft <= 0) return 'due today'
-  if (daysLeft === 1) return 'due tomorrow'
-  return `due again in ${daysLeft}d`
-}
-
-// A recurring task never touches the daily done map — completing it just resets recurring.lastDoneAt
-// — so the grid/mobile board hides it for the rest of the local day by comparing lastDoneAt to today
-// (src/lib/recurring.ts recurringDoneToday). Mirror that here so BabyClaw's context matches what the
-// user sees: a recurring chore ticked off today reads as DONE TODAY, not as still-active.
-function recurringDoneToday(rec: Recurring | null, timeZone: string, now: Date): boolean {
-  if (!rec?.lastDoneAt) return false
-  return localDateInTZ(timeZone, new Date(rec.lastDoneAt)) === localDateInTZ(timeZone, now)
+// Due/overdue phrase for a recurring task, so BabyClaw can tell an overdue chore from one that isn't
+// due yet — a recurring task never sits in the daily done map, so without this it would read every
+// recurrence as an active to-do.
+//
+// The ARITHMETIC comes from the shared ladder (recurring-status.ts); only the wording is local. This
+// file used to re-derive the thresholds itself and had already drifted from the other two copies
+// ('due again in 4d' vs 'in 4d' for the same state) — the reason the ladder now lives in one place.
+// The look-ahead keeps its roomier prose ("due again in 4d") because this text is read by the model
+// in a sentence, not rendered as a compact badge.
+function recurringStatusPhrase(rec: Recurring | null, timeZone: string, now: Date): string | null {
+  const s = recurringStatus(rec, timeZone, now)
+  if (!s) return null
+  return s.code === 'soon' || s.code === 'ok' ? `due again in ${s.daysLeft}d` : s.label
 }
 
 // Compact summary of today's saved Plan My Day (daily_state.plan jsonb, DayPlan shape — see
 // src/types/plan.ts), read defensively so a malformed/partial plan never breaks the chat. Null when
 // there's no plan today, so BabyClaw can answer "what's my big rock?" instead of being blind to it.
+// Rocks whose task is already completed are prefixed "✓ " (the PLAN block header explains the mark)
+// so an evening conversation never nudges the user toward something they already finished. Matched
+// by the rock's taskId (stamped at generation) first, exact task text as the legacy fallback.
 interface RawRock {
   task?: unknown
   duration?: unknown
   when?: unknown
+  taskId?: unknown
 }
-export function planSummary(raw: unknown): PromptPlan | null {
+export function planSummary(
+  raw: unknown,
+  tasks: { id: string; text: string; doneToday: boolean; completedAt: string | null }[] = [],
+): PromptPlan | null {
   if (!raw || typeof raw !== 'object') return null
-  const p = raw as { headline?: unknown; bigRock?: RawRock | null; smallRocks?: unknown }
+  const p = raw as {
+    headline?: unknown
+    anchors?: unknown
+    bigRock?: RawRock | null
+    smallRocks?: unknown
+  }
+  const doneIds = new Set<string>()
+  const doneTexts = new Set<string>()
+  for (const t of tasks) {
+    // Id match takes completed_at too (precise); text fallback sticks to done-TODAY so an old
+    // completion of a same-named task can't strike a live plan item.
+    if (t.doneToday || t.completedAt) doneIds.add(t.id)
+    if (t.doneToday) doneTexts.add(t.text.trim())
+  }
+  const rockDone = (r: RawRock | null | undefined): boolean =>
+    !!r &&
+    ((typeof r.taskId === 'string' && doneIds.has(r.taskId)) ||
+      (typeof r.task === 'string' && doneTexts.has(r.task.trim())))
   const rockLabel = (r: RawRock | null | undefined): string | null => {
     if (!r || typeof r.task !== 'string' || !r.task.trim()) return null
     const extra = [r.when, r.duration].filter(
       (x): x is string => typeof x === 'string' && !!x.trim(),
     )
-    return extra.length ? `${r.task.trim()} (${extra.join(', ')})` : r.task.trim()
+    const base = extra.length ? `${r.task.trim()} (${extra.join(', ')})` : r.task.trim()
+    return rockDone(r) ? `✓ ${base}` : base
   }
   const headline = typeof p.headline === 'string' && p.headline.trim() ? p.headline.trim() : null
   const bigRock = rockLabel(p.bigRock)
   const smallRocks = (Array.isArray(p.smallRocks) ? p.smallRocks : [])
-    .map((r) =>
-      r && typeof (r as RawRock).task === 'string' ? ((r as RawRock).task as string) : '',
-    )
-    .map((t) => t.trim())
+    .map((r) => {
+      const rock = r as RawRock | null
+      if (!rock || typeof rock.task !== 'string' || !rock.task.trim()) return ''
+      return rockDone(rock) ? `✓ ${rock.task.trim()}` : rock.task.trim()
+    })
     .filter((t) => t.length > 0)
-  if (!headline && !bigRock && smallRocks.length === 0) return null
-  return { headline, bigRock, smallRocks }
+  // Today's fixed times (plan.anchors) — read as defensively as the rocks, since the column is
+  // client-writable jsonb. Struck the same way when their task is already done.
+  const anchors = (Array.isArray(p.anchors) ? p.anchors : [])
+    .map((a) => {
+      const anchor = a as (RawRock & { time?: unknown }) | null
+      if (!anchor || typeof anchor.task !== 'string' || !anchor.task.trim()) return ''
+      const time = typeof anchor.time === 'string' && anchor.time.trim() ? anchor.time.trim() : null
+      const dur =
+        typeof anchor.duration === 'string' && anchor.duration.trim()
+          ? anchor.duration.trim()
+          : null
+      const base =
+        (time ? `${time} — ${anchor.task.trim()}` : anchor.task.trim()) + (dur ? ` (${dur})` : '')
+      return rockDone(anchor) ? `✓ ${base}` : base
+    })
+    .filter((t) => t.length > 0)
+  if (!headline && !bigRock && smallRocks.length === 0 && anchors.length === 0) return null
+  return { headline, anchors, bigRock, smallRocks }
 }
 
 function parseAssistant(config: Record<string, unknown> | null): AssistantConfig {
@@ -117,10 +157,26 @@ function parseAssistant(config: Record<string, unknown> | null): AssistantConfig
   return { tone, verbosity, customInstructions }
 }
 
+// First of `vals` that's a non-blank string, trimmed; null if none. Guards against a jsonb key that
+// is absent, null, blank, or (defensively — this config is user-shaped) not a string at all.
+function firstText(...vals: unknown[]): string | null {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  return null
+}
+
 function scheduleSummary(config: Record<string, unknown> | null, dayOfWeek: string): string | null {
   if (!config) return null
   const bits: string[] = []
-  if (typeof config.location === 'string') bits.push(`Location: ${config.location}.`)
+  // Prefer the CONFIRMED place (what wttr.in's geocoder matched — see resolve-location) over the
+  // raw typed string. It's canonical, so it disambiguates the Portlands instead of leaving the
+  // model to guess; it's the place the plan's weather line actually describes, so the two can't
+  // contradict each other; and a typo'd string ("Portlnad, OR") is noise the model may invent
+  // around. Falls back to the raw text for configs written before locationResolved existed, or
+  // where the lookup never succeeded — those still get today's behavior, just unconfirmed.
+  const place = firstText(config.locationResolved, config.location)
+  if (place) bits.push(`Location: ${place}.`)
   const isWeekend = dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday'
   const weekday = (config.weekday ?? {}) as Record<string, unknown>
   const weekend = (config.weekend ?? {}) as Record<string, Record<string, unknown>>
@@ -164,39 +220,61 @@ export async function loadChatContext(
   const assistantCfg = (config?.assistant ?? {}) as Record<string, unknown>
   const memoryEnabled = assistantCfg.memoryEnabled !== false
 
-  const [tasksRes, habitsRes, dailyRes, remindersRes, memoriesRes] = await Promise.all([
-    client
-      .from('tasks')
-      // completed_at is fetched (not SQL-filtered) so the render can mirror the grid/list split:
-      // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
-      // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
-      // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
-      .select('id, text, x, y, due, due_time, staged, recurring, ongoing, completed_at')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false }),
-    client
-      .from('habits')
-      .select('id, text, active, subtasks')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true }),
-    // daily_state.plan is encrypted at rest, so read the row through daily_state_get (DEFINER, fenced
-    // to auth.uid()) which returns the completion maps plus the DECRYPTED plan as one jsonb object (or
-    // null when there's no row today). Runs under the caller JWT, same as the other reads here.
-    client.rpc('daily_state_get', { p_date: date }),
-    // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks
-    // already have one — otherwise it can't answer "do I have a reminder on X?" or reason about
-    // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's
-    // reminders lead each occurrence, a one-off's lead the single due instant (same rows either way).
-    client.from('task_reminders').select('task_id, offset_minutes').is('sent_at', null),
-    // Saved memories (oldest-first = a stable prompt order), only when memory is on. ≤30 rows by
-    // the DB trigger, so no limit needed. RLS scopes it to the caller.
-    memoryEnabled
-      ? client
-          .from('assistant_memories')
-          .select('id, content, updated_at')
-          .order('created_at', { ascending: true })
-      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-  ])
+  const [tasksRes, habitsRes, dailyRes, remindersRes, memoriesRes, activityRes] = await Promise.all(
+    [
+      client
+        .from('tasks')
+        // completed_at is fetched (not SQL-filtered) so the render can mirror the grid/list split:
+        // a one-off completion is excluded from ACTIVE regardless of day, yet a task completed TODAY
+        // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
+        // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
+        .select(
+          'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
+        )
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        // Bounded fetch (write-caps.ts): the prompt renders far fewer, and an account at the DB row
+        // caps must not balloon this function's memory or the model window.
+        .limit(TASKS_FETCH_LIMIT),
+      client
+        .from('habits')
+        .select('id, text, active, subtasks')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(HABITS_FETCH_LIMIT),
+      // daily_state.plan is encrypted at rest, so read the row through daily_state_get (DEFINER, fenced
+      // to auth.uid()) which returns the completion maps plus the DECRYPTED plan as one jsonb object
+      // (or null when there's no row today). Runs under the caller JWT, same as the other reads here.
+      client.rpc('daily_state_get', { p_date: date }),
+      // Pending per-task reminders (sent_at null = not yet fired) so BabyClaw knows which tasks
+      // already have one — otherwise it can't answer "do I have a reminder on X?" or reason about
+      // adding another. Every row carries offset_minutes (a task may hold several); a recurring task's
+      // reminders lead each occurrence, a one-off's lead the single due instant (same rows either way).
+      client
+        .from('task_reminders')
+        .select('task_id, offset_minutes')
+        .is('sent_at', null)
+        .order('created_at', { ascending: true })
+        .limit(REMINDERS_FETCH_LIMIT),
+      // Saved memories (oldest-first = a stable prompt order), only when memory is on. ≤30 rows by
+      // the DB trigger, so no limit needed. RLS scopes it to the caller.
+      memoryEnabled
+        ? client
+            .from('assistant_memories')
+            .select('id, content, updated_at')
+            .order('created_at', { ascending: true })
+        : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+      // Today's task activity (create/complete/move/re-date/…), newest first — so BabyClaw can answer
+      // "what did I do today?" and reference the day's changes in conversation. RLS scopes it to the
+      // caller; we bucket to the user's local day in JS below (avoids SQL tz math). ≤50 rows is plenty
+      // for one day at the write volume of a personal planner.
+      client
+        .from('task_activity')
+        .select('kind, task_text, detail, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ],
+  )
 
   const doneMap = (dailyRes.data?.done ?? {}) as Record<string, boolean>
   const habitDone = (dailyRes.data?.habit_done ?? {}) as Record<string, boolean>
@@ -230,8 +308,16 @@ export async function loadChatContext(
       dueTime: t.due_time as string | null,
       staged: t.staged as boolean,
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
-      recurringStatus: recurringStatusPhrase(rec, now),
+      recurringStatus: recurringStatusPhrase(rec, timeZone, now),
       ongoing: (t.ongoing as boolean | null) ?? false,
+      size: (t.size as string | null) ?? null,
+      // Dormant (paused) = future start date on the user's local calendar. BabyClaw still SEES a
+      // paused task — labeled, in its own PAUSED block — so "what's paused?" and resume work from
+      // chat, while it stays out of ACTIVE and out of generated plans.
+      pausedUntil:
+        t.start_date && (t.start_date as string).slice(0, 10) > date
+          ? (t.start_date as string).slice(0, 10)
+          : null,
       reminderOffsets: reminderByTask.get(t.id as string) ?? [],
       // A one-off is done via the daily done map; a recurring chore is done via lastDoneAt=today
       // (it never enters the map) — count either so a recurring task ticked off today leaves ACTIVE
@@ -271,20 +357,48 @@ export async function loadChatContext(
     })
   }
 
+  // Today's task activity → PromptActivity, bucketed to the user's local day (the query returns
+  // recent rows; the day boundary is a JS check, like everything else here). Oldest-first for a
+  // natural "here's how your day went" order. Malformed rows skipped.
+  const activity: PromptActivity[] = []
+  for (const r of (activityRes.data ?? []) as Record<string, unknown>[]) {
+    const createdAt = typeof r.created_at === 'string' ? r.created_at : null
+    const kind = typeof r.kind === 'string' ? r.kind : ''
+    if (!createdAt || !kind) continue
+    if (localDateInTZ(timeZone, new Date(createdAt)) !== date) continue
+    activity.push({
+      kind,
+      taskText: typeof r.task_text === 'string' ? r.task_text : '',
+      detail:
+        r.detail && typeof r.detail === 'object' && !Array.isArray(r.detail)
+          ? (r.detail as Record<string, unknown>)
+          : {},
+    })
+  }
+  activity.reverse()
+
   const fmt = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-US', { timeZone, ...opts }).format(now)
   const today = fmt({ weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  // The current wall-clock time in the user's zone ("1:45 AM"), rendered alongside `today` so
+  // BabyClaw knows when it's the small hours — a user up at 1 AM who says "tomorrow" means the day
+  // they're waking into (already TODAY on the calendar), not the next calendar day. en-US default is
+  // 12-hour; pin hour12 so server output never drifts with locale.
+  const nowTime = fmt({ hour: 'numeric', minute: '2-digit', hour12: true })
   const dayOfWeek = dayNameInTZ(timeZone, now)
 
   const context: ChatContext = {
     today,
+    nowTime,
     timeZone,
     scheduleSummary: scheduleSummary(config, dayOfWeek),
+    reminderDefault: reminderDefaultFromConfig(config),
     tasks,
     habits,
-    plan: planSummary(dailyRes.data?.plan),
+    plan: planSummary(dailyRes.data?.plan, tasks),
     assistant: parseAssistant(config),
     memories,
+    activity,
   }
 
   return { context, timeZone, labelById, memoryEnabled }

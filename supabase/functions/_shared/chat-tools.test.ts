@@ -11,14 +11,15 @@ import {
   type ToolContext,
 } from './chat-tools.ts'
 
-Deno.test('the completion/deletion tools plus the memory-confirm tools are destructive', () => {
+Deno.test('the completion/deletion tools plus delete_memory are destructive', () => {
+  // propose_memory is NOT here: a confident inference auto-saves (no confirmation gate) — see the
+  // proactive-memory-inference-autosave ADR. Only the irreversible actions still confirm.
   assertEquals([...DESTRUCTIVE].sort(), [
     'complete_task',
     'delete_completion',
     'delete_habit',
     'delete_memory',
     'delete_task',
-    'propose_memory',
   ])
 })
 
@@ -35,9 +36,10 @@ Deno.test('every advertised tool has an object input_schema and a description', 
 })
 
 Deno.test('confirmation summary prefers the label, falls back to the id (tasks + habits)', () => {
+  // "Delete", not "move to the trash" — the app has no trash surface for the summary to promise.
   assertEquals(
     destructiveSummary('delete_task', { task_id: 'abc' }, 'Call dentist'),
-    'Move "Call dentist" to the trash',
+    'Delete "Call dentist"',
   )
   assert(destructiveSummary('complete_task', { task_id: 'abc' }).includes('abc'))
   assertEquals(

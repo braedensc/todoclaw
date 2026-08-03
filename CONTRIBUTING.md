@@ -1,10 +1,10 @@
-# Contributing to Todoclaw
+# Contributing to TodoClaw
 
 Thanks for your interest! A few notes before you open a pull request.
 
 ## License & CLA
 
-Todoclaw is licensed under the **GNU AGPL-3.0** (see `LICENSE`).
+TodoClaw is licensed under the **GNU AGPL-3.0** (see `LICENSE`).
 
 Before any external contribution can be merged, contributors must agree to the
 project's **Contributor License Agreement** (`CLA.md`). This lets the maintainer

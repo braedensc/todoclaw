@@ -2,7 +2,7 @@ import { useId } from 'react'
 
 // TodoClaw's redrawn mark — the same real dog as TodoClawIcon (cream curly fur, tan floppy
 // ears, pale blue eyes) but posed unmistakably: peeking over an edge, paws hooked over it with
-// tiny claw tips dangling (the "claw" in Todoclaw), nose draped over the rail. Two variants:
+// tiny claw tips dangling (the "claw" in TodoClaw), nose draped over the rail. Two variants:
 //  - ledge (default): self-contained — he grips a drawn rail. Used beside the wordmark.
 //  - ledge={false}: no rail — he peeks over the top border of whatever the parent positions
 //    him on (the grid canvas). His chin is clipped at the border line (y=42.2 of the 64-unit

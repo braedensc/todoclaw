@@ -8,27 +8,51 @@
    Atmosphere (the "style mix" pass): the background is no longer a flat hex — four soft
    radial washes echo the quadrant colors in their actual corners (schedule green top-left,
    do-now terracotta top-right, someday grey bottom-left, errands olive bottom-right), and a
-   fine SVG-noise grain kills the vector-flatness. All layers are fixed-attachment so the light
-   stays put while the page scrolls. Decorative only — contrast of text on bg is unaffected
+   fine SVG-noise grain kills the vector-flatness. All layers ride a fixed body::before (below)
+   so the light stays put while the page scrolls. Decorative only — contrast of text on bg is unaffected
    (every wash is ≤ 15% alpha over warm paper). Strengths were doubled from the original
    ≤ 8.5% pass at the owner's request, and the short-lived time-of-day variant was dropped
    for this one constant, grid-matching tint. */
 @layer base {
   body {
     @apply bg-bg font-sans text-ink antialiased;
+    /* Safe-area insets key on env() itself, NOT the 719px width query (ADR
+       2026-07-22-capability-keyed-insets-width-keyed-shell): env() resolves 0 wherever there is
+       no inset (every desktop browser), while the devices that DO have insets routinely land on
+       the desktop side of the breakpoint — a landscape iPhone is 874pt wide on the 16 Pro
+       (side-edge notch → left/right), and an iPad in standalone spans under the transparent
+       status bar at every width (→ top). Bottom is the exception: below the breakpoint the
+       bottom nav manages its own safe-area inset, so a body pad there would double it — the
+       desktop-side rule lives with the shell block below. */
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* The atmosphere washes live on a fixed pseudo-element, NOT background-attachment: fixed —
+     iOS Safari inconsistently demotes that to `scroll`, and the body's background positioning
+     area is displaced by its safe-area padding anyway (a bug report measured the washes missing
+     from part of the visible viewport). A fixed inset:0 layer anchors the corner washes to the
+     true screen corners; it paints above body's own bg-bg (negative z-index children sit over
+     the parent's background, under its content). The flat bg-bg stays on body so the canvas
+     (which propagates body's background) never flashes unpainted. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background-image:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
       radial-gradient(58% 46% at 8% 0%, rgba(61, 122, 95, 0.15), transparent 70%),
       radial-gradient(58% 46% at 94% 0%, rgba(191, 94, 42, 0.15), transparent 70%),
       radial-gradient(52% 42% at 4% 100%, rgba(133, 124, 110, 0.13), transparent 70%),
       radial-gradient(52% 42% at 96% 100%, rgba(125, 107, 30, 0.11), transparent 70%);
-    background-attachment: fixed;
   }
 }
 
-/* iOS standalone / mobile viewport (fix/standalone-viewport). Below the 720px breakpoint the
-   PAGE never scrolls: html/body are locked to the viewport height and the app becomes a flex
-   column inside #root — a scrollable content region (App.tsx) plus the bottom nav pinned in
+/* iOS standalone / mobile viewport (fix/standalone-viewport). On the MOBILE side of the layout
+   gate (narrow viewports + landscape phones — the compound query below) the PAGE never scrolls:
+   html/body are locked to the viewport height and the app becomes a flex column inside #root — a scrollable content region (App.tsx) plus the bottom nav pinned in
    NORMAL FLOW as the column's last child. So the nav always sits flush to the column's bottom
    edge on every device; the earlier `position: fixed; bottom: 0` bar could float a hair above the
    true screen bottom on smaller iPhones (the layout-viewport bottom didn't line up), leaving an
@@ -39,39 +63,82 @@
    shorter than what's on screen and the nav floats up above the true bottom. dvh is by definition
    the height visible right now, so the column bottom == the screen bottom; and because the page
    can't scroll (overflow:hidden) the bar never retracts/expands from scrolling, so dvh doesn't
-   fluctuate — it's stable AND correct. (In a standalone PWA svh == dvh == lvh == the full screen, so
-   this only differs in the browser.) body (which
-   never scrolls) carries the safe-area TOP padding: with viewport-fit=cover the layout spans the
-   whole screen, so this keeps content clear of the camera island while the body's atmosphere
-   background — propagated to the canvas — still paints the strip above it. The nav manages its own
-   safe-area BOTTOM inset. overscroll-behavior is global (all widths): page-level scroll chaining /
-   pull-to-refresh gestures are never wanted. */
+   fluctuate — it's stable AND correct IN THE BROWSER. body carries the safe-area TOP padding
+   unconditionally (@layer base above — iPads need it at desktop widths too), which on this
+   locked shell keeps content clear of the camera island while the body's atmosphere background —
+   propagated to the canvas — still paints the strip above it. The nav manages its own safe-area
+   BOTTOM inset; on the DESKTOP side of the breakpoint (no bottom nav, page scrolls normally) the
+   body instead pads the scroll end clear of the home indicator, below. overscroll-behavior is
+   global (all widths): page-level scroll chaining / pull-to-refresh gestures are never wanted.
+
+   STANDALONE (installed PWA) — `--app-h` below. NO static CSS unit is correct there, and neither
+   is raw visualViewport.height (measured on the iOS 26.5 iPhone 16 + 15 Pro Max sims,
+   fix/iphone16-bottom-bar-still-high): at COLD LAUNCH the window is full-bleed but the
+   layout+visual viewport is screen-minus-top-inset and TOP-anchored — a dead strip spans the
+   bottom 59px until the first DOM-mutating tap settles the viewport to full-bleed (it never
+   settles on its own). A dvh OR vv.height shell floats the nav 59px up in that state (#317's
+   original float, re-shipped by #328's pure-vv measure); a static `100lvh` shell paints flush
+   there (document overflow below the short viewport still paints) but OVERHANGS in the
+   bottom-anchored short state #328's session measured (the 15-Pro-Max "bottom bar too tiny"
+   bug), and leaves scrollable slack iOS pans on composer focus (the chat sheets re-anchor from
+   visualViewport top+height, so panning is survivable — but never free).
+   The fix: src/hooks/use-app-height.ts measures the live viewport (visualViewport.height,
+   ignoring keyboard-sized shrinks) into `--app-h`, RAISED to the measured 100lvh window height
+   when iOS-standalone && env(safe-area-inset-top) > 0 — env() is viewport-relative, so a
+   non-zero top inset proves the viewport is pinned to the window TOP and the shell must reach
+   the window bottom. In a browser tab env-top == 0 and visualViewport.height == dvh, so the
+   measured value only ever matches the (correct) dvh path — the fallback below is also the
+   pre-JS first-paint value. */
 html,
 body {
   overscroll-behavior: none;
 }
-@media (max-width: 719px) {
+/* THE LAYOUT GATE, CSS form. Phones stay MOBILE in both orientations (ADR
+   2026-07-23-phones-stay-mobile-in-landscape): the second leg catches coarse-pointer viewports
+   that are SHAPED like a landscape phone (aspect ≥ 8/5) and NARROW enough to not be an iPad
+   (≤ 1023px — landscape iPads are ≥ 1133pt wide). Deliberately aspect+width, never height:
+   the iOS keyboard shrinks the layout viewport in installed PWAs, so a height leg would flip
+   the whole shell mid-typing on an iPad (see LANDSCAPE_PHONE_MAX_WIDTH's derivation).
+   Lockstep with MOBILE_MEDIA_QUERY in src/hooks/use-is-mobile.ts and with tailwind.config.js's
+   `wide` screen (its complement). */
+@media (max-width: 719px), ((pointer: coarse) and (min-aspect-ratio: 8/5) and (max-width: 1023px)) {
   html,
   body {
-    height: 100dvh;
+    height: 100dvh; /* first paint + no-JS fallback (correct in a tab; see note above) */
+    height: var(--app-h, 100dvh); /* measured live viewport once useAppHeight runs */
     overflow: hidden;
-  }
-  body {
-    padding-top: env(safe-area-inset-top);
   }
   #root {
     height: 100%;
     overflow: hidden;
   }
 }
+/* Desktop-side layouts (iPads included) scroll the page normally, so the last content row can
+   end under the home indicator; pad the scroll end clear of it. Scoped to the gate's COMPLEMENT
+   (same four-query spelling as tailwind's `wide` — ¬(coarse ∧ ar≥8/5 ∧ w≤1023) ≡ fine ∨ none ∨
+   ar<8/5 ∨ w≥1024) so the mobile shell, where the bottom nav owns this inset, never double-pads.
+   The ar<8/5 leg is spelled max-aspect-ratio: 1599/1000 — a hairline GAP at aspect ∈
+   (1.599, 1.6) beats an overlap where both shells' styles apply at exactly 8/5. */
+@media (min-width: 720px) and (pointer: fine),
+  (min-width: 720px) and (pointer: none),
+  (min-width: 1024px),
+  (min-width: 720px) and (max-aspect-ratio: 1599/1000) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
 
-/* Mobile form ergonomics (feat/mobile-ergonomics, audit §3.1):
+/* Touch form ergonomics (feat/mobile-ergonomics, audit §3.1):
    iOS Safari auto-zooms the page when a focused control's font-size is under 16px, and almost
    every input in the app is text-sm (14px) — so on phones every field focus triggered a zoom the
-   user had to pinch back out of. Below the breakpoint, force all text-entry controls to 16px.
+   user had to pinch back out of. Force all text-entry controls to 16px on any touch-primary
+   device: `(pointer: coarse)` is the capability leg (iPads live on the DESKTOP side of the
+   layout gate but still zoom/touch), and the width leg keeps narrow desktop windows and
+   phone-viewport test harnesses rendering exactly like phones.
    !important is deliberate: it must beat the Tailwind text-sm/text-xs utility on the element
-   (higher specificity than these element selectors). Desktop keeps its denser 14px type. */
-@media (max-width: 719px) {
+   (higher specificity than these element selectors). Fine-pointer desktop keeps its denser
+   14px type. */
+@media (max-width: 719px), (pointer: coarse) {
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea {
@@ -82,6 +149,22 @@ body {
      the track) grows the touchable strip without changing the rendered track/thumb. */
   input[type='range'] {
     padding-block: 12px;
+  }
+}
+
+/* iPad hybrid (workshop PR 4): the card action bar's controls are desktop-dense (the ⋯/× are
+   ~18px), far under the 44pt touch guideline — on coarse pointers, grow each an INVISIBLE tap
+   halo (the TouchGridChip trick) without changing the rendered card. Neighboring halos clip at
+   their midpoints; still far better than 18px. Coarse-only so fine-pointer click precision is
+   untouched. */
+@media (pointer: coarse) {
+  [data-card-actions] button {
+    position: relative;
+  }
+  [data-card-actions] button::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
   }
 }
 

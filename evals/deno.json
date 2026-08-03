@@ -1,0 +1,8 @@
+{
+  "lock": false,
+  "tasks": {
+    "eval": "deno run --allow-env --allow-net --allow-read --allow-write=results --allow-run=supabase run.ts",
+    "check": "deno check run.ts",
+    "test": "deno test --allow-env --allow-read lib/"
+  }
+}

@@ -33,6 +33,7 @@ function task(over: Partial<Task> = {}): Task {
     created_at: '2026-06-01T00:00:00.000Z',
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }
@@ -75,6 +76,7 @@ describe('buildPlanRequest', () => {
 
     expect(req.tasks).toHaveLength(1)
     expect(req.tasks[0]).toMatchObject({
+      id: 'keep', // rides along so the server can tie emitted rocks back to tasks (taskId)
       text: 'Keep',
       importance: 60, // round(0.6 * 100)
       urgency: 90, // round(0.9 * 100)
@@ -106,6 +108,21 @@ describe('buildPlanRequest', () => {
     expect(byText).toEqual({ Big: 'L', Small: null })
   })
 
+  it('collects dormant tasks un-pausing within the window into `upcoming`, keeping them out of tasks', () => {
+    const tasks = [
+      task({ id: 'live', text: 'Live', start_date: '2026-06-24' }), // today → live, in tasks
+      task({ id: 'soon', text: 'Soon', start_date: '2026-06-25', due: '2026-07-01' }), // +1d → upcoming
+      task({ id: 'far', text: 'Far', start_date: '2026-06-30' }), // +6d → dormant but out of window
+    ]
+    const req = buildPlanRequest(tasks, [], {}, TZ, NOW)
+    // Dormant tasks never appear as plannable tasks.
+    expect(req.tasks.map((t) => t.text)).toEqual(['Live'])
+    // Only the within-window dormant task is a heads-up, carrying its offset + due.
+    expect(req.upcoming).toEqual([
+      { id: 'soon', text: 'Soon', startsInDays: 1, startDate: '2026-06-25', due: '2026-07-01' },
+    ])
+  })
+
   it('surfaces overdue/due/soon recurring chores and active habits, and the local date', () => {
     const tasks = [
       task({
@@ -117,10 +134,105 @@ describe('buildPlanRequest', () => {
     const habits = [habit({ text: 'Stretch' }), habit({ text: 'Inactive', active: false })]
     const req = buildPlanRequest(tasks, habits, {}, TZ, NOW)
 
-    expect(req.recurringDue).toEqual([{ text: 'Water', status: 'never done' }])
+    expect(req.recurringDue).toEqual([
+      { id: 'overdue', text: 'Water', status: 'never done', daysLeft: -999 },
+    ])
     expect(req.habits).toEqual(['Stretch'])
     expect(req.dayOfWeek).toBe('Wednesday')
     expect(req.today).toBe('Wednesday, June 24, 2026')
+  })
+
+  // ---- the reminder ANCHOR is not a deadline ---------------------------------------------------
+  // On a recurring chore `due`/`due_time` are the reminder occurrence anchor: nextRecurringFireAt
+  // phases the occurrence grid off them and NEVER advances them, so a chore that carries a reminder
+  // permanently holds a `due` date receding into the past. Plan selection must therefore key on the
+  // cadence alone. A change that read that anchor as a deadline shipped past a green CI once
+  // (reverted in #348) precisely because nothing pinned this — these are that pin.
+  describe('a recurring chore whose due date is a reminder anchor', () => {
+    // Anchored 2026-06-01 09:00 (weeks back, as any live reminder anchor is), weekly, done today.
+    const anchored = (over: Partial<Task> = {}) =>
+      task({
+        id: 'chore',
+        text: 'Laundry',
+        due: '2026-06-01',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 7, lastDoneAt: '2026-06-24T11:00:00Z', doneCount: 9 },
+        ...over,
+      })
+
+    it('is NOT dragged into the plan by an anchor date far in the past', () => {
+      const req = buildPlanRequest([anchored()], [], {}, TZ, NOW)
+      expect(req.recurringDue).toEqual([]) // cadence says 7 days out — the anchor must not override
+      expect(req.tasks).toEqual([]) // and a chore is never a plannable task
+    })
+
+    it('reports the cadence status, never an anchor-derived "overdue Nd"', () => {
+      const dueOnCadence = anchored({
+        recurring: { frequencyDays: 7, lastDoneAt: '2026-06-17T11:00:00Z', doneCount: 9 },
+      })
+      const req = buildPlanRequest([dueOnCadence], [], {}, TZ, NOW)
+      // 7 days since a weekly chore → due today. If the anchor leaked in it would read
+      // "overdue 23d" (2026-06-01 is 23 days before NOW) and climb every day.
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'due today', daysLeft: 0 },
+      ])
+    })
+
+    it('is not hidden by an anchor date in the FUTURE either', () => {
+      // The mirror failure: treating the anchor as a deadline would also mute a genuinely
+      // overdue chore whose anchor happens to sit ahead of today.
+      const overdue = anchored({
+        due: '2026-12-25',
+        recurring: { frequencyDays: 3, lastDoneAt: '2026-06-19T11:00:00Z', doneCount: 2 },
+      })
+      const req = buildPlanRequest([overdue], [], {}, TZ, NOW)
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'overdue 2d', daysLeft: -2 },
+      ])
+    })
+  })
+
+  // The mechanism that DOES surface a chore on a chosen day (2026-07-29). "I need to do laundry
+  // tomorrow" writes recurring.nextDueOn; the plan reads it through the same recurringStatus every
+  // other surface uses, so the chore reaches the plan card's "chores due today" strip.
+  describe('a recurring chore scheduled onto a specific day', () => {
+    // NOW is 2026-06-24T12:00:00Z = 08:00 in New York, so "today" there is the 24th.
+    const scheduled = (nextDueOn: string | null) =>
+      task({
+        id: 'chore',
+        text: 'Laundry',
+        // Cadence alone = "in 29d" → 'ok' → nowhere near the plan.
+        recurring: {
+          frequencyDays: 30,
+          lastDoneAt: '2026-06-22T11:00:00Z',
+          doneCount: 9,
+          nextDueOn,
+        },
+      })
+
+    it('is absent from the plan on the cadence alone', () => {
+      expect(buildPlanRequest([scheduled(null)], [], {}, TZ, NOW).recurringDue).toEqual([])
+    })
+
+    it('reaches the plan as "due today" on the day it was scheduled for', () => {
+      const req = buildPlanRequest([scheduled('2026-06-24')], [], {}, TZ, NOW)
+      // daysLeft <= 0 is what deriveChores selects on, so this is the row that lands in the strip.
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'due today', daysLeft: 0 },
+      ])
+      expect(req.tasks).toEqual([]) // still never a plannable rock — a chore is not a rock
+    })
+
+    it('is a heads-up, not a chore for today, the day before', () => {
+      const req = buildPlanRequest([scheduled('2026-06-25')], [], {}, TZ, NOW)
+      expect(req.recurringDue).toEqual([
+        { id: 'chore', text: 'Laundry', status: 'due tomorrow', daysLeft: 1 },
+      ])
+    })
+
+    it('stays out of the plan entirely while the scheduled day is far off', () => {
+      expect(buildPlanRequest([scheduled('2026-07-20')], [], {}, TZ, NOW).recurringDue).toEqual([])
+    })
   })
 })
 
@@ -162,6 +274,26 @@ describe('usePlanMyDay', () => {
     expect(fn).toBe('save_daily_plan')
     expect(arg.p_plan).toEqual(PLAN_RESULT)
     expect(arg.p_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  // The blank-plan-card bug: a truncated emit_plan reached the client as a structurally plausible
+  // object with no headline. The old `!data?.plan` truthiness check let it through, so the card
+  // rendered empty AND the junk was persisted to daily_state. The response is a boundary — it gets
+  // validated like any other.
+  it.each([
+    ['an empty object', {}],
+    ['a plan with no headline', { ...PLAN_RESULT, headline: '' }],
+    ['a plan whose headline is only whitespace', { ...PLAN_RESULT, headline: '   ' }],
+    ['a contentless shell (the reported shape)', { bigRock: null, smallRocks: [], anchors: [] }],
+    ['a missing plan', undefined],
+  ])('rejects %s, and persists nothing', async (_label, plan) => {
+    invoke.mockResolvedValue({ data: { plan }, error: null })
+    const { result } = renderHook(() => usePlanMyDay(TZ), { wrapper: wrapper() })
+
+    result.current.mutate(buildPlanRequest([], [], {}, TZ, NOW))
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(rpc).not.toHaveBeenCalled() // nothing reaches daily_state
   })
 
   it('still succeeds (plan stays visible) when persistence fails — best effort', async () => {

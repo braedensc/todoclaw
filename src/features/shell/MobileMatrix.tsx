@@ -6,18 +6,24 @@ import { useDailyState } from '../daily-state/use-daily-state'
 import { useNow } from '../../hooks/use-now'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
-import { urgencyTier } from '../../lib/visual-urgency'
+import { PAUSED_OPACITY, pausedChipStyle, urgencyTier } from '../../lib/visual-urgency'
 import { recurringDoneToday } from '../../lib/recurring'
+import { isDormant } from '../../lib/start-date'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import {
   summarizeQuadrants,
+  dormantByQuadrant,
   moveToQuadrant,
+  isUnplaced,
   QUADRANT_ORDER,
   QUADRANT_CENTER,
+  QUADRANT_PREVIEW_COUNT,
   QUADRANT_SUBTITLE,
 } from '../../lib/quadrant-summary'
 import { QUADRANT_TINT } from '../grid/grid-constants'
 import { ListView } from '../list/ListView'
+import { PausedSection } from '../tasks/PausedSection'
+import { UnplacedSection } from '../tasks/UnplacedSection'
 import { MoveToQuadrantSheet } from './MoveToQuadrantSheet'
 import type { QuadrantFocus } from './use-quadrant-focus'
 
@@ -31,6 +37,10 @@ import type { QuadrantFocus } from './use-quadrant-focus'
 // tap-based "Move to quadrant" picker (MoveToQuadrantSheet) — the no-drag reposition path. ADDING
 // is owned by the bottom nav's "+" (MobileAddSheet at the app level), not here. Desktop never mounts
 // this — WorkArea renders it only below the breakpoint (useIsMobile).
+//
+// Staged (unplaced) tasks carry no quadrant, so the buckets and focus lists skip them; the
+// Unplaced strip below the overview is their mobile surface (desktop has the tray drag instead).
+// Its "Place" opens the same picker, which materializes the task (x/y + staged:false).
 
 // Label + color for a quadrant, read from the canonical quadrantMeta at its band center.
 function meta(key: QuadrantKey) {
@@ -93,17 +103,33 @@ export function MobileMatrix({
   // "done" reads as a no-op; it returns the next day. Mirrors the grid's isPlaced.
   const doneToday = daily?.done ?? {}
   const active = tasks.filter(
-    (t) => !t.completed_at && !doneToday[t.id] && !recurringDoneToday(t.recurring, timeZone),
+    (t) =>
+      !t.completed_at &&
+      !doneToday[t.id] &&
+      !recurringDoneToday(t.recurring, timeZone) &&
+      // Dormant (paused / future start date): out of the quadrants and counts; the Paused strip
+      // below the overview is its mobile home until the start date arrives.
+      !isDormant(t, timeZone),
   )
+  const paused = tasks.filter((t) => !t.completed_at && isDormant(t, timeZone))
+  // Active but not on the grid yet (staged / null coords) — invisible to the buckets and focus
+  // lists, so the Unplaced strip below the overview is their only mobile surface.
+  const unplaced = active.filter((t) => isUnplaced(t))
   const { buckets } = summarizeQuadrants(active, { timeZone })
+  // Placed dormant tasks bucketed per quadrant — the set-aside preview that rides alongside the
+  // active summary. They stay OUT of `active` (and so out of the count badges and dueCounts), so
+  // they can't read as due or inflate a quadrant's total; they surface only as a dimmed ⏸ preview
+  // row + a slate ⏸N sub-count. Unplaced dormant tasks live in the Paused strip below.
+  const dormantBuckets = dormantByQuadrant(paused.filter((t) => !isUnplaced(t)))
 
   // Per-quadrant "on fire" counts for the overview badges: due today (incl. the final hours)
-  // and overdue. Recurring tasks are excluded — their cadence badge is a different system.
+  // and overdue. Recurring tasks are excluded — their cadence badge is a different system. So are
+  // unplaced tasks: they're in no cell, so they can't feed a cell's badge.
   const dueCounts = (key: QuadrantKey): { today: number; overdue: number } => {
     let today = 0
     let overdue = 0
     for (const t of active) {
-      if (t.recurring || quadrantMeta(t.x ?? 0.5, t.y ?? 0.5).key !== key) continue
+      if (t.recurring || isUnplaced(t) || quadrantMeta(t.x ?? 0.5, t.y ?? 0.5).key !== key) continue
       const tier = urgencyTier(
         daysUntil(t.due, { timeZone }),
         minutesUntilDueTime(t.due, t.due_time, timeZone, now),
@@ -116,18 +142,25 @@ export function MobileMatrix({
 
   // Commit a tap-picker move: snap to the chosen quadrant's center, collision-resolve against all
   // active tasks, write the coords, and close the sheet. Same coord path as a list-slider commit.
+  // staged:false materializes a still-staged task (the Unplaced strip's Place path) — the mobile
+  // equivalent of the desktop tray drag; it's a no-op value for an already-placed row.
   const handleMove = (dest: QuadrantKey) => {
     if (!moveTask) return
-    const { x, y } = moveToQuadrant(moveTask, dest, active)
-    updateTask.mutate({ id: moveTask.id, patch: { x, y } })
+    const { x, y } = moveToQuadrant(moveTask, dest, active, { timeZone })
+    updateTask.mutate({ id: moveTask.id, patch: { x, y, staged: false } })
     setMoveTask(null)
   }
 
-  // The move picker — shared across overview/focus; open while a task is selected.
+  // The move picker — shared across overview (Unplaced strip) and focus rows; open while a task
+  // is selected. An unplaced task has no current quadrant, so every target stays selectable.
   const moveSheet = (
     <MoveToQuadrantSheet
       task={moveTask}
-      currentKey={moveTask ? quadrantMeta(moveTask.x ?? 0.5, moveTask.y ?? 0.5).key : null}
+      currentKey={
+        moveTask && !isUnplaced(moveTask)
+          ? quadrantMeta(moveTask.x ?? 0.5, moveTask.y ?? 0.5).key
+          : null
+      }
       onPick={handleMove}
       onClose={() => setMoveTask(null)}
     />
@@ -194,92 +227,139 @@ export function MobileMatrix({
 
   // ---- OVERVIEW: the read-only 2×2 minimap ----
   return (
-    <section aria-label="Quadrant overview" data-tour="matrix" className={shell}>
-      <div className="grid grid-cols-2 gap-2.5">
-        {QUADRANT_ORDER.map((key) => {
-          const m = meta(key)
-          const { count, top } = buckets[key]
-          const empty = count === 0
-          const due = dueCounts(key)
-          const dueBadge = [
-            due.today > 0 ? `${due.today} today` : null,
-            due.overdue > 0 ? `${due.overdue} overdue` : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => enterFocus(key)}
-              aria-label={`${m.label}, ${count} ${count === 1 ? 'task' : 'tasks'}`}
-              className={
-                'flex min-h-[128px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +
-                (empty ? 'opacity-60' : '')
-              }
-              style={{ borderLeft: `4px solid ${m.color}`, background: QUADRANT_TINT[key] }}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-serif text-[15px] font-semibold" style={{ color: m.color }}>
-                  {m.label}
-                </span>
-                <span
-                  aria-hidden
-                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
-                  style={{ background: m.color }}
-                >
-                  {count}
-                </span>
-              </div>
-              <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
-              {/* Due-urgency badge — the mobile stand-in for the grid's glow: what's on fire in
-                  this quadrant, at a glance from the overview. */}
-              {dueBadge && (
-                <span
-                  className="inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                  style={{ color: '#c2693f', backgroundColor: 'rgba(194,105,63,0.10)' }}
-                >
-                  <span aria-hidden>⏰</span>
-                  {dueBadge}
-                </span>
-              )}
-              {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar. */}
-              {empty ? (
-                <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>
-              ) : (
-                <ul className="mt-0.5 flex flex-col gap-1">
-                  {top.map((t) => (
-                    <li
-                      key={t.id}
-                      className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink"
-                    >
+    <>
+      <section aria-label="Quadrant overview" data-tour="matrix" className={shell}>
+        <div className="grid grid-cols-2 gap-2.5">
+          {QUADRANT_ORDER.map((key) => {
+            const m = meta(key)
+            const { count, top } = buckets[key]
+            const dormant = dormantBuckets[key]
+            // Dormant tasks fill only the preview slots the active top-3 leave empty, so a paused
+            // task can never displace an active one from the visible preview.
+            const dormantPreview = dormant.slice(
+              0,
+              Math.max(0, QUADRANT_PREVIEW_COUNT - top.length),
+            )
+            // Empty only when there's nothing at all — active OR paused — to show.
+            const empty = count === 0 && dormant.length === 0
+            const due = dueCounts(key)
+            const dueBadge = [
+              due.today > 0 ? `${due.today} today` : null,
+              due.overdue > 0 ? `${due.overdue} overdue` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => enterFocus(key)}
+                aria-label={`${m.label}, ${count} ${count === 1 ? 'task' : 'tasks'}`}
+                className={
+                  'flex min-h-[128px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +
+                  (empty ? 'opacity-60' : '')
+                }
+                style={{ borderLeft: `4px solid ${m.color}`, background: QUADRANT_TINT[key] }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-serif text-[15px] font-semibold" style={{ color: m.color }}>
+                    {m.label}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1">
+                    {/* Slate ⏸N sub-count — how many paused tasks belong to this quadrant. Kept
+                        separate from (and quieter than) the active count badge so a paused task
+                        never reads as an active or due one. */}
+                    {dormant.length > 0 && (
                       <span
                         aria-hidden
-                        className="h-1 w-1 shrink-0 rounded-full"
-                        style={{ background: m.color }}
-                      />
-                      <span className="truncate">{t.text}</span>
-                    </li>
-                  ))}
-                  {count > top.length && (
-                    <li className="text-[11px] text-muted-light">+{count - top.length} more</li>
-                  )}
-                </ul>
-              )}
-            </button>
-          )
-        })}
-      </div>
-      {/* A fully-empty board: offer the example-day peek right where the new user is looking. */}
-      {active.length === 0 && onSeeExample && (
-        <button
-          type="button"
-          onClick={onSeeExample}
-          className="mt-2.5 w-full rounded-full border border-border-strong bg-card py-2.5 text-[13px] font-medium text-ink transition-colors active:scale-[0.99]"
-        >
-          <span aria-hidden>👀</span> See an example board
-        </button>
-      )}
-    </section>
+                        title={`${dormant.length} paused`}
+                        className="inline-flex h-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold leading-none"
+                        style={pausedChipStyle()}
+                      >
+                        ⏸{dormant.length}
+                      </span>
+                    )}
+                    <span
+                      aria-hidden
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
+                      style={{ background: m.color }}
+                    >
+                      {count}
+                    </span>
+                  </span>
+                </div>
+                <span className="text-[11px] text-muted-light">{QUADRANT_SUBTITLE[key]}</span>
+                {/* Due-urgency badge — the mobile stand-in for the grid's glow: what's on fire in
+                  this quadrant, at a glance from the overview. */}
+                {dueBadge && (
+                  <span
+                    className="inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{ color: '#c2693f', backgroundColor: 'rgba(194,105,63,0.10)' }}
+                  >
+                    <span aria-hidden>⏰</span>
+                    {dueBadge}
+                  </span>
+                )}
+                {/* Preview the top few tasks (score-ranked) instead of an ambiguous density bar.
+                    Any paused tasks follow the active ones, DIMMED with a ⏸ marker, so they read
+                    as "set aside, coming back later" and never as part of the live workload. */}
+                {empty ? (
+                  <span className="mt-0.5 text-[11.5px] text-muted-light">Nothing here yet</span>
+                ) : (
+                  <ul className="mt-0.5 flex flex-col gap-1">
+                    {top.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink"
+                      >
+                        <span
+                          aria-hidden
+                          className="h-1 w-1 shrink-0 rounded-full"
+                          style={{ background: m.color }}
+                        />
+                        <span className="truncate">{t.text}</span>
+                      </li>
+                    ))}
+                    {count > top.length && (
+                      <li className="text-[11px] text-muted-light">+{count - top.length} more</li>
+                    )}
+                    {dormantPreview.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex items-center gap-1.5 text-[11.5px] leading-tight text-ink"
+                        style={{ opacity: PAUSED_OPACITY }}
+                      >
+                        <span aria-hidden className="shrink-0 text-[10px] leading-none">
+                          ⏸
+                        </span>
+                        <span className="truncate">{t.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        {/* A fully-empty board: offer the example-day peek right where the new user is looking. */}
+        {active.length === 0 && onSeeExample && (
+          <button
+            type="button"
+            onClick={onSeeExample}
+            className="mt-2.5 w-full rounded-full border border-border-strong bg-card py-2.5 text-[13px] font-medium text-ink transition-colors active:scale-[0.99]"
+          >
+            <span aria-hidden>👀</span> See an example board
+          </button>
+        )}
+      </section>
+      {/* Staged tasks — their only mobile surface; Place opens the quadrant picker. */}
+      <UnplacedSection tasks={unplaced} onPlace={setMoveTask} />
+      {/* Paused (dormant) tasks — their only mobile surface; Resume wakes one immediately. */}
+      <PausedSection
+        tasks={paused}
+        onResume={(id) => updateTask.mutate({ id, patch: { start_date: null } })}
+      />
+      {moveSheet}
+    </>
   )
 }

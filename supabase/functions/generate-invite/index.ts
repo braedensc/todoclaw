@@ -17,6 +17,7 @@ import { userClient, requireUser } from '../_shared/auth.ts'
 import { adminClient } from '../_shared/admin.ts'
 import { isOwner } from '../_shared/owner.ts'
 import { generateInviteCode, redeemUrl } from '../_shared/invite-code.ts'
+import { ipThrottleOk } from '../_shared/ip-throttle.ts'
 
 const BodySchema = z
   .object({
@@ -38,6 +39,10 @@ Deno.serve(async (req) => {
       status,
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
+
+  // Coarse per-IP flood guard, before auth (verify_jwt is off for this function).
+  if (!(await ipThrottleOk(req, 'generate-invite', 60, 60)))
+    return json({ error: 'too_many_requests' }, 429)
 
   // Verify the caller from their JWT (RLS-scoped client, used only to establish identity here).
   const user = await requireUser(userClient(req))

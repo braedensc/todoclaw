@@ -6,10 +6,14 @@ import { useConfirm } from '../../components/use-confirm'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
+import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
+import { isDormant } from '../../lib/start-date'
+import { recurringCompletion, recurringDoneToday } from '../../lib/recurring'
 import type { Task } from '../../types/task'
 import { ListRow } from './ListRow'
+import { PausedSection } from '../tasks/PausedSection'
 
 // Priority-ranked list view. Rows are the user's active tasks (soft-deleted rows are already
 // excluded by useTasks), MINUS anything marked done today, INCLUDING not-yet-placed tasks (still
@@ -55,6 +59,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   // recurring row's reminders lead each occurrence — same offsets, same picker as a one-off.
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
+  const setDue = useSetDueWithDefaultReminder()
   const confirm = useConfirm()
   // Only for the empty-state copy: the add affordance is the header widget on desktop but the
   // bottom-nav ➕ on a phone — pointing a phone user at a header that isn't there is a dead end.
@@ -79,13 +84,31 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   // Exclude completed tasks. A one-off completion is PERMANENT (task.completed_at, survives the
   // daily reset); today's daily.done map is kept as a same-day belt-and-suspenders hide before
   // the tasks query refetches with completed_at set. Missing daily state = empty day → done map
-  // excludes nothing.
+  // excludes nothing. Dormant tasks (paused / future start_date) are excluded too — they live in
+  // the collapsed Paused strip below the list, not in the ranking.
+  // A RECURRING chore counts as done today too. It never sets completed_at and never enters the
+  // done map (completing it advances recurring.lastDoneAt), so without this it kept rendering here
+  // as a normal un-ticked row while the grid, MobileMatrix and BabyClaw had all correctly hidden
+  // it — the list was the one surface still claiming a finished chore was outstanding.
   const doneToday = daily?.done ?? {}
-  const active = tasks.filter((t) => !t.completed_at && !doneToday[t.id])
+  const live = tasks.filter(
+    (t) => !t.completed_at && !doneToday[t.id] && !recurringDoneToday(t.recurring, timeZone),
+  )
+  const active = live.filter((t) => !isDormant(t, timeZone))
+  // The full list (not a quadrant focus) is where paused tasks stay findable; a focus list scopes
+  // to a quadrant, and a dormant task deliberately has no quadrant presence.
+  const paused = quadrantFilter ? [] : live.filter((t) => isDormant(t, timeZone))
+  const pausedSection = (
+    <PausedSection
+      tasks={paused}
+      onResume={(id) => updateTask.mutate({ id, patch: { start_date: null } })}
+    />
+  )
 
   // Optional per-quadrant scoping (mobile focus view). Only PLACED tasks carry a real quadrant,
-  // so a staged task (null x/y) is never bucketed into one — the mobile overview handles unplaced
-  // tasks on its own. Unset → `active` unchanged, so the default list is exactly as before.
+  // so a staged task (null x/y) is never in a focus list — on mobile it surfaces in the
+  // overview's Unplaced strip (UnplacedSection), whose Place picker materializes it. Unset →
+  // `active` unchanged, so the default (desktop) list still ranks staged tasks like any other.
   const scoped = quadrantFilter
     ? active.filter(
         (t) =>
@@ -98,24 +121,34 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const ranked = [...scoped].sort((a, b) => taskScore(b, { timeZone }) - taskScore(a, { timeZone }))
 
   if (ranked.length === 0) {
+    // The Paused strip still renders on an otherwise-empty list — a user whose ONLY tasks are
+    // paused must be able to find and resume them (hiding it here would read as data loss).
     return (
-      <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-8">
-        <p className="text-muted">
-          {quadrantFilter
-            ? 'Nothing in this quadrant yet.'
-            : isMobile
-              ? 'No tasks yet — add one with the ➕ below.'
-              : 'No tasks yet — add one from the header.'}
-        </p>
-      </section>
+      <>
+        <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-8">
+          <p className="text-muted">
+            {quadrantFilter
+              ? 'Nothing in this quadrant yet.'
+              : isMobile
+                ? 'No tasks yet — add one with the ➕ below.'
+                : 'No tasks yet — add one from the header.'}
+          </p>
+        </section>
+        {pausedSection}
+      </>
     )
   }
 
   const handleUpdateText = (id: string, text: string) => updateTask.mutate({ id, patch: { text } })
   const handleUpdateCoords = (id: string, x: number, y: number) =>
     updateTask.mutate({ id, patch: { x, y } })
-  const handleUpdateDue = (id: string, due: string | null, dueTime: string | null) =>
-    updateTask.mutate({ id, patch: { due, due_time: dueTime } })
+  // Due writes go through the shared setDue so a task gaining its FIRST due time picks up the
+  // user's default reminder (Settings → Task reminders), like every other schedule surface.
+  const handleUpdateDue = (id: string, due: string | null, dueTime: string | null) => {
+    const task = tasks?.find((t) => t.id === id)
+    if (task) setDue(task, due, dueTime)
+    else updateTask.mutate({ id, patch: { due, due_time: dueTime } })
+  }
   // Delete now confirms first (was a silent soft-delete). The app-themed useConfirm gate names
   // the task so an accidental click can't quietly remove it; only "Delete" soft-deletes.
   const handleDelete = async (task: Task) => {
@@ -131,21 +164,13 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleDone = (task: Task) =>
     markDone.mutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
 
-  // Mark a RECURRING task done: reset its cycle — lastDoneAt=now, doneCount+=1 — via the plain
-  // task UPDATE. Deliberately NOT history/daily_state (parity spec: recurring done lives in
-  // lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
+  // Mark a RECURRING task done: advance its cycle via `recurringCompletion` — lastDoneAt=now,
+  // doneCount+=1, and any one-shot `nextDueOn` cleared so the cadence resumes from the REAL
+  // completion — via the plain task UPDATE. Deliberately NOT history/daily_state (recurring done
+  // lives in lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
   const handleDoneRecurring = (task: Task) => {
     if (!task.recurring) return
-    updateTask.mutate({
-      id: task.id,
-      patch: {
-        recurring: {
-          ...task.recurring,
-          lastDoneAt: new Date().toISOString(),
-          doneCount: (task.recurring.doneCount ?? 0) + 1,
-        },
-      },
-    })
+    updateTask.mutate({ id: task.id, patch: { recurring: recurringCompletion(task.recurring) } })
   }
 
   // Recurring set/edit/remove — all write the `recurring` jsonb through the shared task UPDATE.
@@ -171,36 +196,45 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleSetOngoing = (id: string, on: boolean) =>
     updateTask.mutate({ id, patch: on ? { ongoing: true, recurring: null } : { ongoing: false } })
 
+  // Pause (future start date) / resume (null). A paused row leaves the ranking on the next render
+  // and reappears in the Paused strip below.
+  const handleSetStartDate = (id: string, startDate: string | null) =>
+    updateTask.mutate({ id, patch: { start_date: startDate } })
+
   return (
-    <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
-      <ul className="flex flex-col gap-2">
-        {ranked.map((task: Task, i) => (
-          <ListRow
-            now={now}
-            key={task.id}
-            task={task}
-            rank={i + 1}
-            allTasks={active}
-            timeZone={timeZone}
-            onUpdateText={handleUpdateText}
-            onUpdateCoords={handleUpdateCoords}
-            onUpdateDue={handleUpdateDue}
-            onDone={handleDone}
-            onDoneRecurring={handleDoneRecurring}
-            onSetRecurring={handleSetRecurring}
-            onSetFrequency={handleSetFrequency}
-            onRemoveRecurring={handleRemoveRecurring}
-            onSetOngoing={handleSetOngoing}
-            onDelete={handleDelete}
-            onMove={onMoveToQuadrant}
-            reminderOffsets={reminders?.get(task.id) ?? []}
-            onToggleReminder={(minutes) =>
-              reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
-            }
-            onClearReminders={() => reminderWrites.clear(task.id)}
-          />
-        ))}
-      </ul>
-    </section>
+    <>
+      <section aria-label="List" className="rounded-xl border border-border-strong bg-panel p-4">
+        <ul className="flex flex-col gap-2">
+          {ranked.map((task: Task, i) => (
+            <ListRow
+              now={now}
+              key={task.id}
+              task={task}
+              rank={i + 1}
+              allTasks={active}
+              timeZone={timeZone}
+              onUpdateText={handleUpdateText}
+              onUpdateCoords={handleUpdateCoords}
+              onUpdateDue={handleUpdateDue}
+              onDone={handleDone}
+              onDoneRecurring={handleDoneRecurring}
+              onSetRecurring={handleSetRecurring}
+              onSetFrequency={handleSetFrequency}
+              onRemoveRecurring={handleRemoveRecurring}
+              onSetOngoing={handleSetOngoing}
+              onSetStartDate={handleSetStartDate}
+              onDelete={handleDelete}
+              onMove={onMoveToQuadrant}
+              reminderOffsets={reminders?.get(task.id) ?? []}
+              onToggleReminder={(minutes) =>
+                reminderWrites.toggle(task.id, minutes, reminders?.get(task.id) ?? [])
+              }
+              onClearReminders={() => reminderWrites.clear(task.id)}
+            />
+          ))}
+        </ul>
+      </section>
+      {pausedSection}
+    </>
   )
 }

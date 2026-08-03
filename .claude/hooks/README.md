@@ -60,6 +60,18 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 > (branch, merged-PR, cross-worktree) each swallow their own errors and stay fail-**open**. Verified
 > by an 89-case block/allow battery (see PR).
 
+> **v4 (2026-07-21) — rm-guard flag anchoring; block reasons to stderr.** The
+> `-r…f` / `-f…r` short-flag patterns now require the letter run to START an
+> argument token (whitespace or an opening quote before the dash). Unanchored,
+> they also matched interior dashes in FILENAMES, so plain `rm` of a dashed file
+> false-blocked: `rm src/test/probe-future-date.ts` (`-futur` ~ `-f…r`),
+> `rm build-for-prod.txt` (`-for`). Real spellings (`rm -rf`, `-fr`, `-irf`,
+> quoted `'-rf'`, `--recursive`) still block. Also `block()` now prints its
+> reason to **stderr**: for a blocking exit 2 Claude Code relays stderr and
+> ignores stdout, so every denial had been surfacing to the model as
+> "PreToolUse:… hook error: … No stderr output" with the reason lost. Verified
+> by a 25-case block/allow battery (see PR).
+
 ---
 
 ## PostToolUse — `audit.py`

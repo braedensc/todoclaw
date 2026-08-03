@@ -6,6 +6,7 @@ import { placeInQuadrant } from '../../lib/quadrant-summary'
 import { BottomSheet } from '../../components/BottomSheet'
 import { AddTaskForm } from './AddTaskForm'
 import { useUserSchedule } from '../schedule/use-user-schedule'
+import { useTimeZone } from '../schedule/use-time-zone'
 import { useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { effectiveReminderDefault } from '../reminders/reminder-offsets'
 
@@ -40,6 +41,7 @@ export function MobileAddSheet({
 }) {
   const { data: tasks } = useTasks()
   const addTask = useAddTask()
+  const timeZone = useTimeZone()
   const reminderWrites = useTaskReminderWrites()
   const reminderDefault = effectiveReminderDefault(
     useUserSchedule().data?.config.notifications?.reminderDefaultMinutes,
@@ -58,11 +60,22 @@ export function MobileAddSheet({
     due: string | null,
     dueTime: string | null,
     reminderMinutes: number[],
+    startDate: string | null,
   ) => {
     const placed = (tasks ?? []).filter((t) => !t.staged)
-    const { x, y } = placeInQuadrant(dest, placed)
+    const { x, y } = placeInQuadrant(dest, placed, { timeZone })
     addTask.mutate(
-      { text, x, y, staged: false, recurring, ongoing, due, due_time: dueTime },
+      {
+        text,
+        x,
+        y,
+        staged: false,
+        recurring,
+        ongoing,
+        due,
+        due_time: dueTime,
+        start_date: startDate,
+      },
       {
         onSuccess: (created) => {
           if (dueTime) {
@@ -76,21 +89,31 @@ export function MobileAddSheet({
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Add a task">
-      <AddTaskForm
-        defaultQuadrant={defaultQuadrant}
-        onAdd={handleAdd}
-        reminderDefault={reminderDefault}
-        inputRef={inputRef}
-        onOpenChat={
-          onOpenChat
-            ? () => {
-                onClose()
-                onOpenChat()
-              }
-            : undefined
-        }
-      />
+    // max-h + a scrollable body (the shared scrollable-sheet pattern, see SettingsPanel) so the
+    // form fits a short LANDSCAPE viewport instead of overflowing off the top of the screen; in
+    // portrait the content is shorter than the cap, so nothing scrolls and it sizes to content.
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      title="Add a task"
+      className="flex max-h-[92dvh] flex-col"
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <AddTaskForm
+          defaultQuadrant={defaultQuadrant}
+          onAdd={handleAdd}
+          reminderDefault={reminderDefault}
+          inputRef={inputRef}
+          onOpenChat={
+            onOpenChat
+              ? () => {
+                  onClose()
+                  onOpenChat()
+                }
+              : undefined
+          }
+        />
+      </div>
     </BottomSheet>
   )
 }

@@ -1,6 +1,6 @@
 # ADR-0004 — Drag/drop = raw Pointer Events (spike resolved)
 
-**Date:** 2026-06-23 · **Stage:** 1 deferral → **resolved Stage 3 (PR #1)**
+**Date:** 2026-06-23 · **Stage:** 1 deferral → **resolved Stage 3 (PR #1)** · **Status:** Accepted
 
 **Background (Stage 1):** the master plan calls for spiking @dnd-kit vs. raw pointer events for
 the free-canvas grid. Stage 1 only proves the pipeline (toolchain → DB → auth → render), so the

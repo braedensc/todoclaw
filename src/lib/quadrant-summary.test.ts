@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { Task } from '../types/task'
 import {
   summarizeQuadrants,
+  dormantByQuadrant,
   moveToQuadrant,
   placeInQuadrant,
+  isUnplaced,
   QUADRANT_ORDER,
   QUADRANT_CENTER,
 } from './quadrant-summary'
@@ -26,11 +28,22 @@ function makeTask(over: Partial<Task>): Task {
     created_at: '2026-06-23T00:00:00Z',
     deleted_at: null,
     completed_at: null,
+    start_date: null,
     ...over,
   }
 }
 
 const TZ = { timeZone: 'UTC' }
+
+describe('isUnplaced', () => {
+  it('flags staged or coord-less tasks; a placed task is not unplaced', () => {
+    expect(isUnplaced(makeTask({ staged: true, x: null, y: null }))).toBe(true)
+    // Belt-and-suspenders: either signal alone counts (staged with coords, or coords missing).
+    expect(isUnplaced(makeTask({ staged: true }))).toBe(true)
+    expect(isUnplaced(makeTask({ x: null, y: null }))).toBe(true)
+    expect(isUnplaced(makeTask({}))).toBe(false)
+  })
+})
 
 describe('summarizeQuadrants', () => {
   it('buckets placed tasks into their quadrants with counts', () => {
@@ -98,11 +111,34 @@ describe('summarizeQuadrants', () => {
   })
 })
 
+describe('dormantByQuadrant', () => {
+  it('buckets placed dormant tasks by quadrant, soonest-returning first, skipping unplaced', () => {
+    const groups = dormantByQuadrant([
+      makeTask({ id: 'dn-later', x: 0.9, y: 0.9, start_date: '2026-09-01' }),
+      makeTask({ id: 'dn-soon', x: 0.8, y: 0.8, start_date: '2026-08-01' }),
+      makeTask({ id: 'sc', x: 0.1, y: 0.9, start_date: '2026-08-15' }),
+      // Unplaced (staged / null coords) carries no quadrant — it must be skipped (it lives only in
+      // the Paused strip on mobile).
+      makeTask({ id: 'staged', x: null, y: null, staged: true, start_date: '2026-08-01' }),
+    ])
+
+    // Do Now holds both its tasks, ordered by start_date ascending (what returns next heads the cell).
+    expect(groups['do-now'].map((t) => t.id)).toEqual(['dn-soon', 'dn-later'])
+    expect(groups.schedule.map((t) => t.id)).toEqual(['sc'])
+    // The staged task is in no quadrant.
+    for (const key of QUADRANT_ORDER) {
+      expect(groups[key].some((t) => t.id === 'staged')).toBe(false)
+    }
+    expect(groups.errands).toEqual([])
+    expect(groups.someday).toEqual([])
+  })
+})
+
 describe('moveToQuadrant', () => {
   it('lands the task in the destination quadrant', () => {
     const task = makeTask({ id: 'm', x: 0.9, y: 0.9 }) // currently Do Now
     for (const dest of QUADRANT_ORDER) {
-      const { x, y } = moveToQuadrant(task, dest, [task])
+      const { x, y } = moveToQuadrant(task, dest, [task], TZ)
       expect(quadrantMeta(x, y).key).toBe(dest)
     }
   })
@@ -112,10 +148,10 @@ describe('moveToQuadrant', () => {
     // A blocker already sitting exactly on the Schedule center.
     const center = QUADRANT_CENTER.schedule
     const blocker = makeTask({ id: 'b', x: center.x, y: center.y })
-    const result = moveToQuadrant(task, 'schedule', [task, blocker])
+    const result = moveToQuadrant(task, 'schedule', [task, blocker], TZ)
 
     // Matches resolveCollision run against the same inputs, and is NOT the raw (occupied) center.
-    expect(result).toEqual(resolveCollision(center.x, center.y, [task, blocker], 'm'))
+    expect(result).toEqual(resolveCollision(center.x, center.y, [task, blocker], 'm', TZ))
     expect(result).not.toEqual({ x: center.x, y: center.y })
     expect(quadrantMeta(result.x, result.y).key).toBe('schedule')
   })
@@ -125,7 +161,7 @@ describe('placeInQuadrant', () => {
   it('lands a new task in the destination quadrant, excluding nothing', () => {
     const existing = makeTask({ id: 'e', x: 0.9, y: 0.9 })
     for (const dest of QUADRANT_ORDER) {
-      const { x, y } = placeInQuadrant(dest, [existing])
+      const { x, y } = placeInQuadrant(dest, [existing], TZ)
       expect(quadrantMeta(x, y).key).toBe(dest)
     }
   })
@@ -133,9 +169,9 @@ describe('placeInQuadrant', () => {
   it('spirals off an occupied quadrant center so the new task never overlaps', () => {
     const center = QUADRANT_CENTER['do-now']
     const blocker = makeTask({ id: 'b', x: center.x, y: center.y })
-    const result = placeInQuadrant('do-now', [blocker])
+    const result = placeInQuadrant('do-now', [blocker], TZ)
 
-    expect(result).toEqual(resolveCollision(center.x, center.y, [blocker], ''))
+    expect(result).toEqual(resolveCollision(center.x, center.y, [blocker], '', TZ))
     expect(result).not.toEqual({ x: center.x, y: center.y })
     expect(quadrantMeta(result.x, result.y).key).toBe('do-now')
   })

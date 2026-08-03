@@ -98,6 +98,28 @@ describe('ScheduleConfigSchema', () => {
     expect(cfg.assistant).toEqual({ tone: 'playful', verbosity: 'balanced' })
   })
 
+  it('an over-cap locationResolved drops itself instead of wiping the config', () => {
+    // locationResolved is SERVER-derived (the resolve-location function echoing wttr.in), so it's
+    // the one config field the user can't correct by retyping. Because the whole config parses
+    // under `.catch({})`, a throw here would nuke EVERY setting — schedule, notifications, the lot
+    // — over a cosmetic label. Its own `.catch(undefined)` contains the blast radius to itself.
+    const row = {
+      user_id: 'u1',
+      timezone: 'America/New_York',
+      config: {
+        location: 'Portland, OR',
+        locationResolved: 'x'.repeat(500),
+        planNotes: 'Mornings only.',
+      },
+      created_at: 't',
+      updated_at: 't',
+    }
+    const cfg = UserScheduleSchema.parse(row).config
+    expect(cfg.locationResolved).toBeUndefined() // just this field
+    expect(cfg.location).toBe('Portland, OR') // …everything else survives
+    expect(cfg.planNotes).toBe('Mornings only.')
+  })
+
   it('rejects out-of-range free-time hours', () => {
     expect(() => ScheduleConfigSchema.parse({ weekday: { freeTimeEstimateHours: 30 } })).toThrow()
   })

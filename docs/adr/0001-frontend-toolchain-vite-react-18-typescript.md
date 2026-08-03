@@ -1,6 +1,6 @@
 # ADR-0001 — Frontend toolchain: Vite + React 18 + TypeScript (strict) + Tailwind 3
 
-**Date:** 2026-06-23 · **Stage:** 1 (PR #1)
+**Date:** 2026-06-23 · **Stage:** 1 (PR #1) · **Status:** Accepted
 
 The walking-skeleton toolchain. Resolved versions: Vite 8, `@vitejs/plugin-react` 6,
 React 18.3, TypeScript 6, Tailwind 3.4, TanStack Query 5, `@supabase/supabase-js` 2, Zod 4.

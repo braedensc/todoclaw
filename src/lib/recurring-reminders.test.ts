@@ -82,4 +82,21 @@ describe('nextRecurringFireAt', () => {
       '2026-07-12T16:00:00.000Z',
     )
   })
+
+  // The positive half of the "anchor is not a deadline" invariant. The anchor is never advanced —
+  // the occurrence grid rolls forward FROM it — so a long-lived reminder legitimately keeps a due
+  // date years in the past, and the reminder still fires correctly. That is precisely why no board
+  // or plan reader may treat `due` on a recurring task as a deadline: doing so reads every such
+  // chore as ever-more overdue (reverted in #348). The negative half is pinned in
+  // use-plan-my-day.test.tsx, plan-inputs.test.ts, chat-context.test.ts, GridView.test.tsx and
+  // ListView.test.tsx — search "anchor" to find the set.
+  it('an anchor YEARS in the past still yields the correct next fire (it is never advanced)', () => {
+    const now = at('2026-07-11T17:00:00Z') // 13:00 EDT
+    // Anchored in 2019 on a weekly cadence: the grid has rolled forward ~366 times and the next
+    // slot is a normal future instant, with the stale anchor left exactly where it was.
+    const next = nextRecurringFireAt('2019-01-04', '12:00', 7, 0, TZ, now)
+    expect(next.getTime()).toBeGreaterThan(now.getTime())
+    // Phase is preserved: 2019-01-04 was a Friday, so every occurrence is a Friday at noon local.
+    expect(next.toISOString()).toBe('2026-07-17T16:00:00.000Z')
+  })
 })

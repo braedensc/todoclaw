@@ -37,6 +37,8 @@ function renderPanel(over: Partial<Parameters<typeof SchedulePanel>[0]> = {}) {
     onSetFrequency: vi.fn(),
     onRemoveRecurring: vi.fn(),
     onSetOngoing: vi.fn(),
+    startDate: null as string | null,
+    onSetStartDate: vi.fn(),
     reminderOffsets: [] as number[],
     onToggleReminder: vi.fn(),
     onClearReminders: vi.fn(),
@@ -258,5 +260,31 @@ describe('SchedulePanel ongoing project', () => {
     // The calendar renders for every type — an ongoing project can take a far-out due date.
     renderPanel({ ongoing: true, due: '2026-07-10' })
     expect(screen.getByTestId('schedule-calendar')).toBeInTheDocument()
+  })
+})
+
+describe('SchedulePanel pause (start later)', () => {
+  // NOW is 2026-07-09 (UTC), so 2026-08-01 is a future start and 2026-06-01 a past one.
+
+  it('Pause until… reveals the date input; picking a day commits the start date', () => {
+    const props = renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Pause until…' }))
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-08-01' } })
+    expect(props.onSetStartDate).toHaveBeenCalledWith('2026-08-01')
+  })
+
+  it('while paused: readback + Change date… chip, and Resume now clears the start date', () => {
+    const props = renderPanel({ startDate: '2026-08-01' })
+    expect(screen.getByText(/Hidden until/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Change date…' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Resume now' }))
+    expect(props.onSetStartDate).toHaveBeenCalledWith(null)
+  })
+
+  it('a past/today start date reads as live — no paused readback, no Resume chip', () => {
+    renderPanel({ startDate: '2026-06-01' })
+    expect(screen.queryByText(/Hidden until/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Resume now' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Pause until…' })).toBeInTheDocument()
   })
 })

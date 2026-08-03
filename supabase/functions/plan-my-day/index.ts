@@ -6,17 +6,18 @@
 
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
-import { userClient, requireUser } from '../_shared/auth.ts'
+import { userClient, adminClient, requireUser } from '../_shared/auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from '../_shared/anthropic.ts'
 import { precheck, recordUsage } from '../_shared/guardrails.ts'
+import { ipThrottleOk } from '../_shared/ip-throttle.ts'
 import { getWeather } from '../_shared/weather.ts'
 import {
   PlanRequestSchema,
   SYSTEM_PROMPT,
   EMIT_PLAN_TOOL,
   buildUserPrompt,
+  resolvePlanTaskIds,
   type ScheduleConfig,
-  type PlanResult,
 } from '../_shared/plan-prompt.ts'
 
 Deno.serve(async (req) => {
@@ -29,6 +30,10 @@ Deno.serve(async (req) => {
       status,
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
+
+  // Coarse per-IP flood guard, before auth (verify_jwt is off for this function).
+  if (!(await ipThrottleOk(req, 'plan-my-day', 120, 60)))
+    return json({ error: 'too_many_requests' }, 429)
 
   const client = userClient(req)
   const user = await requireUser(client)
@@ -60,8 +65,11 @@ Deno.serve(async (req) => {
       ? ((memRes.data ?? []) as { content: string }[]).map((m) => m.content)
       : []
     // No location set → skip the weather line entirely (don't default to any city's weather).
+    // The weather_cache is server-only (service_role): pass adminClient(), NOT the user client —
+    // getWeather uses it solely for the cache RPCs (never a user table). See weather.ts / migration
+    // 20260722000000.
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
-    const weather = location ? await getWeather(client, location) : null
+    const weather = location ? await getWeather(adminClient(), location) : null
 
     const a = anthropic()
     const msg = await a.messages.create({
@@ -82,9 +90,19 @@ Deno.serve(async (req) => {
       'plan_my_day',
     )
 
+    // A truncated response can still carry a tool_use block, but its JSON input is cut off — the
+    // SDK hands back a partial object. Treat it as no plan rather than shipping the fragment.
+    if (msg.stop_reason === 'max_tokens') return json({ error: 'no_plan' }, 502)
+
     const toolUse = msg.content.find((b) => b.type === 'tool_use')
     if (!toolUse || toolUse.type !== 'tool_use') return json({ error: 'no_plan' }, 502)
-    return json({ plan: toolUse.input as PlanResult })
+    // Validate the model's raw tool input, then resolve emitted refs → real task ids before the
+    // client sees (and persists) the plan, so each rock can be crossed off when its task is
+    // completed. Null = the emit wasn't a usable plan; failing here is what stops a contentless
+    // plan reaching daily_state and rendering as a blank card. See resolvePlanTaskIds.
+    const plan = resolvePlanTaskIds(toolUse.input, payload)
+    if (!plan) return json({ error: 'no_plan' }, 502)
+    return json({ plan })
   } catch (e) {
     // Log the real error server-side; return a generic code so no internal detail reaches the client.
     console.error('plan-my-day failed:', e)

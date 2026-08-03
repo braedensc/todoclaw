@@ -1,6 +1,6 @@
 # ADR-0005 — No client hard-delete: soft-delete + RLS deny-by-default
 
-**Date:** 2026-06-23 · **Stage:** 1 (PR #2)
+**Date:** 2026-06-23 · **Stage:** 1 (PR #2) · **Status:** Accepted
 
 `tasks` carries `deleted_at`; the app only ever soft-deletes (an `UPDATE`). The migration
 grants `authenticated` **`select, insert, update` — never `delete`** — and defines **no DELETE

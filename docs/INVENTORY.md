@@ -1,6 +1,6 @@
 # INVENTORY.md — Stack, Accounts & Secrets Tracker
 
-A single **at-a-glance** map of the whole Todoclaw stack: every technology, every account, every
+A single **at-a-glance** map of the whole TodoClaw stack: every technology, every account, every
 environment variable / secret **by name**, where each one lives, and the automated processes that
 tie them together. It's the "single pane of glass" for an audit, a key rotation, or onboarding a new
 environment.
@@ -34,7 +34,7 @@ Everything the app depends on across the stack. Dashboards are where you'd rotat
 usage. Billing posture: **only Anthropic can actually charge you** — Supabase Free and Vercel Hobby
 _pause_ a resource at the limit instead of billing (§5).
 
-| Service | What it does for Todoclaw | Account / login | Dashboard | Tier |
+| Service | What it does for TodoClaw | Account / login | Dashboard | Tier |
 |---|---|---|---|---|
 | **GitHub** | Source repo, CI (Actions), branch protection, secret scanning, Dependabot | `braedensc` (`gh` CLI: `repo, workflow, read:org, gist`) | [repo](https://github.com/braedensc/todoclaw) | Public repo → free Actions + security scanning |
 | **Supabase** | Entire backend: Postgres, Auth, RLS, Realtime, Edge Functions (Deno) | owner account | [project](https://supabase.com/dashboard/project/hknmhkzumkjhylxclrcy) | Free (pauses, never bills) |
@@ -75,8 +75,9 @@ guards). Values live only in the store named; this table is names + purpose.
 | `VITE_SUPABASE_URL` | public | Supabase | Project URL the SPA talks to. = `SUPABASE_URL` (different name) |
 | `VITE_SUPABASE_ANON_KEY` | public | Supabase | Anon API key; RLS is the real guard. = `SUPABASE_ANON_KEY` |
 | `VITE_SENTRY_DSN` | public | Sentry | Ingest DSN (a public URL). Unset ⇒ Sentry off (app no-ops) |
-| `VITE_OWNER_USER_ID` | public | app | Owner's `auth.users` id — only **reveals** the owner UI. Mirrors server `OWNER_USER_ID` |
 | `VITE_VAPID_PUBLIC_KEY` | public | Web Push | Public half of the VAPID pair. Unset ⇒ notifications "not configured" |
+
+_No `VITE_OWNER_USER_ID`: the owner's identity is server-only. The frontend reveals the owner UI by asking the `admin` Edge Function's `whoami` action, so the owner's user id never ships in the bundle._
 
 ### 3b. Build-time — Vercel-injected (public)
 | Variable | Kind | Service | Purpose / notes |
@@ -89,7 +90,7 @@ guards). Values live only in the store named; this table is names + purpose.
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | **secret** | Anthropic | The owner's AI key. Used by plan-my-day / ai-chat / dispatch-messages |
 | `ALLOWED_ORIGIN` | public | Edge CORS | CORS allow-list (the prod origin). Defaults to `localhost:5173` when unset |
-| `OWNER_USER_ID` | config (a user id) | app | **The real owner gate** for `generate-invite`. Unset ⇒ nobody is owner (safe) |
+| `OWNER_USER_ID` | config (a user id) | app | **The real owner gate** for `generate-invite` + `admin` (incl. `whoami`). Unset ⇒ nobody is owner (safe) |
 | `VAPID_PUBLIC_KEY` | public | Web Push | Public key (matches `VITE_VAPID_PUBLIC_KEY`) |
 | `VAPID_PRIVATE_KEY` | **secret** | Web Push | Signs push messages. Unset ⇒ push skipped (inbox still persists) |
 | `VAPID_SUBJECT` | public | Web Push | `mailto:` / URL identifying the push sender |
@@ -123,7 +124,6 @@ guards). Values live only in the store named; this table is names + purpose.
 | Variable | Where | Status |
 |---|---|---|
 | `CI` | GitHub runner (auto) | toggles Playwright behavior; not user-set |
-| `EISENCLAW_SEED_DIR` | local shell | optional path for the local-only EisenClaw seed script |
 | `OPENAI_API_KEY` | `config.toml` (local Studio) | inert for the app — Supabase Studio's own assistant only |
 | `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN` | `config.toml` template | **disabled** (SMS auth off) |
 | `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `config.toml` template | **disabled** (Apple OAuth off) |
@@ -132,7 +132,6 @@ guards). Values live only in the store named; this table is names + purpose.
 ### One value, two names (don't double-count)
 - `VITE_SUPABASE_URL` = `SUPABASE_URL` (platform + `GH var`)
 - `VITE_SUPABASE_ANON_KEY` = `SUPABASE_ANON_KEY` (platform + `GH secret`)
-- `VITE_OWNER_USER_ID` (reveals UI) mirrors `OWNER_USER_ID` (real gate)
 - `VITE_VAPID_PUBLIC_KEY` = `VAPID_PUBLIC_KEY` (public half of the VAPID trio)
 - `DISPATCH_SECRET` is the **one** value that must be set **identically** in two stores (`Supabase secret` + `GH secret`)
 - `BACKUP_DATABASE_URL` is one secret used by two jobs (backup reads, deploy's migrate writes)
@@ -197,7 +196,7 @@ red). Scheduled workflows run only from `main`.
 | AI budget caps / rate limits / model | code constants in `supabase/functions/_shared/guardrails.ts` + `_shared/anthropic.ts` → **needs a deploy** (the $0.20 per-call ceiling is _also_ hardcoded in two SQL migrations — change both) |
 | Auth policy (signups off, email confirm, redirect URLs) | Supabase → Authentication |
 | Security response headers / CSP | `vercel.json` |
-| Who is "owner" | `OWNER_USER_ID` (Supabase secret, the gate) + `VITE_OWNER_USER_ID` (Vercel env, reveals UI) |
+| Who is "owner" | `OWNER_USER_ID` (Supabase secret) — the gate for `generate-invite` + `admin`. The frontend reveals the owner UI via the `admin` `whoami` action, so no owner id ships to the client |
 
 ---
 

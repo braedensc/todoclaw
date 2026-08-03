@@ -85,4 +85,14 @@ describe('useQuadrantFocus', () => {
     expect(result.current.focus).toBeNull()
     expect(backSpy).not.toHaveBeenCalled()
   })
+
+  it('popping back onto a GRID-ONLY entry (which can sit above the focus entry) keeps the focus', () => {
+    // Mobile flow: focus list → More → Grid view → notification chat → Back. The pop lands on
+    // grid-only's flagged entry; the focus entry is intact beneath it and must survive.
+    window.location.hash = '#/'
+    const { result } = renderHook(() => useQuadrantFocus())
+    act(() => result.current.enter('errands'))
+    act(() => fire({ tcGridOnly: true }))
+    expect(result.current.focus).toBe('errands')
+  })
 })

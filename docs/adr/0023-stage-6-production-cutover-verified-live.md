@@ -1,6 +1,6 @@
 # ADR-0023 — Stage 6 production cutover: verified live + external billing posture
 
-**Date:** 2026-07-02 · **Stage:** 6
+**Date:** 2026-07-02 · **Stage:** 6 · **Status:** Accepted
 
 The finishing stage. Most of Stage 6 was pulled forward "skeleton-first" (encrypted backups → ADR-0006,
 Sentry code → ADR-0009, CI gate → ADR-0010, keep-alive cron, security headers/CSP → ADR-0006); this

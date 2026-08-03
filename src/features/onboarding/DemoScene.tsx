@@ -1,20 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useIsMobile } from '../../hooks/use-is-mobile'
-import { BoneIcon } from '../../components/BoneIcon'
 import { localDateInTZ } from '../../lib/dates'
 import { EMPTY_DAILY_STATE } from '../daily-state/use-daily-state'
 import { useGrid } from '../grid/use-grid'
 import { GridSurface } from '../grid/GridSurface'
+import { TouchGridSurface } from '../grid/TouchGridSurface'
 import { MobileMatrix } from '../shell/MobileMatrix'
+import { AddTaskForm } from '../shell/AddTaskForm'
+import { SchedulePanel } from '../schedule/SchedulePanel'
 import type { QuadrantFocus } from '../shell/use-quadrant-focus'
+import { RemindersInline } from '../habits/RemindersInline'
 import { PlanBox } from '../ai/PlanBox'
 import { ChatConversation } from '../ai/ChatConversation'
 import type { ChatController } from '../ai/use-chat-controller'
 import type { ChatItem } from '../ai/use-ai-chat'
-import { buildDemoTasks } from './demo-board'
+import { buildDemoTasks, buildDemoHabits, DEMO_HABIT_DONE } from './demo-board'
 import {
+  DEMO_ASK,
+  DEMO_ASK_REPLY,
+  DEMO_ASK_TOOL_NOTES,
   DEMO_EVENING_CLOSE,
   DEMO_EVENING_REPLY,
   DEMO_EVENING_TOOL_NOTES,
@@ -24,32 +29,49 @@ import {
   DEMO_TRANSCRIPT_DAY,
 } from './demo-transcript'
 
-// DemoScene — the tour's "example day": a full-screen overlay showing what Todoclaw looks like in
-// real use. The ENTIRE 8-panel tour plays over this one scene (no second leg over the user's own
-// empty shell), so it also carries the "chrome" the later panels point at — the Plan My Day button,
-// an example Daily-habits card, and an example Settings card. The core surfaces are the REAL
-// components rendering fake in-memory data:
+// DemoScene — the tour's "example day": rendered INLINE in the real shell, right where App.tsx
+// mounts it (below the real header, above the real board/plan/reminders it stands in for), so the
+// real chrome around it — the masthead, the mascot mark, the header's Account nav / the mobile
+// bottom bar — is never covered. It's not a portal or a fixed overlay; it's ordinary content in
+// the page's own flow, which is exactly what makes the surrounding chrome "real" rather than a
+// look-alike. App.tsx hides the REAL PlanBox/RemindersInline/WorkArea while the tour plays (they'd
+// otherwise render a second board directly beneath this one) — see the `tour` guard there.
 //
-//   • the board — the real GridSurface (desktop) / MobileMatrix (mobile) fed by a nested,
-//     pre-seeded TanStack QueryClient, so clustering, glow, ↻ / ❄️ badges and quadrant tints are
-//     the live production code paths (a new card treatment shows up here for free);
-//   • the plan — the real PlanBox with a canned, schema-valid plan (demo-transcript.ts), under an
-//     example ✦ Plan My Day button (look-only) so the plan panel shows the button AND its result;
-//   • the check-ins — the real ChatConversation playing the scripted morning push and evening
-//     recap, whose texts are drift-guarded against the actual dispatch builders by a Deno test;
-//   • habits + settings — small look-only example cards (`demo-habits` / `demo-settings`) the last
-//     two panels spotlight, so the tour never has to jump to the real shell.
+// Everything the scene shows is the REAL component rendering fake in-memory data:
+//   • the grid — the real GridSurface (desktop) / TouchGridSurface in its `embedded` panel form
+//     (mobile — the same grid a phone reaches through Grid view), fed by a nested, pre-seeded
+//     TanStack QueryClient, so clustering, glow, ↻ / ❄️ badges and quadrant tints are the live
+//     production code paths (a new card treatment shows up here for free);
+//   • the quadrant overview — the real MobileMatrix, mobile only, as the everyday alternative;
+//   • the add UI — per breakpoint, because they genuinely differ: mobile gets the real AddTaskForm
+//     (the ➕ sheet's form) with its schedule disclosure pre-opened, desktop the real SchedulePanel
+//     exactly as the Task Manager's 📅 Schedule chip opens it. Either way the three kinds of task
+//     (Task / Recurring / Ongoing) are shown on the actual control, not described;
+//   • the plan — the real PlanBox with a canned, schema-valid plan (demo-transcript.ts);
+//   • the conversations — the real ChatConversation playing a scripted free-form ask plus the
+//     morning push and evening recap, the latter two drift-guarded against the actual dispatch
+//     builders by a Deno test;
+//   • the habits strip — the real RemindersInline over seeded habits.
+//
+// SECTION ORDER FOLLOWS THE TOUR SCRIPT, not the shell's layout: FeatureTour scrolls each anchor
+// into view in turn, so a script that walks the panels in a different order than the DOM makes the
+// page jump backwards mid-walkthrough. Keep tour-steps.ts and the sections below in lockstep.
+//
+// The ONE thing that stays look-only is the ✦ Plan My Day button + the plan panel under it
+// (`demo-plan`): a first-run user has no real plan yet, so the tour fakes "what it looks like once
+// you have one" rather than pointing at the real header button's honest empty state. The real
+// header's own Plan My Day button (or the mobile pill) is untouched and still shows the user's
+// actual plan state the whole time the tour is up.
+//
+// The rest of the app's chrome — Chat / Daily habits / Settings / Done / Sign out (desktop header
+// nav) and Home / Add / Chat / Done / More (mobile bottom bar) — is never faked: the closing tour
+// panel spotlights those REAL controls directly (`data-tour="options"` on each), not a copy of them.
 //
 // ZERO backend traffic and zero AI spend by construction: the nested QueryClient seeds every key
 // the mounted surfaces read and disables fetching outright (`enabled: false` — a missed key shows
 // a quiet loading state rather than pulling the user's real data into the "example"), mutations
-// can never fire because the scene is inert (and the tour overlay above swallows all input), and
-// the chat is a plain fake controller. Unmounting leaves no trace — nothing was written anywhere.
-//
-// The scene sits at z-[90]: above the shell's chrome (mobile nav z-40, header overlays z-50),
-// below the FeatureTour overlay (z-[105]) that spotlights the `data-tour="demo-*"` anchors. Those
-// wrapper anchors are the ONLY targets the demo tour script uses — never 'grid'/'matrix', which
-// also exist in the real shell underneath (first-match-in-document-order would be ambiguous).
+// can never fire because the scene is inert (and the FeatureTour overlay above swallows all input),
+// and the chat is a plain fake controller. Unmounting leaves no trace — nothing was written anywhere.
 //
 // Accessibility: the whole scene is decorative scenery (inert + aria-hidden) — the tour card
 // (role="dialog", aria-modal) carries the narration for screen readers.
@@ -88,6 +110,15 @@ function demoChat(items: ChatItem[]): ChatController {
 // bubbles reproduce exactly that.
 const MORNING_ITEMS: ChatItem[] = [
   { id: 'demo-m1', role: 'assistant', text: `${DEMO_MORNING.title}\n\n${DEMO_MORNING.body}` },
+]
+
+// The un-prompted ask — chat as the app's control surface, not just the reply to a check-in.
+const ASK_ITEMS: ChatItem[] = [
+  { id: 'demo-a1', role: 'user', text: DEMO_ASK },
+  ...DEMO_ASK_TOOL_NOTES.map(
+    (text, i): ChatItem => ({ id: `demo-a-tool-${i}`, role: 'tool', text, ok: true }),
+  ),
+  { id: 'demo-a2', role: 'assistant', text: DEMO_ASK_REPLY },
 ]
 
 // The recap title/close name a weekday ("Wrapping up Monday"). The demo board is authored relative
@@ -132,16 +163,22 @@ function makeDemoClient(timeZone: string): QueryClient {
   // so useTimeZone falls back to the browser zone — seed with the same date that fallback computes.
   const today = localDateInTZ(timeZone)
   client.setQueryData(['tasks'], buildDemoTasks(timeZone))
-  client.setQueryData(['daily_state', today], EMPTY_DAILY_STATE)
+  // Which habits are ticked off TODAY lives in daily_state, never on the habit row (that split is
+  // what makes the daily reset non-destructive) — so the strip needs both halves seeded to show a
+  // real, partly-done day instead of an untouched 0/2.
+  client.setQueryData(['daily_state', today], { ...EMPTY_DAILY_STATE, habit_done: DEMO_HABIT_DONE })
   client.setQueryData(['user_schedule'], null)
   client.setQueryData(['task_reminders'], new Map<string, number[]>())
-  client.setQueryData(['habits'], [])
+  client.setQueryData(['habits'], buildDemoHabits())
   client.setQueryData(['history'], [])
   return client
 }
 
-// Desktop board: the same useGrid + GridSurface pairing WorkArea mounts, minus the input widget.
-function DemoBoardDesktop() {
+// The grid, per breakpoint — the SAME components WorkArea mounts, so the tour teaches the real
+// thing. Desktop is the free-canvas GridSurface; a phone's grid is the touch grid it reaches
+// through Grid view (⌐ pill / More → Grid view), rendered here in its `embedded` panel form —
+// same chips, tints, clustering, minus the fullscreen chrome that would be a control to nowhere.
+function DemoGridDesktop() {
   const gridRef = useRef<HTMLDivElement>(null)
   const grid = useGrid(gridRef)
   return (
@@ -152,6 +189,38 @@ function DemoBoardDesktop() {
       onSelectView={noop}
       gridOnly={false}
       onExitGridOnly={noop}
+    />
+  )
+}
+
+function DemoGridTouch() {
+  const gridRef = useRef<HTMLDivElement>(null)
+  const grid = useGrid(gridRef)
+  return <TouchGridSurface grid={grid} gridRef={gridRef} onExit={noop} onOpenChat={noop} embedded />
+}
+
+// Desktop's add path: the real SchedulePanel, exactly as the Task Manager's 📅 Schedule chip
+// opens it. Inert scenery, so every handler is a noop and the draft never moves off its defaults.
+function DemoSchedulePanel() {
+  return (
+    <SchedulePanel
+      taskText="Water the plants"
+      due={null}
+      dueTime={null}
+      recurring={null}
+      ongoing={false}
+      timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+      onSetDue={noop}
+      onSetRecurring={noop}
+      onSetFrequency={noop}
+      onRemoveRecurring={noop}
+      onSetOngoing={noop}
+      startDate={null}
+      onSetStartDate={noop}
+      reminderOffsets={[]}
+      onToggleReminder={noop}
+      onClearReminders={noop}
+      idPrefix="demo"
     />
   )
 }
@@ -192,58 +261,90 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
     onReady()
   }, [onReady])
 
-  return createPortal(
+  return (
     <div
-      className="fixed inset-0 z-[90] overflow-y-auto bg-bg"
+      className="flex flex-col gap-4"
       aria-hidden="true"
       // `inert` (set via ref — React 18 has no prop for it) keeps the scenery's buttons/inputs out
-      // of the tab order and out of assistive tech; the tour overlay above swallows pointer input.
+      // of the tab order and out of assistive tech; the FeatureTour overlay above swallows pointer
+      // input for the real chrome around this, but this scene's OWN fake controls (the plan button)
+      // must never be reachable either.
       ref={(el) => {
         if (el) el.inert = true
       }}
     >
-      <div className="pointer-events-none mx-auto flex max-w-3xl flex-col gap-4 p-4 pb-24 wide:max-w-[980px] wide:p-6">
-        {/* The framing ribbon — the one thing that must never be missable: this is an example.
-            Sticky, so it stays pinned while the tour scrolls the scene from board to check-ins. */}
-        <div className="sticky top-2 z-10 rounded-full border border-border-strong bg-panel px-4 py-2 text-center text-[13px] font-medium text-ink shadow-sm">
-          <span aria-hidden>👀</span> An example day in Todoclaw — none of this is your data. Your
-          board starts fresh.
+      <QueryClientProvider client={client}>
+        {/* 1. The board. On BOTH breakpoints the tour now leads with the GRID — it's where the
+            urgency × importance model is legible — and the phone gets the real touch grid it
+            reaches through Grid view. */}
+        <div data-tour="demo-grid">{isMobile ? <DemoGridTouch /> : <DemoGridDesktop />}</div>
+
+        {/* 2. …and, on a phone only, the everyday quadrant overview the shell actually opens on
+            (ADR-0028). Its own step, right after the grid, so "there's a quicker view too" is
+            shown rather than just claimed. Desktop has no such surface — nothing is mounted. */}
+        {isMobile && (
+          <div data-tour="demo-matrix">
+            <MobileMatrix quadrantFocus={DEMO_QUADRANT_FOCUS} />
+          </div>
+        )}
+
+        {/* 3. The three kinds of task, shown on the REAL control that sets them (SchedulePanel's
+            Task / Recurring / Ongoing switch) rather than described in prose. Each breakpoint gets
+            its OWN add surface, because they genuinely differ: a phone's ➕ tab opens AddTaskForm
+            (rendered here with its schedule disclosure pre-opened — the scenery is inert, so it
+            can't be tapped open), while on desktop you type into the Task Manager above the grid
+            and the 📅 Schedule chip opens the panel by itself. Same switch either way. */}
+        <div data-tour="demo-add" className="rounded-[14px] border border-border bg-panel p-3">
+          <p className="pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+            {isMobile ? '✚ Add a task' : '📅 Schedule'}
+          </p>
+          {isMobile ? (
+            <AddTaskForm
+              defaultQuadrant="do-now"
+              onAdd={noop}
+              reminderDefault={60}
+              defaultScheduleOpen
+            />
+          ) : (
+            <DemoSchedulePanel />
+          )}
         </div>
 
-        <QueryClientProvider client={client}>
-          {/* The plan step spotlights this whole block — the ✦ Plan My Day button AND the plan it
-              builds — so the tour shows the button and its result together. The button is example
-              scenery (the scene is inert), styled like the real header pill. */}
-          <div data-tour="demo-plan" className="flex flex-col items-center gap-3">
-            <button
-              type="button"
-              className="whitespace-nowrap rounded-full px-6 py-3 text-sm font-medium text-white"
-              style={{ backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #2c4a3a 115%)' }}
-            >
-              <span aria-hidden className="text-[#e8c47a]">
-                ✦
-              </span>{' '}
-              Plan My Day
-            </button>
-            <div className="w-full">
-              <PlanBox
-                plan={DEMO_PLAN}
-                paused={false}
-                isPending={false}
-                isError={false}
-                onRetry={noop}
-                onDismiss={noop}
-                mobile={isMobile}
-              />
-            </div>
-          </div>
+        {/* 4. Chat as the app's control surface — a plain, un-prompted ask with real receipts.
+            Placed BEFORE Plan My Day on purpose: "you can just tell him" follows straight on from
+            "here's what a task is", and the plan then arrives as something built on top. */}
+        <DemoChatCard tourId="demo-chat-ask" caption="🐾 any time — just ask" items={ASK_ITEMS} />
 
-          <div data-tour="demo-board">
-            {isMobile ? <MobileMatrix quadrantFocus={DEMO_QUADRANT_FOCUS} /> : <DemoBoardDesktop />}
+        {/* 5. The plan step spotlights this whole block — the ✦ Plan My Day button AND the plan it
+            builds — so the tour shows the button and its result together. Look-only scenery: a
+            first-run user has no real plan yet, so this fakes what one looks like. Styled like the
+            real header pill. */}
+        <div data-tour="demo-plan" className="flex flex-col items-center gap-3">
+          <button
+            type="button"
+            className="whitespace-nowrap rounded-full px-6 py-3 text-sm font-medium text-white"
+            style={{ backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #2c4a3a 115%)' }}
+          >
+            <span aria-hidden className="text-[#e8c47a]">
+              ✦
+            </span>{' '}
+            Plan My Day
+          </button>
+          <div className="w-full">
+            <PlanBox
+              plan={DEMO_PLAN}
+              paused={false}
+              isPending={false}
+              isError={false}
+              onRetry={noop}
+              onDismiss={noop}
+              mobile={isMobile}
+            />
           </div>
-        </QueryClientProvider>
+        </div>
 
-        {/* Two moments of the same conversation — the morning push and the evening check-in. */}
+        {/* 6–7. The two proactive moments of the same conversation — the morning push and the
+            evening check-in. */}
         <div className="grid grid-cols-1 gap-4 wide:grid-cols-2">
           <DemoChatCard
             tourId="demo-chat-morning"
@@ -257,46 +358,19 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
           />
         </div>
 
-        {/* The last two panels point here — example Daily habits + Settings, so the whole tour is
-            one section over this scene (no jump to the real, empty shell). Look-only scenery. */}
-        <div className="grid grid-cols-1 gap-4 wide:grid-cols-2">
-          <section
-            data-tour="demo-habits"
-            className="overflow-hidden rounded-[14px] border border-border bg-panel"
-          >
-            <p className="border-b border-border bg-card px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
-              <BoneIcon className="inline h-2.5 w-auto align-[-1px]" /> Daily habits
-            </p>
-            <ul className="flex flex-col gap-2.5 p-4 text-[13px] text-ink">
-              <li className="flex items-center gap-2.5">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] text-white">
-                  🐾
-                </span>
-                Stretch — 10 minutes
-              </li>
-              <li className="flex items-center gap-2.5 text-muted">
-                <span className="h-6 w-6 rounded-full border border-border-strong" />
-                Walk the dog
-              </li>
-            </ul>
-          </section>
-
-          <section
-            data-tour="demo-settings"
-            className="overflow-hidden rounded-[14px] border border-border bg-panel"
-          >
-            <p className="border-b border-border bg-card px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
-              <span aria-hidden>⚙</span> Settings
-            </p>
-            <ul className="flex flex-col gap-2 p-4 text-[13px] text-muted">
-              <li>Daily reset — 4:00 AM</li>
-              <li>Notifications — on</li>
-              <li>Timezone, backups, and this tour</li>
-            </ul>
-          </section>
+        {/* 8. The habits strip — the REAL RemindersInline, fed from the sealed cache. Same bet as
+            the board: the live component means the actual home-screen treatment (paw checks, the
+            bone "treats earned" tally, the desktop inline row vs. the mobile collapsible card) is
+            what the tour shows, and a redesign lands here without anyone remembering to re-fake it.
+            MUST stay inside the QueryClientProvider: outside it, useHabits would bind to the
+            app's real client and the "example" would fetch and display the user's OWN habits.
+            (The scene's section order follows the TOUR's narrative, not the shell's layout — a
+            walkthrough that scrolls backwards reads as a glitch. In the real shell this strip does
+            sit right above the board, which is what its panel says.) */}
+        <div data-tour="demo-habits">
+          <RemindersInline />
         </div>
-      </div>
-    </div>,
-    document.body,
+      </QueryClientProvider>
+    </div>
   )
 }

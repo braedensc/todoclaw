@@ -26,7 +26,7 @@ const usd = (micros: number) => `$${(micros / 1_000_000).toFixed(2)}`
 export function formatSpendAlert(a: SpendAlert): string {
   const who = a.userEmail ? `${a.userEmail} (${a.userId})` : a.userId
   return (
-    `⚠️ Todoclaw AI spend alert — user ${who} has spent ${usd(a.spentMicros)} on AI this month ` +
+    `⚠️ TodoClaw AI spend alert — user ${who} has spent ${usd(a.spentMicros)} on AI this month ` +
     `(${a.period}), crossing the ${usd(a.thresholdMicros)} alert threshold (per-user cap ` +
     `${usd(a.capMicros)}). Last call: ${a.feature}. If this is unexpected, investigate for misuse ` +
     `or a compromised account.`
@@ -64,6 +64,9 @@ export async function sendSpendAlert(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(buildAlertPayload(alert)),
+    // Bound the webhook POST: a hanging alerting endpoint must never stall the caller (the alert is
+    // best-effort and already swallowed on failure). 8s is generous for a Slack/Discord webhook.
+    signal: AbortSignal.timeout(8_000),
   })
   return res.ok
 }

@@ -1,6 +1,6 @@
 # ADR-0006 — Production topology + encrypted backups
 
-**Date:** 2026-06-23 · **Stage:** 1 (PR #3)
+**Date:** 2026-06-23 · **Stage:** 1 (PR #3) · **Status:** Accepted
 
 - **One cloud Supabase project = prod; local Docker = dev.** No staging project (keeps cost at
   zero); the local stack is the safe place to break things. The Claude Code hook blocks

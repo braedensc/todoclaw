@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import type { ChatItem } from './use-ai-chat'
 import type { ChatController } from './use-chat-controller'
 import type { ChatSession } from '../../types/chat'
@@ -9,6 +9,8 @@ import { proactiveDayLabel } from '../notifications/message-format'
 import { TodoClawPeek } from '../../components/TodoClawPeek'
 import { SleepingPuppy } from '../../components/SleepingPuppy'
 import { PawPrint } from '../../components/PawPrint'
+import { useIsMobile } from '../../hooks/use-is-mobile'
+import { registerReloadBlocker } from '../../lib/app-update'
 
 // The full BabyClaw conversation UI (header + streamed history + confirm gate + input), factored
 // out of ChatPanel so BOTH chat shells render the same thing:
@@ -47,12 +49,18 @@ function sessionTag(s: ChatSession | null): { label: string; bell: boolean } | n
   return title ? { label: title, bell: false } : null
 }
 
+/** Which face the drawer shows: the open conversation, or the "Your chats" list. */
+export type ChatView = 'conversation' | 'history'
+
 export function ChatConversation({
   chat,
   onClose,
   showClose = true,
   readOnly = false,
   enableSessions = false,
+  view = 'conversation',
+  onViewChange,
+  onHeaderPointerDown,
 }: {
   chat: ChatController
   onClose: () => void
@@ -69,6 +77,22 @@ export function ChatConversation({
    * the list, never in this header.
    */
   enableSessions?: boolean
+  /**
+   * Which face to show — CONTROLLED by the shell (App) rather than held here, because the ENTRY
+   * POINT decides: the nav Chat entry opens the list, the widget's "Open chat" and a #/chat deep
+   * link open a conversation. Holding it here also couldn't work for the desktop rail, which stays
+   * mounted between opens and would keep whatever face it was left on. Defaults suit the look-only
+   * demo, which has no session switcher (enableSessions off → the list is unreachable anyway).
+   */
+  view?: ChatView
+  onViewChange?: (view: ChatView) => void
+  /**
+   * Makes the whole header band the sheet's drag-to-dismiss handle (the mobile ChatPanel passes its
+   * swipe pointer handler; the desktop rail leaves it undefined, so the header stays a plain header
+   * there). The header's own buttons still work — the shared hook skips a press that lands on a
+   * control. Pairs with `touch-action: none` on the band so a touch-drag drives the pointer path.
+   */
+  onHeaderPointerDown?: (event: React.PointerEvent) => void
 }) {
   const {
     items,
@@ -85,9 +109,17 @@ export function ChatConversation({
     newChat,
   } = chat
   const [text, setText] = useState('')
-  const [view, setView] = useState<'conversation' | 'history'>('conversation')
   const showHistory = enableSessions && view === 'history'
   const listRef = useRef<HTMLUListElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  // An unsent draft vetoes the installed-PWA auto-update reload (src/lib/app-update.ts) — any
+  // future long-form composer surface must register its own blocker the same way.
+  const draftRef = useRef(text)
+  useEffect(() => {
+    draftRef.current = text
+  }, [text])
+  useEffect(() => registerReloadBlocker(() => draftRef.current.trim() !== ''), [])
+  const isMobile = useIsMobile()
   const tag = sessionTag(activeSession)
 
   // Keep the latest message in view as things stream in.
@@ -95,6 +127,18 @@ export function ChatConversation({
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [items, pending])
+
+  // The composer is a textarea (it has to hold newlines), so it must grow with its content —
+  // reset to `auto` first or scrollHeight only ever ratchets up. Capped by max-h-32 in the class,
+  // past which it scrolls. Empty drops the inline height entirely rather than measuring: rows={1}
+  // already IS the one-row height, and that keeps a measurement taken before layout settles from
+  // sticking to an empty box (and self-heals it after each send).
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = text ? `${el.scrollHeight}px` : ''
+  }, [text])
 
   function submit(value: string) {
     const t = value.trim()
@@ -106,11 +150,31 @@ export function ChatConversation({
     e.preventDefault()
     submit(text)
   }
+  // Enter sends on DESKTOP only (Shift+Enter newlines there, as ever). On mobile Return is a
+  // plain newline and the paw button is the only send: the on-screen keyboard's return key sits
+  // right where you're typing, so Enter-to-send fired constantly by accident mid-thought.
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== 'Enter' || e.shiftKey || isMobile) return
+    // An IME candidate-select also arrives as Enter; committing it must not send the turn.
+    if (e.nativeEvent.isComposing) return
+    e.preventDefault()
+    submit(text)
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-panel">
-      {/* Header band — a soft puppy-wash gradient with the peeking pup over its top-left edge. */}
-      <div className="relative shrink-0 border-b border-border bg-gradient-to-b from-puppy/10 to-transparent px-4 pb-3 pt-3">
+      {/* Header band — a soft puppy-wash gradient with the peeking pup over its top-left edge. On the
+          mobile sheet the whole band is the drag-to-dismiss handle (onHeaderPointerDown); its buttons
+          still work (the hook skips a press on a control). `touch-none` so a touch-drag here drives
+          the pointer path instead of being read as a scroll. */}
+      <div
+        {...(onHeaderPointerDown
+          ? { 'data-sheet-handle': '', onPointerDown: onHeaderPointerDown }
+          : {})}
+        className={`relative shrink-0 border-b border-border bg-gradient-to-b from-puppy/10 to-transparent px-4 pb-3 pt-3 ${
+          onHeaderPointerDown ? 'cursor-grab touch-none select-none' : ''
+        }`.trim()}
+      >
         {showHistory ? (
           <div className="flex items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 font-serif text-lg font-semibold text-ink">
@@ -119,14 +183,30 @@ export function ChatConversation({
               </span>
               Your chats
             </h2>
-            <button
-              type="button"
-              onClick={() => setView('conversation')}
-              aria-label="Back to conversation"
-              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong bg-card px-3 py-1 text-xs font-medium text-ink hover:border-puppy/50"
-            >
-              ← Back to chat
-            </button>
+            {/* Back AND close: this face needs its own ✕ (same `showClose` rule as the conversation
+                header below). Without it the desktop rail could only be closed from the
+                conversation, so landing here — which is where the nav's Chat entry aims — meant
+                going "back" to a chat you didn't want just to reach the ✕. */}
+            <div className="flex shrink-0 items-center gap-2 text-muted">
+              <button
+                type="button"
+                onClick={() => onViewChange?.('conversation')}
+                aria-label="Back to conversation"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border-strong bg-card px-3 py-1 text-xs font-medium text-ink hover:border-puppy/50"
+              >
+                ← Back to chat
+              </button>
+              {showClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close chat"
+                  className="hover:text-ink"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex items-start justify-between gap-2 pl-[52px]">
@@ -157,7 +237,7 @@ export function ChatConversation({
                     aria-hidden
                     className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(91,138,114,0.16)]"
                   />
-                  your planning pup
+                  your AI planning pup
                 </p>
               )}
             </div>
@@ -165,7 +245,7 @@ export function ChatConversation({
               {enableSessions && (
                 <button
                   type="button"
-                  onClick={() => setView('history')}
+                  onClick={() => onViewChange?.('history')}
                   title="Your inbox + saved chats"
                   className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-card px-2.5 py-1 text-[11px] font-medium text-ink hover:border-puppy/50"
                 >
@@ -192,11 +272,11 @@ export function ChatConversation({
           currentId={sessionId}
           onOpen={(id) => {
             openSession(id)
-            setView('conversation')
+            onViewChange?.('conversation')
           }}
           onNew={() => {
             newChat()
-            setView('conversation')
+            onViewChange?.('conversation')
           }}
         />
       ) : (
@@ -279,10 +359,13 @@ export function ChatConversation({
                   ))}
                 </div>
               )}
-              <form onSubmit={handleSubmit} className="flex items-center gap-2">
-                <input
+              <form onSubmit={handleSubmit} className="flex items-end gap-2">
+                <textarea
+                  ref={inputRef}
+                  rows={1}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   // While a confirmation is pending, a typed reply answers it (send routes yes/no to
                   // confirm/deny) — the buttons above stay as the one-click path.
                   placeholder={
@@ -292,8 +375,8 @@ export function ChatConversation({
                   }
                   aria-label="Message"
                   disabled={paused}
-                  enterKeyHint="send"
-                  className="min-w-0 flex-1 rounded-xl border border-border-strong bg-card px-3 py-2.5 text-sm disabled:opacity-50"
+                  enterKeyHint={isMobile ? 'enter' : 'send'}
+                  className="max-h-32 min-w-0 flex-1 resize-none rounded-xl border border-border-strong bg-card px-3 py-2.5 text-sm leading-5 disabled:opacity-50"
                 />
                 <button
                   type="submit"
@@ -322,7 +405,8 @@ function EmptyState({ readOnly }: { readOnly: boolean }) {
         {readOnly ? 'Meet BabyClaw' : "BabyClaw's having a nap"}
       </p>
       <p className="max-w-[32ch] text-sm leading-relaxed text-muted">
-        Tell him what's on your plate and he'll add, move, plan, or clear it — in plain English.
+        Anything you can do in the app, he can do for you — add, move, plan your day, tick things
+        off. Plain English is all it takes.
       </p>
     </li>
   )

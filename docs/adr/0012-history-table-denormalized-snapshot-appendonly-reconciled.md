@@ -1,6 +1,6 @@
 # ADR-0012 — `history` table: denormalized snapshot + append-only (reconciled with soft-delete)
 
-**Date:** 2026-06-24 · **Stage:** 3 (PR6)
+**Date:** 2026-06-24 · **Stage:** 3 (PR6) · **Status:** Accepted
 
 > **Update (2026-07-05, feat/done-popup-rework):** two of the behaviors below were reverted after
 > owner feedback. **(1) History is no longer append-only** — an owner-scoped `DELETE` policy was

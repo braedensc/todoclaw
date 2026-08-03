@@ -6,6 +6,11 @@ import {
   fmtCountdown,
   fmtOverdueAmount,
   gridChipLabel,
+  PAUSED_OPACITY,
+  pausedBadge,
+  pausedChipLabel,
+  pausedChipStyle,
+  pausedRingStyle,
   staleBadge,
   staleChipStyle,
   staleness,
@@ -196,6 +201,39 @@ describe('staleness', () => {
     expect(staleness({ created_at: null, staged: false }, null, NOW)).toBeNull()
     expect(staleness({ created_at: 'not-a-date', staged: false }, null, NOW)).toBeNull()
   })
+
+  // start_date (pause) interplay: dormancy isn't neglect, so the ignored-clock restarts at the
+  // start date — a task that just woke from a pause can't be instantly ❄️.
+  describe('with a start (pause) date', () => {
+    // A wall-clock day exactly `days` before NOW (NOW sits at 12:00Z, so the arithmetic is exact).
+    const dayAgedBy = (days: number) => agedByDays(days).slice(0, 10)
+
+    it('a DATED task that recently (re)started is not stale despite a deep overdue count', () => {
+      const wokeRecently = { created_at: agedByDays(400), staged: false, start_date: dayAgedBy(10) }
+      expect(staleness(wokeRecently, -100, NOW)).toBeNull()
+    })
+
+    it('a DATED task stales again once it has a full floor of post-start board time', () => {
+      const longAwake = { created_at: agedByDays(400), staged: false, start_date: dayAgedBy(21) }
+      expect(staleness(longAwake, -100, NOW)).toEqual({ days: 100, overdue: true, floor: 21 })
+    })
+
+    it("an UNDATED task's board time counts from the start date, not created_at", () => {
+      const base = { created_at: agedByDays(200), staged: false }
+      expect(staleness({ ...base, start_date: dayAgedBy(30) }, null, NOW)).toBeNull()
+      expect(staleness({ ...base, start_date: dayAgedBy(100) }, null, NOW)).toEqual({
+        days: 100,
+        overdue: false,
+        floor: 90,
+      })
+    })
+
+    it('a still-DORMANT task (future start) is never stale in either lane', () => {
+      const dormant = { created_at: agedByDays(400), staged: false, start_date: dayAgedBy(-5) }
+      expect(staleness(dormant, -100, NOW)).toBeNull()
+      expect(staleness(dormant, null, NOW)).toBeNull()
+    })
+  })
 })
 
 describe('staleRingStyle', () => {
@@ -324,5 +362,45 @@ describe('staleBadge', () => {
 describe('staleChipStyle', () => {
   it('solid azure fill (the cold-lane mirror of the terracotta overdue chip)', () => {
     expect(staleChipStyle()).toEqual({ backgroundColor: 'rgb(50,118,205)', color: '#fff' })
+  })
+})
+
+// The PAUSED (dormant / future start_date) lane — a third, neutral SLATE dress a set-aside card
+// wears, distinct from the warm urgency ladder, the cool stale azure, and the BabyClaw blue. Binary
+// (no depth ladder): a task is paused or it isn't. Applied by the grid card / cluster row / Paused
+// strip via these shared helpers so the surfaces can't drift.
+describe('paused lane', () => {
+  it('pausedRingStyle: a full-alpha slate ring + halo + slate tint (no depth ladder)', () => {
+    expect(pausedRingStyle()).toEqual({
+      boxShadow: '0 0 0 3px rgba(100,116,139,1), 0 0 24px 8px rgba(100,116,139,0.45)',
+      background: '#e7ebf2',
+    })
+  })
+
+  it('pausedChipStyle: solid slate fill (the set-aside mirror of the due / stale chips)', () => {
+    expect(pausedChipStyle()).toEqual({ backgroundColor: 'rgb(100,116,139)', color: '#fff' })
+  })
+
+  it('pausedChipLabel: "⏸ starts <day>", reusing formatStartDay', () => {
+    expect(pausedChipLabel('2026-07-30')).toBe('⏸ starts Jul 30')
+    // A full ISO timestamp is sliced to its wall-clock day, same as formatStartDay.
+    expect(pausedChipLabel('2026-08-01T09:30:00Z')).toBe('⏸ starts Aug 1')
+  })
+
+  it('pausedChipLabel: falls back to a bare "⏸ paused" for a missing/unparseable date', () => {
+    expect(pausedChipLabel(null)).toBe('⏸ paused')
+    expect(pausedChipLabel(undefined)).toBe('⏸ paused')
+    expect(pausedChipLabel('not-a-date')).toBe('⏸ paused')
+  })
+
+  it('pausedBadge: the 💤 corner flag (the paused member of the 🔥/❄️ family) + spelled-out title', () => {
+    expect(pausedBadge('2026-07-30')).toEqual({ glyph: '💤', title: 'Paused — starts Jul 30' })
+    expect(pausedBadge(null)).toEqual({ glyph: '💤', title: 'Paused' })
+    expect(pausedBadge('not-a-date')).toEqual({ glyph: '💤', title: 'Paused' })
+  })
+
+  it('PAUSED_OPACITY dims the card but keeps it legible (not a fade-out)', () => {
+    expect(PAUSED_OPACITY).toBeGreaterThan(0.5)
+    expect(PAUSED_OPACITY).toBeLessThan(1)
   })
 })

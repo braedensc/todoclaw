@@ -3,6 +3,7 @@
 
 import type { Recurring } from '../types/task'
 import { localDateInTZ } from './dates'
+import { daysUntil } from './scoring'
 
 const MS_PER_DAY = 86_400_000
 
@@ -23,32 +24,25 @@ export const RC_COLOR: Record<RecurringCode, string> = {
 }
 
 export interface RecurringOpts {
+  /**
+   * IANA timezone (e.g. 'America/New_York') — the user's `user_schedule.timezone`. REQUIRED, like
+   * `ScoringOpts`: a `nextDueOn` override is a wall-clock DAY, so reading it needs the same
+   * authority the daily reset uses. Callers get it from `useTimeZone()`, never a local fallback.
+   */
+  timeZone: string
   /** Injected for deterministic tests; defaults to the real current instant. */
   now?: Date
 }
 
 /**
- * Status of a recurring task relative to "now" (html:57-67).
+ * The status ladder, keyed on `daysLeft` alone (html:57-67):
+ * `< -1` → overdue, `1` → due tomorrow, `<= 0` → due today, `<= 5` → soon, else ok.
  *
- * Returns `null` for a non-recurring task (no `recurring` object or no `frequencyDays`).
- * A recurring task that has never been done is treated as deeply overdue
- * (`daysLeft: -999`). Otherwise `daysLeft = frequencyDays - daysSinceLastDone`:
- * - `< -1` → overdue, `1` → due tomorrow, `<= 0` → due today, `<= 5` → soon, else ok.
+ * Split out so the cadence clock and a `nextDueOn` override produce IDENTICAL labels/codes for the
+ * same `daysLeft` — that sameness is what lets every reader honor an override without knowing it
+ * exists.
  */
-export function recurringStatus(
-  recurring: Recurring | null | undefined,
-  opts: RecurringOpts = {},
-): RecurringStatus | null {
-  if (!recurring || !recurring.frequencyDays) return null
-
-  if (recurring.lastDoneAt == null) {
-    return { label: 'never done', code: 'overdue', daysLeft: -999 }
-  }
-
-  const now = opts.now ?? new Date()
-  const daysSince = Math.floor((now.getTime() - Date.parse(recurring.lastDoneAt)) / MS_PER_DAY)
-  const daysLeft = recurring.frequencyDays - daysSince
-
+function statusFromDaysLeft(daysLeft: number): RecurringStatus {
   if (daysLeft < -1) {
     return { label: `overdue ${Math.abs(daysLeft)}d`, code: 'overdue', daysLeft }
   }
@@ -59,6 +53,91 @@ export function recurringStatus(
     return { label: `in ${daysLeft}d`, code: 'soon', daysLeft }
   }
   return { label: `in ${daysLeft}d`, code: 'ok', daysLeft }
+}
+
+/**
+ * `daysLeft` from a live `nextDueOn` override, or `null` when there is no override in force.
+ *
+ * The override RETIRES at read time once a completion has caught up with it (`lastDoneAt` landing
+ * on or after the scheduled day) — the same self-healing, no-cron shape as `isDormant`/`start_date`.
+ * Every completion path also clears the field explicitly; this is the belt-and-braces half, so a
+ * writer that forgets can't pin a chore to "due today" forever.
+ *
+ * Calendar-day math (via `daysUntil`), not the cadence clock's rolling 24h: "is this wanted today"
+ * is a question about the user's calendar, so it can't drift on a 23- or 25-hour DST day.
+ */
+function overrideDaysLeft(recurring: Recurring, timeZone: string, now: Date): number | null {
+  const on = recurring.nextDueOn
+  if (!on) return null
+  if (recurring.lastDoneAt != null) {
+    const doneOn = localDateInTZ(timeZone, new Date(recurring.lastDoneAt))
+    if (doneOn >= on.slice(0, 10)) return null // already done on/after the day it was wanted
+  }
+  return daysUntil(on.slice(0, 10), { timeZone, now })
+}
+
+/**
+ * Status of a recurring task relative to "now" (html:57-67).
+ *
+ * Returns `null` for a non-recurring task (no `recurring` object or no `frequencyDays`).
+ * Precedence:
+ * 1. a live `nextDueOn` override ("I need to do this on Friday") — calendar days until that day;
+ * 2. never done → deeply overdue (`daysLeft: -999`);
+ * 3. the cadence clock — `daysLeft = frequencyDays - daysSinceLastDone`.
+ */
+export function recurringStatus(
+  recurring: Recurring | null | undefined,
+  opts: RecurringOpts,
+): RecurringStatus | null {
+  if (!recurring || !recurring.frequencyDays) return null
+
+  const { timeZone, now = new Date() } = opts
+
+  const override = overrideDaysLeft(recurring, timeZone, now)
+  if (override != null) return statusFromDaysLeft(override)
+
+  if (recurring.lastDoneAt == null) {
+    return { label: 'never done', code: 'overdue', daysLeft: -999 }
+  }
+
+  const daysSince = Math.floor((now.getTime() - Date.parse(recurring.lastDoneAt)) / MS_PER_DAY)
+  return statusFromDaysLeft(recurring.frequencyDays - daysSince)
+}
+
+/**
+ * The `recurring` patch that records a COMPLETION: the real completion instant, one more done, and
+ * the one-shot override cleared so the cadence resumes from when the chore was actually done.
+ *
+ * Every completion path (list, grid, BabyClaw's `complete_task`) goes through this — the field is
+ * easy to drop when spreading `{ ...recurring }`, and forgetting it would pin the chore to its
+ * scheduled day forever.
+ */
+export function recurringCompletion(recurring: Recurring, now: Date = new Date()): Recurring {
+  return {
+    ...recurring,
+    lastDoneAt: now.toISOString(),
+    doneCount: (recurring.doneCount ?? 0) + 1,
+    nextDueOn: null,
+  }
+}
+
+/**
+ * The `recurring` patch that UNDOES the most recent completion: rewind the completion stamp by one
+ * cadence and un-count it, so the chore reads due again from where it actually stood.
+ *
+ * A pure rewind of the stamp — deliberately NOT "anchor it so it reads due TODAY". Restoring a
+ * completion from two days ago should read `overdue 2d`, which is what the plain arithmetic gives.
+ * Returns `null` when there is nothing to undo.
+ */
+export function recurringRestore(recurring: Recurring): Recurring | null {
+  if (!recurring.lastDoneAt) return null
+  const freq = Math.max(Math.trunc(recurring.frequencyDays) || 1, 1)
+  return {
+    ...recurring,
+    lastDoneAt: new Date(Date.parse(recurring.lastDoneAt) - freq * MS_PER_DAY).toISOString(),
+    doneCount: Math.max(0, (recurring.doneCount ?? 0) - 1),
+    nextDueOn: null,
+  }
 }
 
 /**

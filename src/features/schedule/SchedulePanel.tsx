@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Recurring } from '../../types/task'
 import { localDateInTZ } from '../../lib/dates'
+import { formatStartDay } from '../../lib/start-date'
 import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
 import { taskType, ONGOING_GLYPH, type TaskType } from '../../lib/task-type'
 import { ReminderPicker } from '../reminders/ReminderPicker'
@@ -105,6 +106,11 @@ export interface SchedulePanelProps {
   onRemoveRecurring: () => void
   /** Set/clear the ONGOING project flag. Setting it true also clears any recurring schedule. */
   onSetOngoing: (on: boolean) => void
+  /** Current start (pause-until) date ('YYYY-MM-DD') or null. A FUTURE date means the task is
+   *  dormant: hidden everywhere until that day (src/lib/start-date.ts isDormant). */
+  startDate: string | null
+  /** Commit the start date (null = resume now / start immediately). */
+  onSetStartDate: (startDate: string | null) => void
   /** This task's selected reminder offsets (minutes before due); empty = none. Multi-select. */
   reminderOffsets: readonly number[]
   /** Toggle one reminder lead time on/off. */
@@ -132,6 +138,8 @@ export function SchedulePanel({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
+  startDate,
+  onSetStartDate,
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
@@ -141,6 +149,7 @@ export function SchedulePanel({
 }: SchedulePanelProps) {
   const dueValue = due ? due.slice(0, 10) : ''
   const timeValue = dueTime ? dueTime.slice(0, 5) : ''
+  const startValue = startDate ? startDate.slice(0, 10) : ''
 
   // Two size grades from one prop: compact for desktop popovers, thumb-sized for touch surfaces.
   const chipBase = `rounded-full border font-medium transition-colors disabled:opacity-40 ${
@@ -167,6 +176,12 @@ export function SchedulePanel({
   const [moreOpen, setMoreOpen] = useState(dueOffGrid)
   const showMore = moreOpen || dueOffGrid
 
+  // Pause (start-later) reveal + state: a start date STRICTLY after the user's today means the
+  // task is currently dormant. The native date input opens on demand ("Pause until…" /
+  // "Change date…"); min is tomorrow — pausing until the past is a no-op by definition.
+  const pausedNow = startValue !== '' && startValue > todayISO
+  const [pauseOpen, setPauseOpen] = useState(false)
+
   // Custom time reveal — auto-open when the stored time isn't one of the presets.
   const timeIsPreset = TIME_PRESETS.some((p) => (p.value ?? '') === timeValue)
   const [customTimeOpen, setCustomTimeOpen] = useState(!timeIsPreset && timeValue !== '')
@@ -191,7 +206,7 @@ export function SchedulePanel({
           ? 'weekly'
           : 'custom'
 
-  const status = recurringStatus(recurring)
+  const status = recurringStatus(recurring, { timeZone })
   const statusColor = status ? RC_COLOR[status.code] : RC_COLOR.ok
 
   // The three mutually-exclusive types (Task / Recurring / Ongoing) drive one segmented switch.
@@ -260,13 +275,27 @@ export function SchedulePanel({
       {/* Plain header (owner feedback 2026-07-09: the "come back to you" phrasing read unclear) —
           the panel says what it does and gets out of the way. The 🦴 garnish below stays. */}
       <div className="flex flex-col">
-        <span className="text-[13px] font-bold">Set a due date</span>
+        {/* A recurring chore has no deadline — its due-ness is derived from the cadence. Picking a
+            day means "this next happens then" (it writes the one-shot occurrence override alongside
+            the reminder anchor; see use-set-due.ts). Saying "due date" here was the trap: the write
+            was confirmed and the chore stayed invisible, because nothing reads a chore's due date
+            for the board or the plan. */}
+        <span className="text-[13px] font-bold">
+          {currentType === 'recurring' ? 'Do it on a day' : 'Set a due date'}
+        </span>
         <span className="truncate text-[11px] text-muted-light">{taskText}</span>
       </div>
 
       {/* ---- Due: the two-week paper calendar ---- */}
       <div>
         <span className={sectionLabel}>{monthLabel}</span>
+        {currentType === 'recurring' && (
+          <p className="mt-0.5 text-[11px] leading-snug text-muted">
+            Pick the day this next comes up — it lands on your board and that day's plan. Finishing
+            it resumes the {freq ? fmtFrequency(freq) : 'usual'} rhythm from when you actually did
+            it.
+          </p>
+        )}
         <div
           role="group"
           aria-label="Due day"
@@ -523,6 +552,51 @@ export function SchedulePanel({
             your board and todoclaw nudges you to chip away at it. Give it a far-out due date if it
             has a target, and just mark it done when it&rsquo;s finished.
           </p>
+        )}
+      </div>
+
+      {/* ---- Pause / start later: a FUTURE start date makes the task dormant — hidden from the
+              board, the plans, and the morning push, reminders held — until that day arrives and
+              it wakes on its own. Same instant-commit contract as everything above. ---- */}
+      <div className="border-t border-border pt-3">
+        <span className={sectionLabel}>Pause</span>
+        {pausedNow ? (
+          <p className="mt-1.5 text-[11px] leading-snug text-muted">
+            <span aria-hidden>⏸ </span>Hidden until <b>{formatStartDay(startValue)}</b> — off your
+            board and out of daily plans; it comes back that morning on its own.
+          </p>
+        ) : (
+          <p className="mt-1.5 text-[11px] leading-snug text-muted">
+            Hide this until a future date — off your board and out of daily plans, back that morning
+            on its own.
+          </p>
+        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            aria-expanded={pauseOpen}
+            aria-pressed={pausedNow}
+            onClick={() => setPauseOpen((o) => !o)}
+            className={pausedNow ? chipOn : chipOff}
+          >
+            <span aria-hidden>⏸ </span>
+            {pausedNow ? 'Change date…' : 'Pause until…'}
+          </button>
+          {pausedNow && (
+            <button type="button" onClick={() => onSetStartDate(null)} className={chipOff}>
+              <span aria-hidden>▶ </span>Resume now
+            </button>
+          )}
+        </div>
+        {pauseOpen && (
+          <input
+            type="date"
+            aria-label="Start date"
+            value={startValue}
+            min={addDaysISO(todayISO, 1)}
+            onChange={(e) => onSetStartDate(e.target.value === '' ? null : e.target.value)}
+            className="mt-1.5 w-full rounded border border-border-strong bg-card px-2 py-1 text-xs"
+          />
         )}
       </div>
 

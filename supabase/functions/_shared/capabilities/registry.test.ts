@@ -55,6 +55,9 @@ class Q {
   order() {
     return this
   }
+  limit() {
+    return this
+  }
   private result(): Result {
     if (this.mode === 'insert') {
       return this.h.onInsert?.(this.table, this.row) ?? { data: { id: 'new' }, error: null }
@@ -104,6 +107,9 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'make_recurring',
     'make_ongoing',
     'clear_recurring',
+    'pause_task',
+    'resume_task',
+    'schedule_for_day',
     'restore_task',
     'complete_task',
     'delete_task',
@@ -130,14 +136,15 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
   assert(!names.has('set_bucket'))
 })
 
-Deno.test('exactly the completion/deletion + memory-confirm tools are destructive', () => {
+Deno.test('exactly the completion/deletion + delete_memory tools are destructive', () => {
+  // propose_memory dropped out of this set: a confident inference now auto-saves (no confirm gate) —
+  // see docs/adr/2026-07-22-proactive-memory-inference-autosave.md. delete_memory still confirms.
   assertEquals([...DESTRUCTIVE].sort(), [
     'complete_task',
     'delete_completion',
     'delete_habit',
     'delete_memory',
     'delete_task',
-    'propose_memory',
   ])
   for (const d of DESTRUCTIVE) assert(capabilityByName.has(d))
 })
@@ -600,11 +607,42 @@ Deno.test('delete_habit is destructive and its confirm summary names the habit',
 Deno.test('generate_plan uses the injected service, else degrades gracefully', async () => {
   const withSvc = ctx(
     {},
-    { generatePlan: () => Promise.resolve({ ok: true, headline: 'Focus day' }) },
+    {
+      generatePlan: () =>
+        Promise.resolve({
+          ok: true,
+          plan: {
+            headline: 'Focus day',
+            availableTime: '~4h',
+            anchors: [
+              { task: 'Timing belt', time: '2:00 PM', duration: '~half-day', taskId: 'car' },
+            ],
+            chores: [{ task: 'Laundry', status: 'due today', taskId: 'laundry' }],
+            bigRock: {
+              task: 'Draft the deck',
+              why: 'w',
+              duration: '~2h',
+              when: 'afternoon',
+              taskId: 'deck',
+            },
+            smallRocks: [
+              { task: 'Reply to Sam', why: 'w', duration: '~10min', when: 'lunch', taskId: 'sam' },
+            ],
+            habitNote: 'Nice streak.',
+            nudge: null,
+          },
+        }),
+    },
   )
   const ok = await executeTool('generate_plan', {}, withSvc)
   assert(!ok.is_error)
   assert(ok.content.includes('Focus day'))
+  // The tool result spells the card out — with only a headline the model narrated the rest from
+  // imagination, then insisted a dropped item was still on the card.
+  assert(ok.content.includes('2:00 PM Timing belt'))
+  assert(ok.content.includes('Big rock: Draft the deck.'))
+  assert(ok.content.includes('Then: Reply to Sam.'))
+  assert(ok.content.includes('That is the whole plan'))
   assertEquals(ok.mutated, ['daily_state'])
 
   const noSvc = await executeTool('generate_plan', {}, ctx())
@@ -619,4 +657,87 @@ Deno.test('create_task tool schema exposes the text property', () => {
   assert(schema.properties && 'text' in schema.properties)
   // The zod schema is the single source of truth for both validation and this wire schema.
   assert(z.toJSONSchema)
+})
+
+// ---- pause / resume --------------------------------------------------------------------------
+Deno.test('pause_task writes the start date and confirms with the return day', async () => {
+  const updates: unknown[] = []
+  const res = await executeTool(
+    'pause_task',
+    { task_id: UUID, until: '2026-08-01' },
+    ctx({
+      onSelect: () => ({ data: { text: 'Big project' }, error: null }),
+      onUpdate: (_t, patch) => {
+        updates.push(patch)
+        return { data: null, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(updates, [{ start_date: '2026-08-01' }])
+  assertEquals(res.mutated, ['tasks'])
+  assert(res.content.includes('Paused "Big project" until Aug 1'))
+})
+
+Deno.test('pause_task refuses a past/today date and a malformed one BEFORE any write', async () => {
+  // ctx now = 2026-07-04T12:00Z (New York → local today 2026-07-04): today is not "after today".
+  const today = await executeTool('pause_task', { task_id: UUID, until: '2026-07-04' }, ctx())
+  assert(today.is_error)
+  const past = await executeTool('pause_task', { task_id: UUID, until: '2026-01-01' }, ctx())
+  assert(past.is_error)
+  const garbage = await executeTool('pause_task', { task_id: UUID, until: 'next month' }, ctx())
+  assert(garbage.is_error)
+})
+
+Deno.test('resume_task clears the start date of a paused task', async () => {
+  const updates: unknown[] = []
+  const res = await executeTool(
+    'resume_task',
+    { task_id: UUID },
+    ctx({
+      onSelect: () => ({ data: { text: 'Big project', start_date: '2026-08-01' }, error: null }),
+      onUpdate: (_t, patch) => {
+        updates.push(patch)
+        return { data: null, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(updates, [{ start_date: null }])
+  assert(res.content.includes('Resumed "Big project"'))
+})
+
+Deno.test('resume_task on a live task is an honest no-op (no write)', async () => {
+  const updates: unknown[] = []
+  const res = await executeTool(
+    'resume_task',
+    { task_id: UUID },
+    ctx({
+      onSelect: () => ({ data: { text: 'Big project', start_date: null }, error: null }),
+      onUpdate: (_t, patch) => {
+        updates.push(patch)
+        return { data: null, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(updates, [])
+  assert(res.content.includes("isn't paused"))
+})
+
+Deno.test('create_task forwards a start_date and confirms the pause', async () => {
+  let inserted: Record<string, unknown> | undefined
+  const res = await executeTool(
+    'create_task',
+    { text: 'Resume API project', urgency: 'high', importance: 'high', start_date: '2026-08-01' },
+    ctx({
+      onInsert: (_t, row) => {
+        inserted = row as Record<string, unknown>
+        return { data: { id: 'new' }, error: null }
+      },
+    }),
+  )
+  assert(!res.is_error)
+  assertEquals(inserted?.start_date, '2026-08-01')
+  assert(res.content.includes('paused until Aug 1'))
 })

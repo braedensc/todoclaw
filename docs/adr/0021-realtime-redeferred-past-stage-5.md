@@ -1,6 +1,6 @@
 # ADR-0021 — Realtime re-deferred past Stage 5
 
-**Date:** 2026-07-02 · **Stage:** 5
+**Date:** 2026-07-02 · **Stage:** 5 · **Status:** Accepted
 
 ADR-0013 deferred Supabase Realtime "to Stage 5". Revisited in Stage 5 and **re-deferred**
 (Braeden's call, 2026-07-02):

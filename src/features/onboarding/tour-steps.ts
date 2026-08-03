@@ -5,48 +5,82 @@ import type { TourStep } from './FeatureTour'
 // words (a first-run non-technical user), each step teaches ONE idea, and the app's core model —
 // tasks on an urgent × important map — leads.
 //
-// The tour is ONE section, played entirely over the DemoScene — no second leg over the user's own
-// empty shell (that only bred redundancy). Eight panels, all pointing at the one example scene:
-// welcome → board → three task kinds → Plan My Day (button + the plan it builds) → morning →
-// evening → daily habits → settings. Everything the tour highlights (the plan button, the habits
-// card, the settings card) is example scenery ON the scene, so the walkthrough never jumps surfaces.
+// The tour is ONE section. It OPENS at the top of the app (`app-top`, the real masthead) so the
+// first thing a first-run user sees is the app itself; DemoScene then mounts inline below that
+// (in place of the real board/plan/reminders it stands in for — see DemoScene's own comment), so
+// the real chrome around it is never hidden. The middle panels point at the example scene's own
+// `demo-*` anchors; the LAST one points at the REAL Account nav / bottom bar sitting right there
+// in the shell — no look-alike copy.
+//
+// STEP ORDER MUST MATCH DemoScene's section order — the overlay scrolls each anchor into view, so
+// a mismatch scrolls the page backwards mid-tour.
 
 /**
- * The demo tour — over the DemoScene. Targets ONLY the scene's own `demo-*` wrapper anchors: 'grid'
- * and 'matrix' also exist in the real shell underneath, and anchors resolve first-match-in-document.
- * Every target exists on both breakpoints, but the BOARD step's copy is breakpoint-specific: the
- * desktop scene is the free-canvas grid (glow rings, ↻ / ❄️ badges), the mobile scene is the 2×2
- * quadrant overview (labels, counts, ⏰ badges — no grid, ADR-0028), so `demoTour(isMobile)` swaps
- * that one body rather than teaching a decoder ring for a UI half the users never see.
+ * The demo tour. The middle steps target the DemoScene's own `demo-*` wrapper anchors ('grid' and
+ * 'matrix' also exist in the real shell underneath, hence the `demo-` prefix — anchors resolve
+ * first-match-in-document). The opening step targets `app-top` (the real masthead) and the closing
+ * one `options`, the REAL Account nav (desktop header) / bottom bar (mobile) — DemoScene doesn't
+ * cover either, so there's nothing to fake.
+ *
+ * `demoTour(isMobile)` swaps what genuinely differs between the two surfaces (ADR-0028):
+ *  - THE GRID — the same board, reached differently: it's the desktop home page, and on a phone
+ *    it's Grid view (the ⌐ Grid pill / More → Grid view).
+ *  - THE QUICK OVERVIEW — a phone-only extra step for MobileMatrix, the surface the mobile shell
+ *    actually opens on. Absent on desktop, which has no such view.
+ *  - BOTTOM-BAR CALL-OUTS (`also`) — a phone learns WHERE a surface lives, so the add and chat
+ *    panels also ring their tab in the bottom bar. Desktop's equivalents sit in the header nav the
+ *    closing panel covers. The closing panel itself needs none: it spotlights the whole bar.
+ *  - THE REST OF THE APP — desktop's options are the header nav across the top; mobile has no
+ *    header nav at all (bottom-bar tabs + "More"), so this step's copy must name the place the
+ *    spotlight is actually sitting on.
  */
 export function demoTour(isMobile: boolean): TourStep[] {
   return [
     {
-      target: 'demo-board',
-      title: 'Welcome to Todoclaw',
+      target: 'app-top',
+      title: 'Welcome to TodoClaw',
       body:
-        'Todoclaw keeps everything you have to do in one place, sorted by how urgent and important ' +
-        'it is — then plans a realistic day for you each morning and checks in each evening. ' +
-        'Here’s a day already in motion.',
+        'TodoClaw is an AI-powered planner. Everything you have to do lands in one place, sorted ' +
+        'by how urgent and important it is — and BabyClaw, your AI pup, plans a realistic day ' +
+        'each morning and checks in each evening. Below is a day already in motion.',
     },
     {
-      target: 'demo-board',
+      target: 'demo-grid',
       title: 'Sorted by what matters',
       body: isMobile
-        ? 'Everything sorts into four boxes by how urgent and important it is, so what to do next ' +
-          'is always obvious — “Do Now” is the box to clear first. The ⏰ badges flag what’s due; ' +
-          'tap any box to open its list.'
-        : 'Further right is more urgent, higher up is more important — so the top-right corner is ' +
-          'always what to do next. Tasks heat up as they come due, then cool down and turn icy ❄️ ' +
-          'once ignored too long. Repeating chores wear the ↻ arrow.',
+        ? 'This is your grid — two dials, urgent (→) and important (↑). You place each task ' +
+          'yourself: press and hold a chip to move it, or use ⇢ Move to tap where it goes. Where ' +
+          'it sits IS its priority, so the top-right corner is always what to do next. Open it any ' +
+          'time with the ▦ Grid button.'
+        : 'You place each task yourself — drag it right for more urgent, up for more important. ' +
+          'Where you drop it sets its priority, so the top-right corner is always what to do next. ' +
+          'Tasks heat up as they come due, then cool to icy ❄️ once ignored too long; repeating ' +
+          'chores wear the ↻ arrow.',
     },
+    // Phone only: the everyday surface, introduced as the quick way to read the same board.
+    ...(isMobile
+      ? [
+          {
+            target: 'demo-matrix',
+            title: 'Or the quick overview',
+            body:
+              'Day to day your phone opens on this instead — the same four corners of the grid as ' +
+              'four boxes, newest first, with ⏰ badges on what’s due. Tap a box to open its list. ' +
+              '“Do Now” is the one to clear first.',
+          },
+        ]
+      : []),
     {
-      target: 'demo-board',
+      target: 'demo-add',
+      ...(isMobile ? { also: 'nav-add' } : {}),
       title: 'Three kinds of task',
-      body: 'Everything you add is one of three kinds:',
+      body: isMobile
+        ? 'Add with the ✚ tab. Say how urgent and important it is, then pick a type:'
+        : 'Type it into the Task Manager above your grid, then open its 📅 Schedule chip — this ' +
+          'panel — and pick a type:',
       bullets: [
         {
-          lead: 'One-off',
+          lead: 'Task',
           rest: 'something you do once (renew your passport, book a haircut).',
         },
         {
@@ -55,17 +89,29 @@ export function demoTour(isMobile: boolean): TourStep[] {
         },
         {
           lead: 'Ongoing',
-          rest: 'a long project with no real deadline; it stays put while Todoclaw nudges you to chip away (learn Spanish, declutter the garage).',
+          rest: 'a long project with no real deadline; it stays put while TodoClaw nudges you to chip away (learn Spanish, declutter the garage).',
         },
       ],
+    },
+    {
+      target: 'demo-chat-ask',
+      ...(isMobile ? { also: 'nav-chat' } : {}),
+      title: 'Chat runs the whole app',
+      body: isMobile
+        ? 'Or skip the form entirely: open the 🐾 Chat tab and tell BabyClaw “add dentist Friday ' +
+          '2pm,” “push the invoice to Monday,” or “what’s overdue?” — anytime, in plain words. He ' +
+          'does it and stamps a receipt, like the ones here.'
+        : 'Or skip the form entirely: tell BabyClaw “add dentist Friday 2pm,” “push the invoice to ' +
+          'Monday,” or “what’s overdue?” — anytime, in plain words. He does it and stamps a ' +
+          'receipt, like the ones here.',
     },
     {
       target: 'demo-plan',
       title: 'One tap plans your day',
       body:
-        'This ✦ Plan My Day button turns your whole board into a realistic day — one big rock, a ' +
-        'few quick wins, and room for habits, never an overstuffed list. One tap builds the plan ' +
-        'you see here.',
+        'This ✦ Plan My Day button turns your whole board into a realistic day. BabyClaw reads ' +
+        'where you placed each task and the details — due dates, recurring chores, ongoing ' +
+        'projects — to intelligently plan your day.',
     },
     {
       target: 'demo-chat-morning',
@@ -79,21 +125,28 @@ export function demoTour(isMobile: boolean): TourStep[] {
       title: 'Evenings close the loop',
       body:
         'Each evening BabyClaw checks in. Reply in plain words — “1 and 3” — and he ticks them ' +
-        'off for you.',
+        'off for you: each green ✓ receipt is him really updating your board.',
     },
     {
       target: 'demo-habits',
       title: 'Daily habits',
       body:
-        'Small routines you repeat — stretch, meds, walk the dog. Build them once and they show up ' +
-        'on your home screen to paw-check off each day; they reset every morning.',
+        'Small routines you repeat — stretch, meds, walk the dog. Build them once and they sit ' +
+        'right above your board every day; tap the paw to check one off. They reset every morning.',
     },
     {
-      target: 'demo-settings',
-      title: 'Settings and the rest',
-      body:
-        'Your daily reset time, notifications, timezone, backups, and this tour all live in ' +
-        'Settings. And AI is always optional — everything here works by hand too.',
+      target: 'options',
+      title: 'Done and Settings',
+      // Name only what Settings actually holds: its tabs are Plan My Day / Notifications / AI /
+      // Backups, plus the timezone picker and "Replay the tour". There is no reset-time control —
+      // the daily reset is local midnight in your stored timezone, so the timezone IS the knob.
+      body: isMobile
+        ? 'Two more along the bottom. Done keeps everything you’ve finished, newest first — with ' +
+          '↩ to put anything back on the board. Settings, under “More”, is where notifications, ' +
+          'your timezone, backups, and this tour live.'
+        : 'Two more along the top. Done keeps everything you’ve finished, newest first — with ↩ to ' +
+          'put anything back on the board. Settings is where notifications, your timezone, ' +
+          'backups, and this tour live.',
     },
   ]
 }

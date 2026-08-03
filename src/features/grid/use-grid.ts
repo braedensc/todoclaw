@@ -5,7 +5,8 @@ import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
-import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
+import { recurringCompletion, recurringDoneToday, recurringStatus } from '../../lib/recurring'
+import { isDormant } from '../../lib/start-date'
 import { quadrantMeta } from '../../lib/quadrants'
 import { urgencyGlowStyle } from '../../lib/visual-urgency'
 import {
@@ -24,6 +25,7 @@ import {
   type ClampBounds,
 } from '../../hooks/use-free-drag'
 import { useIsMobile } from '../../hooks/use-is-mobile'
+import { useIsCoarsePointer } from '../../hooks/use-is-coarse-pointer'
 import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
 
 /**
@@ -48,9 +50,12 @@ function isPlaced(
   if (task.staged) return false
   if (task.x == null || task.y == null) return false
   if (task.completed_at) return false
+  // Dormant (paused / future start date): off the grid until its start date arrives, then it
+  // wakes at its stored x/y. The list view's Paused group is where it lives meanwhile.
+  if (isDormant(task, timeZone)) return false
   if (doneToday[task.id]) return false
   if (recurringDoneToday(task.recurring, timeZone)) return false
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   if (rc && rc.code === 'ok') return false
   return true
 }
@@ -90,6 +95,8 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // has no card node of its own, but its bubble does. A dominant id never collides with a
   // standalone card (a clustered task renders as the bubble, not a card).
   const cardNodesRef = useRef(new Map<string, HTMLDivElement>())
+  /** The live DOM node a placed card renders as — the touch popover anchors to it (iPad). */
+  const getCardNode = useCallback((id: string) => cardNodesRef.current.get(id) ?? null, [])
   const registerCardNode = useCallback((id: string, node: HTMLDivElement | null) => {
     if (node) cardNodesRef.current.set(id, node)
     else cardNodesRef.current.delete(id)
@@ -194,6 +201,12 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // by clicking the grid background, dragging a row out, or marking a recurring task done.
   const [openClusterId, setOpenClusterId] = useState<string | null>(null)
 
+  // The iPad-hybrid touch actions popover (workshop PR 4): the placed card whose popover is open
+  // on a coarse-pointer desktop device, or null. Declared up here so selectCluster can clear it —
+  // the cluster popup and this popover are mutually exclusive (both are z-90 task editors).
+  const [tappedCardId, setTappedCardId] = useState<string | null>(null)
+  const clearCardTap = useCallback(() => setTappedCardId(null), [])
+
   // The cluster-popup row currently in inline-edit mode (a plain tap opens editing rather than
   // tearing the card out — item 16).
   const [editingClusterRowId, setEditingClusterRowId] = useState<string | null>(null)
@@ -205,6 +218,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   const selectCluster = useCallback((id: string | null) => {
     setOpenClusterId(id)
     setEditingClusterRowId(null)
+    setTappedCardId(null) // opening/closing a cluster closes the touch card popover (both z-90)
   }, [])
 
   // Size-aware drop clamp shared by every grid drag (reposition / new-item / popup drag-out) and
@@ -235,8 +249,32 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // done (e.g. from the list) leaves the list but reappears as a "new item" card AND survives the
   // daily reset (staged never resets) — the "ghost item" bug PR #191 missed on this fifth surface.
   const pendingTasks = useMemo(
-    () => tasks.filter((t) => t.staged && !t.completed_at && !(doneToday ?? {})[t.id]),
-    [tasks, doneToday],
+    () =>
+      tasks.filter(
+        (t) => t.staged && !t.completed_at && !(doneToday ?? {})[t.id] && !isDormant(t, timeZone),
+      ),
+    [tasks, doneToday, timeZone],
+  )
+
+  // Dormant (paused / future start_date) tasks that already have a grid spot. `isPlaced` drops
+  // them (dormancy hides a task from the active board), so they render as their OWN read-only
+  // "set aside" pass BEHIND the clustered active cards (GridSurface) — a paused card still shows
+  // WHERE it will land when it wakes, without joining clustering or the drag/merge machinery
+  // (folding a paused card into an active cluster would break placement and let it be dragged).
+  // Same completed/staged exclusions as `isPlaced`; the only difference is it KEEPS the ones
+  // `isPlaced` drops solely for being dormant. Not registered as cluster nodes.
+  const dormantPlaced = useMemo(
+    () =>
+      tasks.filter(
+        (t): t is Task & { x: number; y: number } =>
+          !t.staged &&
+          t.x != null &&
+          t.y != null &&
+          !t.completed_at &&
+          !(doneToday ?? {})[t.id] &&
+          isDormant(t, timeZone),
+      ),
+    [tasks, doneToday, timeZone],
   )
 
   const softDeleteMutate = softDelete.mutate
@@ -244,22 +282,17 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
 
   // --- Mark done (shared by grid cards + popup rows) -------------------------------------
   // Normal task: write history + today's daily_state (it leaves the grid). Recurring task:
-  // reset the cycle (lastDoneAt=now, doneCount+1) WITHOUT touching history/daily_state — it is
-  // then hidden from the board for the rest of the local day (recurringDoneToday) and returns the
-  // next day when its cadence next reads due/soon. Closes any open popup.
+  // advance the cycle via `recurringCompletion` (lastDoneAt=now, doneCount+1, any one-shot
+  // `nextDueOn` cleared) WITHOUT touching history/daily_state — it is then hidden from the board
+  // for the rest of the local day (recurringDoneToday) and returns the next day when its cadence
+  // next reads due/soon. Closes any open popup.
   const handleDone = useCallback(
     (task: Task) => {
       selectCluster(null)
       if (task.recurring) {
         updateMutate({
           id: task.id,
-          patch: {
-            recurring: {
-              ...task.recurring,
-              lastDoneAt: new Date().toISOString(),
-              doneCount: (task.recurring.doneCount ?? 0) + 1,
-            },
-          },
+          patch: { recurring: recurringCompletion(task.recurring) },
         })
       } else {
         markDoneMutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
@@ -278,11 +311,32 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     [updateMutate, endDrag],
   )
 
+  // The iPad hybrid (workshop PR 4): on a coarse-pointer device running this DESKTOP layout, an
+  // instant pointer-down drag steals every tap (a stray touch repositions a card), so reposition
+  // becomes HOLD-to-lift there and the freed-up TAP opens the card's touch actions popover
+  // (GridSurface anchors it via tappedCardId). Fine-pointer desktop is untouched: eager drag,
+  // no tap semantics (onTap only records when holdToLift is live).
+  const isCoarse = useIsCoarsePointer()
+  const holdToLift = isCoarse && !isMobile
+  const handleCardTap = useCallback(
+    (id: string) => {
+      if (!holdToLift) return
+      setOpenClusterId(null) // a card tap closes any open cluster popup (mutually exclusive)
+      setTappedCardId((current) => (current === id ? null : id))
+    },
+    [holdToLift],
+  )
   const reposition = useFreeDrag({
     surfaceRef: gridRef,
     onDrop: handleRepositionDrop,
     onMove: handleDragMove,
+    onTap: handleCardTap,
+    // A hold-drag lift closes the popover — otherwise it floats detached at the card's old spot
+    // while the card moves (the reposition pointerdown stopPropagations past the popover's own
+    // outside-dismiss, iPad-hybrid review). No-op on fine pointer (tappedCardId is never set).
+    onDragStart: clearCardTap,
     clamp: cardClamp,
+    holdToLift,
   })
 
   // --- New-item card → grid drag (desktop) -----------------------------------------------
@@ -382,15 +436,21 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     timeZone,
     placedTasks,
     pendingTasks,
+    dormantPlaced,
     clusters,
     draggedTask,
     draggingId,
     // Placed-card render wiring
     registerCardNode,
+    getCardNode,
     startReposition: reposition.startDrag,
     updateMutate,
     softDeleteMutate,
     handleDone,
+    // iPad hybrid: the card whose touch-actions popover is open (tap on a coarse-pointer
+    // desktop; always null on fine pointers) + its dismissal.
+    tappedCardId,
+    clearCardTap,
     // Cluster popup + background
     openClusterId,
     selectCluster,

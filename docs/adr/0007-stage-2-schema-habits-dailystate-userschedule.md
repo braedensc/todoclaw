@@ -1,6 +1,6 @@
 # ADR-0007 — Stage 2 schema: habits, daily_state, user_schedule (+ RLS, shared Zod types)
 
-**Date:** 2026-06-23 · **Stage:** 2 (PR #1)
+**Date:** 2026-06-23 · **Stage:** 2 (PR #1) · **Status:** Accepted
 
 The remaining tables from the master-plan schema, each **replicating the proven `tasks`
 pattern** (ADR-0005): RLS enabled; the only policies are owner-scoped (`user_id = auth.uid()`

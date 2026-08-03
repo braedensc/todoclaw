@@ -1,7 +1,7 @@
 // Tests for the pure dispatcher logic (dispatch.ts): local-hour math, quiet-hours suppression, the
 // due-kind decision, and the message content (plan-rich morning, plan-based evening check-in, and
 // the deterministic fallbacks).
-import { assertEquals, assertStringIncludes, assertNotMatch } from 'jsr:@std/assert@1'
+import { assert, assertEquals, assertStringIncludes, assertNotMatch } from 'jsr:@std/assert@1'
 import { dayNameInTZ } from './dates.ts'
 import {
   buildMorningFromPlan,
@@ -14,11 +14,14 @@ import {
   isQuietHour,
   localHourInTZ,
   normalizePlan,
+  recapPlanItems,
+  upcomingItems,
   type DispatchInputs,
   type DispatchPlan,
   type NotificationPrefs,
   type RecapContext,
 } from './dispatch.ts'
+import type { ActivityRow } from './activity.ts'
 
 const noon_utc = new Date('2026-07-07T12:00:00Z')
 
@@ -393,10 +396,13 @@ Deno.test('buildRecapMessage: numbers the still-unfinished plan items and asks',
   assertStringIncludes(m.body, 'rest day')
 })
 
-Deno.test('buildRecapMessage: done items drop off the list (matched by task text)', () => {
+Deno.test('buildRecapMessage: done items move to the crossed-off section (text match)', () => {
   const m = buildRecapMessage(inputs({ plan: planWithTasks, done: { a: true } }), ctx())
-  assertNotMatch(m.body, /Alpha/) // done this morning → not asked about
+  assertStringIncludes(m.body, 'already crossed off:\n✓ Alpha') // acknowledged…
+  assertNotMatch(m.body, /\d+\. Alpha/) // …never re-asked as an open item
+  assertStringIncludes(m.body, "Still open from this morning's plan:")
   assertStringIncludes(m.body, '1. Beta\n2. Gamma (not on board)') // unmatched Gamma stays listed
+  assertNotMatch(m.body, /rest day/) // things got done — the rest-day closer would ring false
 })
 
 Deno.test(
@@ -434,7 +440,8 @@ Deno.test(
       }),
       ctx(), // UTC, localDate 2026-07-07 → lastDoneAt is "today"
     )
-    assertNotMatch(m.body, /Alpha/)
+    assertStringIncludes(m.body, '✓ Alpha') // acknowledged in the crossed-off section
+    assertNotMatch(m.body, /\d+\. Alpha/)
     assertStringIncludes(m.body, '1. Beta')
   },
 )
@@ -461,6 +468,82 @@ Deno.test('buildRecapMessage: a recurring chore done YESTERDAY stays on the list
   )
   assertStringIncludes(m.body, '1. Alpha')
 })
+
+Deno.test(
+  'buildRecapMessage: a completed one-off is recognized by rock taskId even when completed_at ' +
+    'hid its task row (the RPC filters completed tasks out, so text matching never sees it)',
+  () => {
+    const planned: DispatchPlan = {
+      headline: 'x',
+      bigRock: { task: 'Finish taxes', duration: '~1h', taskId: 'gone' },
+      smallRocks: [{ task: 'Beta', taskId: 'b' }],
+    }
+    // 'gone' has no row in inputs.tasks — only today's done map (keyed by id) remembers it.
+    const m = buildRecapMessage(inputs({ plan: planned, done: { gone: true } }), ctx())
+    assertStringIncludes(m.body, '✓ Finish taxes')
+    assertNotMatch(m.body, /\d+\. Finish taxes/)
+    assertStringIncludes(m.body, '1. Beta')
+  },
+)
+
+Deno.test(
+  'buildRecapMessage: taskId links a paraphrased rock to its task row (completed_at / lastDoneAt)',
+  () => {
+    // The model may re-word a task ("Alpha" → "Knock out Alpha") — only the id can tie them.
+    const m = buildRecapMessage(
+      inputs({
+        plan: {
+          bigRock: { task: 'Knock out Alpha', taskId: 'a' },
+          smallRocks: [
+            { task: 'Chip at Rho', taskId: 'r' },
+            { task: 'Beta', taskId: 'b' },
+          ],
+        },
+        tasks: [
+          {
+            id: 'a',
+            text: 'Alpha',
+            x: 0.5,
+            y: 0.5,
+            due: null,
+            due_time: null,
+            staged: false,
+            size: null,
+            recurring: null,
+            completed_at: '2026-07-07T15:00:00Z',
+          },
+          {
+            id: 'r',
+            text: 'Rho',
+            x: 0.5,
+            y: 0.5,
+            due: null,
+            due_time: null,
+            staged: false,
+            size: null,
+            recurring: { frequencyDays: 7, lastDoneAt: '2026-07-07T14:00:00Z', doneCount: 2 },
+          },
+          {
+            id: 'b',
+            text: 'Beta',
+            x: 0.2,
+            y: 0.3,
+            due: null,
+            due_time: null,
+            staged: false,
+            size: null,
+            recurring: null,
+          },
+        ],
+      }),
+      ctx(), // UTC, localDate 2026-07-07 → both completion stamps land "today"
+    )
+    assertStringIncludes(m.body, '✓ Knock out Alpha')
+    assertStringIncludes(m.body, '✓ Chip at Rho')
+    assertStringIncludes(m.body, '1. Beta')
+    assertNotMatch(m.body, /\d+\. Knock out Alpha/)
+  },
+)
 
 Deno.test('buildRecapMessage: whole plan finished → celebrate, no list', () => {
   const m = buildRecapMessage(
@@ -504,6 +587,190 @@ Deno.test('buildRecapMessage: an oversized plan list is capped with an "…and N
   assertStringIncludes(m.body, '…and 4 more')
 })
 
+// ---- recapPlanItems / upcomingItems / activity-aware recap ---------------------------------------
+
+const act = (kind: string, taskText = 'x'): ActivityRow => ({ kind, taskText, detail: {} })
+
+Deno.test('recapPlanItems: splits the plan into done / open; hasPlan flags a real plan', () => {
+  const r = recapPlanItems(inputs({ plan: planWithTasks, done: { a: true } }), ctx())
+  assertEquals(r.hasPlan, true)
+  assertEquals(r.done, ['Alpha'])
+  assertEquals(r.open, ['Beta', 'Gamma (not on board)'])
+  assertEquals(recapPlanItems(inputs(), ctx()).hasPlan, false)
+})
+
+Deno.test(
+  'upcomingItems: due-soon (timed first) + recurring next-cycle, excludes done, drops far',
+  () => {
+    const tasks = [
+      {
+        id: 'd1',
+        text: 'Dentist',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-08',
+        due_time: '16:30:00',
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'd2',
+        text: 'Report',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-09',
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'far',
+        text: 'Faraway',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-20',
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'done',
+        text: 'DoneOne',
+        x: 0.5,
+        y: 0.5,
+        due: '2026-07-08',
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: null,
+      },
+      {
+        id: 'rec',
+        text: 'Water',
+        x: 0.5,
+        y: 0.5,
+        due: null,
+        due_time: null,
+        staged: false,
+        size: null,
+        recurring: { frequencyDays: 3, lastDoneAt: '2026-07-06T12:00:00Z', doneCount: 1 },
+      },
+    ]
+    const up = upcomingItems(inputs({ tasks, done: { done: true } }), ctx())
+    assertStringIncludes(up[0], 'Dentist') // timed → sorts first within tomorrow
+    assertStringIncludes(up[0], '4:30 PM')
+    assertStringIncludes(up[0], 'due tomorrow')
+    assert(up.some((l) => l.startsWith('Report')))
+    assert(up.some((l) => l.includes('Water') && l.includes('recurring'))) // next cycle 07-09
+    assert(!up.some((l) => l.startsWith('Faraway'))) // beyond the window
+    assert(!up.some((l) => l.startsWith('DoneOne'))) // done today → excluded
+  },
+)
+
+Deno.test(
+  'upcomingItems: dormant `waking` tasks fold in as "un-pauses" lines, soonest-first, window-bounded',
+  () => {
+    const up = upcomingItems(
+      inputs({
+        tasks: [],
+        waking: [
+          { id: 'w1', text: 'Trip prep', start_date: '2026-07-08', due: null }, // tomorrow
+          { id: 'w2', text: 'Q3 planning', start_date: '2026-07-09', due: null }, // in 2 days
+          { id: 'far', text: 'Someday', start_date: '2026-07-20', due: null }, // beyond window
+        ],
+      }),
+      ctx(), // localDate 2026-07-07
+    )
+    assertEquals(up, ['Trip prep — un-pauses tomorrow', 'Q3 planning — un-pauses in 2 days'])
+  },
+)
+
+Deno.test('upcomingItems: due-soon tasks and `waking` tasks interleave by soonest', () => {
+  const up = upcomingItems(
+    inputs({
+      tasks: [
+        {
+          id: 'd',
+          text: 'Report',
+          x: 0.5,
+          y: 0.5,
+          due: '2026-07-09', // in 2 days
+          due_time: null,
+          staged: false,
+          size: null,
+          recurring: null,
+        },
+      ],
+      waking: [{ id: 'w', text: 'Trip prep', start_date: '2026-07-08', due: null }], // tomorrow
+    }),
+    ctx(),
+  )
+  // The un-pausing task (tomorrow) sorts ahead of the due-in-2-days task.
+  assertEquals(up[0], 'Trip prep — un-pauses tomorrow')
+  assert(up.some((l) => l.startsWith('Report')))
+})
+
+Deno.test('buildRecapMessage: a `waking` heads-up rides the 🔭 Coming up line', () => {
+  const m = buildRecapMessage(
+    inputs({
+      tasks: [],
+      plan: { bigRock: { task: 'Alpha' }, smallRocks: [] },
+      waking: [{ id: 'w', text: 'Trip prep', start_date: '2026-07-08', due: null }],
+    }),
+    ctx(),
+    [],
+  )
+  assertStringIncludes(m.body, '🔭 Coming up: Trip prep — un-pauses tomorrow')
+})
+
+Deno.test('buildRecapMessage: no plan but activity → credits the day with a tally', () => {
+  const m = buildRecapMessage(inputs({ plan: null }), ctx(), [
+    act('completed'),
+    act('completed'),
+    act('created'),
+  ])
+  assertStringIncludes(m.body, 'Nice work today — 2 done · 1 created')
+})
+
+Deno.test('buildRecapMessage: look-ahead line appears, but never double-lists a plan item', () => {
+  const tasks = [
+    {
+      id: 'd1',
+      text: 'Dentist',
+      x: 0.5,
+      y: 0.5,
+      due: '2026-07-08',
+      due_time: null,
+      staged: false,
+      size: null,
+      recurring: null,
+    },
+  ]
+  // Dentist is NOT a plan item → it belongs in the look-ahead.
+  const m = buildRecapMessage(
+    inputs({ tasks, plan: { bigRock: { task: 'Alpha' }, smallRocks: [] } }),
+    ctx(),
+    [],
+  )
+  assertStringIncludes(m.body, '🔭 Coming up: Dentist — due tomorrow')
+  // Dentist IS the open plan item → listed once, not repeated in the look-ahead.
+  const m2 = buildRecapMessage(
+    inputs({ tasks, plan: { bigRock: { task: 'Dentist' }, smallRocks: [] } }),
+    ctx(),
+    [],
+  )
+  assertNotMatch(m2.body, /Coming up/)
+  assertStringIncludes(m2.body, '1. Dentist')
+})
+
+Deno.test('isEmptyEvening: any activity makes the evening non-empty', () => {
+  assertEquals(isEmptyEvening(inputs({ tasks: [], plan: null })), true)
+  assertEquals(isEmptyEvening(inputs({ tasks: [], plan: null }), [act('completed')]), false)
+})
+
 // ---- Malformed plan hardening (the column is opaque jsonb — any shape can arrive) ----------------
 
 Deno.test('normalizePlan: rejects non-object shapes and coerces mis-typed fields', () => {
@@ -511,7 +778,16 @@ Deno.test('normalizePlan: rejects non-object shapes and coerces mis-typed fields
   assertEquals(normalizePlan('a string'), null)
   assertEquals(normalizePlan([1, 2]), null)
   const p = normalizePlan({ headline: 42, bigRock: 'nope', smallRocks: 'also nope' })
-  assertEquals(p, { headline: undefined, bigRock: null, smallRocks: [] })
+  assertEquals(p, { headline: undefined, bigRock: null, smallRocks: [], anchors: [] })
+})
+
+Deno.test('normalizePlan: carries rock taskId through, degrading a mis-typed one to absent', () => {
+  const p = normalizePlan({
+    bigRock: { task: 'X', taskId: 'id-1' },
+    smallRocks: [{ task: 'Y', taskId: 42 }],
+  })
+  assertEquals(p?.bigRock?.taskId, 'id-1')
+  assertEquals(p?.smallRocks?.[0]?.taskId, undefined)
 })
 
 Deno.test(

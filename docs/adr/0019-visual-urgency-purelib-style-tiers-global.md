@@ -1,6 +1,6 @@
 # ADR-0019 — Visual urgency: pure-lib style tiers + global keyframe (Stage 5 PR1)
 
-**Date:** 2026-07-02 · **Stage:** 5 (PR1)
+**Date:** 2026-07-02 · **Stage:** 5 (PR1) · **Status:** Accepted
 
 > **Update 2026-07-11 — the "staleness" fade was replaced by an aging RING.** The `stalenessStyle`
 > desaturate-and-fade described below (which dimmed old cards into the background) proved backwards

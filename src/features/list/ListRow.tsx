@@ -65,6 +65,8 @@ interface ListRowProps {
   onRemoveRecurring: (id: string) => void
   /** Set/clear the ongoing-project flag (setting true also clears any recurring schedule). */
   onSetOngoing: (id: string, on: boolean) => void
+  /** Set the start (pause-until) date — a future date hides the task until then; null resumes. */
+  onSetStartDate: (id: string, startDate: string | null) => void
   /** Delete the task — the parent gates this behind a confirm before soft-deleting. */
   onDelete: (task: Task) => void
   /**
@@ -97,6 +99,7 @@ export function ListRow({
   onSetFrequency,
   onRemoveRecurring,
   onSetOngoing,
+  onSetStartDate,
   onDelete,
   onMove,
   reminderOffsets,
@@ -113,7 +116,7 @@ export function ListRow({
   const due = daysUntil(task.due, { timeZone })
   const minutesUntil = minutesUntilDueTime(task.due, task.due_time, timeZone, now)
   const tier = urgencyTier(due, minutesUntil)
-  const status = recurringStatus(task.recurring)
+  const status = recurringStatus(task.recurring, { timeZone })
   // ❄️ stale badge — shown when this one-off has clearly been ignored (3+ weeks past due, or an
   // undated task months on the board). It REPLACES the warm due chip below (the lane flip every
   // surface makes); a recurring task carries its own status instead. The list has no rings
@@ -158,7 +161,7 @@ export function ListRow({
   // Slider commit: resolve the target against all active tasks (skips self), then write the
   // non-overlapping spot. Collision runs ONLY here, never live (parity spec).
   function handleCommitCoords(x: number, y: number) {
-    const resolved = resolveCollision(x, y, allTasks, task.id)
+    const resolved = resolveCollision(x, y, allTasks, task.id, { timeZone })
     onUpdateCoords(task.id, resolved.x, resolved.y)
   }
 
@@ -380,6 +383,7 @@ export function ListRow({
           onSetFrequency={(freq) => onSetFrequency(task.id, freq)}
           onRemoveRecurring={() => onRemoveRecurring(task.id)}
           onSetOngoing={(on) => onSetOngoing(task.id, on)}
+          onSetStartDate={(startDate) => onSetStartDate(task.id, startDate)}
           onRename={startEdit}
           reminderOffsets={reminderOffsets}
           onToggleReminder={onToggleReminder}
