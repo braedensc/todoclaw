@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
+import { edgeErrorSlug } from '../../lib/edge-error'
 import { RedeemInviteSchema } from '../../types/invite'
 
 // RedeemInviteForm — the pre-auth surface a new user reaches from a texted invite link
@@ -19,19 +20,6 @@ const REDEEM_ERRORS: Record<string, string> = {
   too_many_attempts: 'Too many attempts — please wait a few minutes and try again.',
   email_taken: 'An account already exists for that email. Try signing in instead.',
   invalid_request: 'Please check the code, email, and password (at least 8 characters).',
-}
-
-// supabase.functions.invoke surfaces a non-2xx response as a FunctionsHttpError whose `context` is
-// the raw Response. Read the JSON body to recover our { error: slug } contract. Best-effort.
-async function errorSlug(err: unknown): Promise<string> {
-  const ctx = (err as { context?: Response } | null)?.context
-  if (!ctx || typeof ctx.json !== 'function') return ''
-  try {
-    const body = (await ctx.json()) as { error?: string }
-    return typeof body?.error === 'string' ? body.error : ''
-  } catch {
-    return ''
-  }
 }
 
 export function RedeemInviteForm({
@@ -62,7 +50,7 @@ export function RedeemInviteForm({
       body: parsed.data,
     })
     if (invokeErr) {
-      const slug = await errorSlug(invokeErr)
+      const slug = await edgeErrorSlug(invokeErr)
       setError(
         REDEEM_ERRORS[slug] ?? 'Something went wrong redeeming your invite. Please try again.',
       )
