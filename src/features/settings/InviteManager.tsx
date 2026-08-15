@@ -5,6 +5,8 @@ import {
   useRevokeInvite,
   inviteLink,
   inviteStatus,
+  EXPIRES_DAYS_RANGE,
+  MAX_USES_RANGE,
   type Invite,
   type InviteStatus,
 } from './use-invite'
@@ -32,6 +34,15 @@ const STATUS_CLASS: Record<InviteStatus, string> = {
 }
 
 // Shared small number input (also reused by the Admin caps form).
+//
+// The box keeps its own TEXT while you type, and only reports a number the parent can actually use.
+// It used to be `value={value} onChange={Number(e.target.value)}`, which had two teeth: clearing the
+// field reported `Number('') === 0` (below every min — the server 400s on it), and a partially-typed
+// value like '5e' reported NaN (JSON-serialized to null — another 400). Both surfaced as an opaque
+// "Edge Function returned a non-2xx status code". Now an empty or out-of-range box simply doesn't
+// commit — the parent holds the last GOOD value — and blur normalizes the text back to it. That also
+// fixes a display artifact of the old binding: React skips writing a number input whose DOM text
+// loose-equals the new value, so clearing '7' and typing '5' left the box reading '05' forever.
 export function NumberField({
   label,
   value,
@@ -46,16 +57,34 @@ export function NumberField({
   max: number
 }) {
   const id = useId()
+  // `draft` is the in-flight edit and nothing else: null means "not being edited", so the box simply
+  // shows the committed value and follows it if it ever changes from outside. No effect to sync.
+  const [draft, setDraft] = useState<string | null>(null)
+  const text = draft ?? String(value)
+
   return (
     <label htmlFor={id} className="flex flex-1 flex-col gap-1 text-sm">
       <span className="text-muted">{label}</span>
       <input
         id={id}
         type="number"
+        inputMode="numeric"
         min={min}
         max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        value={text}
+        onChange={(e) => {
+          const raw = e.target.value
+          setDraft(raw)
+          const n = Number(raw)
+          // Commit only a genuinely usable number; mid-edit junk leaves the last good value standing.
+          if (raw.trim() && Number.isFinite(n) && n >= min && n <= max) onChange(Math.round(n))
+        }}
+        onBlur={() => {
+          const n = Number(text)
+          const usable = Boolean(text.trim()) && Number.isFinite(n)
+          setDraft(null) // done editing — the box goes back to mirroring the committed value
+          onChange(usable ? Math.min(max, Math.max(min, Math.round(n))) : value)
+        }}
         className="rounded-lg border border-border-strong bg-card px-3 py-2 text-sm"
       />
     </label>
@@ -135,13 +164,19 @@ export function InviteManager() {
       </p>
 
       <div className="flex items-end gap-3">
-        <NumberField label="Uses" value={maxUses} onChange={setMaxUses} min={1} max={50} />
+        <NumberField
+          label="Uses"
+          value={maxUses}
+          onChange={setMaxUses}
+          min={MAX_USES_RANGE.min}
+          max={MAX_USES_RANGE.max}
+        />
         <NumberField
           label="Expires (days)"
           value={expiresInDays}
           onChange={setExpiresInDays}
-          min={1}
-          max={90}
+          min={EXPIRES_DAYS_RANGE.min}
+          max={EXPIRES_DAYS_RANGE.max}
         />
         <button
           type="button"
@@ -154,8 +189,9 @@ export function InviteManager() {
       </div>
 
       {generate.isError && (
-        <p className="mt-3 text-sm text-red-600">
-          Couldn’t create an invite. {generate.error instanceof Error ? generate.error.message : ''}
+        <p className="mt-3 text-sm text-danger" role="alert">
+          Couldn’t create an invite.{' '}
+          {generate.error instanceof Error ? generate.error.message : 'Please try again.'}
         </p>
       )}
 

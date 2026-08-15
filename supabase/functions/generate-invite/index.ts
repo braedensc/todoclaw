@@ -73,7 +73,13 @@ Deno.serve(async (req) => {
     .insert({ code, max_uses: maxUses, expires_at: expiresAt, owner_id: user.id })
     .select('code, max_uses, expires_at')
     .single()
-  if (error || !data) return json({ error: 'insert_failed' }, 500)
+  if (error || !data) {
+    // The client only ever sees the slug, so without this the ONE interesting fact — which
+    // constraint or grant actually refused the row — is lost and a repeat is undiagnosable. The
+    // code itself is never logged (it is a bearer token); a Postgres error message carries no secret.
+    console.error('generate-invite insert failed:', error?.message ?? 'no row returned')
+    return json({ error: 'insert_failed' }, 500)
+  }
 
   return json({
     code: data.code,
