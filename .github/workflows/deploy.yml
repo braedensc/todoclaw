@@ -12,6 +12,14 @@ name: Deploy (prod)
 #     head_branch: a pull_request CI run's head_branch is the PR's SOURCE branch (e.g.
 #     `feat/x`), so PR-branch CI is excluded; only the push-to-main CI run (head_branch ==
 #     main) matches. If two PRs conflict semantically and main's CI goes red, deploy is skipped.
+#   • A SUPERSEDED run skips GREEN. Two PRs merging seconds apart finish CI out of order, so the
+#     OLDER commit's deploy can queue behind the newer one (`cancel-in-progress: false` is correct
+#     — an in-flight `db push` must never be interrupted) and then run against a tree predating a
+#     migration prod already recorded. `db push` then hard-fails with "Remote migration versions
+#     not found in local migrations directory", and deploy-failure-alert.yml files an issue saying
+#     prod is un-migrated when the newer run had already shipped everything. (2026-08-18: #360/#361
+#     merged 19s apart → false-alarm issue #362.) The gate now compares the resolved SHA against
+#     main and skips when it is already an ancestor.
 #   • Jobs are SEQUENTIAL: migrate → deploy-functions (`needs:`). If `db push` errors, the
 #     function deploy is skipped (no `if: always()` / `continue-on-error` downstream — do NOT
 #     add one, or you re-enable deploys after a failed migration/CI).
@@ -83,6 +91,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
+      stale: ${{ steps.stale.outputs.stale }}
     steps:
       - name: Resolve the commit to deploy
         id: resolve
@@ -98,9 +107,33 @@ jobs:
           [ -n "$sha" ] || { echo "::error::could not resolve a commit SHA to deploy"; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
+      - name: Is this deploy already superseded?
+        id: stale
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          # compare/BASE...HEAD reports HEAD relative to BASE, so `main` being "ahead" of the commit
+          # we resolved means a newer commit is already on main and its own deploy has run (or will).
+          # Re-running this older tree can only regress prod or fail on migration history, so skip.
+          # FAIL-OPEN: any API hiccup leaves stale=false and the deploy proceeds as before — a
+          # transient blip must never silently withhold a legitimate deploy.
+          status=$(gh api "repos/${{ github.repository }}/compare/$SHA...main" --jq '.status' 2>/dev/null || echo unknown)
+          if [ "$status" = "ahead" ]; then
+            echo "::notice::$SHA is behind main — a newer deploy already covers it; skipping this superseded run."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "resolved commit is current (compare status: $status) — deploying."
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
   migrate:
     name: Apply migrations to prod
     needs: gate
+    # A superseded deploy skips GREEN (see the gate's staleness check). Skipping this job also skips
+    # deploy-functions via its `needs: migrate`, leaving prod exactly as the newer deploy left it.
+    # This is NOT `if: always()` — a FAILED migrate still blocks the function deploy, as documented.
+    if: needs.gate.outputs.stale != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10 # a hung db push aborts (releasing any DB lock) instead of wedging deploys
     steps:
