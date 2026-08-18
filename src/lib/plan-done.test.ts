@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPlanRockDone } from './plan-done'
+import { findPlanTask, isPlanRockDone } from './plan-done'
 import type { Task } from '../types/task'
 
 const TZ = 'America/New_York'
@@ -86,5 +86,35 @@ describe('isPlanRockDone', () => {
     expect(
       isPlanRockDone(rock('Call mom', 'open-twin'), tasks, { 'done-twin': true }, TZ, NOW),
     ).toBe(false)
+  })
+})
+
+// The row a plan item points at — what the card's checkbox writes to. It has to resolve the SAME
+// task the strikethrough tracks, or ticking one item could complete another.
+describe('findPlanTask', () => {
+  const tasks = [
+    task({ id: 'a', text: 'Taxes' }),
+    task({ id: 'b', text: 'Call mom' }),
+    task({ id: 'c', text: 'Call mom' }),
+  ]
+
+  it('resolves by taskId first, even when the model paraphrased the text', () => {
+    expect(findPlanTask(rock('Knock out the taxes', 'a'), tasks)?.id).toBe('a')
+    // Two tasks share text; the id decides which — text matching never runs.
+    expect(findPlanTask(rock('Call mom', 'c'), tasks)?.id).toBe('c')
+  })
+
+  it('falls back to exact (trimmed) text for a legacy item with no taskId', () => {
+    expect(findPlanTask(rock('Taxes '), tasks)?.id).toBe('a')
+    expect(findPlanTask(rock('Knock out the taxes'), tasks)).toBeNull()
+  })
+
+  it('is null when nothing matches — a model-invented item or one deleted since planning', () => {
+    expect(findPlanTask(rock('Invented', 'ghost'), tasks)).toBeNull()
+    expect(findPlanTask(rock(''), tasks)).toBeNull()
+  })
+
+  it('still resolves by text when the stamped id no longer exists (task recreated)', () => {
+    expect(findPlanTask(rock('Taxes', 'gone'), tasks)?.id).toBe('a')
   })
 })
