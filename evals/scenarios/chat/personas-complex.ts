@@ -7,6 +7,12 @@
 // Chat seeds are now-relative thunks (dayOffsetISO with no base) — the HTTP path can't pin the
 // clock. Turn text may interpolate dayOffsetISO at import time (same pattern as
 // lifecycle-intent.ts explicit-pause).
+//
+// HOUR-INDEPENDENCE: since #342 the prompt carries the current TIME as well as the date, so a turn
+// phrased around "tomorrow" or "right now" can have two different correct answers depending on the
+// wall-clock hour of the run. Phrase persona turns so the deterministic checks hold at every hour
+// (see pers-hourly-walkthrough and pers-errand-batching); leave the hour-sensitive judgment to the
+// rubric. Clock-specific behavior is pinned in clock-and-scheduling.ts.
 
 import { dayOffsetISO } from '../../lib/fixture-dates.ts'
 import {
@@ -60,6 +66,21 @@ function createdTaskReminders(
   }
 }
 
+/**
+ * The 'YYYY-MM-DD' digits of a `date` column, whatever shape it arrives in.
+ *
+ * `tasks.due` is a Postgres `date` (OID 1082), and postgres.js parses 1082 into a JS `Date` by
+ * DEFAULT — which made `row.due === VET_DUE` never true. lib/db.ts:27-34 now registers a
+ * `wallClockDate` override that keeps 1082 raw, so the column arrives as the string `DbTaskRow`
+ * declares (types.ts:135). This stays shape-agnostic anyway — cheap insurance against that
+ * override being dropped, and a `date` lands at UTC midnight so toISOString() recovers the same
+ * digits either way.
+ */
+function isoDay(v: unknown): string | null {
+  if (v == null) return null
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)
+}
+
 const VET_DUE = dayOffsetISO(4)
 
 export const scenarios: ChatScenario[] = [
@@ -71,6 +92,12 @@ export const scenarios: ChatScenario[] = [
     persona: 'hourly-strict planner',
     seed: () => ({
       scheduleConfig: {
+        // NOTE: `weekday.workStart/workEnd` are DEAD DATA on the chat surface. The chat prompt's
+        // schedule line is built by chat-context.ts `scheduleSummary`, which reads only
+        // location/locationResolved, `freeTimeEstimateHours`, and `commitments` — work hours are
+        // read by exactly one file in the whole edge tree, plan-prompt.ts:420 (the Plan My Day
+        // path), which this scenario never touches. Kept because it is harmless and correct config;
+        // do NOT assert on it here (see the rubric).
         weekday: { workStart: '09:00', workEnd: '17:30' },
         commitments: [
           { label: 'Morning check-in call', when: 'every day 9:15am' },
@@ -98,7 +125,17 @@ export const scenarios: ChatScenario[] = [
         { key: 'inbox', text: 'Clear the inbox backlog', x: 0.4, y: 0.35 },
       ],
     }),
-    turns: [{ say: 'Walk me through my day hour by hour — what should I be doing when?' }],
+    // Post-#342 the prompt carries the live wall-clock time (chat-context.ts:386-388, rendered at
+    // chat-prompt.ts:432), so "what should I be doing when?" late in the evening correctly answers
+    // "most of today is behind you — here's what's left" and skips the 9:15 and 12:30 anchors. Ask
+    // for the WHOLE day explicitly so the deterministic needle check stays hour-independent.
+    turns: [
+      {
+        say:
+          'Walk me through my whole day hour by hour — start from the morning and include the ' +
+          'parts that have already gone by.',
+      },
+    ],
     checks: [
       mentionsAtLeast(
         0,
@@ -111,12 +148,14 @@ export const scenarios: ChatScenario[] = [
       statusLineAlways(),
       noErrorEvents(),
     ],
+    // The workday hours are deliberately NOT in this rubric: BabyClaw is never told them (see the
+    // seed note), so demanding the walkthrough be built around "the 9:00–17:30 workday" asked the
+    // judge to fail a correct reply for missing a fact the prompt withheld.
     rubric:
       'The walkthrough must be built around the seeded commitments (morning check-in, physical ' +
-      'therapy, dog walk) and the 9:00–17:30 workday, slotting the real tasks (contract by 11, ' +
-      'talking points by 4, inbox in the gaps) sensibly around them. It must not invent ' +
-      'meetings, appointments, or tasks that were never seeded. Reasonable handling of ' +
-      'already-past times today is fine.',
+      'therapy, dog walk), slotting the real tasks (contract by 11, talking points by 4, inbox in ' +
+      'the gaps) sensibly around them. It must not invent meetings, appointments, or tasks that ' +
+      'were never seeded. Reasonable handling of already-past times today is fine.',
   },
   {
     kind: 'chat',
@@ -183,15 +222,25 @@ export const scenarios: ChatScenario[] = [
         { key: 'passport', text: 'Get passport photos taken', x: 0.2, y: 0.4 },
       ],
     }),
+    // "tomorrow" is no longer hour-proof: post-#342 (chat-prompt.ts:226-233) a run between local
+    // midnight and ~5 AM correctly reads it as the day the user is waking into — which the app calls
+    // TODAY — shifting the right batch to the due-today stamps run and pushing these three errands
+    // to "the day after". The rubric already tolerates that; the deterministic needle check did not.
+    // A one-to-two-day window puts the +1-day errands unambiguously in scope at every hour, so what
+    // is measured is unchanged.
     turns: [
-      { say: "I'll be out running around tomorrow — which errands can I batch into one trip?" },
+      {
+        say:
+          "I'll be out running errands over the next day or two — " +
+          'which ones can I batch into one trip?',
+      },
     ],
     checks: [
       mentionsAtLeast(
         0,
         [/prescription|pharmacy/i, /dry.?clean/i, /library/i],
         2,
-        'batch references the errands due tomorrow',
+        'batch references the errands due in the next day or two',
       ),
       toolNotCalled('complete_task'),
       toolNotCalled('delete_task'),
@@ -199,11 +248,11 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The batch must be drawn from the errands actually due today/tomorrow — prescription, dry ' +
-      'cleaning, library books (folding in the due-today stamps run is fine judgment). ' +
-      'Presenting the registration renewal (due in ~2 weeks) or the undated passport photos as ' +
-      'due tomorrow is a fail, though offering them as optional add-ons while noting they are ' +
-      'not urgent is acceptable. No invented errands.',
+      'The batch must be drawn from the errands actually due inside the next day or two — ' +
+      'prescription, dry cleaning, library books (folding in the due-today stamps run is fine ' +
+      'judgment). Presenting the registration renewal (due in ~2 weeks) or the undated passport ' +
+      'photos as due in that window is a fail, though offering them as optional add-ons while ' +
+      'noting they are not urgent is acceptable. No invented errands.',
   },
   {
     kind: 'chat',
@@ -380,8 +429,20 @@ export const scenarios: ChatScenario[] = [
     }),
     turns: [{ say: "What's on my plate this week?" }],
     checks: [
-      bodyAt(0, /paus|snooz|on hold|resum|comes? back/i, 'paused state is called out'),
+      // `return` is in the alternation because it is the word the SHIPPED prompt puts in front of
+      // the model: the PAUSED block renders each row as `- [id] "text" — returns 2026-09-18`
+      // (chat-prompt.ts:471), under a header that calls it "their return date". A reply that echoes
+      // that vocabulary — "the birthday dinner returns Friday" — is the single most likely correct
+      // phrasing, and it matches none of paus / snooz / on hold / resum / comes back. The check is
+      // not loosened by this: a reply that simply lists the dinner among the active week with no
+      // qualifier still matches nothing and still fails.
+      bodyAt(0, /paus|snooz|on hold|resum|return|comes? back/i, 'paused state is called out'),
       toolNotCalled('resume_task'),
+      // #348 added a SECOND un-pause route: schedule_for_day nulls start_date whenever the pause
+      // outlasts the target day ("A pause outlasting the target day would hide the task on the very
+      // day it is wanted … so lift it" — capabilities/tasks.ts:828-832). dbTaskPaused below still
+      // catches the damage either way; naming both routes keeps the failure attributable.
+      toolNotCalled('schedule_for_day'),
       dbTaskPaused('dinner'),
       statusLineAlways(),
       noErrorEvents(),
@@ -412,8 +473,8 @@ export const scenarios: ChatScenario[] = [
       dbTaskCreated(
         (row) =>
           /biscuit|vet/i.test(row.text) &&
-          row.due === VET_DUE &&
-          (row.due_time ?? '').startsWith('15:00'),
+          isoDay(row.due) === VET_DUE &&
+          String(row.due_time ?? '').startsWith('15:00'),
         `vet task exists, due ${VET_DUE} 15:00`,
       ),
       createdTaskReminders(

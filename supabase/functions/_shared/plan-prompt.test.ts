@@ -7,12 +7,16 @@ import {
   SYSTEM_PROMPT,
   buildUserPrompt,
   deriveAnchors,
+  deriveChores,
   MAX_ANCHORS,
+  MAX_CHORES,
   resolvePlanTaskIds,
+  parseEmittedPlan,
   type EmittedNudge,
   type EmittedPlan,
   type EmittedRock,
   type PlanRequest,
+  type PlanResult,
   type ScheduleConfig,
 } from './plan-prompt.ts'
 
@@ -534,6 +538,14 @@ const withIds: PlanRequest = {
   recurringDue: [{ id: 'chore-1', text: 'Water plants', status: 'due today' }],
 }
 
+// `withIds`, but with the chore due LATER. A chore that is due TODAY is now a strip item and its
+// rock is dropped (see the deriveChores tests), which would mask what these two tests are about:
+// ref resolution and anchor de-duplication.
+const withIdsSoon: PlanRequest = {
+  ...withIds,
+  recurringDue: [{ id: 'chore-1', text: 'Water plants', status: 'in 3d' }],
+}
+
 const emittedRock = (task: string, ref: string | null): EmittedRock => ({
   task,
   why: 'w',
@@ -541,6 +553,14 @@ const emittedRock = (task: string, ref: string | null): EmittedRock => ({
   when: 'morning',
   ref,
 })
+
+// resolvePlanTaskIds now returns null for an emit that isn't a usable plan (see parseEmittedPlan),
+// so these ref-resolution tests assert a plan came back and then work with the non-null value.
+function resolved(plan: unknown, req: PlanRequest): PlanResult {
+  const out = resolvePlanTaskIds(plan, req)
+  assert(out, 'expected a resolved plan')
+  return out
+}
 
 const emitted = (
   bigRock: EmittedRock | null,
@@ -573,12 +593,12 @@ Deno.test('emit_plan schema requires ref on every rock', () => {
 Deno.test(
   'resolvePlanTaskIds: maps T/R refs to real task ids and strips ref from the output',
   () => {
-    const plan = resolvePlanTaskIds(
+    const plan = resolved(
       emitted(emittedRock('File taxes', 'T1'), [
         emittedRock('Water plants', 'R1'),
         emittedRock('Invented errand', null),
       ]),
-      withIds,
+      withIdsSoon,
     )
     assertEquals(plan.bigRock?.taskId, 'task-1')
     assertEquals(plan.smallRocks[0].taskId, 'chore-1')
@@ -589,7 +609,7 @@ Deno.test(
 )
 
 Deno.test('resolvePlanTaskIds: lowercase refs still resolve (the model may not copy case)', () => {
-  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 't1'), []), withIds)
+  const plan = resolved(emitted(emittedRock('File taxes', 't1'), []), withIds)
   assertEquals(plan.bigRock?.taskId, 'task-1')
 })
 
@@ -600,7 +620,7 @@ Deno.test('resolvePlanTaskIds: a bogus/missing ref falls back to exact text; els
     duration: '~1h',
     when: 'morning',
   } as EmittedRock
-  const plan = resolvePlanTaskIds(
+  const plan = resolved(
     emitted(emittedRock('Read paper', 'T99'), [noRef, emittedRock('Totally new thing', 'R7')]),
     withIds,
   )
@@ -610,7 +630,7 @@ Deno.test('resolvePlanTaskIds: a bogus/missing ref falls back to exact text; els
 })
 
 Deno.test('resolvePlanTaskIds: an id-less request (old cached client) degrades to null ids', () => {
-  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), base)
+  const plan = resolved(emitted(emittedRock('File taxes', 'T1'), []), base)
   assertEquals(plan.bigRock?.taskId, null)
 })
 
@@ -618,17 +638,14 @@ Deno.test(
   'resolvePlanTaskIds: a quiet-day nudge resolves its ref like a rock (and strips ref)',
   () => {
     const nudge: EmittedNudge = { task: 'Read paper', why: 'w', duration: '~30min', ref: 'T2' }
-    const plan = resolvePlanTaskIds(emitted(null, [], nudge), withIds)
+    const plan = resolved(emitted(null, [], nudge), withIds)
     // Relaxed day: no big rock, no small rocks, but the nudge points at a real task.
     assertEquals(plan.bigRock, null)
     assertEquals(plan.smallRocks.length, 0)
     assertEquals(plan.nudge?.taskId, 'task-2')
     assert(plan.nudge && !('ref' in plan.nudge)) // ref stripped, taskId stamped
     // An absent nudge stays null (the common case: a real big rock owns the day).
-    assertEquals(
-      resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), withIds).nudge,
-      null,
-    )
+    assertEquals(resolved(emitted(emittedRock('File taxes', 'T1'), []), withIds).nudge, null)
   },
 )
 
@@ -714,7 +731,7 @@ Deno.test('deriveAnchors: caps the list and tolerates an id-less request', () =>
 
 Deno.test("resolvePlanTaskIds: stamps the day's anchors onto the plan", () => {
   // `base`'s Dentist is due today at 10:30 — an anchor, whatever the model emitted.
-  const plan = resolvePlanTaskIds(emitted(emittedRock('File taxes', 'T1'), []), withIds)
+  const plan = resolved(emitted(emittedRock('File taxes', 'T1'), []), withIds)
   assertEquals(plan.anchors, [
     { task: 'Dentist', time: '10:30 AM', duration: null, taskId: 'task-4' },
   ])
@@ -723,12 +740,12 @@ Deno.test("resolvePlanTaskIds: stamps the day's anchors onto the plan", () => {
 Deno.test('resolvePlanTaskIds: a rock the model emitted for an anchored task is dropped', () => {
   // The prompt tells the model not to emit an anchor as a rock; if it does anyway, the anchors
   // strip already shows it, so listing it twice would be noise. Matched by ref-resolved id...
-  const plan = resolvePlanTaskIds(
+  const plan = resolved(
     emitted(emittedRock('File taxes', 'T1'), [
       emittedRock('Dentist', 'T4'),
       emittedRock('Water plants', 'R1'),
     ]),
-    withIds,
+    withIdsSoon,
   )
   assertEquals(
     plan.smallRocks.map((r) => r.task),
@@ -742,7 +759,7 @@ Deno.test(
   'resolvePlanTaskIds: an anchored BIG rock drops to null (an appointment is not a rock)',
   () => {
     // ...and by exact text, for an id-less request where no ref can resolve.
-    const plan = resolvePlanTaskIds(emitted(emittedRock('Dentist', 'T4'), []), base)
+    const plan = resolved(emitted(emittedRock('Dentist', 'T4'), []), base)
     assertEquals(plan.bigRock, null)
     assertEquals(plan.anchors[0].task, 'Dentist')
   },
@@ -797,7 +814,7 @@ Deno.test('an anchor costs time: the prompt makes the day pay for it', () => {
 Deno.test('resolvePlanTaskIds: refs stay request-indexed across a worked-today gap', () => {
   // The printed list skips [T1] (worked today), so T2/T3 must still mean req.tasks[1]/[2] — a
   // renumbered list would silently retarget every rock the model emitted.
-  const plan = resolvePlanTaskIds(
+  const plan = resolved(
     emitted(emittedRock('File taxes', 'T2'), [emittedRock('Learn Spanish', 'T3')]),
     worked,
   )
@@ -811,7 +828,7 @@ Deno.test(
     // The mention block carries no id, so no ref can reach the project — but resolveRef's TEXT
     // fallback still can, because the model saw the name. That hole is what would turn "not
     // schedulable" back into a polite request, so the item is dropped here instead.
-    const plan = resolvePlanTaskIds(
+    const plan = resolved(
       emitted(emittedRock('Write the novel', null), [emittedRock('File taxes', 'T2')]),
       worked,
     )
@@ -821,13 +838,13 @@ Deno.test(
       ['File taxes'],
     )
     // Same for the quiet-day nudge — pointing at today's finished work is not a suggestion.
-    const nudged = resolvePlanTaskIds(
+    const nudged = resolved(
       emitted(null, [], { task: 'Write the novel', why: 'w', duration: '~1h', ref: null }),
       worked,
     )
     assertEquals(nudged.nudge, null)
     // A nudge at any other task is untouched.
-    const ok = resolvePlanTaskIds(
+    const ok = resolved(
       emitted(null, [], { task: 'Learn Spanish', why: 'w', duration: '~1h', ref: 'T3' }),
       worked,
     )
@@ -844,4 +861,202 @@ Deno.test('a low/low ongoing project does not earn the big rock by default', () 
   assertStringIncludes(SYSTEM_PROMPT, 'not on whether anything else wants the slot')
   assertStringIncludes(SYSTEM_PROMPT, 'is not a reason either')
   assertStringIncludes(SYSTEM_PROMPT, 'leave bigRock null and let the day be light')
+})
+
+// ---- the emitted plan is validated, never cast ------------------------------------------------
+// `toolUse.input` is untyped JSON from the model. Both callers used to cast it straight to
+// EmittedPlan, so a truncated/empty emit sailed through — resolvePlanTaskIds then supplied
+// anchors/bigRock/smallRocks defaults, which made the result look structurally fine while every
+// text field was missing. The client rendered and PERSISTED that as a blank plan card.
+
+Deno.test('parseEmittedPlan rejects an empty emit (the blank-plan-card bug)', () => {
+  assertEquals(parseEmittedPlan({}), null)
+  assertEquals(parseEmittedPlan(null), null)
+  assertEquals(parseEmittedPlan('nope'), null)
+})
+
+Deno.test('parseEmittedPlan rejects a plan with no headline text', () => {
+  const noHeadline = { ...emitted(null, []), headline: '' }
+  assertEquals(parseEmittedPlan(noHeadline), null)
+  assertEquals(parseEmittedPlan({ ...noHeadline, headline: '   ' }), null)
+})
+
+Deno.test('resolvePlanTaskIds returns null for an unusable emit, so callers must handle it', () => {
+  // The type is PlanResult | null precisely so neither caller can skip this check.
+  assertEquals(resolvePlanTaskIds({}, withIds), null)
+  assertEquals(resolvePlanTaskIds({ smallRocks: [] }, withIds), null)
+})
+
+Deno.test('parseEmittedPlan repairs cosmetic fields rather than losing the plan', () => {
+  // A missing why/duration and an out-of-enum slot are not worth throwing a good plan away for.
+  const parsed = parseEmittedPlan({
+    headline: 'Ship it',
+    bigRock: { task: 'File taxes', when: 'midday' },
+    smallRocks: [],
+  })
+  assert(parsed)
+  assertEquals(parsed.headline, 'Ship it')
+  assertEquals(parsed.availableTime, '')
+  assertEquals(parsed.habitNote, '')
+  assertEquals(parsed.bigRock?.why, '')
+  assertEquals(parsed.bigRock?.when, 'morning') // repaired to a real slot
+  assertEquals(parsed.nudge, null)
+})
+
+Deno.test('parseEmittedPlan drops only the malformed small rocks, keeping the good ones', () => {
+  const parsed = parseEmittedPlan({
+    headline: 'Ship it',
+    availableTime: '~4h',
+    habitNote: 'nice',
+    bigRock: null,
+    smallRocks: [
+      { task: 'Water plants', why: 'w', duration: '~10min', when: 'morning', ref: 'R1' },
+      { why: 'no task at all' }, // unusable → dropped
+      null,
+      { task: 'Vacuum', why: 'w', duration: '~20min', when: 'evening', ref: null },
+    ],
+  })
+  assert(parsed)
+  assertEquals(
+    parsed.smallRocks.map((r) => r.task),
+    ['Water plants', 'Vacuum'],
+  )
+})
+
+Deno.test('a valid emit still resolves end to end (no regression from validation)', () => {
+  const plan = resolved(
+    emitted(emittedRock('File taxes', 'T1'), [emittedRock('Vacuum', null)]),
+    withIds,
+  )
+  assertEquals(plan.headline, 'h')
+  assertEquals(plan.bigRock?.taskId, 'task-1')
+  assertEquals(plan.smallRocks.length, 1)
+})
+
+// ---- chores due today are derived, not chosen --------------------------------------------------
+// Rule 4 caps small rocks at two and defaults to one, so a chore due TODAY had to out-argue the
+// model's other picks for a slot — and lost to tasks that weren't even due yet (laundry due today,
+// dropped in favour of tasks due in 3 and 6 days). A cadence is not a judgement call: the user
+// already decided it happens today. Same doctrine as deriveAnchors.
+
+// `status` is the display label and is always sent in production; tests that only care about the
+// numeric selection may omit it, and it defaults to something the label matcher would REJECT so a
+// daysLeft-based test can never pass through the deploy-skew shim by accident.
+const choreReq = (
+  recurringDue: { id?: string; text: string; status?: string; daysLeft?: number }[],
+): PlanRequest => ({
+  ...base,
+  tasks: [],
+  recurringDue: recurringDue.map((c) => ({ status: 'in 9d', ...c })),
+})
+
+Deno.test('deriveChores takes overdue / never done / due today, and nothing later', () => {
+  const chores = deriveChores(
+    choreReq([
+      { id: 'c1', text: 'Laundry', status: 'due today' },
+      { id: 'c2', text: 'Bins', status: 'overdue 3d' },
+      { id: 'c3', text: 'Filters', status: 'never done' },
+      { id: 'c4', text: 'Sheets', status: 'due tomorrow' }, // look-ahead → not today
+      { id: 'c5', text: 'Descale', status: 'in 4d' }, // look-ahead → not today
+    ]),
+  )
+  assertEquals(
+    chores.map((c) => c.task),
+    ['Laundry', 'Bins', 'Filters'],
+  )
+  assertEquals(chores[0].taskId, 'c1')
+  assertEquals(chores[1].status, 'overdue 3d') // the label rides along so overdue still reads overdue
+})
+
+Deno.test('deriveChores caps a long backlog rather than filling the card', () => {
+  const many = Array.from({ length: MAX_CHORES + 4 }, (_, i) => ({
+    id: `c${i}`,
+    text: `Chore ${i}`,
+    status: 'overdue 2d',
+  }))
+  assertEquals(deriveChores(choreReq(many)).length, MAX_CHORES)
+})
+
+// Selection is a NUMBER comparison on the ladder's own daysLeft, not a pattern match on the display
+// label. The label branch survives only as a deploy-skew shim for a cached client that predates the
+// field (exercised by the tests above, which send no daysLeft).
+Deno.test('deriveChores selects on daysLeft, not on the label text', () => {
+  const chores = deriveChores(
+    choreReq([
+      { id: 'c1', text: 'Laundry', daysLeft: 0 },
+      { id: 'c2', text: 'Bins', daysLeft: -3 },
+      { id: 'c3', text: 'Filters', daysLeft: -999 }, // never done
+      { id: 'c4', text: 'Sheets', daysLeft: 1 }, // due tomorrow → look-ahead
+      { id: 'c5', text: 'Descale', daysLeft: 4 },
+    ]),
+  )
+  assertEquals(
+    chores.map((c) => c.task),
+    ['Filters', 'Bins', 'Laundry'],
+  )
+})
+
+Deno.test('deriveChores trusts daysLeft over a stale or renamed label', () => {
+  // A label the old string matcher would have accepted, with a number that says otherwise — and the
+  // reverse. The number must win both ways, so renaming a label can never empty (or wrongly fill)
+  // the strip again.
+  const chores = deriveChores(
+    choreReq([
+      { id: 'c1', text: 'Not today', status: 'due today', daysLeft: 3 },
+      { id: 'c2', text: 'Actually today', status: 'whatever the badge says', daysLeft: 0 },
+    ]),
+  )
+  assertEquals(
+    chores.map((c) => c.task),
+    ['Actually today'],
+  )
+})
+
+Deno.test('deriveChores keeps the MOST overdue when a backlog exceeds the cap', () => {
+  // Request order is task-creation order, so capping without sorting dropped an arbitrary chore —
+  // and silently: unlike the rocks, nothing tells the user more was due than fits.
+  const many = Array.from({ length: MAX_CHORES + 3 }, (_, i) => ({
+    id: `c${i}`,
+    text: `Chore ${i}`,
+    daysLeft: -i, // Chore 0 is due today, the last one is the most overdue
+  }))
+  const chores = deriveChores(choreReq(many))
+  assertEquals(chores.length, MAX_CHORES)
+  // The three least-urgent (Chore 0..2) are the ones dropped.
+  assertEquals(chores[0].task, `Chore ${MAX_CHORES + 2}`)
+  assertEquals(chores.at(-1)?.task, `Chore 3`)
+})
+
+Deno.test('a due chore reaches the plan even when the model emits no rocks at all', () => {
+  // The reported failure: the model spent both slots elsewhere and the chore vanished.
+  const plan = resolved(
+    emitted(null, []),
+    choreReq([{ id: 'c1', text: 'Laundry', status: 'due today' }]),
+  )
+  assertEquals(
+    plan.chores.map((c) => c.task),
+    ['Laundry'],
+  )
+})
+
+Deno.test('a chore the model DID emit as a rock is not listed twice', () => {
+  const req = choreReq([{ id: 'c1', text: 'Laundry', status: 'due today' }])
+  // Emitted as the big rock (by ref) and again as a small rock (by text) — both are dropped,
+  // because the strip already lists it.
+  const plan = resolved(emitted(emittedRock('Laundry', 'R1'), [emittedRock('Laundry', null)]), req)
+  assertEquals(plan.chores.length, 1)
+  assertEquals(plan.bigRock, null)
+  assertEquals(plan.smallRocks, [])
+})
+
+Deno.test('a chore due LATER is still allowed to be a rock', () => {
+  const req = choreReq([{ id: 'c1', text: 'Sheets', status: 'due tomorrow' }])
+  const plan = resolved(emitted(emittedRock('Sheets', 'R1'), []), req)
+  assertEquals(plan.chores, []) // not in the strip
+  assertEquals(plan.bigRock?.task, 'Sheets') // so the model may still schedule it
+})
+
+Deno.test('the prompt tells the model the due-chore strip exists and is not its to fill', () => {
+  assertStringIncludes(SYSTEM_PROMPT, 'chores due today')
+  assertStringIncludes(SYSTEM_PROMPT, 'Do NOT emit one as a bigRock or a smallRock')
 })

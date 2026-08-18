@@ -295,7 +295,7 @@ function ClusterPopupRow({
   onToggleReminder,
   onClearReminders,
 }: ClusterPopupRowProps) {
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   // Session facts for an ONGOING row (null for every other type). The row has no ∞ marker of its
   // own — the meta line below is where a folded project says what it is and when it was last
   // worked, since the ✓ now says "Worked" here and that would otherwise arrive unexplained.

@@ -1,7 +1,7 @@
 import type { Task } from '../types/task'
 import { quadrantMeta, type QuadrantKey } from './quadrants'
 import { taskScore } from './scoring'
-import { resolveCollision } from './collision'
+import { resolveCollision, type CollisionOpts } from './collision'
 
 // Per-quadrant rollup for the mobile overview (Concept C). The 2×2 minimap needs, for each
 // Eisenhower quadrant: how many tasks sit there (count badge + density bar) and the single
@@ -123,9 +123,10 @@ export function moveToQuadrant(
   task: Task,
   dest: QuadrantKey,
   allTasks: Task[],
+  opts: CollisionOpts,
 ): { x: number; y: number } {
   const center = QUADRANT_CENTER[dest]
-  return resolveCollision(center.x, center.y, allTasks, task.id)
+  return resolveCollision(center.x, center.y, allTasks, task.id, opts)
 }
 
 /**
@@ -134,7 +135,11 @@ export function moveToQuadrant(
  * it resolves against every active card. The caller writes these as the new task's x/y with
  * staged=false (already placed).
  */
-export function placeInQuadrant(dest: QuadrantKey, allTasks: Task[]): { x: number; y: number } {
+export function placeInQuadrant(
+  dest: QuadrantKey,
+  allTasks: Task[],
+  opts: CollisionOpts,
+): { x: number; y: number } {
   const center = QUADRANT_CENTER[dest]
-  return resolveCollision(center.x, center.y, allTasks, '')
+  return resolveCollision(center.x, center.y, allTasks, '', opts)
 }

@@ -245,6 +245,64 @@ describe('GridView placement filter', () => {
     expect(screen.getByText('Take out trash')).toBeInTheDocument()
   })
 
+  it('ignores a recurring task’s reminder ANCHOR when deciding what is on the grid', () => {
+    // `due`/`due_time` on a recurring chore are the reminder occurrence anchor, not a deadline —
+    // nextRecurringFireAt phases the grid off them and never advances them, so a chore carrying a
+    // reminder permanently holds a past `due`. isPlaced must key on the cadence alone. Reading the
+    // anchor as a deadline once shipped past a green CI (reverted in #348) because nothing pinned
+    // this: it pinned every such chore to the board, reading ever-more overdue.
+    const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString()
+    tasksFixture = [
+      // Anchor years back, but the cadence says "not due for a month" → stays off the grid.
+      makeTask({
+        id: 'anchored-ok',
+        text: 'Descale kettle',
+        due: '2024-01-15',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 30, lastDoneAt: twoDaysAgo, doneCount: 6 },
+      }),
+      // Anchor far in the FUTURE, but the cadence says overdue → must still show.
+      makeTask({
+        id: 'anchored-overdue',
+        text: 'Take out trash',
+        due: '2099-12-31',
+        due_time: '09:00:00',
+        recurring: { frequencyDays: 1, lastDoneAt: twoDaysAgo, doneCount: 3 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.queryByText('Descale kettle')).not.toBeInTheDocument()
+    expect(screen.getByText('Take out trash')).toBeInTheDocument()
+  })
+
+  // THE reported bug (2026-07-29): "I need to do laundry tomorrow" on a weekly chore. Nothing on
+  // the board read a chosen day, so the chore stayed invisible — the cadence said 'ok' and isPlaced
+  // hides 'ok'. A one-shot `recurring.nextDueOn` is now the mechanism, and because every surface
+  // reads `recurringStatus`, honoring it here took no change to isPlaced at all.
+  it('renders a recurring chore scheduled for TODAY even when its cadence says ok', () => {
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString()
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(new Date())
+    tasksFixture = [
+      // Cadence alone = "in 29d" → 'ok' → off the board. The override puts it on today.
+      makeTask({
+        id: 'scheduled-today',
+        text: 'Laundry',
+        recurring: { frequencyDays: 30, lastDoneAt: yesterday, doneCount: 9, nextDueOn: today },
+      }),
+      // Same cadence, no override → still correctly hidden, so the test can't pass vacuously.
+      makeTask({
+        id: 'not-scheduled',
+        text: 'Descale kettle',
+        recurring: { frequencyDays: 30, lastDoneAt: yesterday, doneCount: 6 },
+      }),
+    ]
+    render(<GridHarness />)
+
+    expect(screen.getByText('Laundry')).toBeInTheDocument()
+    expect(screen.queryByText('Descale kettle')).not.toBeInTheDocument()
+  })
+
   it('renders no new-item cards when nothing is staged', () => {
     tasksFixture = [makeTask({ staged: false })]
     render(<GridHarness />)

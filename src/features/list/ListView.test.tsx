@@ -233,7 +233,7 @@ describe('ListView', () => {
     fireEvent.pointerUp(urgency)
 
     // Expected payload is exactly what resolveCollision returns for the same inputs.
-    const expected = resolveCollision(0.9, 0.9, tasksData, 'mover')
+    const expected = resolveCollision(0.9, 0.9, tasksData, 'mover', { timeZone: 'UTC' })
     expect(updateMutate).toHaveBeenCalledWith({
       id: 'mover',
       patch: { x: expected.x, y: expected.y },
@@ -279,6 +279,32 @@ describe('ListView', () => {
     tasksData = []
     renderList()
     expect(screen.getByText(/No tasks yet/i)).toBeInTheDocument()
+  })
+
+  it('drops a recurring chore completed today, like it drops a completed one-off', () => {
+    // The bug behind the reported confusion: a recurring completion sets neither completed_at nor
+    // today's done map (it advances recurring.lastDoneAt), so the list kept rendering a finished
+    // chore as a normal un-ticked row — while the grid, MobileMatrix and BabyClaw all hid it. The
+    // list was the only surface still claiming it was outstanding.
+    tasksData = [
+      makeTask({ id: 'keep', text: 'still open' }),
+      makeTask({
+        id: 'done-rec',
+        text: 'laundry',
+        recurring: { frequencyDays: 7, lastDoneAt: new Date().toISOString(), doneCount: 4 },
+      }),
+      // Done on a PRIOR day → back on its cycle, still listed.
+      makeTask({
+        id: 'live-rec',
+        text: 'sweep floors',
+        recurring: { frequencyDays: 2, lastDoneAt: RECENT, doneCount: 1 },
+      }),
+    ]
+    renderList()
+
+    expect(screen.getByText('still open')).toBeInTheDocument()
+    expect(screen.getByText('sweep floors')).toBeInTheDocument()
+    expect(screen.queryByText('laundry')).not.toBeInTheDocument()
   })
 
   describe('done control', () => {
@@ -381,6 +407,26 @@ describe('ListView', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Task' }))
 
       expect(updateMutate).toHaveBeenCalledWith({ id: 'rm1', patch: { recurring: null } })
+    })
+
+    it('shows the cadence status, not the reminder anchor, on a recurring row', () => {
+      // `due`/`due_time` on a recurring chore are the reminder occurrence anchor, so a chore that
+      // carries a reminder permanently holds a past `due`. The row's single trailing badge must be
+      // the cadence status — never an anchor-derived overdue chip (the reverted #348 behavior,
+      // which no test caught). Anchored 2024-01-15 but done yesterday on a 7-day cadence.
+      tasksData = [
+        makeTask({
+          id: 'anch',
+          text: 'anchored chore',
+          due: '2024-01-15',
+          due_time: '09:00:00',
+          recurring: { frequencyDays: 7, lastDoneAt: RECENT, doneCount: 4 },
+        }),
+      ]
+      renderList()
+
+      expect(screen.getByText('in 6d')).toBeInTheDocument()
+      expect(screen.queryByText(/overdue/i)).not.toBeInTheDocument()
     })
 
     it('renders the cadence (fmtFrequency) and status label for a recurring task', () => {

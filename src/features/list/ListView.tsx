@@ -11,6 +11,7 @@ import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import { isDormant } from '../../lib/start-date'
+import { recurringCompletion, recurringDoneToday } from '../../lib/recurring'
 import type { Task } from '../../types/task'
 import { ListRow } from './ListRow'
 import { PausedSection } from '../tasks/PausedSection'
@@ -87,8 +88,14 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   // the tasks query refetches with completed_at set. Missing daily state = empty day → done map
   // excludes nothing. Dormant tasks (paused / future start_date) are excluded too — they live in
   // the collapsed Paused strip below the list, not in the ranking.
+  // A RECURRING chore counts as done today too. It never sets completed_at and never enters the
+  // done map (completing it advances recurring.lastDoneAt), so without this it kept rendering here
+  // as a normal un-ticked row while the grid, MobileMatrix and BabyClaw had all correctly hidden
+  // it — the list was the one surface still claiming a finished chore was outstanding.
   const doneToday = daily?.done ?? {}
-  const live = tasks.filter((t) => !t.completed_at && !doneToday[t.id])
+  const live = tasks.filter(
+    (t) => !t.completed_at && !doneToday[t.id] && !recurringDoneToday(t.recurring, timeZone),
+  )
   const active = live.filter((t) => !isDormant(t, timeZone))
   // The full list (not a quadrant focus) is where paused tasks stay findable; a focus list scopes
   // to a quadrant, and a dormant task deliberately has no quadrant presence.
@@ -159,21 +166,13 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const handleDone = (task: Task) =>
     markDone.mutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
 
-  // Mark a RECURRING task done: reset its cycle — lastDoneAt=now, doneCount+=1 — via the plain
-  // task UPDATE. Deliberately NOT history/daily_state (parity spec: recurring done lives in
-  // lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
+  // Mark a RECURRING task done: advance its cycle via `recurringCompletion` — lastDoneAt=now,
+  // doneCount+=1, and any one-shot `nextDueOn` cleared so the cadence resumes from the REAL
+  // completion — via the plain task UPDATE. Deliberately NOT history/daily_state (recurring done
+  // lives in lastDoneAt). The status flips to "ok" and the card hides from the grid until next cycle.
   const handleDoneRecurring = (task: Task) => {
     if (!task.recurring) return
-    updateTask.mutate({
-      id: task.id,
-      patch: {
-        recurring: {
-          ...task.recurring,
-          lastDoneAt: new Date().toISOString(),
-          doneCount: (task.recurring.doneCount ?? 0) + 1,
-        },
-      },
-    })
+    updateTask.mutate({ id: task.id, patch: { recurring: recurringCompletion(task.recurring) } })
   }
 
   // Log (or un-log) today's work session on an ONGOING project — the third arm of the row's ✓.

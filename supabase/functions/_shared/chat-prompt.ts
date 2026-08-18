@@ -412,8 +412,20 @@ function taskLine(t: PromptTask): string {
   } else {
     bits.push(`urgency ${t.x.toFixed(2)}, importance ${t.y.toFixed(2)} (${quadrant(t.x, t.y)})`)
   }
-  const due = duePhrase(t)
-  if (due) bits.push(due)
+  // On a RECURRING chore `due`/`due_time` are the REMINDER ANCHOR, not a deadline — nothing reads
+  // them for the board or Plan My Day, and the anchor never advances, so it sits ever further in the
+  // past. Emitting a bare "due today"/"due 58d ago" here had BabyClaw confidently telling the user a
+  // chore was due today while every board surface correctly hid it (the cadence is the only truth,
+  // and it is on the next line). Name the anchor for what it is instead.
+  const recurringChore = !t.ongoing && !!t.recurringLabel
+  if (recurringChore) {
+    if (t.due) {
+      bits.push(`reminder anchor ${t.due}${t.dueTime ? ` at ${formatClockTime(t.dueTime)}` : ''}`)
+    }
+  } else {
+    const due = duePhrase(t)
+    if (due) bits.push(due)
+  }
   if (t.ongoing) {
     // An ongoing project is a standing effort — a normal task (its due date, if any, is already in
     // `bits`) that the planner should proactively suggest chipping away at. Its session recency

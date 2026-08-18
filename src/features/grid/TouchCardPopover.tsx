@@ -166,7 +166,7 @@ export function TouchCardPopover({
   }, [onClose])
 
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   const stale = rc || paused ? null : staleness(task, daysUntilDue)
   const tier = rc || stale || paused ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const frost = stale ? staleBadge(stale) : null

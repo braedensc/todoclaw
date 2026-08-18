@@ -167,7 +167,7 @@ export function GridCard({
   useClickOutside(menuRefs, () => setMenuOpen(false), menuOpen)
 
   // x/y are guaranteed non-null by the caller's filter, but be defensive for the type.
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   // Data-space quadrant for this card's (x, y). Drives the border color (when not recurring)
   // and a `data-quadrant` hook so E2E specs can assert placement without reading pixel styles
   // (durable across Stage 5's restyle).

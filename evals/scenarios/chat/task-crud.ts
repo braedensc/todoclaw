@@ -6,6 +6,14 @@
 // Chat seeds MUST be now-relative (dayOffsetISO with no base). Dates embedded in turns/checks are
 // computed at import time — same run as the seed thunk, so the digits agree (the exemplar pattern
 // from lifecycle-intent.ts).
+//
+// The DAY-selection machinery itself (#342 clock, #348 schedule_for_day, #349 reminder anchors,
+// #352 nextDueOn) is pinned in clock-and-scheduling.ts; this file only has to stay COMPATIBLE with
+// it, never re-test it. So every turn here that needs a day passes an EXPLICIT ISO date, and the
+// day-writing tool is accepted by family (toolCalledAny) rather than by name. Concretely:
+// crud-vague-ref-resolves pins WHICH TASK a vague handle resolves to; clk-relative-tomorrow-lands-
+// next-day pins WHICH DAY a relative "tomorrow" resolves to. Phrasing this file's turns around
+// relative days again would collapse the two into one signal at twice the API cost.
 
 import { dayOffsetISO } from '../../lib/fixture-dates.ts'
 import {
@@ -20,9 +28,44 @@ import {
 } from '../../lib/checks.ts'
 import type { ChatCheck, ChatScenario } from '../../lib/types.ts'
 
-const TOMORROW = dayOffsetISO(1)
 const CAKE_DAY = dayOffsetISO(3)
+const BUMP_DAY = dayOffsetISO(4)
 const GARDEN_START = dayOffsetISO(6)
+
+/**
+ * Accept ANY of several tool names. #348 added `schedule_for_day`, and on a ONE-OFF task it writes
+ * exactly what set_due_date writes (`due` + re-derived urgency + unstage — capabilities/tasks.ts:
+ * 866-871 vs tasks.ts:419-432). Its own description names this intent first — "the tool for 'I need
+ * to do X tomorrow'… Prefer this over set_due_date whenever the user's intent is 'surface it on that
+ * day'" (tasks.ts:799) — so pinning set_due_date alone would punish the tool the prompt prefers.
+ */
+function toolCalledAny(names: string[], label: string): ChatCheck {
+  return (t) => {
+    const seen = t.turns.flatMap((turn) => turn.toolUses).map((u) => u.name)
+    const pass = names.some((n) => seen.includes(n))
+    return {
+      name: label,
+      pass,
+      ...(pass ? {} : { detail: `tool_use names seen: ${seen.join(', ') || 'none'}` }),
+    }
+  }
+}
+
+/**
+ * The 'YYYY-MM-DD' digits of a `date` column, whatever shape it arrives in.
+ *
+ * `tasks.due` / `tasks.start_date` are Postgres `date` (OID 1082), and postgres.js parses 1082 into
+ * a JS `Date` by DEFAULT — which made `row.due === CAKE_DAY` never true and `row.start_date
+ * .slice(0, 10)` throw (aborting the whole scenario: runner.ts has no per-check try). lib/db.ts:
+ * 27-34 now registers a `wallClockDate` override that keeps 1082 raw, so these columns arrive as
+ * the strings `DbTaskRow` declares (types.ts:135, 147). This stays shape-agnostic anyway — cheap
+ * insurance against that override being dropped, and a `date` lands at UTC midnight so
+ * toISOString() recovers the same digits either way.
+ */
+function isoDay(v: unknown): string | null {
+  if (v == null) return null
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)
+}
 
 /** Reminder offsets for a CREATED task (no seed key — matched by text). */
 function createdTaskReminders(match: RegExp, offsets: number[], label: string): ChatCheck {
@@ -87,9 +130,9 @@ export const scenarios: ChatScenario[] = [
       dbTaskCreated(
         (row) =>
           /cake/i.test(row.text) &&
-          row.due === CAKE_DAY &&
+          isoDay(row.due) === CAKE_DAY &&
           row.due_time != null &&
-          row.due_time.startsWith('16:00'),
+          String(row.due_time).startsWith('16:00'),
         `cake task created due ${CAKE_DAY} 16:00`,
       ),
       createdTaskReminders(/cake/i, [60], 'default 60-min reminder auto-applied'),
@@ -184,10 +227,7 @@ export const scenarios: ChatScenario[] = [
     ],
     checks: [
       dbTaskCreated(
-        (row) =>
-          /garden bed/i.test(row.text) &&
-          row.start_date != null &&
-          row.start_date.slice(0, 10) === GARDEN_START,
+        (row) => /garden bed/i.test(row.text) && isoDay(row.start_date) === GARDEN_START,
         `garden task created with start_date ${GARDEN_START}`,
       ),
       noErrorEvents(),
@@ -276,10 +316,19 @@ export const scenarios: ChatScenario[] = [
         { key: 'invoice', text: 'Send the Carver invoice', x: 0.6, y: 0.5 },
       ],
     }),
-    turns: [{ say: 'Bump that report thing to tomorrow.' }],
+    // The DATE is explicit and the REFERENCE is vague — the one variable under test is which task
+    // "that report thing" resolves to. It used to say "to tomorrow", which made this a second copy
+    // of clk-relative-tomorrow-lands-next-day (same relative-day intent, same widened landing
+    // predicate, same tool-family check) — two paid conversations for one signal. An explicit day
+    // also buys a STRICTER assertion: an exact date instead of the two-day window the hour-proof
+    // reading of "tomorrow" forces.
+    turns: [{ say: `Bump that report thing to ${BUMP_DAY}.` }],
     checks: [
-      toolCalled('set_due_date'),
-      dbTask('report', (row) => row.due === TOMORROW, `report due ${TOMORROW}`),
+      toolCalledAny(
+        ['set_due_date', 'schedule_for_day'],
+        'the report was re-dated via set_due_date or schedule_for_day',
+      ),
+      dbTask('report', (row) => isoDay(row.due) === BUMP_DAY, `report due ${BUMP_DAY}`),
       dbTask('invoice', (row) => row.due == null, 'invoice untouched'),
       dbTask('ferns', (row) => row.due == null, 'ferns untouched'),
       noErrorEvents(),

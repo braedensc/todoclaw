@@ -1,14 +1,50 @@
 # recurring
 
-Recurring-task UI (Stage 3 PR8). The repeat-schedule control rendered inside an expanded list
-row, plus the place where a task is **made / un-made** recurring. The recurring _math_
-(status code, cadence label, colors) lives in `src/lib/recurring.ts` and is reused here, never
-reimplemented.
+Recurring-task notes (Stage 3 PR8). **This folder is documentation only** — it holds no component.
+The place where a task is **made / un-made** recurring is the shared `SchedulePanel`, and the
+recurring _math_ (status code, cadence label, colors) lives in `src/lib/recurring.ts` and is reused
+everywhere, never reimplemented. Both are mapped under "Where things live" below; what precedes it
+is the behavior contract for recurring tasks.
 
 A recurring task is a regular task with a `recurring` jsonb field
 (`{ frequencyDays, lastDoneAt, doneCount }` — see `src/types/task.ts`). It is identical to a
 normal task except: it surfaces on the grid only when due/soon/overdue, and marking it done
 **resets its clock** instead of archiving it (handled in `src/features/list/`, not here).
+
+Because a recurring completion sets neither `completed_at` nor today's `daily_state.done` map,
+**every surface that hides done tasks must also check `recurringDoneToday`** — grid `isPlaced`,
+`MobileMatrix`, `ListView`, and the edge twin in `_shared/chat-context.ts`. The list missed that
+check until 2026-07-29 and kept showing finished chores as outstanding rows.
+
+## "I need to do this on Friday" — scheduling an occurrence
+
+A recurring chore's due-ness is **derived, not stored**: `recurringStatus` computes
+`daysLeft` and every surface reads that one function. To put a chore on a chosen day, set
+**`recurring.nextDueOn`** — a wall-clock `'YYYY-MM-DD'` meaning "this occurrence is wanted on this
+day". `recurringStatus` prefers it over the cadence clock and runs it through the **same ladder**,
+so it yields the same labels and codes and every reader honors it without knowing it exists.
+
+It is a **one-shot**: `recurringCompletion` clears it, so finishing the chore resumes the cadence
+from the *real* completion and the user's rhythm is never permanently moved. It also **retires at
+read time** if a completion has already caught up with it (`lastDoneAt` on or after the scheduled
+day), so a stale row — or a writer that forgets to clear it — can't pin a chore to "due today"
+forever. Same self-healing, no-cron shape as `start_date`/`isDormant`.
+
+Two surfaces write it: BabyClaw's **`schedule_for_day`** (which also covers one-off tasks and
+ongoing projects — those just get the due date — so the model never branches on task type), and the
+**schedule editor's calendar**, which on a chore writes `nextDueOn` and `due` to the same day via
+`useSetDueWithDefaultReminder`, so the occurrence and its reminder agree.
+
+**A due date alone is NOT that mechanism.** On a recurring chore `tasks.due` + `due_time` are the
+**reminder anchor** (see below) — nothing reads them for the board or Plan My Day.
+
+> **Superseded approach (2026-07-29, same day):** the first attempt *phased the cadence clock*
+> instead, writing a fabricated `lastDoneAt` (target day minus one cadence) via a
+> `lastDoneAtForOccurrenceOn` helper. It needed no new field, but it wrote a false completion
+> timestamp into the field that the Done log, the activity log and `recurringDoneToday` all read as
+> fact — and because the phase shift was permanent, a one-off "do it Friday" silently moved the
+> chore's weekly slot to Fridays for good. Replaced by the explicit field, which cost three
+> functions to thread rather than the "every reader" the phasing note had assumed.
 
 ## Ongoing projects (a separate task type)
 
@@ -30,6 +66,23 @@ parent handlers keep the two types exclusive in one write). BabyClaw sets it via
 flag — just `task_id`) or `create_task`'s `ongoing` boolean, and clears it via `clear_recurring` —
 see `supabase/functions/_shared/capabilities/tasks.ts`.
 
+### The anchor is not a deadline — and it is pinned
+
+Because the anchor is **never advanced** (the occurrence grid rolls forward *from* it), a chore
+with a long-lived reminder legitimately carries a `due` date years in the past. Any reader that
+treats that as a deadline therefore reads every such chore as ever-more overdue, pins it to the
+board, and force-feeds it into every plan. That change once shipped past a green CI and was
+reverted (#348) — nothing had pinned the invariant. It is now pinned on both sides:
+
+| Side | Where |
+|---|---|
+| The anchor still drives reminders, however stale | `src/lib/recurring-reminders.test.ts` |
+| Plan selection ignores it (client + server twins) | `use-plan-my-day.test.tsx`, `_shared/plan-inputs.test.ts` |
+| BabyClaw's context ignores it | `_shared/chat-context.test.ts` |
+| Board + list ignore it | `GridView.test.tsx`, `ListView.test.tsx` |
+
+Search `anchor` across the test tree to find the whole set before touching this area.
+
 ## Reminders (offset before each occurrence)
 
 A recurring **chore** carries reminders the **same way a one-off does** — lead-time **offsets**
@@ -47,24 +100,23 @@ now accepted). The fire-time math is `next_recurring_fire_at` (SQL, the sole pro
 DST-safe and backlog-skipping. Full design: ADR
 `docs/adr/2026-07-09-task-reminders-pg-cron-push.md` (recurring unified 2026-07-12).
 
-## Components
+## Where things live
 
-- **`RecurringSection.tsx`** — the `↻ Recurring` row at the bottom of `ExpandedRow`. Owns no
-  server state; it reads `task.recurring` and calls back into the parent's mutation wiring
-  (`ListView`'s `useUpdateTask`). Two modes:
-  - **Not recurring** → a days number-input + **Set** (writes a fresh
-    `{ frequencyDays, lastDoneAt: null, doneCount: 0 }`). Set is a no-op until a positive
-    integer is entered.
-  - **Recurring** → the cadence via `fmtFrequency`, the live status via `recurringStatus`
-    (label colored by `RC_COLOR[code]`), an editable frequency input (preserves `lastDoneAt` +
-    `doneCount`), and **Remove** (writes `recurring: null`).
-
-## Where the rest lives
-
+- **The editor (set / edit / remove a cadence):** the shared `SchedulePanel`
+  (`src/features/schedule/SchedulePanel.tsx`) — one panel across every surface, whose three-way
+  **Task / Recurring / Ongoing** switch owns the type and the cadence input. A dedicated
+  `RecurringSection.tsx` used to live in this folder; `SchedulePanel` superseded it when it landed
+  (#216, 2026-07-09) and the orphan was deleted, still unimported, on 2026-07-29.
 - **Status/cadence/colors:** `src/lib/recurring.ts` (`recurringStatus`, `RC_COLOR`,
   `fmtFrequency`) — fully unit-tested in `recurring.test.ts`.
 - **Mark-done branch + the set/remove mutation handlers:** `src/features/list/ListView.tsx`
   (recurring done = `useUpdateTask` cycle reset; normal done = `useMarkTaskDone`). The
-  `RecurringSection` and done-control behavior are tested in `ListView.test.tsx`.
+  schedule-editor wiring and done-control behavior are tested in `ListView.test.tsx`.
+- **Un-completing one (BabyClaw's `restore_task`)** REWINDS the cycle — `lastDoneAt` moves back one
+  `frequencyDays` and `doneCount` drops by one — rather than touching today's `daily_state` done
+  map, which a recurring completion never enters. (It used to call `set_task_undone`, so restoring
+  a recurring chore wrote nothing at all while replying that it had worked.) That rewind is also
+  the supported way to pull a chore back for an extra round off-cycle: undo the completion and it
+  reads due again. See `supabase/functions/_shared/capabilities/tasks.ts`.
 - **Grid visuals** (`code !== 'ok'` visibility filter, `×N` badge): `src/features/grid/`. The
   list row mirrors the same `×N` badge at `doneCount ≥ 3`.

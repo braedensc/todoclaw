@@ -110,6 +110,7 @@ Deno.test('registry exposes the full capability set (and NO set_bucket — bucke
     'clear_recurring',
     'pause_task',
     'resume_task',
+    'schedule_for_day',
     'restore_task',
     'complete_task',
     'delete_task',
@@ -619,6 +620,7 @@ Deno.test('generate_plan uses the injected service, else degrades gracefully', a
             anchors: [
               { task: 'Timing belt', time: '2:00 PM', duration: '~half-day', taskId: 'car' },
             ],
+            chores: [{ task: 'Laundry', status: 'due today', taskId: 'laundry' }],
             bigRock: {
               task: 'Draft the deck',
               why: 'w',

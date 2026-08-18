@@ -6,7 +6,7 @@ import { useMarkTaskDone } from '../done/use-history'
 import { useLogWork } from '../tasks/use-worked'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
-import { recurringDoneToday, recurringStatus } from '../../lib/recurring'
+import { recurringCompletion, recurringDoneToday, recurringStatus } from '../../lib/recurring'
 import { primaryDoneAction } from '../../lib/task-type'
 import { workRecency } from '../../lib/worked'
 import { isDormant } from '../../lib/start-date'
@@ -58,7 +58,7 @@ function isPlaced(
   if (isDormant(task, timeZone)) return false
   if (doneToday[task.id]) return false
   if (recurringDoneToday(task.recurring, timeZone)) return false
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   if (rc && rc.code === 'ok') return false
   return true
 }
@@ -289,8 +289,10 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   // One three-way switch on `primaryDoneAction`, so the arms can't drift from the list's:
   //
   //   archive          a one-off: history + today's daily_state — it leaves the grid.
-  //   recurring-cycle  a chore: reset the cycle (lastDoneAt=now, doneCount+1), no history — it is
-  //                    hidden for the rest of the local day (recurringDoneToday), back tomorrow.
+  //   recurring-cycle  a chore: advance the cycle via `recurringCompletion` (lastDoneAt=now,
+  //                    doneCount+1, any one-shot `nextDueOn` cleared so the cadence resumes from
+  //                    the REAL completion), no history — it is hidden for the rest of the local
+  //                    day (recurringDoneToday), back when its cadence next reads due/soon.
   //   work-session     an ONGOING project: log that you put time in today. It does NOT archive and
   //                    it does NOT move — the card stays exactly where it is; the only change is
   //                    the control's own filled state. Tapping again un-logs today.
@@ -306,16 +308,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
           const rc = task.recurring
           if (!rc) return
           selectCluster(null)
-          updateMutate({
-            id: task.id,
-            patch: {
-              recurring: {
-                ...rc,
-                lastDoneAt: new Date().toISOString(),
-                doneCount: (rc.doneCount ?? 0) + 1,
-              },
-            },
-          })
+          updateMutate({ id: task.id, patch: { recurring: recurringCompletion(rc) } })
           break
         }
         case 'work-session':

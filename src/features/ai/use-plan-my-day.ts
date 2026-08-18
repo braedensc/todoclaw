@@ -14,6 +14,7 @@ import type { Habit } from '../../types/habit'
 // persisted-plan read boundary too); re-exported here so existing importers keep working.
 export type { PlanWhen, PlanRock, DayPlan } from '../../types/plan'
 import type { DayPlan } from '../../types/plan'
+import { DayPlanSchema } from '../../types/plan'
 
 // Mirror of UPCOMING_WINDOW_DAYS in supabase/functions/_shared/plan-prompt.ts — the frontend build
 // tree can't import from the Deno tree, so the value is re-declared here. Keep the two in step: a
@@ -59,7 +60,9 @@ export interface PlanRequest {
     workedToday: boolean
     worked: string
   }[]
-  recurringDue: { id: string; text: string; status: string }[]
+  // Recurring chores the cadence ladder does NOT call 'ok'. `daysLeft` rides along (<= 0 means
+  // wanted today) so the server's "chores due today" strip selects on a number, not on the label.
+  recurringDue: { id: string; text: string; status: string; daysLeft: number }[]
   habits: string[]
   // Paused / not-yet-started tasks un-pausing within UPCOMING_WINDOW_DAYS — heads-up material only,
   // never scheduled (they stay OUT of `tasks`).
@@ -117,13 +120,13 @@ export function buildPlanRequest(
       }
     })
 
-  const recurringDue: { id: string; text: string; status: string }[] = []
+  const recurringDue: PlanRequest['recurringDue'] = []
   for (const t of tasks) {
     if (!t.recurring) continue
     if (isDormant(t, timeZone, now)) continue // a paused chore sits out its pause too
-    const s = recurringStatus(t.recurring, { now })
-    if (s && (s.code === 'overdue' || s.code === 'due' || s.code === 'soon')) {
-      recurringDue.push({ id: t.id, text: t.text, status: s.label })
+    const s = recurringStatus(t.recurring, { timeZone, now })
+    if (s && s.code !== 'ok') {
+      recurringDue.push({ id: t.id, text: t.text, status: s.label, daysLeft: s.daysLeft })
     }
   }
 
@@ -174,12 +177,17 @@ export function usePlanMyDay(timeZone: string) {
   const queryClient = useQueryClient()
   return useMutation<DayPlan, Error, PlanRequest>({
     mutationFn: async (body) => {
-      const { data, error } = await supabase.functions.invoke<{ plan: DayPlan }>('plan-my-day', {
+      const { data, error } = await supabase.functions.invoke<{ plan: unknown }>('plan-my-day', {
         body,
       })
       if (error) throw error
-      if (!data?.plan) throw new Error('No plan returned')
-      return data.plan
+      // VALIDATE before returning: this result is both rendered and PERSISTED to daily_state, so an
+      // unchecked object becomes a stuck, contentless plan card (a truncated emit once produced a
+      // plan with no headline, which rendered as an empty box). A truthiness check is not enough —
+      // the malformed object was truthy. Failing here surfaces the card's Retry instead.
+      const parsed = DayPlanSchema.safeParse(data?.plan)
+      if (!parsed.success || !parsed.data.headline.trim()) throw new Error('No plan returned')
+      return parsed.data
     },
     onSuccess: async (plan) => {
       const today = localDateInTZ(timeZone)

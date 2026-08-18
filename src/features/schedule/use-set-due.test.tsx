@@ -33,8 +33,8 @@ vi.mock('../../lib/supabase', () => ({
 
 import { useSetDueWithDefaultReminder } from './use-set-due'
 
-const NO_TIME = { id: 't1', due_time: null }
-const TIMED = { id: 't1', due_time: '09:00:00' }
+const NO_TIME = { id: 't1', due_time: null, recurring: null }
+const TIMED = { id: 't1', due_time: '09:00:00', recurring: null }
 
 function makeWrapper({
   config,
@@ -183,5 +183,62 @@ describe('useSetDueWithDefaultReminder', () => {
     expect(await screen.findByText("Couldn't save your change — try again.")).toBeInTheDocument()
     await flush()
     expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+// ---- a recurring chore: picking a day must actually surface it -----------------------------------
+// The laundry bug (2026-07-29). On a recurring chore `due` is only the reminder ANCHOR — no board or
+// plan reader consults it — so the calendar confirmed a write and the chore stayed invisible. The
+// same tap now also sets the one-shot occurrence override, on the SAME day, so the chore surfaces
+// then and its reminder counts from then. Every schedule surface writes through this hook (#305),
+// which is why the fix lives here rather than in each panel.
+describe('useSetDueWithDefaultReminder on a recurring chore', () => {
+  const CHORE = {
+    id: 't1',
+    due_time: null,
+    recurring: { frequencyDays: 7, lastDoneAt: '2026-07-20T12:00:00Z', doneCount: 9 },
+  }
+
+  it('writes the occurrence override alongside the reminder anchor', async () => {
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useSetDueWithDefaultReminder(), { wrapper })
+
+    result.current(CHORE, '2026-08-01', '09:00')
+
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(update).toHaveBeenCalledWith({
+      due: '2026-08-01',
+      due_time: '09:00',
+      // The cadence and the completion history are untouched — only the wanted day is recorded.
+      recurring: { ...CHORE.recurring, nextDueOn: '2026-08-01' },
+    })
+  })
+
+  it('clears the override when the date is cleared', async () => {
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useSetDueWithDefaultReminder(), { wrapper })
+
+    result.current(
+      { ...CHORE, recurring: { ...CHORE.recurring, nextDueOn: '2026-08-01' } },
+      null,
+      null,
+    )
+
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(update).toHaveBeenCalledWith({
+      due: null,
+      due_time: null,
+      recurring: { ...CHORE.recurring, nextDueOn: null },
+    })
+  })
+
+  it('leaves a NON-recurring task’s patch exactly as it was', async () => {
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useSetDueWithDefaultReminder(), { wrapper })
+
+    result.current({ id: 't1', due_time: null, recurring: null }, '2026-08-01', null)
+
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(update).toHaveBeenCalledWith({ due: '2026-08-01', due_time: null })
   })
 })

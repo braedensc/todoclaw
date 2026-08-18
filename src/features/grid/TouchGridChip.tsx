@@ -61,6 +61,8 @@ export interface TouchGridChipProps {
   onHoldStart?: (event: React.PointerEvent) => void
   /** Open this task's action sheet. */
   onTap: () => void
+  /** The user's IANA timezone — `recurringStatus` needs it to read a wall-clock `nextDueOn`. */
+  timeZone: string
 }
 
 /**
@@ -86,9 +88,10 @@ export function TouchGridChip({
   chipRef,
   onHoldStart,
   onTap,
+  timeZone,
 }: TouchGridChipProps) {
   const quadrant = quadrantMeta(task.x ?? 0.5, task.y ?? 0.5)
-  const rc = recurringStatus(task.recurring)
+  const rc = recurringStatus(task.recurring, { timeZone })
   // Lane gating order mirrors GridCard: paused gates first; staleness is skipped for recurring
   // and paused; the warm tier applies only when no other lane claimed the chip.
   const stale = rc || paused ? null : staleness(task, daysUntilDue)
