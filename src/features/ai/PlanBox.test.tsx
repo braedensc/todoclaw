@@ -548,4 +548,213 @@ describe('PlanBox', () => {
       expect(screen.queryByText('Chores due today')).not.toBeInTheDocument()
     })
   })
+
+  // Checking items off ON the card (itemCheck). The card is a live surface, not a read-out: every
+  // rock, fixed time and due chore carries a real checkbox wired to the same write the board's ✓
+  // makes. Without the prop — the DemoScene's canned plan — the card stays exactly as it was, with
+  // no checkboxes at all, which the strikethrough tests above pin.
+  describe('check off', () => {
+    const FULL: DayPlan = {
+      ...PLAN,
+      bigRock: { ...PLAN.bigRock!, taskId: 'taxes' },
+      smallRocks: [
+        {
+          task: 'Email landlord',
+          why: 'Quick.',
+          duration: '~10min',
+          when: 'evening',
+          taskId: 'landlord',
+        },
+        {
+          task: 'Book dentist',
+          why: 'Overdue.',
+          duration: '~5min',
+          when: 'lunch',
+          taskId: 'dentist',
+        },
+      ],
+      anchors: [{ task: 'Timing belt', time: '2:00 PM', duration: '~half-day', taskId: 'car' }],
+      chores: [{ task: 'Laundry', status: 'due today', taskId: 'laundry' }],
+    }
+    const live = (toggle: () => void) => () => ({ toggle, busy: false })
+
+    it('gives every rock, fixed time and chore its own checkbox', () => {
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          itemCheck={live(noop)}
+        />,
+      )
+      // Each box is named for its item, so "check off Laundry" is unambiguous to a screen reader.
+      for (const name of ['File taxes', 'Email landlord', 'Book dentist', 'Timing belt', 'Laundry'])
+        expect(screen.getByRole('checkbox', { name })).toBeInTheDocument()
+      expect(screen.getAllByRole('checkbox')).toHaveLength(5)
+    })
+
+    it('renders no checkboxes at all without the prop (the read-only demo card)', () => {
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={() => true}
+        />,
+      )
+      expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    })
+
+    it("ticking a box fires that item's toggle — and only that one", () => {
+      const toggled: string[] = []
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          itemCheck={(item) => ({ toggle: () => toggled.push(item.task), busy: false })}
+        />,
+      )
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Book dentist' }))
+      expect(toggled).toEqual(['Book dentist'])
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Laundry' }))
+      expect(toggled).toEqual(['Book dentist', 'Laundry'])
+    })
+
+    it('a box reads checked exactly when the item is done, and un-checking is a toggle back', () => {
+      const toggle = vi.fn()
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'taxes'}
+          itemCheck={live(toggle)}
+        />,
+      )
+      expect(screen.getByRole('checkbox', { name: 'File taxes' })).toBeChecked()
+      expect(screen.getByRole('checkbox', { name: 'Book dentist' })).not.toBeChecked()
+      // The done item is still tickable — clicking it asks for the un-done write.
+      fireEvent.click(screen.getByRole('checkbox', { name: 'File taxes' }))
+      expect(toggle).toHaveBeenCalledTimes(1)
+    })
+
+    it('a ticked box replaces the inline ✓ marker rather than doubling it up', () => {
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'taxes'}
+          itemCheck={live(noop)}
+        />,
+      )
+      // Struck through as before — but the checked box IS the done marker now (it announces its own
+      // state), so the separate ✓ + screen-reader "Done:" pair is gone.
+      expect(screen.getByText('File taxes').className).toContain('line-through')
+      expect(screen.queryByText('Done:')).not.toBeInTheDocument()
+    })
+
+    it('an item with no task behind it gets an inert box, not a checkbox that does nothing', () => {
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          // Only the big rock still resolves to a task; everything else was invented or deleted.
+          itemCheck={(item) => (item.taskId === 'taxes' ? { toggle: noop, busy: false } : null)}
+        />,
+      )
+      expect(screen.getAllByRole('checkbox')).toHaveLength(1)
+      expect(screen.getByRole('checkbox', { name: 'File taxes' })).toBeInTheDocument()
+      // The unmatched rows still render their text — they just can't be ticked from here.
+      expect(screen.getByText('Laundry')).toBeInTheDocument()
+    })
+
+    it('an inert item that IS done keeps the screen-reader "Done:" (no box state to announce)', () => {
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'laundry'}
+          itemCheck={() => null}
+        />,
+      )
+      expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+      expect(screen.getByText('Done:')).toBeInTheDocument()
+      expect(screen.getByText('Laundry').className).toContain('line-through')
+    })
+
+    it('disables the box whose write is in flight, so a double-tap cannot double-write', () => {
+      const toggle = vi.fn()
+      render(
+        <PlanBox
+          plan={FULL}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          itemCheck={(item) => ({ toggle, busy: item.taskId === 'taxes' })}
+        />,
+      )
+      const busy = screen.getByRole('checkbox', { name: 'File taxes' })
+      expect(busy).toBeDisabled()
+      fireEvent.click(busy)
+      expect(toggle).not.toHaveBeenCalled()
+      // Its neighbours stay live — one slow write doesn't freeze the card.
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Book dentist' }))
+      expect(toggle).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves the quiet-day nudge unchecked-able — a suggestion is not an assignment', () => {
+      render(
+        <PlanBox
+          plan={{
+            ...FULL,
+            bigRock: null,
+            smallRocks: [],
+            anchors: [],
+            chores: [],
+            nudge: {
+              task: 'Sort the garage',
+              why: 'Been meaning to.',
+              duration: '~1h',
+              taskId: 'g',
+            },
+          }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          itemCheck={live(noop)}
+        />,
+      )
+      expect(screen.getByText('Sort the garage')).toBeInTheDocument()
+      expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    })
+  })
 })

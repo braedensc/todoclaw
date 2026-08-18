@@ -5,6 +5,21 @@ import type { DayPlan, PlanAnchor, PlanChore, PlanNudge, PlanRock } from '../../
 // (task, taskId) pair isPlanRockDone matches on.
 type Strikeable = Pick<PlanRock, 'task' | 'taskId'>
 
+// What one item's checkbox can do, from usePlanController: the write that checks it off (or back
+// on), plus whether that write is in flight right now.
+export interface PlanItemCheck {
+  toggle: () => void
+  busy: boolean
+}
+
+// How a row gets its checkbox. Three states, all expressible as `itemCheck?.(item)`:
+//   undefined → the card is READ-ONLY (no itemCheck prop at all — the onboarding DemoScene's
+//               canned plan): no checkboxes anywhere, exactly as before this existed;
+//   null      → a box with nothing behind it (no task on the board matches this item, so there is
+//               nothing to write): shown inert + dimmed, keeping the column aligned, titled why;
+//   object    → a live checkbox.
+type ItemCheck = (item: Strikeable) => PlanItemCheck | null
+
 // The inline "Plan My Day" card — a PERSISTENT parchment box above the grid (not a modal). It
 // hydrates from daily_state.plan on load, stays for the whole local day, and disappears after
 // local midnight (a new day reads a different date's row). Closely mirrors EisenClaw's plan card
@@ -27,6 +42,7 @@ export function PlanBox({
   onDismiss,
   mobile = false,
   rockDone,
+  itemCheck,
   collapsed = false,
   onToggleCollapse,
 }: {
@@ -43,6 +59,10 @@ export function PlanBox({
   // dimmed text) so the card tracks the day's progress live. Optional: the onboarding DemoScene
   // shows its canned morning plan untouched.
   rockDone?: (rock: Strikeable) => boolean
+  // Check items off in place — the whole point of the card being a live surface rather than a
+  // read-out. Given an item, returns the write behind its checkbox (or null when there is nothing
+  // to toggle). Omit the prop entirely and the card renders read-only, with no checkboxes at all.
+  itemCheck?: (item: Strikeable) => PlanItemCheck | null
   // Collapse the plan to a one-line summary to free vertical space — a view toggle, NOT a delete
   // (Dismiss is still the delete path). Omit onToggleCollapse to render without the toggle (the
   // DemoScene's static card): then the card always shows expanded.
@@ -102,7 +122,7 @@ export function PlanBox({
                 .
               </p>
             )}
-            <PlanContent plan={plan} rockDone={rockDone} />
+            <PlanContent plan={plan} rockDone={rockDone} itemCheck={itemCheck} />
           </div>
         )
       ) : isPending ? (
@@ -174,9 +194,11 @@ export function PlanBox({
 function PlanContent({
   plan,
   rockDone,
+  itemCheck,
 }: {
   plan: DayPlan
   rockDone?: (rock: Strikeable) => boolean
+  itemCheck?: ItemCheck
 }) {
   const done = (r: Strikeable) => rockDone?.(r) ?? false
   const anchors = plan.anchors ?? []
@@ -196,9 +218,9 @@ function PlanContent({
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
             Fixed times today
           </div>
-          <ul className="mt-1 flex flex-col gap-[3px]">
+          <ul className={`mt-1 flex flex-col ${itemCheck ? 'gap-[7px]' : 'gap-[3px]'}`}>
             {anchors.map((a, i) => (
-              <AnchorRow key={i} anchor={a} done={done(a)} />
+              <AnchorRow key={i} anchor={a} done={done(a)} itemCheck={itemCheck} />
             ))}
           </ul>
         </div>
@@ -213,9 +235,9 @@ function PlanContent({
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
             Chores due today
           </div>
-          <ul className="mt-1 flex flex-col gap-[3px]">
+          <ul className={`mt-1 flex flex-col ${itemCheck ? 'gap-[7px]' : 'gap-[3px]'}`}>
             {chores.map((c, i) => (
-              <ChoreRow key={i} chore={c} done={done(c)} />
+              <ChoreRow key={i} chore={c} done={done(c)} itemCheck={itemCheck} />
             ))}
           </ul>
         </div>
@@ -223,20 +245,27 @@ function PlanContent({
 
       {plan.bigRock && (
         <div className="mt-3 flex items-start gap-2.5">
+          <PlanCheck item={plan.bigRock} done={done(plan.bigRock)} itemCheck={itemCheck} />
           <span className="mt-0.5 shrink-0 rounded-md bg-accent px-[7px] py-1 text-[10px] font-bold uppercase tracking-wider text-white">
             Big rock
           </span>
-          <RockBody rock={plan.bigRock} emphasis done={done(plan.bigRock)} />
+          <RockBody
+            rock={plan.bigRock}
+            emphasis
+            done={done(plan.bigRock)}
+            mark={itemCheck == null}
+          />
         </div>
       )}
 
       {plan.smallRocks.map((r, i) => (
         <div className="mt-[7px] flex items-start gap-2.5" key={i}>
+          <PlanCheck item={r} done={done(r)} itemCheck={itemCheck} />
           {/* then/also under a big rock; a bullet when there is none (mirrors EisenClaw). */}
           <span className="mt-[3px] w-[34px] shrink-0 text-[12px] font-semibold text-muted-light">
             {plan.bigRock ? (i === 0 ? 'then' : 'also') : '•'}
           </span>
-          <RockBody rock={r} done={done(r)} />
+          <RockBody rock={r} done={done(r)} mark={itemCheck == null} />
         </div>
       ))}
 
@@ -253,10 +282,21 @@ function PlanContent({
 
 // One fixed time — "2:00 PM — Timing belt & water pump". Strikes off like a rock once its task is
 // completed, so the day's anchors track progress too.
-function AnchorRow({ anchor, done }: { anchor: PlanAnchor; done: boolean }) {
+function AnchorRow({
+  anchor,
+  done,
+  itemCheck,
+}: {
+  anchor: PlanAnchor
+  done: boolean
+  itemCheck?: ItemCheck
+}) {
   return (
-    <li className={`text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}>
-      {done && (
+    <li
+      className={`flex items-start gap-2 text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}
+    >
+      <PlanCheck item={anchor} done={done} itemCheck={itemCheck} />
+      {done && itemCheck == null && (
         <>
           <span aria-hidden className="mr-1.5 text-primary">
             ✓
@@ -264,26 +304,41 @@ function AnchorRow({ anchor, done }: { anchor: PlanAnchor; done: boolean }) {
           <span className="sr-only">Done: </span>
         </>
       )}
-      <span className={done ? 'line-through' : undefined}>
-        <span className="font-semibold tabular-nums">{anchor.time}</span>
-        {' — '}
-        {anchor.task}
-      </span>
-      {/* How much of the day it eats. Shown because an appointment is a block, not a moment: seeing
+      <span className="min-w-0 flex-1">
+        <span className={done ? 'line-through' : undefined}>
+          <span className="font-semibold tabular-nums">{anchor.time}</span>
+          {' — '}
+          {anchor.task}
+        </span>
+        {/* How much of the day it eats. Shown because an appointment is a block, not a moment: seeing
           "~half-day" next to 2 PM is what makes a light plan underneath it read as correct. */}
-      {anchor.duration && (
-        <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">⏱ {anchor.duration}</span>
-      )}
+        {anchor.duration && (
+          <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">
+            ⏱ {anchor.duration}
+          </span>
+        )}
+      </span>
     </li>
   )
 }
 
 // One due chore — "Laundry · due today". The cadence label rides along so an overdue chore reads as
 // overdue rather than looking like a fresh one.
-function ChoreRow({ chore, done }: { chore: PlanChore; done: boolean }) {
+function ChoreRow({
+  chore,
+  done,
+  itemCheck,
+}: {
+  chore: PlanChore
+  done: boolean
+  itemCheck?: ItemCheck
+}) {
   return (
-    <li className={`text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}>
-      {done && (
+    <li
+      className={`flex items-start gap-2 text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}
+    >
+      <PlanCheck item={chore} done={done} itemCheck={itemCheck} />
+      {done && itemCheck == null && (
         <>
           <span aria-hidden className="mr-1.5 text-primary">
             ✓
@@ -291,9 +346,84 @@ function ChoreRow({ chore, done }: { chore: PlanChore; done: boolean }) {
           <span className="sr-only">Done: </span>
         </>
       )}
-      <span className={done ? 'line-through' : undefined}>{chore.task}</span>
-      <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">{chore.status}</span>
+      <span className="min-w-0 flex-1">
+        <span className={done ? 'line-through' : undefined}>{chore.task}</span>
+        <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">{chore.status}</span>
+      </span>
     </li>
+  )
+}
+
+// One row's leading check control — the card's "tick it off right here" affordance.
+//
+// It writes through the SAME mutations the board's ✓ does (usePlanController.itemCheck), so the
+// plan is a live surface rather than a read-out: checking a rock off here archives the task
+// everywhere (and un-checking restores it), and checking a chore advances its recurring cycle. The
+// box only ever reflects the real task state — `done` still comes from rockDone, so a task checked
+// off on the grid shows ticked here too.
+//
+// Rendered as a native checkbox (with the visual box painted alongside it) so the role, name and
+// checked state are the real thing for a11y and tests.
+function PlanCheck({
+  item,
+  done,
+  itemCheck,
+}: {
+  item: Strikeable
+  done: boolean
+  itemCheck?: ItemCheck
+}) {
+  // No itemCheck at all → a read-only card (the DemoScene's canned plan): no control, no column.
+  if (!itemCheck) return null
+  const check = itemCheck(item)
+
+  // Mobile-first sizing: a 20px box that tightens to 18px on `wide`, where the pointer is precise
+  // and the card is denser. The hit area spills past it (below) — wider than tall, because the
+  // fixed-times/chores rows sit close enough that a tall spill would steal the next row's taps.
+  const box =
+    'flex h-[20px] w-[20px] items-center justify-center rounded-[6px] border text-[12px] font-bold leading-none transition-colors wide:h-[18px] wide:w-[18px] wide:text-[11px]'
+  const filled = done
+    ? 'border-primary bg-primary text-white'
+    : 'border-border-strong text-transparent'
+
+  // Nothing on the board matches this item (a model-invented one, or a task deleted since the plan
+  // was made) — there is no row to write to. Keep the column aligned with an inert, dimmed box that
+  // says why on hover, rather than a checkbox that would silently do nothing.
+  if (!check) {
+    return (
+      <>
+        <span
+          aria-hidden
+          title="No matching task on your board — check this one off there"
+          className={`mt-[1px] shrink-0 opacity-40 ${box} ${filled}`}
+        >
+          ✓
+        </span>
+        {done && <span className="sr-only">Done: </span>}
+      </>
+    )
+  }
+
+  return (
+    <span className="relative mt-[1px] inline-flex shrink-0" aria-busy={check.busy || undefined}>
+      <input
+        type="checkbox"
+        checked={done}
+        disabled={check.busy}
+        // Guarded as well as disabled: a synthesised change (a stray double-tap, a test) must not
+        // slip a second write past the in-flight one — set_task_done appends a history row per call.
+        onChange={() => !check.busy && check.toggle()}
+        aria-label={item.task}
+        title={done ? 'Mark not done' : 'Mark done'}
+        className="peer absolute -inset-x-2 -inset-y-1 z-10 m-0 h-auto w-auto cursor-pointer appearance-none opacity-0 disabled:cursor-progress"
+      />
+      <span
+        aria-hidden
+        className={`${box} ${filled} ${check.busy ? 'animate-pulse opacity-60 motion-reduce:animate-none' : ''} peer-hover:border-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-1`}
+      >
+        ✓
+      </span>
+    </span>
   )
 }
 
@@ -301,10 +431,15 @@ function RockBody({
   rock,
   emphasis,
   done,
+  mark = true,
 }: {
   rock: PlanRock
   emphasis?: boolean
   done?: boolean
+  // Render the inline ✓ + screen-reader "Done:" ahead of the text? Only on a read-only card: when
+  // the row carries a checkbox, THAT is the done marker (a ✓ next to a ticked box reads as noise,
+  // and the box already announces its checked state).
+  mark?: boolean
 }) {
   const size = emphasis
     ? 'text-[15.5px] font-semibold leading-snug'
@@ -314,7 +449,7 @@ function RockBody({
     // (with a screen-reader "Done:" — line-through alone is invisible to a11y tech).
     <div className={done ? 'flex-1 opacity-75' : 'flex-1'}>
       <div className={`${size} ${done ? 'text-muted' : 'text-ink'}`}>
-        {done && (
+        {done && mark && (
           <>
             <span aria-hidden className="mr-1.5 text-primary">
               ✓

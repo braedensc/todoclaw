@@ -28,6 +28,7 @@ function makeTask(over: Partial<Task>): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
+    worked_days: null,
     created_at: new Date(Date.now() - 86_400_000).toISOString(),
     deleted_at: null,
     completed_at: null,
@@ -107,6 +108,23 @@ describe('TouchCardPopover', () => {
     expect(h.onDone).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Delete task' }))
     expect(h.onDelete).toHaveBeenCalledTimes(1)
+  })
+
+  // An ongoing project's ✓ logs a session rather than finishing the project, so the popover both
+  // says so on the button and explains itself in a meta line (the card behind it has no room).
+  it('an ongoing project reads back its session log and labels the action "Worked"', () => {
+    const worked = new Date(Date.now() - 5 * 86_400_000).toLocaleDateString('en-CA', {
+      timeZone: 'America/New_York',
+    })
+    renderPopover(makeTask({ text: 'Learn piano', ongoing: true, worked_days: [worked] }))
+    const popover = screen.getByTestId('touch-card-popover')
+
+    expect(within(popover).getByText(/ongoing · Last worked 5 days ago/)).toBeInTheDocument()
+    const action = within(popover).getByRole('button', {
+      name: 'Log that you worked on this today',
+    })
+    expect(action).toHaveTextContent('✓ Worked')
+    expect(action).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('tap-the-title rename commits through onRename', () => {

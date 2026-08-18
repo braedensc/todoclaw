@@ -15,7 +15,9 @@ import {
   type UrgencyTier,
 } from '../../lib/visual-urgency'
 import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
-import { ONGOING_GLYPH } from '../../lib/task-type'
+import { ONGOING_GLYPH, primaryDoneAction } from '../../lib/task-type'
+import { workedDetail, workedShort, workRecency } from '../../lib/worked'
+import { doneControlCopy } from '../../components/CardActionBar'
 import { resolveCollision } from '../../lib/collision'
 import { IconButton } from '../../components/IconButton'
 import { ExpandedRow } from './ExpandedRow'
@@ -33,10 +35,11 @@ import { ExpandedRow } from './ExpandedRow'
 // F2 (keyboard) swaps the text for an inline input. Only two icon buttons remain in the trailing
 // cluster — done (green) and delete (red) — both shared B9 IconButtons (tooltips + hover intent).
 //
-// The done control branches on recurring (parity spec / EisenClaw `toggleDone`): a NORMAL task
-// goes to the Done tab + history (onDone), a RECURRING task instead resets its cycle
-// (onDoneRecurring) — no history, no daily_state. Delete is confirmed in the parent (ListView
-// runs useConfirm before soft-deleting). All handlers live in ListView.
+// The done control switches on `primaryDoneAction(task)` — the one home for the three arms, so the
+// row can't drift from the grid's: a NORMAL task goes to the Done tab + history (onDone), a
+// RECURRING task resets its cycle (onDoneRecurring — no history, no daily_state), and an ONGOING
+// project logs a work SESSION for today (onLogWork) without leaving the list. Delete is confirmed
+// in the parent (ListView runs useConfirm before soft-deleting). All handlers live in ListView.
 
 // The `×N` recurring count badge appears once a recurring task has been completed this many
 // times — mirrors the grid card (src/features/grid/grid-constants.ts RECURRING_BADGE_MIN_DONE).
@@ -57,6 +60,9 @@ interface ListRowProps {
   onDone: (task: Task) => void
   /** Mark a RECURRING task done — resets its cycle (lastDoneAt/doneCount), no history. */
   onDoneRecurring: (task: Task) => void
+  /** Log (or un-log, with `logged: false`) today's work session on an ONGOING project. The row
+   *  stays exactly where it is — only the ✓ control's own state changes. */
+  onLogWork: (task: Task, logged: boolean) => void
   /** Make the task recurring with the given cadence (writes a fresh `recurring`). */
   onSetRecurring: (id: string, frequencyDays: number) => void
   /** Change an already-recurring task's cadence (preserves lastDoneAt + doneCount). */
@@ -95,6 +101,7 @@ export function ListRow({
   onUpdateDue,
   onDone,
   onDoneRecurring,
+  onLogWork,
   onSetRecurring,
   onSetFrequency,
   onRemoveRecurring,
@@ -123,9 +130,31 @@ export function ListRow({
   // (grid/cluster only), so this chip is the sole "gone stale" signal here.
   const iceBadge = status ? null : staleBadge(staleness(task, due, now))
   const showCount = task.recurring != null && task.recurring.doneCount >= RECURRING_BADGE_MIN_DONE
-  // An ongoing project is a standing effort: it has no cadence and no status clock, so its ✓ simply
-  // archives it (done = finished), exactly like a one-off. The badge is the only row-level marker.
+  // An ongoing project is a standing effort: no cadence, no status clock. Its ✓ logs a work SESSION
+  // for today rather than archiving it (finishing is deliberate — SchedulePanel's 🏁), so the row
+  // carries a session counter beside the ∞ badge.
   const isOngoingTask = task.ongoing
+  // Session facts (null for every non-ongoing task — see workRecency), and the ✓'s wording, which
+  // is shared with the grid card / touch surfaces so one gesture can't be worded three ways.
+  const recency = workRecency(task, timeZone)
+  const workedToken = workedShort(recency)
+  const workedTitle = workedDetail(recency)
+  const doneAction = primaryDoneAction(task)
+  const doneCopy = doneControlCopy(doneAction, recency?.workedToday)
+
+  // The row's primary ✓ — one switch, no inline recurring ternary, so the three arms stay in step
+  // with useGrid.handleDone's. The ongoing arm TOGGLES: tapping it on a day already logged un-logs
+  // that day (the same gesture, reversed), which is why the control reads pressed when it's filled.
+  function handlePrimaryDone() {
+    switch (doneAction) {
+      case 'recurring-cycle':
+        return onDoneRecurring(task)
+      case 'work-session':
+        return onLogWork(task, !recency?.workedToday)
+      default:
+        return onDone(task)
+    }
+  }
 
   function startEdit() {
     setDraft(task.text)
@@ -206,6 +235,23 @@ export function ListRow({
           aria-label="Ongoing project"
         >
           {ONGOING_GLYPH}
+        </span>
+      )}
+
+      {/* Last-worked token for an ongoing project — "✓ today" or "3d" — in the SAME slot the
+          recurring ×N badge uses. Free by construction: the two types are mutually exclusive, so a
+          row never wants both. It stays in the LEADING group deliberately; the trailing lane
+          (recurring status | ❄️ stale | due chip) is often already occupied by an ongoing
+          project's own due chip. The full sentence rides along as the title/label. */}
+      {isOngoingTask && workedToken && (
+        <span
+          className={`shrink-0 text-xs font-semibold ${
+            recency?.workedToday ? 'text-primary' : 'text-muted'
+          }`}
+          title={workedTitle}
+          aria-label={workedTitle}
+        >
+          {workedToken}
         </span>
       )}
 
@@ -348,13 +394,18 @@ export function ListRow({
             </IconButton>
           )}
 
-          {/* Done control. Branches on recurring: a normal task is archived (Done tab + history),
-              a recurring task instead resets its clock (no history). Both go through ListView. */}
+          {/* Done control — the three-way switch above. A normal task is archived (Done tab +
+              history), a recurring task resets its clock, an ongoing project logs today's session
+              (and fills, since tapping again undoes it). All writes go through ListView. */}
           <IconButton
             variant="success"
-            onClick={() => (task.recurring ? onDoneRecurring(task) : onDone(task))}
-            aria-label={task.recurring ? 'Mark done (resets clock)' : 'Mark done'}
-            title={task.recurring ? 'Done (resets clock)' : 'Mark done'}
+            onClick={handlePrimaryDone}
+            aria-label={doneCopy.ariaLabel}
+            title={doneCopy.title}
+            aria-pressed={doneAction === 'work-session' ? recency?.workedToday : undefined}
+            className={
+              recency?.workedToday ? '!border-primary bg-primary/15 !text-primary' : undefined
+            }
           >
             ✓
           </IconButton>

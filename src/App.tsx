@@ -736,6 +736,7 @@ function AppShell() {
                             collapsed={planner.collapsed}
                             onToggleCollapse={planner.toggleCollapsed}
                             rockDone={planner.rockDone}
+                            itemCheck={planner.itemCheck}
                           />
                         </ErrorBoundary>
                       </div>

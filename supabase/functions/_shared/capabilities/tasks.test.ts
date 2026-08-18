@@ -331,6 +331,118 @@ Deno.test(
   },
 )
 
+// ---- log_work: the everyday ✓ on an ongoing project -------------------------------------------
+// A session is PROGRESS, never completion: log_work routes through the log_task_work RPC (which
+// merges + de-dupes + caps the array under a row lock) and touches nothing else — no daily_state,
+// no completed_at, no history row. makeMutCtx's rpc() returns null by default, so these tests pass
+// an explicit onRpc where the returned array matters.
+function makeWorkCtx(seedTask: Row | null, rpcData: unknown = ['2026-07-04']) {
+  const rpcCalls: { name: string; args: Record<string, unknown> }[] = []
+  const client = {
+    from() {
+      // deno-lint-ignore no-explicit-any
+      const b: any = {
+        select: () => b,
+        eq: () => b,
+        is: () => b,
+        maybeSingle: () => Promise.resolve({ data: seedTask, error: null }),
+      }
+      return b
+    },
+    rpc: (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args })
+      return Promise.resolve({ data: rpcData, error: null })
+    },
+  } as unknown as ToolContext['client']
+  const ctx: ToolContext = {
+    client,
+    timeZone: 'America/New_York',
+    now: new Date('2026-07-04T15:00:00Z'), // local day 2026-07-04
+  }
+  return { ctx, rpcCalls }
+}
+
+Deno.test('log_work logs the local day through log_task_work and archives nothing', async () => {
+  const { ctx, rpcCalls } = makeWorkCtx({ text: 'Novel', ongoing: true, completed_at: null })
+  const res = await executeTool('log_work', { task_id: TASK_ID }, ctx)
+  assert(!res.is_error)
+  // Only the task row changes — never daily_state/history, which is what would archive the project.
+  assertEquals(res.mutated, ['tasks'])
+  assertEquals(rpcCalls, [
+    {
+      name: 'log_task_work',
+      args: { p_task_id: TASK_ID, p_local_date: '2026-07-04', p_logged: true },
+    },
+  ])
+  assert(String(res.content).includes('Novel'))
+})
+
+Deno.test('log_work reports a consecutive run as a raw fact, with no verdict word', async () => {
+  // The returned array is authoritative (the RPC applied the de-dupe + cap), so the run is derived
+  // from it. Three consecutive days ending today → "3 days running" — a FACT, never "you're on a
+  // roll" / "due for a session".
+  const { ctx } = makeWorkCtx({ text: 'Thesis', ongoing: true, completed_at: null }, [
+    '2026-07-04',
+    '2026-07-03',
+    '2026-07-02',
+  ])
+  const res = await executeTool('log_work', { task_id: TASK_ID }, ctx)
+  assert(!res.is_error)
+  assert(String(res.content).includes('3 days running'))
+  for (const verdict of ['resting', 'cooling', 'due for', 'neglect', 'streak']) {
+    assert(!String(res.content).toLowerCase().includes(verdict), `verdict word: ${verdict}`)
+  }
+})
+
+Deno.test('log_work on a single session says nothing about a run', async () => {
+  const { ctx } = makeWorkCtx({ text: 'Novel', ongoing: true, completed_at: null }, ['2026-07-04'])
+  const res = await executeTool('log_work', { task_id: TASK_ID }, ctx)
+  assert(!res.is_error)
+  assert(!String(res.content).includes('days running'))
+})
+
+Deno.test('log_work refuses a task that is not an ongoing project, before any RPC', async () => {
+  const { ctx, rpcCalls } = makeWorkCtx({ text: 'Buy milk', ongoing: false, completed_at: null })
+  const res = await executeTool('log_work', { task_id: TASK_ID }, ctx)
+  assert(res.is_error)
+  assert(String(res.content).includes("isn't an ongoing project"))
+  assertEquals(rpcCalls.length, 0)
+})
+
+Deno.test('log_work refuses an already-finished project, and an unknown task', async () => {
+  const done = makeWorkCtx({ text: 'Novel', ongoing: true, completed_at: '2026-07-01T12:00:00Z' })
+  const r1 = await executeTool('log_work', { task_id: TASK_ID }, done.ctx)
+  assert(r1.is_error)
+  assert(String(r1.content).includes('already finished'))
+  assertEquals(done.rpcCalls.length, 0)
+
+  const missing = makeWorkCtx(null)
+  const r2 = await executeTool('log_work', { task_id: TASK_ID }, missing.ctx)
+  assert(r2.is_error)
+  assert(String(r2.content).includes("couldn't find"))
+  assertEquals(missing.rpcCalls.length, 0)
+})
+
+Deno.test('log_work logged=false un-logs today — and a NULL return is not an error', async () => {
+  // Un-logging the only session empties the array, which the RPC collapses to NULL. That is the
+  // SUCCESS shape here, not a failure — reading it as one would report a phantom error on the
+  // everyday "actually, I didn't get to it" correction.
+  const { ctx, rpcCalls } = makeWorkCtx({ text: 'Novel', ongoing: true, completed_at: null }, null)
+  const res = await executeTool('log_work', { task_id: TASK_ID, logged: false }, ctx)
+  assert(!res.is_error)
+  assertEquals(res.mutated, ['tasks'])
+  assertEquals(rpcCalls[0].args.p_logged, false)
+  assert(String(res.content).includes("Cleared today's session"))
+})
+
+Deno.test('log_work surfaces a genuine null-on-log as an error', async () => {
+  // Logging always returns a non-empty array on success (the day just prepended), so null there
+  // really did write nothing — the one case that must report a failure.
+  const { ctx } = makeWorkCtx({ text: 'Novel', ongoing: true, completed_at: null }, null)
+  const res = await executeTool('log_work', { task_id: TASK_ID }, ctx)
+  assert(res.is_error)
+})
+
 // ---- search_history id exposure + delete_completion ------------------------------------------
 Deno.test(
   'search_history exposes each entry id (for delete_completion), hidden from the user',

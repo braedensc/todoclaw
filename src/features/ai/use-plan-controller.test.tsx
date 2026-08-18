@@ -1,10 +1,35 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import type { DayPlan } from '../../types/plan'
+import type { Task } from '../../types/task'
 
 // Stub the data hooks (no network) and the plan mutation we control per test.
-vi.mock('../tasks/use-tasks', () => ({ useTasks: () => ({ data: [], isLoading: false }) }))
+const tasksMock = vi.fn()
+const updateMutate = vi.fn()
+const updateMock = vi.fn()
+vi.mock('../tasks/use-tasks', () => ({
+  useTasks: () => tasksMock(),
+  useUpdateTask: () => updateMock(),
+}))
 vi.mock('../habits/use-habits', () => ({ useHabits: () => ({ data: [], isLoading: false }) }))
+
+// The check-off writes: the same hooks the grid/list ✓ use.
+const markMutate = vi.fn()
+const restoreMutate = vi.fn()
+const markMock = vi.fn()
+const restoreMock = vi.fn()
+vi.mock('../done/use-history', () => ({
+  useMarkTaskDone: () => markMock(),
+  useRestoreTask: () => restoreMock(),
+}))
+
+// The third arm of the checkbox: logging a work session on an ongoing project. Stubbed like the
+// other data hooks — and it MUST be stubbed, because use-worked reaches lib/supabase, which throws
+// at import time when the VITE_SUPABASE_* vars are unset. CI has none, so leaving this unmocked
+// takes the whole suite down there while passing locally off the dev env file.
+const logWorkMutate = vi.fn()
+const logWorkMock = vi.fn()
+vi.mock('../tasks/use-worked', () => ({ useLogWork: () => logWorkMock() }))
 
 const dailyMock = vi.fn()
 vi.mock('../daily-state/use-daily-state', () => ({ useDailyState: () => dailyMock() }))
@@ -26,6 +51,28 @@ vi.mock('./use-plan-my-day', () => ({
 
 import { usePlanController } from './use-plan-controller'
 
+function task(over: Partial<Task>): Task {
+  return {
+    id: 'id',
+    user_id: 'u1',
+    text: 'task',
+    x: 0.5,
+    y: 0.5,
+    due: null,
+    due_time: null,
+    staged: false,
+    bucket: 'oneoff',
+    recurring: null,
+    ongoing: false,
+    created_at: '2026-07-01T00:00:00Z',
+    deleted_at: null,
+    completed_at: null,
+    start_date: null,
+    worked_days: null,
+    ...over,
+  }
+}
+
 const plan = (headline: string): DayPlan => ({
   headline,
   availableTime: '',
@@ -41,6 +88,11 @@ beforeEach(() => {
   dailyMock.mockReturnValue({ data: { done: {}, plan: null }, isLoading: false })
   planMock.mockReturnValue({ mutate, reset, isPending: false, isError: false, data: null })
   clearMock.mockReturnValue({ mutate: clearMutate })
+  tasksMock.mockReturnValue({ data: [], isLoading: false })
+  updateMock.mockReturnValue({ mutate: updateMutate, isPending: false, variables: undefined })
+  markMock.mockReturnValue({ mutate: markMutate, isPending: false, variables: undefined })
+  restoreMock.mockReturnValue({ mutate: restoreMutate, isPending: false, variables: undefined })
+  logWorkMock.mockReturnValue({ mutate: logWorkMutate, isPending: false, variables: undefined })
 })
 
 describe('usePlanController', () => {
@@ -119,5 +171,161 @@ describe('usePlanController', () => {
     act(() => result.current.generate())
     expect(result.current.collapsed).toBe(false)
     expect(mutate).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Checking an item off IN THE PLAN CARD. The card writes through the very same mutations the grid
+// and list ✓ do — that is the whole contract here: one source of truth, so a rock ticked on the
+// plan is done everywhere (and shows ticked on the plan when it was done anywhere else).
+describe('usePlanController itemCheck', () => {
+  const TZ = 'America/New_York'
+  const rock = (t: string, taskId: string | null = null) => ({ task: t, taskId })
+
+  it('is null when nothing on the board matches the item (model-invented / deleted since planning)', () => {
+    tasksMock.mockReturnValue({ data: [task({ id: 'a', text: 'Real task' })], isLoading: false })
+    const { result } = renderHook(() => usePlanController(TZ))
+    expect(result.current.itemCheck(rock('Invented thing', 'ghost'))).toBeNull()
+  })
+
+  it('checks a normal task off through the shared mark-done write (done map + history)', () => {
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'a', text: 'File taxes', bucket: 'oneoff' })],
+      isLoading: false,
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    const check = result.current.itemCheck(rock('File taxes', 'a'))
+    expect(check).not.toBeNull()
+    act(() => check!.toggle())
+    expect(markMutate).toHaveBeenCalledWith({
+      taskId: 'a',
+      text: 'File taxes',
+      bucket: 'oneoff',
+      timeZone: TZ,
+    })
+  })
+
+  it('un-checks a done normal task through restore — the same write the Done tab ↩ makes', () => {
+    tasksMock.mockReturnValue({ data: [task({ id: 'a', text: 'File taxes' })], isLoading: false })
+    dailyMock.mockReturnValue({ data: { done: { a: true }, plan: null }, isLoading: false })
+    const { result } = renderHook(() => usePlanController(TZ))
+    expect(result.current.rockDone(rock('File taxes', 'a'))).toBe(true)
+    act(() => result.current.itemCheck(rock('File taxes', 'a'))!.toggle())
+    expect(restoreMutate).toHaveBeenCalledWith({ taskId: 'a', timeZone: TZ })
+    expect(markMutate).not.toHaveBeenCalled()
+  })
+
+  it('checks a recurring chore off by advancing its cycle, never through history', () => {
+    tasksMock.mockReturnValue({
+      data: [
+        task({
+          id: 'c',
+          text: 'Laundry',
+          recurring: { frequencyDays: 7, lastDoneAt: '2026-06-01T00:00:00Z', doneCount: 3 },
+        }),
+      ],
+      isLoading: false,
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    act(() => result.current.itemCheck(rock('Laundry', 'c'))!.toggle())
+    expect(markMutate).not.toHaveBeenCalled()
+    const patch = updateMutate.mock.calls[0]?.[0] as {
+      id: string
+      patch: { recurring: { doneCount: number; lastDoneAt: string; nextDueOn: string | null } }
+    }
+    expect(patch.id).toBe('c')
+    expect(patch.patch.recurring.doneCount).toBe(4)
+    expect(patch.patch.recurring.nextDueOn).toBeNull()
+    // Stamped at the click, not at render — the "when" of a completion has to be the tap.
+    expect(Date.parse(patch.patch.recurring.lastDoneAt)).toBeGreaterThan(Date.parse('2026-06-01'))
+  })
+
+  it('un-checks a chore done today by rewinding one cadence (recurring has no un-done record)', () => {
+    const lastDoneAt = new Date().toISOString() // done today → the card shows it ticked
+    tasksMock.mockReturnValue({
+      data: [
+        task({
+          id: 'c',
+          text: 'Laundry',
+          recurring: { frequencyDays: 7, lastDoneAt, doneCount: 3 },
+        }),
+      ],
+      isLoading: false,
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    expect(result.current.rockDone(rock('Laundry', 'c'))).toBe(true)
+    act(() => result.current.itemCheck(rock('Laundry', 'c'))!.toggle())
+    const patch = updateMutate.mock.calls[0]?.[0] as {
+      patch: { recurring: { doneCount: number; lastDoneAt: string } }
+    }
+    expect(patch.patch.recurring.doneCount).toBe(2)
+    // Seven days back from the completion it undid — so the chore reads due again where it stood.
+    expect(Date.parse(lastDoneAt) - Date.parse(patch.patch.recurring.lastDoneAt)).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    )
+    expect(restoreMutate).not.toHaveBeenCalled()
+  })
+
+  it('reports the tapped item as busy while its write is in flight (blocks a double-tap)', () => {
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'a', text: 'File taxes' }), task({ id: 'b', text: 'Book dentist' })],
+      isLoading: false,
+    })
+    markMock.mockReturnValue({ mutate: markMutate, isPending: true, variables: { taskId: 'a' } })
+    const { result } = renderHook(() => usePlanController(TZ))
+    expect(result.current.itemCheck(rock('File taxes', 'a'))!.busy).toBe(true)
+    // Only the row being written to — the rest of the card stays tappable.
+    expect(result.current.itemCheck(rock('Book dentist', 'b'))!.busy).toBe(false)
+  })
+
+  // The third arm. An ongoing project is CHIPPED AT, so its check means "I put time in today" on
+  // every other surface (grid card, list row, BabyClaw log_work) — the plan card has to mean the
+  // same thing, or checking a project off the plan would quietly end it.
+  it('logs a work session on an ongoing project — it is never archived from the plan card', () => {
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'o', text: 'Write the novel', ongoing: true })],
+      isLoading: false,
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    act(() => result.current.itemCheck(rock('Write the novel', 'o'))!.toggle())
+    expect(logWorkMutate).toHaveBeenCalledWith({ taskId: 'o', timeZone: TZ, logged: true })
+    // The two writes that would END the project. Neither may fire from a plan check-off.
+    expect(markMutate).not.toHaveBeenCalled()
+    expect(updateMutate).not.toHaveBeenCalled()
+  })
+
+  it("un-checks a project worked today by clearing today's session, not by restoring it", () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'o', text: 'Write the novel', ongoing: true, worked_days: [today] })],
+      isLoading: false,
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    // A session logged anywhere ticks the plan item — the strikethrough and the box agree.
+    expect(result.current.rockDone(rock('Write the novel', 'o'))).toBe(true)
+    act(() => result.current.itemCheck(rock('Write the novel', 'o'))!.toggle())
+    expect(logWorkMutate).toHaveBeenCalledWith({ taskId: 'o', timeZone: TZ, logged: false })
+    // restore undoes an ARCHIVE; there was never one, so it must not be reachable here.
+    expect(restoreMutate).not.toHaveBeenCalled()
+  })
+
+  it('reports a project busy while its session write is in flight', () => {
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'o', text: 'Write the novel', ongoing: true })],
+      isLoading: false,
+    })
+    logWorkMock.mockReturnValue({
+      mutate: logWorkMutate,
+      isPending: true,
+      variables: { taskId: 'o' },
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    expect(result.current.itemCheck(rock('Write the novel', 'o'))!.busy).toBe(true)
+  })
+
+  it('matches a legacy rock with no taskId by exact text, like the strikethrough does', () => {
+    tasksMock.mockReturnValue({ data: [task({ id: 'a', text: 'File taxes' })], isLoading: false })
+    const { result } = renderHook(() => usePlanController(TZ))
+    act(() => result.current.itemCheck(rock('File taxes'))!.toggle())
+    expect(markMutate).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'a' }))
   })
 })

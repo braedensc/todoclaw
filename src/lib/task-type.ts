@@ -17,3 +17,29 @@ export function taskType(task: Pick<Task, 'recurring' | 'ongoing'>): TaskType {
 
 /** Glyph marking an ongoing project on cards/rows — one source of truth for the badge. */
 export const ONGOING_GLYPH = '∞'
+
+/** What the primary ✓ control does, which differs per task type. */
+export type PrimaryDoneAction = 'archive' | 'recurring-cycle' | 'work-session'
+
+/**
+ * What the everyday ✓ means for a task. Every surface that renders a done control routes through
+ * this, so the three arms can never drift apart across use-grid, ListView and the chat capability
+ * layer (they previously each carried their own copy of the recurring branch).
+ *
+ * - `archive` — a one-off: goes to the Done tab + history and leaves the board for good.
+ * - `recurring-cycle` — a chore: resets its clock (lastDoneAt/doneCount), never archives.
+ * - `work-session` — an ONGOING project: logs that you put time in today. It does NOT archive; an
+ *   ongoing project is finished deliberately, via "Finish project" in the schedule panel. Before
+ *   2026-07-28 ongoing projects fell through to `archive`, so the everyday ✓ silently ended them —
+ *   there was no way to record progress short of completion.
+ */
+export function primaryDoneAction(task: Pick<Task, 'recurring' | 'ongoing'>): PrimaryDoneAction {
+  switch (taskType(task)) {
+    case 'recurring':
+      return 'recurring-cycle'
+    case 'ongoing':
+      return 'work-session'
+    default:
+      return 'archive'
+  }
+}

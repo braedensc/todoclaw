@@ -1,12 +1,14 @@
 // capabilities/tasks.ts — the task capabilities. Positions are computed server-side from a due
 // date or urgency/importance words (../placement.ts); completion goes through the atomic
-// daily_state RPCs (set_task_done / set_task_undone). Destructive tools (complete_task,
+// daily_state RPCs (set_task_done / set_task_undone), and a work SESSION on an ongoing project
+// through log_task_work (progress, never completion). Destructive tools (complete_task,
 // delete_task) are flagged here — the adapter never trusts the model's belief about that.
 
 import { z } from 'npm:zod@4.4.3'
 import { daysUntilInTZ, localDateInTZ } from '../dates.ts'
 import { recurringCompletion, recurringDoneToday, recurringRestore } from '../recurring-status.ts'
 import { formatOffset } from '../reminder-content.ts'
+import { workRecency } from '../worked.ts'
 import { placeByDue, urgencyToX, importanceToY } from '../placement.ts'
 import { loadReminderDefault } from '../reminder-default.ts'
 import { TASKS_FETCH_LIMIT } from '../write-caps.ts'
@@ -99,7 +101,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'list_tasks',
     description:
-      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, an `ongoing` project flag, a `size` (S/M/L/XL or null), a `done` flag, and `paused_until` when the task is paused). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. A PAUSED task (future start date) is listed with paused_until set — it is hidden from the user's board and plans until that date. Use to refresh your view before editing.",
+      "List the user's current tasks (id, text, grid position, due date/time, staged, recurring, an `ongoing` project flag, a `size` (S/M/L/XL or null), a `done` flag, and `paused_until` when the task is paused). Mirrors the grid: one-off tasks completed on a PRIOR day are excluded (permanently done), while a task completed TODAY is still listed with done=true so you can restore it. A PAUSED task (future start date) is listed with paused_until set — it is hidden from the user's board and plans until that date. On an ONGOING project `done` means the project was FINISHED for good, never that the user worked on it — a logged work session leaves done=false, and the project's session history is in the ACTIVE TASKS block of your context, not here. Use to refresh your view before editing.",
     schema: z.object({}).strict(),
     async execute(ctx) {
       const now = ctx.now ?? new Date()
@@ -692,6 +694,82 @@ export const taskCapabilities: Capability[] = [
   }),
 
   defineCapability({
+    name: 'log_work',
+    description:
+      'Record that the user put time into an ONGOING PROJECT today — the chat equivalent of the ✓ on ' +
+      'an ongoing project. Call this whenever they report progress rather than completion: "I worked ' +
+      'on the novel today", "spent an hour on the garage", "did some of the thesis", "made progress ' +
+      'on the site redesign". It logs the local calendar day (one session per day — saying it twice ' +
+      'changes nothing), and that is ALL it does: the project keeps its place on the board, its due ' +
+      'date and its reminders, and nothing is hidden or archived. NEVER use complete_task for this — ' +
+      'on an ongoing project that FINISHES the project for good. Pass logged=false to take back a ' +
+      "session the user says they didn't actually do. Only works on an ongoing project; a one-off " +
+      'or a recurring chore has no session log.',
+    schema: z
+      .object({
+        task_id: uuid.describe("The ongoing project's task id (UUID)."),
+        logged: z
+          .boolean()
+          .nullish()
+          .describe(
+            "Omit (or true) to log today's session. false un-logs today — use only when the user says they did NOT work on it after all.",
+          ),
+      })
+      .strict(),
+    async execute(ctx, i) {
+      const now = ctx.now ?? new Date()
+      const logged = i.logged ?? true
+      // Pre-read for FRIENDLY errors. The RPC enforces all of this itself (ongoing / live / owner),
+      // but it signals every rejection the same way — a null return — so without this the user
+      // would get one vague message for "that isn't a project", "you already finished it" and a
+      // genuine failure alike.
+      const { data: task, error: selErr } = await ctx.client
+        .from('tasks')
+        .select('text, ongoing, completed_at')
+        .eq('id', i.task_id)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (selErr) return systemErr(selErr.message)
+      if (!task) return err("I couldn't find that task.")
+      if (!task.ongoing) {
+        return err(
+          `"${task.text}" isn't an ongoing project, so there's no session to log — work sessions are only for standing projects. Want me to make it one (make_ongoing), or mark it done instead?`,
+        )
+      }
+      if (task.completed_at) {
+        return err(
+          `"${task.text}" is already finished, so I can't log time against it — restore it first if you want to keep chipping away.`,
+        )
+      }
+
+      const { data, error } = await ctx.client.rpc('log_task_work', {
+        p_task_id: i.task_id,
+        p_local_date: localDateInTZ(ctx.timeZone, now),
+        p_logged: logged,
+      })
+      if (error) return systemErr(error.message)
+      // A null return means "logged nothing" ONLY when logging: an un-log that empties the array
+      // collapses it to NULL by design, so treating null as failure there would report a phantom
+      // error on the common "actually, I didn't" case.
+      if (logged && data === null) {
+        return err(`I couldn't log a session on "${task.text}" — try again in a moment.`)
+      }
+
+      if (!logged) {
+        return ok(`Cleared today's session on "${task.text}".`, ['tasks'])
+      }
+      // Report the run back as a RAW FACT, derived from the array the RPC just returned
+      // (authoritative — it applied the de-dupe and the cap). No verdict, no cadence, and never a
+      // remark about the gap before this session: coming back to a project after weeks away is
+      // ordinary, healthy use of an ongoing project.
+      const days = Array.isArray(data) ? (data as string[]) : []
+      const recency = workRecency({ ongoing: true, worked_days: days }, ctx.timeZone, now)
+      const run = recency && recency.streak >= 2 ? ` — ${recency.streak} days running` : ''
+      return ok(`Logged a work session on "${task.text}" for today${run}.`, ['tasks'])
+    },
+  }),
+
+  defineCapability({
     name: 'clear_recurring',
     description:
       'Stop a task from recurring OR from being an ongoing project — make it an ordinary one-off task again.',
@@ -945,7 +1023,7 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'complete_task',
     description:
-      'Mark a task done for today. For a recurring chore this advances its cycle (it comes back next interval); for a one-off task or an ONGOING project it archives the task to the Done log. Completing HIDES the task and STOPS its reminders — so if the user wants to KEEP it but just stop it surfacing (it is handled elsewhere, or it is an event on a fixed future day), use pause_task instead. Destructive — the user is asked to confirm before it runs.',
+      'Mark a task done for today. For a recurring chore this advances its cycle (it comes back next interval); for a one-off task or an ONGOING project it archives the task to the Done log. On an ONGOING project this FINISHES the project for good — it is NOT how the user records progress, so "I worked on the novel today", "did an hour on the garage", or "made progress on X" means log_work, never this; only complete an ongoing project when the user says the whole thing is finished. Completing HIDES the task and STOPS its reminders — so if the user wants to KEEP it but just stop it surfacing (it is handled elsewhere, or it is an event on a fixed future day), use pause_task instead. Destructive — the user is asked to confirm before it runs.',
     destructive: true,
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
