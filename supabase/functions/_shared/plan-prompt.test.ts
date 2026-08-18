@@ -775,6 +775,54 @@ Deno.test('buildUserPrompt: fixed times are called out as plan-around, never-emi
   assert(!buildUserPrompt(untimed, schedule, null).includes('FIXED TIMES TODAY'))
 })
 
+Deno.test(
+  'the prompt tells the model the line ids are for `ref` ONLY — prose names the task',
+  () => {
+    // The 2026-08-18 morning message opened "T2 is 28 days overdue…": a positional line id leaked
+    // into the one sentence the user reads first. The id contract now says so explicitly (and
+    // resolvePlanTaskIds scrubs any leak as the deterministic backstop — tested below).
+    assertStringIncludes(SYSTEM_PROMPT, 'These ids exist ONLY for the `ref` field')
+    assertStringIncludes(SYSTEM_PROMPT, 'call a task by its NAME, never by its id')
+  },
+)
+
+Deno.test('resolvePlanTaskIds scrubs leaked T#/R# tokens from every prose field', () => {
+  const plan = resolved(
+    {
+      ...emitted(emittedRock('File taxes', 'T1'), []),
+      headline: 'T1 is 28 days overdue — time to finally get real time on it.',
+      availableTime: 'After [T1] there is about an hour left.',
+      habitNote: 'R1 pairs well with the morning coffee.',
+    },
+    withIdsSoon,
+  )
+  assertEquals(
+    plan.headline,
+    'File taxes is 28 days overdue — time to finally get real time on it.',
+  )
+  assertEquals(plan.availableTime, 'After File taxes there is about an hour left.')
+  assertEquals(plan.habitNote, 'Water plants pairs well with the morning coffee.')
+})
+
+Deno.test(
+  'the scrubber covers rock task/why but leaves unresolvable + lowercase tokens alone',
+  () => {
+    const plan = resolved(
+      emitted(emittedRock('T1', 'T1'), [
+        { ...emittedRock('Buy the T99 drone', null), why: 'the t2 model is cheaper' },
+      ]),
+      withIdsSoon,
+    )
+    // The big rock's task text was the bare id itself — resolved to the real title, taskId intact.
+    assertEquals(plan.bigRock?.task, 'File taxes')
+    assertEquals(plan.bigRock?.taskId, 'task-1')
+    // A bare token that resolves to no listed line (T99) or is lowercase (t2) is not ours to
+    // rewrite — a task or product genuinely named that way must survive.
+    assertEquals(plan.smallRocks[0].task, 'Buy the T99 drone')
+    assertEquals(plan.smallRocks[0].why, 'the t2 model is cheaper')
+  },
+)
+
 Deno.test('the prompt bars internal vocabulary from anything the user reads', () => {
   // A real leak: the card's headline read "…with the timing belt appointment as a fixed anchor at
   // 2pm". "anchor"/"big rock"/"quick win" are OUR words for building the plan, not the user's.

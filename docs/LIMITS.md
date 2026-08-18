@@ -43,7 +43,7 @@ CORS preflight reaches it; auth is verified **in-function** and RLS isolates dat
 | `plan-my-day` | **Login** + budget/rate precheck | userClient (RLS) |
 | `ai-status` | **Login** | userClient (RLS) |
 | `resolve-location` | **Login** + per-user rate limit | userClient (RLS) |
-| `generate-invite` | **Owner-only** (`isOwner`→403) | service_role for the insert |
+| `generate-invite` | **Owner-only** (`isOwner`→403) | service_role RPC (`mint_invite`) for the insert |
 | `admin` | `whoami` = any login; `get_overview` = **owner-only** | userClient for identity; service_role reads |
 | `dispatch-messages` | **Secret** (`DISPATCH_SECRET` header→403) | service_role (whole fn) |
 | `dispatch-reminders` | **Secret** (`DISPATCH_SECRET` header→403) | service_role (whole fn) |

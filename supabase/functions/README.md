@@ -10,7 +10,7 @@ run here, never in the frontend bundle (CLAUDE.md Hard Rule; ADR-0015). Deno 2 r
 _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   cors.ts        # origin allow-list (ALLOWED_ORIGIN), preflight — never '*'
   auth.ts        # caller-JWT-scoped Supabase client (RLS applies; no service-role here)
-  admin.ts       # the ONE service-role client (ADR-0030) — used only by redeem-invite (createUser)
+  admin.ts       # the ONE service-role client (ADR-0030) — redeem-invite (createUser) + generate-invite (mint_invite RPC)
   invite-code.ts # high-entropy Crockford-base32 invite-code generator + redeem URL
   anthropic.ts   # Anthropic SDK client factory + MODEL/MAX_TOKENS (owner key from env)
   guardrails.ts  # per-user rate limits + global budget kill-switch + cost math
@@ -68,8 +68,10 @@ One of **two** deliberate service-role touchpoints in the functions (the other i
 brand-new Auth account requires `auth.admin.createUser`, which has no non-admin path. So `_shared/admin.ts`
 is the service-role client for accounts, fenced to **redeem-invite** and **dispatch-messages** (ADR-0031) —
 the two callers with no user JWT. Everything else is still least-privilege: the
-claim / throttle / release logic lives in `SECURITY DEFINER` RPCs
-(`supabase/migrations/20260707044212_invites.sql`) granted to `service_role` **only**, so the whole
+mint / claim / throttle / release logic lives in `SECURITY DEFINER` RPCs
+(`supabase/migrations/20260707044212_invites.sql`; `mint_invite` added by
+`20260818000000_mint_invite_definer.sql` — service_role holds no table DML, so minting goes through
+an RPC like everything else) granted to `service_role` **only**, so the whole
 invite mechanism is off the public PostgREST surface. Backed by three tables — `invites` (owner-RLS,
 list/revoke), `invite_redemptions` (audit), `invite_attempts` (throttle log, no grants). Codes are
 128-bit, single-use by default, expiring, and revocable. `generate-invite` is gated by

@@ -7,9 +7,12 @@
 // The owner gate used to be enforced ONLY here while the insert went through the caller's JWT + the
 // `invites_insert_own` RLS policy — which any authenticated user could bypass by POSTing to
 // /rest/v1/invites directly (L3, 2026-07-13 audit). That direct path is now revoked
-// (20260713020000): the insert runs through the service-role admin client, which bypasses RLS, so
-// owner_id is set EXPLICITLY to the isOwner()-verified caller (there is no auth.uid() under service
-// role). isOwner() remains the one gate; the DB simply no longer offers a second way in.
+// (20260713020000), and the insert goes through the mint_invite SECURITY DEFINER RPC
+// (20260818000000), fenced to service_role like the claim/release/record family — service_role
+// holds no table DML in this project, so a direct .from('invites').insert() under the admin client
+// fails with 42501 (which is exactly how minting was silently broken 2026-07-13 → 2026-08-18).
+// owner_id is set EXPLICITLY to the isOwner()-verified caller (there is no auth.uid() under
+// service role). isOwner() remains the one gate; the DB simply no longer offers a second way in.
 
 import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
@@ -64,16 +67,18 @@ Deno.serve(async (req) => {
   const expiresAt = new Date(Date.now() + expiresInDays * 86_400_000).toISOString()
   const code = generateInviteCode()
 
-  // Insert via the service-role admin client (the ONLY invite insert path now — the direct
-  // authenticated grant is revoked). Under service role there is no auth.uid(), so owner_id is set
-  // explicitly to the verified owner. The DB CHECK constraints (max_uses ∈ [1,50], expires_at not
-  // null) are a backstop under the Zod caps above.
-  const { data, error } = await adminClient()
-    .from('invites')
-    .insert({ code, max_uses: maxUses, expires_at: expiresAt, owner_id: user.id })
-    .select('code, max_uses, expires_at')
-    .single()
-  if (error || !data) {
+  // Insert via the mint_invite DEFINER RPC (the ONLY invite insert path — the direct authenticated
+  // grant is revoked, and service_role has no table DML). Under service role there is no
+  // auth.uid(), so owner_id is passed explicitly as the verified owner. The DB CHECK constraints
+  // (max_uses ∈ [1,50], expires_at not null) are a backstop under the Zod caps above.
+  const { data, error } = await adminClient().rpc('mint_invite', {
+    p_owner_id: user.id,
+    p_code: code,
+    p_max_uses: maxUses,
+    p_expires_at: expiresAt,
+  })
+  const minted = data as { code: string; max_uses: number; expires_at: string } | null
+  if (error || !minted) {
     // The client only ever sees the slug, so without this the ONE interesting fact — which
     // constraint or grant actually refused the row — is lost and a repeat is undiagnosable. The
     // code itself is never logged (it is a bearer token); a Postgres error message carries no secret.
@@ -82,9 +87,9 @@ Deno.serve(async (req) => {
   }
 
   return json({
-    code: data.code,
-    url: redeemUrl(req.headers.get('Origin') ?? '', data.code),
-    maxUses: data.max_uses,
-    expiresAt: data.expires_at,
+    code: minted.code,
+    url: redeemUrl(req.headers.get('Origin') ?? '', minted.code),
+    maxUses: minted.max_uses,
+    expiresAt: minted.expires_at,
   })
 })

@@ -162,6 +162,12 @@ const JARGON: Array<[string, RegExp]> = [
   ['quick win', /\bquick[-\s]wins?\b/i],
   ['ref', /\brefs?\b/i],
   ['schema field', /\b(bigRock|smallRocks|habitNote|availableTime|emit_plan)\b/],
+  // 2026-08-18: "T2 is 28 days overdue" — the bracketed line ids ([T2]/[R1]) are prompt
+  // scaffolding too. Case-SENSITIVE on purpose (a lowercase "t2" in ordinary prose is not ours).
+  // These checks run on the RESOLVED plan (runner → generatePlan → resolvePlanTaskIds), which now
+  // scrubs resolvable tokens — so this asserts the prompt-mandated titles-in-prose invariant
+  // end-to-end; only a token pointing at NO listed line could still surface here.
+  ['task line id', /\b[TR]\d{1,3}\b/],
 ]
 
 /**

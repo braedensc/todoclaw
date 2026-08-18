@@ -31,7 +31,7 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
-import { useSetDueWithDefaultReminder } from './use-set-due'
+import { useSetDueWithDefaultReminder, useSetStartDate } from './use-set-due'
 
 const NO_TIME = { id: 't1', due_time: null, recurring: null }
 const TIMED = { id: 't1', due_time: '09:00:00', recurring: null }
@@ -240,5 +240,53 @@ describe('useSetDueWithDefaultReminder on a recurring chore', () => {
 
     await waitFor(() => expect(update).toHaveBeenCalled())
     expect(update).toHaveBeenCalledWith({ due: '2026-08-01', due_time: null })
+  })
+})
+
+// The shared PAUSE write (all surfaces): pausing a non-recurring task past its due date clears
+// due + due_time in the SAME atomic patch (waking weeks-overdue is never what "shelve this"
+// meant); every other pause/resume is a bare start_date patch. This due-clear is the one due
+// write exempt from useSetDueWithDefaultReminder — it can never seed a reminder and never
+// touches a chore.
+describe('useSetStartDate', () => {
+  it('clears a due date stranded before the resume day, in one atomic patch', async () => {
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useSetStartDate(), { wrapper })
+
+    result.current({ id: 't1', due: '2026-07-10', recurring: null }, '2026-08-01')
+
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(update).toHaveBeenCalledWith({ start_date: '2026-08-01', due: null, due_time: null })
+    expect(updateEq).toHaveBeenCalledWith('id', 't1')
+  })
+
+  it('keeps a due date ON or AFTER the resume day (bare start_date patch)', async () => {
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useSetStartDate(), { wrapper })
+
+    result.current({ id: 't1', due: '2026-08-01', recurring: null }, '2026-08-01')
+
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(update).toHaveBeenCalledWith({ start_date: '2026-08-01' })
+  })
+
+  it('never clears due on a recurring chore or on resume (null)', async () => {
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useSetStartDate(), { wrapper })
+
+    result.current(
+      {
+        id: 't1',
+        due: '2026-07-10',
+        recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+      },
+      '2026-08-01',
+    )
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    expect(update).toHaveBeenLastCalledWith({ start_date: '2026-08-01' })
+
+    result.current({ id: 't1', due: '2026-07-10', recurring: null }, null)
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2))
+    expect(update).toHaveBeenLastCalledWith({ start_date: null })
   })
 })

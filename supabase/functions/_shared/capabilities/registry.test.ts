@@ -682,6 +682,89 @@ Deno.test('pause_task writes the start date and confirms with the return day', a
   assert(res.content.includes('Paused "Big project" until Aug 1'))
 })
 
+Deno.test(
+  'pause_task clears a due date the pause would strand in the past — and asks anew',
+  async () => {
+    // Due Jul 10, paused until Aug 1: waking "3 weeks overdue" is never what "shelve this" meant.
+    // The due (and via the DB trigger, its reminders) is cleared in the SAME patch, the model is
+    // told to relay it and ask for a new date, and the user-facing line stays a plain statement.
+    const updates: unknown[] = []
+    const res = await executeTool(
+      'pause_task',
+      { task_id: UUID, until: '2026-08-01' },
+      ctx({
+        onSelect: (table) =>
+          table === 'task_reminders'
+            ? { data: [{ task_id: UUID }], error: null }
+            : { data: { text: 'Code review', due: '2026-07-10', recurring: null }, error: null },
+        onUpdate: (_t, patch) => {
+          updates.push(patch)
+          return { data: null, error: null }
+        },
+      }),
+    )
+    assert(!res.is_error)
+    assertEquals(updates, [{ start_date: '2026-08-01', due: null, due_time: null }])
+    assertEquals(res.mutated, ['tasks', 'reminders'])
+    assert(res.content.includes('Jul 10'))
+    assert(res.content.includes('ask what the new due date should be'))
+  },
+)
+
+Deno.test(
+  'pause_task keeps a due date ON the return day (event tasks wake the morning of)',
+  async () => {
+    // The movie case: paused until the due day itself must wake with due date and reminders intact.
+    const updates: unknown[] = []
+    const res = await executeTool(
+      'pause_task',
+      { task_id: UUID, until: '2026-08-01' },
+      ctx({
+        onSelect: () => ({
+          data: { text: 'Go to the movie', due: '2026-08-01', recurring: null },
+          error: null,
+        }),
+        onUpdate: (_t, patch) => {
+          updates.push(patch)
+          return { data: null, error: null }
+        },
+      }),
+    )
+    assert(!res.is_error)
+    assertEquals(updates, [{ start_date: '2026-08-01' }])
+    assertEquals(res.mutated, ['tasks'])
+    assert(!res.content.includes('cleared'))
+  },
+)
+
+Deno.test(
+  'pause_task never clears due on a recurring chore (due is only the reminder anchor)',
+  async () => {
+    const updates: unknown[] = []
+    const res = await executeTool(
+      'pause_task',
+      { task_id: UUID, until: '2026-08-01' },
+      ctx({
+        onSelect: () => ({
+          data: {
+            text: 'Laundry',
+            due: '2026-07-01',
+            recurring: { frequencyDays: 7, lastDoneAt: null },
+          },
+          error: null,
+        }),
+        onUpdate: (_t, patch) => {
+          updates.push(patch)
+          return { data: null, error: null }
+        },
+      }),
+    )
+    assert(!res.is_error)
+    assertEquals(updates, [{ start_date: '2026-08-01' }])
+    assertEquals(res.mutated, ['tasks'])
+  },
+)
+
 Deno.test('pause_task refuses a past/today date and a malformed one BEFORE any write', async () => {
   // ctx now = 2026-07-04T12:00Z (New York → local today 2026-07-04): today is not "after today".
   const today = await executeTool('pause_task', { task_id: UUID, until: '2026-07-04' }, ctx())

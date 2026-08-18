@@ -397,7 +397,10 @@ export const SYSTEM_PROMPT = [
   'Every task line starts with a bracketed id — [T3] for grid tasks, [R1] for recurring chores. Set',
   "each rock's `ref` to the id of the exact line it came from, copied verbatim (it links the plan",
   'back to the real task, so the app can cross the rock off when that task is completed). Use null',
-  'only for a rock that is not one of the listed items.',
+  'only for a rock that is not one of the listed items. These ids exist ONLY for the `ref` field:',
+  'the user never sees them. In every piece of text they read — headline, availableTime, why,',
+  'habitNote, the task text itself — call a task by its NAME, never by its id: "Renew passport is',
+  '4 weeks overdue", never "T3 is 4 weeks overdue".',
   'WRITE LIKE A PERSON, NOT LIKE THE SCHEMA. "anchor", "fixed anchor", "big rock", "small rock",',
   '"quick win", "ref", "slot" are OUR internal vocabulary for building the plan — the user never',
   'sees these rules and does not speak this way. NEVER put those words in any text they read',
@@ -565,6 +568,27 @@ function resolveRef<T extends { task: string; ref?: string | null }>(
   return { ...rest, taskId } as Omit<T, 'ref'> & { taskId: string | null }
 }
 
+// Replace a leaked line id in user-facing prose with the referenced task's text. The bracketed ids
+// exist only so `ref` can cite a line, but a model that read "- [T2] Finish code review (due 28d
+// ago)" occasionally writes "T2 is 28 days overdue" in the headline — meaningless to the user, who
+// never sees the ids (the prompt now forbids this; this is the deterministic backstop). Bracketed
+// tokens are unambiguously ours: resolve them, or drop the brackets when they point at nothing.
+// BARE tokens are replaced only when they resolve to a listed line, and matched case-SENSITIVELY
+// (unlike resolveRef's forgiving `ref` parse) so ordinary prose or a task genuinely containing
+// "t2" is left alone.
+function scrubRefTokens(text: string, req: PlanRequest): string {
+  const lineText = (kind: string, num: string): string | null => {
+    const idx = Number(num) - 1
+    const src = kind.toUpperCase() === 'T' ? req.tasks[idx] : req.recurringDue[idx]
+    return src?.text ?? null
+  }
+  return text
+    .replace(/\[([TR])(\d+)\]/gi, (_m, kind: string, num: string) => {
+      return lineText(kind, num) ?? `${kind}${num}`
+    })
+    .replace(/\b([TR])(\d+)\b/g, (m, kind: string, num: string) => lineText(kind, num) ?? m)
+}
+
 /**
  * Today's fixed times, straight from the request — every task due TODAY at a specific clock time,
  * earliest first. Deterministic on purpose: an appointment is a fact about the day, not a choice the
@@ -673,9 +697,16 @@ export function resolvePlanTaskIds(plan: unknown, req: PlanRequest): PlanResult 
   if (!emitted) return null
   const anchors = deriveAnchors(req)
   const chores = deriveChores(req)
-  const bigRock = emitted.bigRock ? resolveRef(emitted.bigRock, req) : null
-  const smallRocks = emitted.smallRocks.map((r) => resolveRef(r, req))
-  const nudge = emitted.nudge ? resolveRef(emitted.nudge, req) : null
+  // Resolve the `ref` FIRST (it is consumed and stripped), then scrub any T#/R# tokens the model
+  // leaked into prose. De-tokenized task text also matches isAnchored/isChore better, never worse.
+  const scrub = (text: string) => scrubRefTokens(text, req)
+  const resolveItem = <T extends { task: string; why: string; ref?: string | null }>(raw: T) => {
+    const item = resolveRef(raw, req)
+    return { ...item, task: scrub(item.task), why: scrub(item.why) }
+  }
+  const bigRock = emitted.bigRock ? resolveItem(emitted.bigRock) : null
+  const smallRocks = emitted.smallRocks.map(resolveItem)
+  const nudge = emitted.nudge ? resolveItem(emitted.nudge) : null
   // A rock the model emitted for something the card already lists itself (a fixed time, or a chore
   // due today) is dropped: it would just show twice. Chores are handled exactly like anchors. A rock
   // landing on a project already worked today is dropped for its own reason — the day's work on it
@@ -684,6 +715,9 @@ export function resolvePlanTaskIds(plan: unknown, req: PlanRequest): PlanResult 
     isAnchored(r, anchors) || isChore(r, chores) || isWorkedToday(r, req)
   return {
     ...emitted,
+    headline: scrub(emitted.headline),
+    availableTime: scrub(emitted.availableTime),
+    habitNote: scrub(emitted.habitNote),
     anchors,
     chores,
     bigRock: bigRock && !listed(bigRock) ? bigRock : null,

@@ -74,7 +74,11 @@ budget — defeating the owner-vouched, invite-only intent (ADR-0030/0014) and c
   `_shared/admin.ts` (the single existing service-role client, as `redeem-invite` already does),
   which bypasses RLS; since there is no `auth.uid()` under service role, `owner_id` is set explicitly
   to the `isOwner()`-verified `user.id`. `isOwner()` remains the one gate — the DB simply no longer
-  offers a second door.
+  offers a second door. _(Amended 2026-08-18: the mechanism is corrected to a `mint_invite`
+  SECURITY DEFINER RPC fenced to `service_role` — `20260818000000_mint_invite_definer.sql`. A
+  service-role client bypasses RLS but not privilege grants, and service_role holds no table DML
+  here, so the direct insert this bullet described failed with 42501 on every mint. The decision —
+  owner-only minting below the Edge Function — is unchanged.)_
 - **Defense-in-depth CHECK constraints** mirror the function's caps so even the owner path (or a
   future admin bug) can't mint an absurd code: `max_uses between 1 and 50`, and `expires_at is not
   null` (no never-expiring codes). The ≤ 90-day bound stays in the function — a CHECK can't reference

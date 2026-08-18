@@ -6,7 +6,7 @@ import { minutesUntilDueTime } from '../../lib/dates'
 import { clusterStaleness, staleRingStyle, urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
-import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
+import { useSetDueWithDefaultReminder, useSetStartDate } from '../schedule/use-set-due'
 import { useConfirm } from '../../components/use-confirm'
 import { ViewToggle } from '../../components/ViewToggle'
 import type { WorkView } from '../../components/tabs'
@@ -113,8 +113,8 @@ export function GridSurface({
 
   // Pause (future start date) / resume (null) — shared by a card's ⋯ menu and a cluster row. A
   // paused card leaves the grid on the next render; the list's Paused strip is where it lives.
-  const setStartDate = (task: Task, startDate: string | null) =>
-    updateMutate({ id: task.id, patch: { start_date: startDate } })
+  // The shared hook also clears a due date the pause would strand in the past (pauseClearsDue).
+  const setStartDate = useSetStartDate()
 
   // Live grid dimensions (react to the chat push-drawer + window resize). The edge clamp margins
   // are a pixel half-extent over these, so cards/bubbles near an edge pull inward and can't be
