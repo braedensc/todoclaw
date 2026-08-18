@@ -1,5 +1,8 @@
+import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useChatSessions } from '../ai/use-chat-sessions'
+import { visibleCheckIns, unreadCheckInCount, type CheckIn } from './check-in-window'
 
 // The in-app inbox (ADR-0031). `messages` is the durable source of truth for the proactive daily
 // plan/recap — push is best-effort on top, so the inbox is where a missed or dismissed push is
@@ -37,10 +40,28 @@ export function useMessages() {
   return useQuery({ queryKey: MESSAGES_KEY, queryFn: fetchMessages })
 }
 
-/** Unread count for the bell badge. */
+/**
+ * The check-ins currently worth showing — see `check-in-window.ts` for the rule. Shared by the
+ * "From BabyClaw" list and the badge below so the number and the rows can't drift apart.
+ *
+ * It reads `chat_sessions` too: a check-in is dated by its last message, and once opened that clock
+ * lives on its session. That costs nothing extra — the shell already mounts `useChatSessions` via
+ * `useChatController`, so this is a cache hit on a query every signed-in load makes anyway.
+ */
+export function useVisibleCheckIns(): CheckIn[] {
+  const { data: messages } = useMessages()
+  const { data: sessions } = useChatSessions()
+  return useMemo(() => visibleCheckIns(messages, sessions), [messages, sessions])
+}
+
+/**
+ * Unread count for the "Chat N" badge and the mobile Chat-tab dot: the unread check-ins the list is
+ * actually SHOWING, not every unread row. Counting all of them made the badge a measure of how long
+ * you'd been away — it climbed by two a day on its own, and no amount of reading the current
+ * check-ins could bring it down while older ones sat behind the display cap.
+ */
 export function useUnreadCount(): number {
-  const { data } = useMessages()
-  return (data ?? []).reduce((n, m) => n + (m.read_at ? 0 : 1), 0)
+  return unreadCheckInCount(useVisibleCheckIns())
 }
 
 /**
@@ -76,11 +97,11 @@ export function useMarkMessageRead() {
 }
 
 /**
- * Mark EVERY unread message read in one shot — the badge's bulk escape hatch. Unread check-ins stay
- * visible past the chat list's display cap (so the "Chat N" badge always lands on a row), which
- * means ignoring them piles them up; this clears the pile without opening each one. Same security
- * envelope as mark_message_read: the RLS update policy scopes the write to the caller's own rows and
- * the column grant permits only `read_at` — no RPC needed. `.is('read_at', null)` keeps it
+ * Mark EVERY unread message read in one shot — the "clear it all" escape hatch. Deliberately NOT
+ * limited to the shown check-ins: the badge only counts those, but the point of this action is to
+ * leave nothing unread behind it, including whatever the display window has tucked away. Same
+ * security envelope as mark_message_read: the RLS update policy scopes the write to the caller's own
+ * rows and the column grant permits only `read_at` — no RPC needed. `.is('read_at', null)` keeps it
  * idempotent and leaves existing read stamps untouched.
  */
 export function useMarkAllMessagesRead() {
