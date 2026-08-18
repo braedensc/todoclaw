@@ -111,6 +111,76 @@ Deno.test('an ongoing task row surfaces in the plan tasks carrying its ongoing f
   })
 })
 
+Deno.test('an ongoing project carries its session recency as raw facts', () => {
+  // NOW is Wed Jun 24 in New York. worked_days are the user's local days, newest first.
+  const rows = [
+    {
+      id: 'today',
+      text: 'Worked today',
+      x: 0.4,
+      y: 0.9,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+      ongoing: true,
+      worked_days: ['2026-06-24', '2026-06-23', '2026-06-22'],
+    },
+    {
+      id: 'gap',
+      text: 'Long gap',
+      x: 0.4,
+      y: 0.9,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+      ongoing: true,
+      worked_days: ['2026-06-15'],
+    },
+    // An ongoing project nobody has logged a session on: no signal, said plainly.
+    {
+      id: 'fresh',
+      text: 'Never worked',
+      x: 0.4,
+      y: 0.9,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+      ongoing: true,
+    },
+    // A plain task has no session concept at all — empty phrase, never "worked today".
+    {
+      id: 'plain',
+      text: 'Buy milk',
+      x: 0.6,
+      y: 0.3,
+      due: null,
+      due_time: null,
+      staged: false,
+      recurring: null,
+      worked_days: ['2026-06-24'], // stale log left behind by a type switch — must not render
+    },
+  ]
+  const req = buildPlanRequest(rows, [], {}, TZ, NOW)
+  assertEquals(Object.fromEntries(req.tasks.map((t) => [t.text, t.worked])), {
+    'Worked today': 'worked today, 3 days running',
+    'Long gap': 'last worked 9 days ago',
+    'Never worked': 'no sessions logged yet',
+    'Buy milk': '',
+  })
+  // workedToday is the structural flag the prompt filters the rock candidates on.
+  assertEquals(Object.fromEntries(req.tasks.map((t) => [t.text, t.workedToday])), {
+    'Worked today': true,
+    'Long gap': false,
+    'Never worked': false,
+    'Buy milk': false,
+  })
+  // The project worked today still ships in `tasks` — deriveAnchors reads this list too.
+  assertEquals(req.tasks.length, 4)
+})
+
 Deno.test(
   'a DORMANT task never becomes a rock, but a within-window one surfaces in `upcoming`',
   () => {

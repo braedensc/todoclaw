@@ -74,6 +74,15 @@ export const TaskSchema = z.object({
   // null = live now. `.catch(null)` keeps rows/fixtures without the column parsing during any
   // deploy skew (client shipped before the migration), mirroring `ongoing`.
   start_date: z.string().nullable().catch(null),
+  // ONGOING projects only: the local wall-clock days ('YYYY-MM-DD', user timezone — same floating
+  // model as `due`) on which a work SESSION was logged, newest first, capped at WORKED_DAYS_CAP.
+  // A session is progress, not completion: it never sets completed_at. Written only by the
+  // log_task_work RPC; derive everything (last worked, run length, "worked today") via
+  // src/lib/worked.ts. `.catch(null)` keeps rows/fixtures without the column parsing during any
+  // deploy skew. Optional+nullable (like `size`, not like `ongoing`): it is a soft, additive field
+  // that most tasks never carry, so `.nullish()` keeps every existing task fixture valid without
+  // threading an empty array through each one.
+  worked_days: z.array(z.string()).nullish().catch(null),
 })
 
 export type Task = z.infer<typeof TaskSchema>

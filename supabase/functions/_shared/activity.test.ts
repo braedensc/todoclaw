@@ -40,6 +40,8 @@ Deno.test('describeActivity: each kind renders a clear past-tense line', () => {
   assertEquals(d('created', { recurring_days: 3 }), 'created "Taxes" (repeats every 3d)')
   assertEquals(d('completed'), 'finished "Taxes"')
   assertEquals(d('completed', { type: 'recurring' }), 'checked off "Taxes" (recurring)')
+  // A session reads as work put IN, never as a finish — an ongoing project has no finish line.
+  assertEquals(d('worked', { sessions: 4 }), 'logged a work session on "Taxes"')
   assertEquals(d('deleted'), 'deleted "Taxes"')
   assertEquals(d('renamed', { from: 'Old' }), 'renamed "Old" to "Taxes"')
   assertEquals(d('due_set', { due: '2026-07-25' }), 'set "Taxes" due 2026-07-25')
@@ -87,8 +89,21 @@ Deno.test('activityTally: counts by bucket, most-frequent first, top 4, empty �
   assertEquals(activityTally([{ kind: 'nonsense', taskText: 'x', detail: {} }]), null)
 })
 
+// Sessions get their own tally bucket: the deterministic fallback's one-liner would otherwise be
+// silent on a day whose only real work was two hours on an ongoing project.
+Deno.test('activityTally: a logged session tallies as "worked", separate from "done"', () => {
+  const t = activityTally([
+    { kind: 'worked', taskText: 'Novel', detail: { sessions: 4 } },
+    { kind: 'worked', taskText: 'Deck', detail: { sessions: 1 } },
+    { kind: 'completed', taskText: 'Pay rent', detail: {} },
+  ])!
+  assertEquals(t, '2 worked · 1 done')
+})
+
 Deno.test('isProgressActivity: only finishing counts as real progress', () => {
   assertEquals(isProgressActivity('completed'), true)
+  // Putting an hour into an ongoing project is doing the thing, not deciding to do it.
+  assertEquals(isProgressActivity('worked'), true)
   // Everything else is the user deciding to do something, not doing it — the recap must not
   // celebrate any of these.
   for (const kind of [

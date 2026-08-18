@@ -30,8 +30,10 @@ Functions (`supabase/functions/`).
   the same tasks/daily-state caches every done-path updates. Every rock, anchor and chore also
   carries a **checkbox you can tick right on the card** (`usePlanController.itemCheck`): it resolves
   the item to its task with the same matcher the strikethrough uses (`findPlanTask`) and fires the
-  same writes the board's ✓ does — mark-done/restore for a normal task, cycle-advance/rewind for a
-  recurring chore — so the two surfaces can never disagree. An item nothing on the board matches
+  same writes the board's ✓ does, branching on the same `primaryDoneAction` — mark-done/restore for
+  a normal task, cycle-advance/rewind for a recurring chore, log/un-log today's session for an
+  ongoing project (checking a project off the plan is "I put time in", never "this is finished") —
+  so the two surfaces can never disagree. An item nothing on the board matches
   (model-invented, or deleted since planning) gets an inert box instead of a control that would do
   nothing, and the quiet-day nudge stays uncheckable on purpose (a suggestion, not an assignment).
   The evening check-in matches by the same `taskId` (`_shared/dispatch.ts`), so it acknowledges

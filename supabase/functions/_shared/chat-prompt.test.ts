@@ -207,18 +207,47 @@ Deno.test('a sized task renders its S/M/L/XL so BabyClaw can answer "what size i
 Deno.test(
   'persona knows about ongoing projects and gates the suggestion to real long-running efforts',
   () => {
-    // The capability is advertised, framed as a standing effort finished with an ordinary complete…
+    // The capability is advertised…
     assertStringIncludes(SYSTEM_PREFIX, 'ongoing project')
-    assertStringIncludes(SYSTEM_PREFIX, 'finished with an ordinary complete')
     // …and the smart-suggestion heuristic: offer it for a long-running effort, but ASK first, and
     // NEVER for one-offs/quick chores (so BabyClaw doesn't slap "ongoing" on "buy milk").
     assertStringIncludes(SYSTEM_PREFIX, 'long-running effort')
     assertStringIncludes(SYSTEM_PREFIX, 'ASK first')
     assertStringIncludes(SYSTEM_PREFIX, 'NEVER do this for one-off')
-    // The retired session/Finish model is gone — no "work session" tally, no separate Finish action.
-    assert(!SYSTEM_PREFIX.toLowerCase().includes('work session'))
+    // An ongoing project is NO LONGER finished by the everyday complete (2026-07-28): the ✓ logs a
+    // work SESSION, and finishing is the separate, deliberate "Finish project" action. The old
+    // "finished with an ordinary complete" line was the exact sentence that taught the model to
+    // archive a project the moment the user mentioned working on it.
+    assert(!SYSTEM_PREFIX.includes('finished with an ordinary complete'))
+    assertStringIncludes(SYSTEM_PREFIX, 'work SESSION')
+    assertStringIncludes(SYSTEM_PREFIX, 'Finish project')
   },
 )
+
+Deno.test('persona steers "I worked on X" to log_work, never to complete_task', () => {
+  // The pause-vs-complete steering's sibling: complete_task on an ongoing project ENDS it, which is
+  // almost never what "I worked on the novel today" means. Same voice, same shape.
+  assertStringIncludes(SYSTEM_PREFIX, 'WORKED vs FINISHED')
+  assertStringIncludes(SYSTEM_PREFIX, 'log_work')
+  assertStringIncludes(SYSTEM_PREFIX, 'ENDS the project for good')
+})
+
+Deno.test('persona reads a gap between sessions as ordinary, never as neglect', () => {
+  // The tone rule is load-bearing: people drop a project for weeks and come back, and a scolding
+  // "you haven't touched this in 19 days" is the failure mode this whole feature must not create.
+  assertStringIncludes(SYSTEM_PREFIX, 'Sessions are FACTS, never a scorecard')
+  assertStringIncludes(SYSTEM_PREFIX, 'NEVER frame a')
+  assertStringIncludes(SYSTEM_PREFIX, 'normal, healthy use of an ongoing project')
+  assertStringIncludes(SYSTEM_PREFIX, 'Do not invent a cadence')
+})
+
+Deno.test('the APP GUIDE describes the ongoing ✓ as a session, not an archive', () => {
+  // These clauses were WRONG until 2026-07-28: the ✓ archived an ongoing project and every session
+  // would have written a Done row. BabyClaw answers app questions from this guide verbatim.
+  assertStringIncludes(SYSTEM_PREFIX, '"I worked on this today"')
+  assertStringIncludes(SYSTEM_PREFIX, 'tapping it again un-logs today')
+  assertStringIncludes(SYSTEM_PREFIX, 'A work session never lands here')
+})
 
 Deno.test('persona prefers PAUSE over complete when the user wants to keep-but-hide a task', () => {
   // complete_task HIDES the task and KILLS its reminders — the movie-tickets regression. The prompt
@@ -277,6 +306,95 @@ Deno.test('buildSystem renders an ongoing project as a continuous effort, not a 
   assert(!sys.includes('7 sessions'))
   assert(!sys.includes('target in'))
   assert(!sys.includes('recurring every 2d'))
+})
+
+Deno.test('an ongoing project carries its session recency as raw facts on the task line', () => {
+  // Slice out the rendered ACTIVE TASKS block: the persona above it talks about ongoing projects
+  // too, so a whole-prompt substring check would pass on prose instead of the task line.
+  const projectLine = (workedPhrase?: string) => {
+    const sys = buildSystem(
+      baseContext({
+        tasks: [
+          {
+            id: 'p1',
+            text: 'Write the novel',
+            x: 0.4,
+            y: 0.9,
+            due: null,
+            dueInDays: null,
+            dueTime: null,
+            staged: false,
+            recurringLabel: null,
+            recurringStatus: null,
+            ongoing: true,
+            workedPhrase,
+            reminderOffsets: [],
+            doneToday: false,
+            completedAt: null,
+            pausedUntil: null,
+          },
+        ],
+      }),
+    )
+    return sys.slice(sys.indexOf('=== ACTIVE TASKS'), sys.indexOf('=== DONE TODAY'))
+  }
+  // The phrase rides in the same parenthetical a recurring chore's status uses — it answers the
+  // same question (has this been dealt with lately?).
+  assertStringIncludes(projectLine('worked today'), 'ongoing project (worked today)')
+  assertStringIncludes(
+    projectLine('worked yesterday, 3 days running'),
+    'ongoing project (worked yesterday, 3 days running)',
+  )
+  assertStringIncludes(
+    projectLine('last worked 5 days ago'),
+    'ongoing project (last worked 5 days ago)',
+  )
+
+  // A project with no sessions renders BARE — no "0 sessions", no "never worked". Silence is the
+  // honest reading (there is no signal), and a zero would read as something to correct.
+  const none = projectLine('')
+  assertStringIncludes(none, '(Schedule); ongoing project')
+  assert(!none.includes('ongoing project ('))
+  assert(!none.includes('never worked'))
+
+  // And no verdict vocabulary on the line — a verdict word gets treated as a switch and turns the
+  // pacing into a mechanical every-N-days cadence.
+  const stale = projectLine('last worked 12 days ago')
+  for (const verdict of ['resting', 'cooling', 'due for a session', 'overdue for']) {
+    assert(!stale.includes(verdict), `verdict word: ${verdict}`)
+  }
+})
+
+Deno.test('a non-ongoing task never renders a session phrase, even if one leaks in', () => {
+  // workRecency returns null for a chore/one-off, so workedPhrase is '' — but the render must not
+  // depend on that: the phrase is gated on `ongoing`, not on its own emptiness.
+  const sys = buildSystem(
+    baseContext({
+      tasks: [
+        {
+          id: 't1',
+          text: 'Water plants',
+          x: 0.5,
+          y: 0.5,
+          due: null,
+          dueInDays: null,
+          dueTime: null,
+          staged: false,
+          recurringLabel: 'weekly',
+          recurringStatus: 'due today',
+          ongoing: false,
+          workedPhrase: 'worked today',
+          reminderOffsets: [],
+          doneToday: false,
+          completedAt: null,
+          pausedUntil: null,
+        },
+      ],
+    }),
+  )
+  const active = sys.slice(sys.indexOf('=== ACTIVE TASKS'), sys.indexOf('=== DONE TODAY'))
+  assertStringIncludes(active, 'recurring weekly (due today)')
+  assert(!active.includes('worked today'))
 })
 
 Deno.test(

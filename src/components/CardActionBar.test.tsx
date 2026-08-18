@@ -12,7 +12,7 @@ describe('CardActionBar', () => {
   it('renders an OUTLINED "Done" pill (label + green border/text, not filled) plus ⋯ and ×', () => {
     render(
       <CardActionBar
-        recurring={false}
+        doneAction="archive"
         onDone={noop}
         onMenu={noop}
         onDelete={noop}
@@ -37,7 +37,7 @@ describe('CardActionBar', () => {
     const onDelete = vi.fn()
     render(
       <CardActionBar
-        recurring={false}
+        doneAction="archive"
         onDone={onDone}
         onMenu={onMenu}
         onDelete={onDelete}
@@ -57,7 +57,7 @@ describe('CardActionBar', () => {
   it('labels the Done control "resets clock" when recurring', () => {
     render(
       <CardActionBar
-        recurring
+        doneAction="recurring-cycle"
         onDone={noop}
         onMenu={noop}
         onDelete={noop}
@@ -68,10 +68,52 @@ describe('CardActionBar', () => {
     expect(screen.queryByRole('button', { name: 'Mark done' })).not.toBeInTheDocument()
   })
 
+  // An ONGOING project's ✓ is not a completion — it logs "I worked on this today", so the pill says
+  // WORKED and, once today is banked, fills and reads as a pressed toggle you can tap to undo.
+  it('labels the control "Worked" for an ongoing project, unfilled until today is logged', () => {
+    render(
+      <CardActionBar
+        doneAction="work-session"
+        onDone={noop}
+        onMenu={noop}
+        onDelete={noop}
+        menuLabel="Due date and recurring"
+      />,
+    )
+    const worked = screen.getByRole('button', { name: 'Log that you worked on this today' })
+    expect(worked).toHaveTextContent('Worked')
+    expect(worked).toHaveAttribute('aria-pressed', 'false')
+    expect(worked.className).not.toMatch(/(^|\s)bg-primary(\s|$)/)
+  })
+
+  it('fills the control and offers undo once a session is logged today', () => {
+    const onDone = vi.fn()
+    render(
+      <CardActionBar
+        doneAction="work-session"
+        workedToday
+        onDone={onDone}
+        onMenu={noop}
+        onDelete={noop}
+        menuLabel="Due date and recurring"
+      />,
+    )
+    const worked = screen.getByRole('button', { name: 'Worked on this today — click to undo' })
+    // The VISIBLE word does not change between the two states — only the fill and aria-pressed do.
+    // A longer "Worked today" label wrapped to a second line on a grid card and grew the card the
+    // moment a session was logged, which is precisely what logging a session must never do.
+    expect(worked).toHaveTextContent('Worked')
+    expect(worked).toHaveAttribute('aria-pressed', 'true')
+    expect(worked.className).toMatch(/(^|\s)bg-primary(\s|$)/)
+
+    fireEvent.click(worked)
+    expect(onDone).toHaveBeenCalledOnce()
+  })
+
   it('as a popover trigger (menuOpen set) advertises aria-haspopup + aria-expanded and shows the menu content', () => {
     render(
       <CardActionBar
-        recurring={false}
+        doneAction="archive"
         onDone={noop}
         onMenu={noop}
         onDelete={noop}
@@ -89,7 +131,7 @@ describe('CardActionBar', () => {
   it('as a plain trigger (no menuOpen) carries neither aria-haspopup nor aria-expanded', () => {
     render(
       <CardActionBar
-        recurring={false}
+        doneAction="archive"
         onDone={noop}
         onMenu={noop}
         onDelete={noop}
@@ -106,7 +148,7 @@ describe('CardActionBar', () => {
     render(
       <div onPointerDown={onParentPointerDown}>
         <CardActionBar
-          recurring={false}
+          doneAction="archive"
           onDone={noop}
           onMenu={noop}
           onDelete={noop}

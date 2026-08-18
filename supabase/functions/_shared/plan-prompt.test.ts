@@ -232,6 +232,159 @@ Deno.test('an ongoing task renders with the ongoing-project tag in its grid line
   assert(!p.includes('File taxes (importance 80, urgency 90, due in 1d, ongoing project)'))
 })
 
+// ---- session recency on ONGOING projects -------------------------------------------------------
+// An ongoing project's ✓ logs a work session instead of archiving it, so the planner has to know
+// when it was last worked. The facts ride on the task line; "worked today" is the one STRUCTURAL
+// rule — such a project is not schedulable at all.
+
+// An ongoing project worked today, plus a plain task, plus an ongoing project with no sessions.
+const worked: PlanRequest = {
+  ...base,
+  tasks: [
+    {
+      id: 'novel',
+      text: 'Write the novel',
+      importance: 90,
+      urgency: 30,
+      due: null,
+      dueInDays: null,
+      ongoing: true,
+      workedToday: true,
+      worked: 'worked today, 3 days running',
+    },
+    {
+      id: 'taxes',
+      text: 'File taxes',
+      importance: 80,
+      urgency: 90,
+      due: '2026-06-25',
+      dueInDays: 1,
+    },
+    {
+      id: 'spanish',
+      text: 'Learn Spanish',
+      importance: 60,
+      urgency: 20,
+      due: null,
+      dueInDays: null,
+      ongoing: true,
+      workedToday: false,
+      worked: 'last worked 9 days ago',
+    },
+  ],
+}
+
+Deno.test('an ongoing task line carries its session history after the ongoing tag', () => {
+  const p = buildUserPrompt(worked, schedule, null)
+  assertStringIncludes(
+    p,
+    'Learn Spanish (importance 60, urgency 20, no due date, ongoing project, last worked 9 days ago)',
+  )
+  // A never-worked project says so rather than rendering nothing — "no signal yet" is itself a fact
+  // the planner needs (it judges the project on board placement alone).
+  const fresh = buildUserPrompt(
+    {
+      ...base,
+      tasks: [
+        {
+          id: 'new',
+          text: 'Build the deck',
+          importance: 50,
+          urgency: 50,
+          due: null,
+          dueInDays: null,
+          ongoing: true,
+          worked: 'no sessions logged yet',
+        },
+      ],
+    },
+    schedule,
+    null,
+  )
+  assertStringIncludes(fresh, 'ongoing project, no sessions logged yet)')
+  // A plain task carries no session text at all.
+  assertStringIncludes(p, '- [T2] File taxes (importance 80, urgency 90, due in 1d)')
+})
+
+Deno.test('a project worked TODAY leaves the schedulable list for an id-less mention block', () => {
+  const p = buildUserPrompt(worked, schedule, null)
+  // Gone from the grid list entirely — and the surviving lines keep their REQUEST index, so [T1] is
+  // simply absent rather than renumbered onto File taxes (that would map rocks onto the wrong task).
+  assertStringIncludes(p, '- [T2] File taxes')
+  assertStringIncludes(p, '- [T3] Learn Spanish')
+  assert(!p.includes('[T1]'))
+  // Re-listed as context with NO bracketed id, so no `ref` can reach it.
+  assertStringIncludes(p, '=== ALREADY WORKED TODAY')
+  assertStringIncludes(p, '- Write the novel — worked today, 3 days running')
+  assert(!/\[T\d+\] Write the novel/.test(p))
+  assertStringIncludes(p, 'do not ask for a second session')
+  // Nothing worked today → no block at all (the common case).
+  assert(!buildUserPrompt(base, schedule, null).includes('ALREADY WORKED TODAY'))
+})
+
+Deno.test('an ongoing project worked today STILL produces its fixed-time anchor', () => {
+  // The trap this guards: `tasks` is both the rock-candidate list AND the input to deriveAnchors, so
+  // filtering worked-today projects out of the request would erase the 2 PM anchor of a project the
+  // user happens to have logged a session on — regressing PRs #344/#345. The skip lives in the
+  // renderer, downstream of the anchors.
+  const req: PlanRequest = {
+    ...base,
+    tasks: [
+      {
+        id: 'studio',
+        text: 'Studio session',
+        importance: 80,
+        urgency: 80,
+        due: '2026-06-24',
+        dueInDays: 0,
+        dueTime: '14:00:00',
+        size: 'L',
+        ongoing: true,
+        workedToday: true,
+        worked: 'worked today',
+      },
+    ],
+  }
+  assertEquals(deriveAnchors(req), [
+    { task: 'Studio session', time: '2:00 PM', duration: '~2h', taskId: 'studio' },
+  ])
+  const p = buildUserPrompt(req, schedule, null)
+  assertStringIncludes(p, '- 2:00 PM — Studio session (about ~2h)')
+  // …while still being off the table as a rock.
+  assert(!p.includes('[T1] Studio session'))
+  assertStringIncludes(p, '=== ALREADY WORKED TODAY')
+  // And the emptied candidate list reads as a coherent statement, not a blank block.
+  assertStringIncludes(p, '(nothing on the grid is available today')
+  assert(!p.includes('(no tasks placed on the grid)')) // that line means an EMPTY board
+})
+
+Deno.test('SYSTEM_PROMPT paces ongoing projects on raw facts, with no verdict and no guilt', () => {
+  // The ONGOING PROJECTS section stays ONE instruction: proactively promote a project that is READY,
+  // where readiness now accounts for when it was last worked.
+  assertStringIncludes(SYSTEM_PROMPT, 'a project that is READY for one a focused block')
+  assertStringIncludes(SYSTEM_PROMPT, 'PREFER making it the BIG ROCK')
+  assertStringIncludes(SYSTEM_PROMPT, 'WHAT "READY" MEANS')
+  // The rhythm is read out of the facts, never turned into a cadence…
+  assertStringIncludes(SYSTEM_PROMPT, 'do NOT turn them into a fixed every-N-days cadence')
+  assertStringIncludes(SYSTEM_PROMPT, 'worked yesterday — normally leave it today')
+  assertStringIncludes(SYSTEM_PROMPT, 'three or more days in a row — let it rest')
+  assertStringIncludes(SYSTEM_PROMPT, 'four or more days ago — fully fresh')
+  assertStringIncludes(SYSTEM_PROMPT, 'no sessions logged yet — no signal at all')
+  assertStringIncludes(SYSTEM_PROMPT, 'never push it just to fill an empty slot')
+  // …and a long gap is never framed as neglect.
+  assertStringIncludes(SYSTEM_PROMPT, 'NEVER name the gap to')
+  assertStringIncludes(SYSTEM_PROMPT, 'never imply neglect')
+  // Worked today is stated as off-the-table, matching the id-less block.
+  assertStringIncludes(SYSTEM_PROMPT, 'ALREADY LOGGED TODAY is not on the table at all')
+  // Still no verdict vocabulary anywhere the model reads.
+  for (const verdict of ['resting', 'cooling', 'due for a session']) {
+    assert(!SYSTEM_PROMPT.toLowerCase().includes(verdict), `no verdict word: ${verdict}`)
+  }
+  // The numbered rules stay 1..7 — this is prose inside an existing section, not a rule 8.
+  for (const n of [1, 2, 3, 4, 5, 6, 7]) assert(SYSTEM_PROMPT.includes(`\n${n}. `))
+  assert(!SYSTEM_PROMPT.includes('\n8. '))
+})
+
 // ---- COMING UP (paused / not-yet-started tasks) ----------------------------------------------
 Deno.test(
   'COMING UP block lists upcoming items with their start offset + due, or is omitted',
@@ -657,6 +810,47 @@ Deno.test('an anchor costs time: the prompt makes the day pay for it', () => {
   assertStringIncludes(p, 'These COST TIME.')
   assertStringIncludes(p, 'SCALE THE DAY DOWN')
 })
+
+Deno.test('resolvePlanTaskIds: refs stay request-indexed across a worked-today gap', () => {
+  // The printed list skips [T1] (worked today), so T2/T3 must still mean req.tasks[1]/[2] — a
+  // renumbered list would silently retarget every rock the model emitted.
+  const plan = resolved(
+    emitted(emittedRock('File taxes', 'T2'), [emittedRock('Learn Spanish', 'T3')]),
+    worked,
+  )
+  assertEquals(plan.bigRock?.taskId, 'taxes')
+  assertEquals(plan.smallRocks[0].taskId, 'spanish')
+})
+
+Deno.test(
+  'resolvePlanTaskIds: a rock or nudge landing on a worked-today project is dropped',
+  () => {
+    // The mention block carries no id, so no ref can reach the project — but resolveRef's TEXT
+    // fallback still can, because the model saw the name. That hole is what would turn "not
+    // schedulable" back into a polite request, so the item is dropped here instead.
+    const plan = resolved(
+      emitted(emittedRock('Write the novel', null), [emittedRock('File taxes', 'T2')]),
+      worked,
+    )
+    assertEquals(plan.bigRock, null) // an honest empty slot beats a second session
+    assertEquals(
+      plan.smallRocks.map((r) => r.task),
+      ['File taxes'],
+    )
+    // Same for the quiet-day nudge — pointing at today's finished work is not a suggestion.
+    const nudged = resolved(
+      emitted(null, [], { task: 'Write the novel', why: 'w', duration: '~1h', ref: null }),
+      worked,
+    )
+    assertEquals(nudged.nudge, null)
+    // A nudge at any other task is untouched.
+    const ok = resolved(
+      emitted(null, [], { task: 'Learn Spanish', why: 'w', duration: '~1h', ref: 'T3' }),
+      worked,
+    )
+    assertEquals(ok.nudge?.taskId, 'spanish')
+  },
+)
 
 Deno.test('a low/low ongoing project does not earn the big rock by default', () => {
   // The regression: "Work on portfolio site" sat bottom-left on the grid, yet took the BIG ROCK

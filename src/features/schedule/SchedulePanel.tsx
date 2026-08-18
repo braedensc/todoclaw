@@ -1,9 +1,13 @@
 import { useState } from 'react'
-import type { Recurring } from '../../types/task'
+import type { Recurring, Task } from '../../types/task'
 import { localDateInTZ } from '../../lib/dates'
 import { formatStartDay } from '../../lib/start-date'
 import { recurringStatus, RC_COLOR, fmtFrequency } from '../../lib/recurring'
 import { taskType, ONGOING_GLYPH, type TaskType } from '../../lib/task-type'
+import { workedDetail, workRecency } from '../../lib/worked'
+import { useMarkTaskDone } from '../done/use-history'
+import { useLogWork } from '../tasks/use-worked'
+import { useConfirm } from '../../components/use-confirm'
 import { ReminderPicker } from '../reminders/ReminderPicker'
 import { DueTimezoneHint } from './DueTimezoneHint'
 
@@ -20,7 +24,9 @@ import { DueTimezoneHint } from './DueTimezoneHint'
 //   · a Type segmented control (Task / Recurring / Ongoing — the three mutually-exclusive kinds,
 //     2026-07-13). Task and Ongoing share every control above (due/time + reminders); Recurring
 //     reveals a Daily / Weekly / Every… cadence (→ a ±N-days stepper). Switching type is one
-//     instant-commit mutation; the parent handlers keep recurring/ongoing exclusive.
+//     instant-commit mutation; the parent handlers keep recurring/ongoing exclusive. An ONGOING
+//     project additionally reads back its session log and carries the two deliberate actions its
+//     everyday ✓ deliberately is NOT — undo today's session, and 🏁 Finish project (2026-07-28).
 //
 // Commit semantics are unchanged from the inputs it replaces: every tap writes immediately via
 // the SAME callback contracts the old controls used (onSetDue always writes both columns — the
@@ -117,6 +123,13 @@ export interface SchedulePanelProps {
   onToggleReminder: (minutes: number) => void
   /** Clear every reminder on this task (the Off chip). */
   onClearReminders: () => void
+  /**
+   * The SAVED task this panel is editing, when there is one. The add surfaces (new-task form,
+   * mobile add sheet, the onboarding demo) pass nothing: a task that doesn't exist yet has no
+   * session log to read back and nothing to finish, so the ongoing session controls below simply
+   * don't mount there — which also keeps this panel renderable with no query/confirm providers.
+   */
+  project?: Pick<Task, 'id' | 'text' | 'bucket' | 'worked_days'>
   /** Namespaces the ReminderPicker testid when several panels mount (grid / list / add). */
   idPrefix?: string
   /** Thumb-sized controls for touch surfaces (mobile add sheet / expanded row on a phone):
@@ -143,6 +156,7 @@ export function SchedulePanel({
   reminderOffsets,
   onToggleReminder,
   onClearReminders,
+  project,
   idPrefix,
   touch = false,
   now,
@@ -544,14 +558,27 @@ export function SchedulePanel({
           </>
         )}
 
-        {/* Ongoing: no extra controls — it uses the same due/reminders above. Just an explainer of
-            what the flag means (the AI proactively suggests chipping away; done archives it). */}
+        {/* Ongoing: the due/reminders above still apply; what's different is the ✓, so the copy
+            leads with that split. Its everyday ✓ logs a SESSION ("worked on this today") and the
+            project stays put — finishing is the separate, deliberate 🏁 button below. Before
+            2026-07-28 the ✓ archived the project, which is what this paragraph used to promise. */}
         {currentType === 'ongoing' && (
-          <p className="mt-1.5 text-[11px] leading-snug text-muted">
-            <span aria-hidden>{ONGOING_GLYPH} </span>A standing, open-ended effort — it stays on
-            your board and todoclaw nudges you to chip away at it. Give it a far-out due date if it
-            has a target, and just mark it done when it&rsquo;s finished.
-          </p>
+          <>
+            <p className="mt-1.5 text-[11px] leading-snug text-muted">
+              <span aria-hidden>{ONGOING_GLYPH} </span>A standing, open-ended effort — it stays on
+              your board and TodoClaw helps you chip away at it. Its ✓ means &ldquo;I worked on this
+              today&rdquo;: the project stays right where it is. Give it a far-out due date if it
+              has a target, and finish it below when it&rsquo;s really done.
+            </p>
+            {project && (
+              <OngoingSessionControls
+                project={project}
+                timeZone={timeZone}
+                now={now}
+                chipOff={chipOff}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -601,6 +628,81 @@ export function SchedulePanel({
       </div>
 
       <DueTimezoneHint />
+    </div>
+  )
+}
+
+interface OngoingSessionControlsProps {
+  /** The saved project — only ever rendered for one that exists (see SchedulePanelProps.project). */
+  project: Pick<Task, 'id' | 'text' | 'bucket' | 'worked_days'>
+  /** IANA zone that defines "today" for the session log — the same authority the calendar uses. */
+  timeZone: string
+  /** Test seam, threaded from the panel. */
+  now?: Date
+  /** The panel's own unpressed-chip class, so these read as part of the same control set. */
+  chipOff: string
+}
+
+/**
+ * The session readback and the two DELIBERATE actions for an ongoing project: undo today's session,
+ * and finish the project for good. The everyday gesture (log a session) lives on the card's ✓ —
+ * this panel is where the two things you do rarely, and want to think about, live.
+ *
+ * This is the one part of SchedulePanel that writes on its own rather than through a callback prop.
+ * The alternative was threading two more callbacks through the five presentational surfaces that
+ * host the panel (grid card, cluster row, touch popover, touch sheet, expanded row), whose parents
+ * are shared with the add forms — where neither action exists. Keeping it in a child that mounts
+ * ONLY for a saved ongoing project is also what keeps the panel itself renderable with no query or
+ * confirm provider on the add surfaces.
+ *
+ * Finish reuses the UNCHANGED archive path (useMarkTaskDone — the same write the ✓ on a one-off
+ * makes), so a finished project lands in the Done log and can be restored from there like any other
+ * completion. Nothing here is a cadence: the readback states facts and never characterises a gap.
+ */
+function OngoingSessionControls({ project, timeZone, now, chipOff }: OngoingSessionControlsProps) {
+  const logWork = useLogWork()
+  const markDone = useMarkTaskDone()
+  const confirm = useConfirm()
+
+  // `ongoing: true` is a given here — this only renders under the Ongoing type — so the recency is
+  // always derived, never null.
+  const recency = workRecency({ ongoing: true, worked_days: project.worked_days }, timeZone, now)
+
+  const finish = async () => {
+    const ok = await confirm({
+      title: `Finish “${project.text}”?`,
+      message:
+        'It moves to your Done log and comes off your board. You can restore it from Done if it turns out there was more to do.',
+      confirmLabel: '🏁 Finish project',
+      tone: 'default',
+    })
+    if (ok) {
+      markDone.mutate({
+        taskId: project.id,
+        text: project.text,
+        bucket: project.bucket,
+        timeZone,
+      })
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      <p className="text-[11px] leading-snug text-muted-light">{workedDetail(recency)}</p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {recency?.workedToday && (
+          <button
+            type="button"
+            onClick={() => logWork.mutate({ taskId: project.id, timeZone, logged: false })}
+            className={chipOff}
+          >
+            <span aria-hidden>↩ </span>Undo today&rsquo;s session
+          </button>
+        )}
+        <button type="button" onClick={finish} className={chipOff}>
+          <span aria-hidden>🏁 </span>Finish project
+        </button>
+      </div>
     </div>
   )
 }

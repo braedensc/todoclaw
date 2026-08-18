@@ -23,6 +23,14 @@ vi.mock('../done/use-history', () => ({
   useRestoreTask: () => restoreMock(),
 }))
 
+// The third arm of the checkbox: logging a work session on an ongoing project. Stubbed like the
+// other data hooks — and it MUST be stubbed, because use-worked reaches lib/supabase, which throws
+// at import time when the VITE_SUPABASE_* vars are unset. CI has none, so leaving this unmocked
+// takes the whole suite down there while passing locally off the dev env file.
+const logWorkMutate = vi.fn()
+const logWorkMock = vi.fn()
+vi.mock('../tasks/use-worked', () => ({ useLogWork: () => logWorkMock() }))
+
 const dailyMock = vi.fn()
 vi.mock('../daily-state/use-daily-state', () => ({ useDailyState: () => dailyMock() }))
 
@@ -60,6 +68,7 @@ function task(over: Partial<Task>): Task {
     deleted_at: null,
     completed_at: null,
     start_date: null,
+    worked_days: null,
     ...over,
   }
 }
@@ -83,6 +92,7 @@ beforeEach(() => {
   updateMock.mockReturnValue({ mutate: updateMutate, isPending: false, variables: undefined })
   markMock.mockReturnValue({ mutate: markMutate, isPending: false, variables: undefined })
   restoreMock.mockReturnValue({ mutate: restoreMutate, isPending: false, variables: undefined })
+  logWorkMock.mockReturnValue({ mutate: logWorkMutate, isPending: false, variables: undefined })
 })
 
 describe('usePlanController', () => {
@@ -265,6 +275,51 @@ describe('usePlanController itemCheck', () => {
     expect(result.current.itemCheck(rock('File taxes', 'a'))!.busy).toBe(true)
     // Only the row being written to — the rest of the card stays tappable.
     expect(result.current.itemCheck(rock('Book dentist', 'b'))!.busy).toBe(false)
+  })
+
+  // The third arm. An ongoing project is CHIPPED AT, so its check means "I put time in today" on
+  // every other surface (grid card, list row, BabyClaw log_work) — the plan card has to mean the
+  // same thing, or checking a project off the plan would quietly end it.
+  it('logs a work session on an ongoing project — it is never archived from the plan card', () => {
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'o', text: 'Write the novel', ongoing: true })],
+      isLoading: false,
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    act(() => result.current.itemCheck(rock('Write the novel', 'o'))!.toggle())
+    expect(logWorkMutate).toHaveBeenCalledWith({ taskId: 'o', timeZone: TZ, logged: true })
+    // The two writes that would END the project. Neither may fire from a plan check-off.
+    expect(markMutate).not.toHaveBeenCalled()
+    expect(updateMutate).not.toHaveBeenCalled()
+  })
+
+  it("un-checks a project worked today by clearing today's session, not by restoring it", () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'o', text: 'Write the novel', ongoing: true, worked_days: [today] })],
+      isLoading: false,
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    // A session logged anywhere ticks the plan item — the strikethrough and the box agree.
+    expect(result.current.rockDone(rock('Write the novel', 'o'))).toBe(true)
+    act(() => result.current.itemCheck(rock('Write the novel', 'o'))!.toggle())
+    expect(logWorkMutate).toHaveBeenCalledWith({ taskId: 'o', timeZone: TZ, logged: false })
+    // restore undoes an ARCHIVE; there was never one, so it must not be reachable here.
+    expect(restoreMutate).not.toHaveBeenCalled()
+  })
+
+  it('reports a project busy while its session write is in flight', () => {
+    tasksMock.mockReturnValue({
+      data: [task({ id: 'o', text: 'Write the novel', ongoing: true })],
+      isLoading: false,
+    })
+    logWorkMock.mockReturnValue({
+      mutate: logWorkMutate,
+      isPending: true,
+      variables: { taskId: 'o' },
+    })
+    const { result } = renderHook(() => usePlanController(TZ))
+    expect(result.current.itemCheck(rock('Write the novel', 'o'))!.busy).toBe(true)
   })
 
   it('matches a legacy rock with no taskId by exact text, like the strikethrough does', () => {

@@ -4,6 +4,9 @@ import { BottomSheet } from '../../components/BottomSheet'
 import { SchedulePanel } from '../schedule/SchedulePanel'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
+import { ONGOING_GLYPH, primaryDoneAction } from '../../lib/task-type'
+import { workedDetail, workRecency } from '../../lib/worked'
+import { doneControlCopy } from '../../components/CardActionBar'
 import {
   dueChipStyle,
   gridChipLabel,
@@ -23,7 +26,8 @@ export interface TouchTaskSheetProps {
   timeZone: string
   reminderOffsets: readonly number[]
   onClose: () => void
-  /** Mark done (caller branches recurring vs one-off) — caller also closes the sheet. */
+  /** Run the task's primary ✓ — the caller's three-way switch (archive / recurring cycle / work
+   *  session for an ongoing project). The caller also closes the sheet. */
   onDone: () => void
   /** Delete — confirm-gated by the caller (convention: the confirm lives with the mutation). */
   onDelete: () => void
@@ -85,6 +89,10 @@ export function TouchTaskSheet({
   const stale = rc || paused ? null : staleness(task, daysUntilDue)
   const tier = rc || stale || paused ? 'none' : urgencyTier(daysUntilDue, minutesUntilDue)
   const frost = stale ? staleBadge(stale) : null
+  // Session facts for an ONGOING project (null otherwise). The touch chip that opens this sheet has
+  // no room for a counter, so this meta line is the ONLY place a phone user reads the session log.
+  const recency = workRecency(task, timeZone)
+  const doneCopy = doneControlCopy(primaryDoneAction(task), recency?.workedToday)
 
   const commitRename = () => {
     const text = draft.trim()
@@ -154,17 +162,35 @@ export function TouchTaskSheet({
           ) : null}
         </div>
 
+        {/* Ongoing meta line — "∞ ongoing · Last worked 5 days ago". Facts only: a long gap is
+            reported, never characterised. */}
+        {recency && (
+          <div className="-mt-2 mb-3 text-xs text-muted">
+            <span aria-hidden>{ONGOING_GLYPH} </span>ongoing · {workedDetail(recency)}
+          </div>
+        )}
+
         {/* Action row — 44pt targets. Paused tasks can be repositioned (Move / press-and-hold drag)
             so the user can set WHERE they'll land on wake; only Done is withheld (a dormant task
-            isn't active to complete). Schedule stays (it is the Resume path) and Delete stays. */}
+            isn't active to complete). Schedule stays (it is the Resume path) and Delete stays. An
+            ongoing project's button says "Worked" and fills once today's session is logged —
+            tapping it again un-logs today. */}
         <div className="flex gap-2">
           {!paused && (
             <button
               type="button"
               onClick={onDone}
-              className="min-h-[44px] flex-1 rounded-xl border border-primary bg-card text-sm font-semibold text-primary"
+              // Only the ongoing arm names itself: a plain/recurring button's visible text already
+              // IS its accessible name, and overriding that would rename a control nothing changed.
+              aria-label={recency ? doneCopy.ariaLabel : undefined}
+              title={recency ? doneCopy.title : undefined}
+              aria-pressed={recency ? recency.workedToday : undefined}
+              className={`min-h-[44px] flex-1 rounded-xl border border-primary text-sm font-semibold ${
+                recency?.workedToday ? 'bg-primary text-white' : 'bg-card text-primary'
+              }`}
             >
-              ✓ Done{rc ? ' (resets clock)' : ''}
+              ✓ {doneCopy.label}
+              {rc ? ' (resets clock)' : ''}
             </button>
           )}
           <button
@@ -199,6 +225,7 @@ export function TouchTaskSheet({
         {showSchedule && (
           <div className="mt-3 border-t border-border pt-3">
             <SchedulePanel
+              project={task}
               taskText={task.text}
               due={task.due}
               dueTime={task.due_time}

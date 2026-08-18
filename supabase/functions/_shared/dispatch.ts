@@ -88,6 +88,14 @@ export interface DispatchInputs {
     completed_at?: string | null
     staged: boolean
     recurring: { frequencyDays: number; lastDoneAt: string | null; doneCount: number } | null
+    // ONGOING project flag + its work-session log (local 'YYYY-MM-DD' days, newest first). Both
+    // added to dispatch_inputs_for_user by migration 20260728120000 — `ongoing` had been missing
+    // since the column was created, which silently disabled the plan prompt's ONGOING PROJECTS
+    // guidance on this whole path. Optional for the same deploy-skew reason as completed_at: new
+    // edge code can run against the not-yet-migrated RPC, and both readers narrow a missing value
+    // to "not an ongoing project".
+    ongoing?: boolean | null
+    worked_days?: string[] | null
   }[]
   habits: { id: string; text: string; active: boolean }[]
   done: Record<string, boolean>
@@ -347,6 +355,21 @@ function recurringDoneToday(task: DispatchInputs['tasks'][number], ctx: RecapCon
   return localDateInTZ(ctx.timeZone, at) === ctx.localDate
 }
 
+// Was a work SESSION logged on this ongoing project today? An ongoing project is finished by a
+// deliberate, separate act — its everyday ✓ logs a session and never archives — so a session IS the
+// day's completion for it. Without this the check-in would re-ask about a project the user spent the
+// whole afternoon on. worked_days holds the user's own local calendar days, and ctx.localDate IS
+// that day, so the comparison needs no clock (same idiom as recurringDoneToday above); the slice
+// tolerates a jsonb value that arrived as a full timestamp.
+// The client twin of this rule is isPlanRockDone in src/lib/plan-done.ts — the plan card's
+// scratch-off and this must agree about what "done" means for a rock. Keep the two in step.
+function workedToday(task: DispatchInputs['tasks'][number], ctx: RecapContext): boolean {
+  if (!task.ongoing) return false
+  return (task.worked_days ?? []).some(
+    (d) => typeof d === 'string' && d.slice(0, 10) === ctx.localDate,
+  )
+}
+
 /**
  * The morning plan's items split into what got done today vs. what's still open — the shared source
  * of truth for both the deterministic recap body and the AI recap prompt (so they never disagree).
@@ -354,6 +377,9 @@ function recurringDoneToday(task: DispatchInputs['tasks'][number], ctx: RecapCon
  * completed_at hiding the task row from inputs.tasks, so a one-off finished at noon is recognized
  * tonight), with exact task text as the fallback for legacy plans; an unmatched item stays "open"
  * (better to ask than to silently drop). hasPlan=false when there was no plan today.
+ *
+ * "Done" is per task TYPE: a one-off is archived, a recurring chore advances lastDoneAt, and an
+ * ongoing project logs a work session (workedToday) — a session is that project's done for the day.
  */
 export function recapPlanItems(
   inputs: DispatchInputs,
@@ -366,14 +392,16 @@ export function recapPlanItems(
     ? [...(plan.anchors ?? []), ...(plan.bigRock ? [plan.bigRock] : []), ...(plan.smallRocks ?? [])]
     : []
   const doneTexts = new Set(
-    inputs.tasks.filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx)).map((t) => t.text),
+    inputs.tasks
+      .filter((t) => inputs.done[t.id] || recurringDoneToday(t, ctx) || workedToday(t, ctx))
+      .map((t) => t.text),
   )
   const taskById = new Map(inputs.tasks.map((t) => [t.id, t]))
   const rockDone = (r: DispatchPlanRock): boolean => {
     if (r.taskId) {
       if (inputs.done[r.taskId] === true) return true
       const t = taskById.get(r.taskId)
-      if (t && (!!t.completed_at || recurringDoneToday(t, ctx))) return true
+      if (t && (!!t.completed_at || recurringDoneToday(t, ctx) || workedToday(t, ctx))) return true
     }
     return r.task != null && doneTexts.has(r.task.trim())
   }

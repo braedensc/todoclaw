@@ -1,4 +1,5 @@
 import { recurringDoneToday } from './recurring'
+import { workRecency } from './worked'
 import type { Task } from '../types/task'
 import type { PlanRock } from '../types/plan'
 
@@ -6,9 +7,15 @@ import type { PlanRock } from '../types/plan'
 // crosses itself off the moment its task is marked done anywhere (grid/list/mobile ✓, or BabyClaw's
 // complete_task — either way the tasks/daily_state caches update and this re-evaluates).
 //
-// Matching mirrors the evening recap (supabase/functions/_shared/dispatch.ts buildRecapMessage):
+// "Done" depends on the task's TYPE, because each one is finished by a different gesture: a one-off
+// is archived, a recurring chore advances lastDoneAt, and an ONGOING project logs a work session —
+// its ✓ never archives it, so a session is what completing it means for today.
+//
+// Matching mirrors the evening recap (supabase/functions/_shared/dispatch.ts recapPlanItems — the
+// two must agree about what a completed rock is, or the card and the check-in contradict each other):
 //   1. by the rock's taskId (stamped at generation): today's done map, the task's permanent
-//      completed_at, or — for a recurring chore — lastDoneAt landing on today (user-local day);
+//      completed_at, lastDoneAt landing on today for a recurring chore, or a session logged today
+//      for an ongoing project (all user-local days);
 //   2. by exact task text as the fallback for legacy plans whose rocks predate taskId.
 // A rock that matches nothing (model-invented item, task deleted since planning) just stays
 // unstruck — never a false positive from fuzzy matching.
@@ -24,10 +31,13 @@ export function isPlanRockDone(
   if (rock.taskId && doneMap[rock.taskId] === true) return true
   const task = findPlanTask(rock, tasks)
   if (!task) return false
+  // workRecency returns null for anything that is not an ongoing project, so the session arm is
+  // inert for a chore or a one-off.
   return (
     doneMap[task.id] === true ||
     !!task.completed_at ||
-    recurringDoneToday(task.recurring, timeZone, now)
+    recurringDoneToday(task.recurring, timeZone, now) ||
+    workRecency(task, timeZone, now)?.workedToday === true
   )
 }
 

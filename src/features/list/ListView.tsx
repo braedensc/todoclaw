@@ -1,4 +1,5 @@
 import { useTasks, useUpdateTask, useSoftDeleteTask } from '../tasks/use-tasks'
+import { useLogWork } from '../tasks/use-worked'
 import { useMarkTaskDone } from '../done/use-history'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
@@ -55,6 +56,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const updateTask = useUpdateTask()
   const softDelete = useSoftDeleteTask()
   const markDone = useMarkTaskDone()
+  const logWork = useLogWork()
   // Reminders for every row in one query; the expanded row reads/writes its task's via these. A
   // recurring row's reminders lead each occurrence — same offsets, same picker as a one-off.
   const { data: reminders } = useTaskReminders()
@@ -173,6 +175,13 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
     updateTask.mutate({ id: task.id, patch: { recurring: recurringCompletion(task.recurring) } })
   }
 
+  // Log (or un-log) today's work session on an ONGOING project — the third arm of the row's ✓.
+  // Deliberately NOT a completion: no history, no daily_state, no completed_at, no coordinate or
+  // sort change. The row stays exactly where it is and the ✓ simply reads as filled; tapping it on
+  // a day already logged passes `logged: false` and clears it again.
+  const handleLogWork = (task: Task, logged: boolean) =>
+    logWork.mutate({ taskId: task.id, timeZone, logged })
+
   // Recurring set/edit/remove — all write the `recurring` jsonb through the shared task UPDATE.
   // Making a task recurring also clears the ongoing flag (the two types are mutually exclusive), so
   // the SchedulePanel type switch is a single mutation even when crossing from Ongoing → Recurring.
@@ -191,8 +200,9 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
     updateTask.mutate({ id, patch: { recurring: null } })
 
   // Ongoing project: a standalone boolean flag (no recurring data). Setting it true also clears any
-  // recurring schedule, keeping the two types exclusive in one mutation. A done ongoing task is
-  // archived by the normal handleDone (it has no recurring branch) — there is no separate Finish.
+  // recurring schedule, keeping the two types exclusive in one mutation. Its everyday ✓ logs a work
+  // session (handleLogWork above); FINISHING it is the deliberate 🏁 in the expanded row's schedule
+  // panel, which routes back through this same archive path.
   const handleSetOngoing = (id: string, on: boolean) =>
     updateTask.mutate({ id, patch: on ? { ongoing: true, recurring: null } : { ongoing: false } })
 
@@ -218,6 +228,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
               onUpdateDue={handleUpdateDue}
               onDone={handleDone}
               onDoneRecurring={handleDoneRecurring}
+              onLogWork={handleLogWork}
               onSetRecurring={handleSetRecurring}
               onSetFrequency={handleSetFrequency}
               onRemoveRecurring={handleRemoveRecurring}

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useTasks, useUpdateTask } from '../tasks/use-tasks'
+import { useLogWork } from '../tasks/use-worked'
 import { useHabits } from '../habits/use-habits'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { useMarkTaskDone, useRestoreTask } from '../done/use-history'
@@ -7,6 +8,7 @@ import { useAiStatus } from './use-ai-status'
 import { usePlanMyDay, useClearPlan, buildPlanRequest } from './use-plan-my-day'
 import { findPlanTask, isPlanRockDone } from '../../lib/plan-done'
 import { recurringCompletion, recurringRestore } from '../../lib/recurring'
+import { primaryDoneAction } from '../../lib/task-type'
 import { localDateInTZ } from '../../lib/dates'
 import type { PlanItemCheck } from './PlanBox'
 import type { DayPlan, PlanRock } from '../../types/plan'
@@ -81,6 +83,7 @@ export function usePlanController(timeZone: string): PlanController {
   const markDone = useMarkTaskDone()
   const restore = useRestoreTask()
   const updateTask = useUpdateTask()
+  const logWork = useLogWork()
 
   const paused = status.data?.paused ?? false
   const dataReady = !tasksQ.isLoading && !habitsQ.isLoading && !dailyQ.isLoading
@@ -126,44 +129,70 @@ export function usePlanController(timeZone: string): PlanController {
       ? restore.variables?.taskId
       : updateTask.isPending
         ? updateTask.variables?.id
-        : null
+        : logWork.isPending
+          ? logWork.variables?.taskId
+          : null
 
-  // Check an item off / back on. Branches exactly like the grid and list ✓ do:
-  //   • a normal task is archived (set_task_done → today's done map + history + completed_at), and
-  //     un-checking restores it (set_task_undone) — the same write the Done tab's ↩ makes;
-  //   • a recurring chore advances its cycle instead (lastDoneAt=now, any one-shot nextDueOn
-  //     consumed) and never touches history; un-checking rewinds that stamp by one cadence
-  //     (recurringRestore), so the chore reads due again from where it actually stood.
+  // Check an item off / back on. Branches on `primaryDoneAction` — the SAME switch the grid card,
+  // the list row and BabyClaw's complete_task route through — so the plan card can never mean
+  // something different by a ✓ than the board does:
+  //   • `archive` — a one-off is archived (set_task_done → today's done map + history +
+  //     completed_at), and un-checking restores it (set_task_undone), the write the Done tab's ↩
+  //     makes;
+  //   • `recurring-cycle` — a chore advances its cycle instead (lastDoneAt=now, any one-shot
+  //     nextDueOn consumed) and never touches history; un-checking rewinds that stamp by one
+  //     cadence (recurringRestore), so the chore reads due again from where it actually stood;
+  //   • `work-session` — an ONGOING project logs today's session and is NEVER archived from here.
+  //     Checking a project off the plan is "I put time in", not "this project is over" — finishing
+  //     one stays the deliberate 🏁 in the schedule panel. Un-checking clears today's session.
   const itemCheck = (item: PlanItemRef): PlanItemCheck | null => {
     const task = findPlanTask(item, tasks)
     if (!task) return null
     const done = rockDone(item)
     const busy = task.id === busyTaskId
-    const recurring = task.recurring
-    if (recurring) {
-      if (done) {
-        const rewound = recurringRestore(recurring)
-        // Null for a never-completed chore (nothing to rewind) — leave the box inert rather than
-        // firing a write that can't mean anything.
-        if (!rewound) return null
+    switch (primaryDoneAction(task)) {
+      case 'recurring-cycle': {
+        // `recurring` is non-null by construction in this arm; the switch doesn't narrow it.
+        const recurring = task.recurring
+        if (!recurring) return null
+        if (done) {
+          const rewound = recurringRestore(recurring)
+          // Null for a never-completed chore (nothing to rewind) — leave the box inert rather than
+          // firing a write that can't mean anything.
+          if (!rewound) return null
+          return {
+            busy,
+            toggle: () => updateTask.mutate({ id: task.id, patch: { recurring: rewound } }),
+          }
+        }
+        // Stamped inside the click, not at render: lastDoneAt must be when the user checked it off.
         return {
           busy,
-          toggle: () => updateTask.mutate({ id: task.id, patch: { recurring: rewound } }),
+          toggle: () =>
+            updateTask.mutate({
+              id: task.id,
+              patch: { recurring: recurringCompletion(recurring) },
+            }),
         }
       }
-      // Stamped inside the click, not at render: lastDoneAt must be when the user checked it off.
-      return {
-        busy,
-        toggle: () =>
-          updateTask.mutate({ id: task.id, patch: { recurring: recurringCompletion(recurring) } }),
-      }
-    }
-    return {
-      busy,
-      toggle: () =>
-        done
-          ? restore.mutate({ taskId: task.id, timeZone })
-          : markDone.mutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone }),
+      case 'work-session':
+        return {
+          busy,
+          toggle: () => logWork.mutate({ taskId: task.id, timeZone, logged: !done }),
+        }
+      default:
+        return {
+          busy,
+          toggle: () =>
+            done
+              ? restore.mutate({ taskId: task.id, timeZone })
+              : markDone.mutate({
+                  taskId: task.id,
+                  text: task.text,
+                  bucket: task.bucket,
+                  timeZone,
+                }),
+        }
     }
   }
 
