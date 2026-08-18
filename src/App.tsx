@@ -142,8 +142,10 @@ function AppShell() {
   // One conversation for the whole shell — shared by the inline BabyClaw reply and the chat popup.
   const chat = useChatController()
   // Proactive messages (ADR-0031) no longer have a separate inbox — the chat drawer IS the inbox
-  // (its "See all chats" list shows them). `messages` still feeds the #/chat deep-link resolver
-  // below; the unread count rides on the Chat entry (desktop nav badge + mobile Chat-tab dot).
+  // (its "See all chats" list shows them). `messages` stays UNCAPPED here because it feeds the
+  // #/chat deep-link resolver below — a push can name a check-in the list has since tucked away,
+  // and that link must still land. The unread count rides on the Chat entry (desktop nav badge +
+  // mobile Chat-tab dot) and is windowed to what the list shows — see check-in-window.ts.
   const messages = useMessages()
   const unread = useUnreadCount()
   const markRead = useMarkMessageRead()

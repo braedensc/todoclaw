@@ -15,15 +15,21 @@ lives in `supabase/functions/` — see `supabase/functions/README.md`.
   subscribe/unsubscribe) + morning/evening hour pickers + quiet hours. The prefs live in
   `user_schedule.config.notifications` (`ScheduleConfigSchema`), woven into the Settings draft so a
   normal save preserves them.
-- **`use-messages.ts`** — the inbox data: `useMessages` (list), `useUnreadCount` (badge),
-  `useMarkMessageRead` (`mark_message_read` RPC), `useMarkAllMessagesRead` (bulk — an RLS-scoped
-  `read_at` update, no RPC). `messages` is the source of truth; push is best-effort on top. Read via
-  TanStack Query on load/focus (Realtime stays deferred, ADR-0021).
+- **`use-messages.ts`** — the inbox data: `useMessages` (list), `useVisibleCheckIns` + `useUnreadCount`
+  (the window and the badge), `useMarkMessageRead` (`mark_message_read` RPC), `useMarkAllMessagesRead`
+  (bulk — an RLS-scoped `read_at` update, no RPC). `messages` is the source of truth; push is
+  best-effort on top. Read via TanStack Query on load/focus (Realtime stays deferred, ADR-0021).
+- **`check-in-window.ts`** — WHICH check-ins are current, and the one place that decides it:
+  `visibleCheckIns` ranks by last activity (a session's `updated_at` once opened, else arrival),
+  drops anything past `STALE_AFTER_DAYS`, and hard-caps at `MAX_CHECK_INS`. **The badge counts the
+  unread rows inside that window and nothing else** — so it can never claim more than the list is
+  showing. This is a display window, not retention: nothing is deleted, and "Mark all read" still
+  clears every unread row, windowed or not.
 - The unread badge and message list live in the **chat drawer** now (the separate bell/inbox overlay
   was retired): the desktop "Chat N" badge and the mobile Chat-tab dot surface `useUnreadCount`, and
-  `ChatSessionList` (`src/features/ai`) lists check-ins under "From BabyClaw" — unread rows are
-  exempt from its display cap and carry per-row dots, with a "Mark all read" bulk action on the
-  group label. Opening a message materialises/reopens its chat session and marks it read.
+  `ChatSessionList` (`src/features/ai`) lists the same windowed check-ins under "From BabyClaw" with
+  per-row dots, plus a "Mark all read" bulk action on the group label. Opening a message
+  materialises/reopens its chat session and marks it read.
 - **Read state is optimistic, and a dot in that list only ever means unread.** Both mark-read
   mutations write the cache in `onMutate` (rolled back on failure) so the dot clears on the tap, and
   `useOpenMessageChat` PATCHES the row's `session_id` rather than invalidating `['messages']` — the
