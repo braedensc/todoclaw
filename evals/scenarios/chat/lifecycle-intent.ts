@@ -14,6 +14,7 @@ import { dayOffsetISO } from '../../lib/fixture-dates.ts'
 import {
   bodyAt,
   confirmRequested,
+  dbTask,
   dbTaskDeleted,
   dbTaskNotCompleted,
   dbTaskPaused,
@@ -95,8 +96,11 @@ export const scenarios: ChatScenario[] = [
     ],
     rubric:
       'By the end of the conversation the movie task must be paused (start date on the movie ' +
-      'day or nearby), NOT completed, NOT deleted, reminders intact. Bonus: the assistant ' +
-      'explains that pause keeps the reminder.',
+      'day or nearby), NOT completed, NOT deleted. Pausing until the movie day itself (or ' +
+      'earlier) keeps the due date and reminder intact — the ideal outcome here. (Pausing PAST ' +
+      'the due day clears the due date by design; if the assistant did that it must say so and ' +
+      'ask about a new date, but for this request landing on the movie day is the right call.) ' +
+      'Bonus: the assistant explains that pause keeps the reminder.',
   },
   {
     kind: 'chat',
@@ -112,6 +116,48 @@ export const scenarios: ChatScenario[] = [
       toolNotCalled('complete_task'),
       noErrorEvents(),
     ],
+  },
+  {
+    kind: 'chat',
+    id: 'pause-past-due-clears',
+    title: 'Pausing past the due date clears it, and the assistant asks for a new one',
+    tags: ['lifecycle', 'pause', 'due'],
+    // The 2026-08-18 report: a task due weeks ago, paused until a future day, woke "28 days
+    // overdue" — a deadline that expired while deliberately shelved is stale, not urgent.
+    // pause_task now clears due/due_time when due < until (the db check asserts that mandate
+    // end-to-end); relaying the clear and asking for a new date is prompt-steered → rubric.
+    seed: () => ({
+      tasks: [
+        {
+          key: 'review',
+          text: 'Finish AI code review system for work',
+          x: 0.7,
+          y: 0.7,
+          due: dayOffsetISO(-20),
+        },
+      ],
+    }),
+    turns: [
+      {
+        say: `Pause the code review task until ${dayOffsetISO(14)} — I can't touch it until my credits reset.`,
+      },
+    ],
+    checks: [
+      dbTaskPaused('review', dayOffsetISO(14)),
+      dbTask(
+        'review',
+        (row) => row.due == null && row.due_time == null,
+        'stale due date cleared by the pause (pause_task mandate)',
+      ),
+      toolNotCalled('complete_task'),
+      noErrorEvents(),
+    ],
+    rubric:
+      'The task was due ~3 weeks ago and is being paused for two more weeks. The assistant must ' +
+      'pause it AND surface that the old due date was cleared (it would have come back already ' +
+      'overdue), then ask — or offer to set — a new due date for when it returns. Silently ' +
+      'pausing without mentioning the cleared due date is a fail; inventing a new due date ' +
+      'without asking is also a fail.',
   },
   {
     kind: 'chat',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatStartDay, isDormant } from './start-date'
+import { formatStartDay, isDormant, pauseClearsDue } from './start-date'
 
 // The dormancy predicate is the client half of a rule enforced in four places (SQL reminder
 // sweep, dispatch RPC, edge plan-inputs/chat-context, and here) — these tests pin the boundary
@@ -33,6 +33,32 @@ describe('isDormant', () => {
   it('tolerates a longer ISO string (slices the calendar day)', () => {
     expect(isDormant({ start_date: '2026-08-01T00:00:00Z' }, TZ, NOW)).toBe(true)
     expect(isDormant({ start_date: '2026-07-16T23:59:59Z' }, TZ, NOW)).toBe(false)
+  })
+})
+
+// Pure string calendar comparison (no clock consulted, so fixed dates can't rot). The server
+// twin lives in pause_task (_shared/capabilities/tasks.ts) — same strictly-before rule.
+describe('pauseClearsDue', () => {
+  it('clears only when the due day falls strictly BEFORE the resume day', () => {
+    expect(pauseClearsDue({ due: '2026-07-10', recurring: null }, '2026-08-01')).toBe(true)
+    // Due ON the resume day is kept: an event task wakes the morning it is due.
+    expect(pauseClearsDue({ due: '2026-08-01', recurring: null }, '2026-08-01')).toBe(false)
+    expect(pauseClearsDue({ due: '2026-08-02', recurring: null }, '2026-08-01')).toBe(false)
+  })
+
+  it('never clears without a due date, on resume (null), or on a recurring chore', () => {
+    expect(pauseClearsDue({ due: null, recurring: null }, '2026-08-01')).toBe(false)
+    expect(pauseClearsDue({ due: '2026-07-10', recurring: null }, null)).toBe(false)
+    // A chore's due is only the reminder anchor — clearing it would wipe the reminder phase.
+    expect(
+      pauseClearsDue({ due: '2026-07-10', recurring: { frequencyDays: 7 } }, '2026-08-01'),
+    ).toBe(false)
+  })
+
+  it('tolerates longer ISO strings (slices the calendar day)', () => {
+    expect(pauseClearsDue({ due: '2026-07-10T09:00:00Z', recurring: null }, '2026-08-01')).toBe(
+      true,
+    )
   })
 })
 

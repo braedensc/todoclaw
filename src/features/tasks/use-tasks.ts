@@ -126,7 +126,13 @@ export function useUpdateTask() {
       const { error } = await supabase.from('tasks').update(patch).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: TASKS_KEY }),
+    onSuccess: (_data, { patch }) => {
+      qc.invalidateQueries({ queryKey: TASKS_KEY })
+      // Clearing the due date makes the DB trigger drop the task's reminder rows OUTSIDE the
+      // client's write path (calendar clear, pause-past-due) — refetch so the ⋯-menu chips don't
+      // show ghost reminders until the next navigation.
+      if (patch.due === null) qc.invalidateQueries({ queryKey: ['task_reminders'] })
+    },
     onError: () => toast("Couldn't save your change — try again.", 'error'),
   })
 }

@@ -14,7 +14,7 @@ import { BACKGROUND_DISMISS_ATTR } from '../../hooks/use-background-dismiss'
 import { useConfirm } from '../../components/use-confirm'
 import { useToast } from '../../components/use-toast'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
-import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
+import { useSetDueWithDefaultReminder, useSetStartDate } from '../schedule/use-set-due'
 import { MobileAddSheet } from '../shell/MobileAddSheet'
 import { ClusterBubble } from '../clustering/ClusterBubble'
 import { CLUSTER_BUBBLE_HALF } from '../clustering/cluster-constants'
@@ -113,6 +113,7 @@ export function TouchGridSurface({
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
   const setDue = useSetDueWithDefaultReminder()
+  const setStartDate = useSetStartDate()
 
   // Where the TOP quadrant labels sit: pushed down past the floating exit pill in the real
   // fullscreen grid, in the true corner when embedded (no chrome to dodge).
@@ -644,7 +645,7 @@ export function TouchGridSurface({
             })
         }}
         onSetStartDate={(startDate) => {
-          if (selected) updateMutate({ id: selected.id, patch: { start_date: startDate } })
+          if (selected) setStartDate(selected, startDate)
         }}
         onToggleReminder={(minutes) => {
           if (selected)

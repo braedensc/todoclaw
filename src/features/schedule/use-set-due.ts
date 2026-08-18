@@ -1,4 +1,5 @@
 import type { Task } from '../../types/task'
+import { pauseClearsDue } from '../../lib/start-date'
 import { useUpdateTask } from '../tasks/use-tasks'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
 import { effectiveReminderDefault } from '../reminders/reminder-offsets'
@@ -42,6 +43,7 @@ export function useSetDueWithDefaultReminder() {
     //
     // This lives in the shared hook rather than in each panel because EVERY existing-task due write
     // routes through here (#305), so all five schedule surfaces get it at once and none can drift.
+    // (The ONE exemption is useSetStartDate's pause-clear below — see its comment for why.)
     const patch: Parameters<typeof updateTask.mutate>[0]['patch'] = { due, due_time: dueTime }
     if (task.recurring) {
       patch.recurring = { ...task.recurring, nextDueOn: due }
@@ -56,5 +58,26 @@ export function useSetDueWithDefaultReminder() {
         if (seedMinutes !== null) reminderWrites.add(task.id, seedMinutes)
       })
       .catch(() => {})
+  }
+}
+
+// The SchedulePanel PAUSE write, shared by every surface with a Pause control (grid card ⋯ menu,
+// cluster rows, touch grid takeover, list rows). Pausing a NON-recurring task past its due date
+// also clears `due` + `due_time` in the SAME patch (pauseClearsDue) — otherwise the task wakes
+// already weeks overdue, which is never what "shelve this until then" meant. The DB trigger drops
+// the orphaned reminder rows when due goes null, so the cleared-due write is exempt from
+// useSetDueWithDefaultReminder above (#305): it can never seed a reminder (clearing, not gaining
+// a time) and never touches a recurring chore (pauseClearsDue skips them), so neither of that
+// hook's two jobs applies. One atomic patch, not two mutations — two would race the optimistic
+// cache and _clientRev. (The reminder rows the DB trigger drops with the due date are refetched
+// by useUpdateTask itself, which invalidates task_reminders on any due-clearing patch.)
+export function useSetStartDate() {
+  const updateTask = useUpdateTask()
+
+  return (task: Pick<Task, 'id' | 'due' | 'recurring'>, startDate: string | null) => {
+    const patch: Parameters<typeof updateTask.mutate>[0]['patch'] = pauseClearsDue(task, startDate)
+      ? { start_date: startDate, due: null, due_time: null }
+      : { start_date: startDate }
+    updateTask.mutate({ id: task.id, patch })
   }
 }

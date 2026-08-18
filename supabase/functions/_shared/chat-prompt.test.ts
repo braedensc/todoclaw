@@ -229,8 +229,11 @@ Deno.test('persona prefers PAUSE over complete when the user wants to keep-but-h
   )
   assertStringIncludes(SYSTEM_PREFIX, 'names an EVENT on a')
   assertStringIncludes(SYSTEM_PREFIX, 'offer to PAUSE it')
-  // Pausing is lossless: the task, its due date, and its reminders all survive.
+  // Pausing is lossless: the task, its due date, and its reminders all survive — EXCEPT a due
+  // date the pause would strand in the past, which is cleared and re-asked (2026-08-18).
   assertStringIncludes(SYSTEM_PREFIX, 'pausing keeps the task, its due date AND its reminders')
+  assertStringIncludes(SYSTEM_PREFIX, 'a due date BEFORE the return day is cleared')
+  assertStringIncludes(SYSTEM_PREFIX, 'ASK the user what the new due date should be')
 })
 
 Deno.test('persona saves durable memories proactively (no per-conversation throttle)', () => {

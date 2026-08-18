@@ -302,6 +302,88 @@ async function runLatentPrivsCheck(client, failures) {
   }
 }
 
+// H. Invite minting is RPC-only AND the RPC actually works. Two lessons pinned at once:
+//   • The DENIAL side: neither `authenticated` (whose direct INSERT grant was revoked by
+//     20260713020000 — the pre-fix schema allowed exactly this write, so it can't pass vacuously)
+//     nor `anon` may insert into public.invites or execute mint_invite.
+//   • The POSITIVE control: mint_invite succeeds under `service_role`. This is the assertion that
+//     would have caught the 2026-07-13 → 2026-08-18 outage, where generate-invite's direct
+//     service-role insert silently 42501'd on every mint (service_role holds NO table DML in this
+//     project — writes go through SECURITY DEFINER RPCs; migration 20260818000000).
+// All inside one transaction that is rolled back.
+async function runInviteMintProbe(client, failures) {
+  await client.query('begin')
+  try {
+    // A throwaway auth user (FK target for invites.owner_id), created as superuser in the txn.
+    const uidRes = await client.query(
+      `insert into auth.users (id) values (gen_random_uuid()) returning id`,
+    )
+    const uid = uidRes.rows[0].id
+
+    for (const role of ['authenticated', 'anon']) {
+      await client.query('savepoint sp_role')
+      await client.query(`set local role ${role}`)
+      if (role === 'authenticated') {
+        await client.query(`select set_config('request.jwt.claim.sub', $1, true)`, [uid])
+      }
+      for (const [label, sql, params] of [
+        [
+          'direct INSERT into invites',
+          `insert into public.invites (owner_id, code, max_uses, expires_at)
+           values ($1, '_probe_direct', 1, now() + interval '1 day')`,
+          [uid],
+        ],
+        [
+          'mint_invite EXECUTE',
+          `select public.mint_invite($1, '_probe_rpc', 1, now() + interval '1 day')`,
+          [uid],
+        ],
+      ]) {
+        await client.query('savepoint sp')
+        let code = null
+        try {
+          await client.query(sql, params)
+        } catch (e) {
+          code = e.code // '42501' = permission denied (what we require)
+        }
+        await client.query('rollback to savepoint sp')
+        if (code !== '42501') {
+          failures.push(
+            `invite mint: ${label} as "${role}" — expected permission-denied (42501), got ` +
+              `${code ?? 'NO error, the write SUCCEEDED'}. Invite creation must be reachable ` +
+              `only through generate-invite's service-role client (20260713020000 + 20260818000000).`,
+          )
+        }
+      }
+      await client.query('rollback to savepoint sp_role')
+    }
+
+    // Positive control: the one legitimate mint path works. Args satisfy the CHECKs
+    // (max_uses ∈ [1,50], non-null expires_at).
+    await client.query(`set local role service_role`)
+    let ctrlErr = null
+    try {
+      const minted = await client.query(
+        `select public.mint_invite($1, '_probe_mint', 1, now() + interval '1 day') as row`,
+        [uid],
+      )
+      const row = minted.rows[0].row
+      if (!row || row.code !== '_probe_mint') ctrlErr = `unexpected return: ${JSON.stringify(row)}`
+    } catch (e) {
+      ctrlErr = `${e.code} ${e.message}`
+    }
+    if (ctrlErr) {
+      failures.push(
+        `invite mint: mint_invite FAILED under service_role (${ctrlErr}) — the only invite ` +
+          `creation path is broken (this is exactly how minting was silently down 2026-07-13 → ` +
+          `2026-08-18), and the denials above would pass vacuously.`,
+      )
+    }
+  } finally {
+    await client.query('rollback')
+  }
+}
+
 async function main() {
   if (!DB_URL) {
     console.error(
@@ -377,6 +459,9 @@ async function main() {
     // G. Client roles hold no RLS-immune table privilege (TRUNCATE/REFERENCES/TRIGGER),
     // on existing tables or in the default ACL for future ones.
     await runLatentPrivsCheck(client, failures)
+
+    // H. Invite minting: direct writes + RPC denied to client roles, RPC works for service_role.
+    await runInviteMintProbe(client, failures)
   } finally {
     await client.end()
   }

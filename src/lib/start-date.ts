@@ -28,6 +28,24 @@ export function isDormant(
 }
 
 /**
+ * True when pausing this task until `startDate` should also CLEAR its due date: the due day falls
+ * strictly BEFORE the resume day, so the task would wake already overdue — a deadline that expired
+ * while the user had deliberately shelved the work is stale, not urgent ("28 days overdue" on
+ * wake, 2026-08-18). A due date ON the resume day is kept (an event task wakes the morning it is
+ * due, reminders intact). Recurring chores are skipped entirely: their `due` is only the reminder
+ * anchor — no board or plan reader treats it as a deadline, and clearing it would wipe the
+ * reminder phase for nothing. Same string calendar comparison as isDormant; the edge twin lives
+ * in _shared/capabilities/tasks.ts (pause_task) — keep them in step.
+ */
+export function pauseClearsDue(
+  task: { due?: string | null; recurring?: unknown },
+  startDate: string | null,
+): boolean {
+  if (!startDate || !task.due || task.recurring) return false
+  return task.due.slice(0, 10) < startDate.slice(0, 10)
+}
+
+/**
  * Human day for a start date — "Aug 1" (host locale). Pure UTC-noon date math like the
  * SchedulePanel calendar cells: the string already IS the user's wall-clock day, so projecting
  * it through a timezone would be wrong. Returns '' for an unparseable input.

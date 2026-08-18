@@ -6,7 +6,7 @@ import { useConfirm } from '../../components/use-confirm'
 import { useIsMobile } from '../../hooks/use-is-mobile'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
-import { useSetDueWithDefaultReminder } from '../schedule/use-set-due'
+import { useSetDueWithDefaultReminder, useSetStartDate } from '../schedule/use-set-due'
 import { taskScore } from '../../lib/scoring'
 import { quadrantMeta, type QuadrantKey } from '../../lib/quadrants'
 import { isDormant } from '../../lib/start-date'
@@ -60,6 +60,7 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
   const { data: reminders } = useTaskReminders()
   const reminderWrites = useTaskReminderWrites()
   const setDue = useSetDueWithDefaultReminder()
+  const setStartDate = useSetStartDate()
   const confirm = useConfirm()
   // Only for the empty-state copy: the add affordance is the header widget on desktop but the
   // bottom-nav ➕ on a phone — pointing a phone user at a header that isn't there is a dead end.
@@ -197,9 +198,12 @@ export function ListView({ quadrantFilter, onMoveToQuadrant }: ListViewProps = {
     updateTask.mutate({ id, patch: on ? { ongoing: true, recurring: null } : { ongoing: false } })
 
   // Pause (future start date) / resume (null). A paused row leaves the ranking on the next render
-  // and reappears in the Paused strip below.
-  const handleSetStartDate = (id: string, startDate: string | null) =>
-    updateTask.mutate({ id, patch: { start_date: startDate } })
+  // and reappears in the Paused strip below. The shared hook also clears a due date the pause
+  // would strand in the past (pauseClearsDue), which needs the full task — look it up by id.
+  const handleSetStartDate = (id: string, startDate: string | null) => {
+    const task = tasks.find((t) => t.id === id)
+    if (task) setStartDate(task, startDate)
+  }
 
   return (
     <>

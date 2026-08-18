@@ -711,7 +711,10 @@ export const taskCapabilities: Capability[] = [
     description:
       'Pause a task until a future date: it disappears from the board, daily plans, and the morning ' +
       'push, and its reminders are HELD, not cancelled — then it comes back BY ITSELF that morning, ' +
-      'exactly where it was, with its due date and reminders intact. Use whenever the user wants to ' +
+      'exactly where it was, with its due date and reminders intact. EXCEPTION: a due date that ' +
+      'falls BEFORE the return day is CLEARED (with its reminders) — the task would otherwise wake ' +
+      'already overdue on a deadline that expired while shelved. When that happens, tell the user ' +
+      'and ASK what the new due date should be. Use whenever the user wants to ' +
       'KEEP a task but stop it surfacing until a day: blocked until a date ("pause the API project ' +
       'until Aug 1", "can\'t touch this until my credits reset"); it is handled elsewhere for now; ' +
       '"stop reminding/promoting me about this until <date>"; or it is a task for an EVENT on a ' +
@@ -743,22 +746,52 @@ export const taskCapabilities: Capability[] = [
       }
       const { data: task, error: selErr } = await ctx.client
         .from('tasks')
-        .select('text')
+        .select('text, due, recurring')
         .eq('id', i.task_id)
         .is('deleted_at', null)
         .maybeSingle()
       if (selErr) return systemErr(selErr.message)
       if (!task) return err("I couldn't find that task.")
+
+      // A due date strictly BEFORE the return day is cleared with the pause: the task would wake
+      // already overdue on a deadline that expired while deliberately shelved ("28 days overdue"
+      // on wake, 2026-08-18). Due ON the return day is kept — an event task wakes the morning it
+      // is due, reminders intact. Recurring chores are skipped: their `due` is only the reminder
+      // anchor (no reader treats it as a deadline), and clearing it would wipe the reminder phase.
+      // Same rule as the client's pauseClearsDue (src/lib/start-date.ts) — keep them in step.
+      const clearsDue =
+        !task.recurring && typeof task.due === 'string' && task.due.slice(0, 10) < i.until
+
+      // Pre-check whether clearing the due date will also wipe reminder rows (the DB trigger drops
+      // them when due goes null), so the wipe is REPORTED — mirror set_due_date above.
+      let wipesReminders = false
+      if (clearsDue) {
+        const { data: existing } = await ctx.client
+          .from('task_reminders')
+          .select('task_id')
+          .eq('task_id', i.task_id)
+        wipesReminders = ((existing as unknown[] | null) ?? []).length > 0
+      }
+
       const { error } = await ctx.client
         .from('tasks')
-        .update({ start_date: i.until })
+        .update(
+          clearsDue ? { start_date: i.until, due: null, due_time: null } : { start_date: i.until },
+        )
         .eq('id', i.task_id)
         .is('deleted_at', null)
       if (error) return systemErr(error.message)
-      return ok(
-        `Paused "${task.text}" until ${fmtDay(i.until)} — off the board and out of daily plans until then; it comes back that morning on its own.`,
-        ['tasks'],
-      )
+
+      const paused = `Paused "${task.text}" until ${fmtDay(i.until)} — off the board and out of daily plans until then; it comes back that morning on its own.`
+      if (clearsDue) {
+        const wasDue = fmtDay((task.due as string).slice(0, 10))
+        return ok(
+          `${paused} Its due date (${wasDue}) fell before its return${wipesReminders ? ', so I cleared it and removed its reminders' : ', so I cleared it'} — it would have come back already overdue. Tell the user, and ask what the new due date should be once it's back.`,
+          wipesReminders ? ['tasks', 'reminders'] : ['tasks'],
+          `${paused} Its old due date (${wasDue}) was cleared${wipesReminders ? ' along with its reminders' : ''}.`,
+        )
+      }
+      return ok(paused, ['tasks'])
     },
   }),
 
