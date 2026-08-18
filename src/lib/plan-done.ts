@@ -19,17 +19,29 @@ export function isPlanRockDone(
   timeZone: string,
   now: Date = new Date(),
 ): boolean {
-  const taskDone = (t: Task): boolean =>
-    doneMap[t.id] === true || !!t.completed_at || recurringDoneToday(t.recurring, timeZone, now)
+  // A done-map hit on the rock's own id stands even when the task row is gone (completed, then
+  // deleted) — findPlanTask can't match a row that no longer exists.
+  if (rock.taskId && doneMap[rock.taskId] === true) return true
+  const task = findPlanTask(rock, tasks)
+  if (!task) return false
+  return (
+    doneMap[task.id] === true ||
+    !!task.completed_at ||
+    recurringDoneToday(task.recurring, timeZone, now)
+  )
+}
 
-  if (rock.taskId) {
-    if (doneMap[rock.taskId] === true) return true
-    const byId = tasks.find((t) => t.id === rock.taskId)
-    if (byId) return taskDone(byId)
-    // Task row gone (deleted since planning) and not in the done map — fall through to text.
+// The board task a plan item points at, or null when nothing matches (a model-invented item, or a
+// task deleted since planning). Same match order isPlanRockDone strikes on — the stamped taskId
+// first, exact task text only as the legacy fallback — so the plan card's checkbox always acts on
+// the SAME row the strikethrough tracks; the two can never disagree about which task an item is.
+export function findPlanTask(item: Pick<PlanRock, 'task' | 'taskId'>, tasks: Task[]): Task | null {
+  if (item.taskId) {
+    const byId = tasks.find((t) => t.id === item.taskId)
+    // Task row gone (deleted since planning) — fall through to text.
+    if (byId) return byId
   }
-  const text = rock.task.trim()
-  if (!text) return false
-  const byText = tasks.find((t) => t.text.trim() === text)
-  return byText ? taskDone(byText) : false
+  const text = item.task.trim()
+  if (!text) return null
+  return tasks.find((t) => t.text.trim() === text) ?? null
 }
