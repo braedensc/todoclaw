@@ -172,6 +172,12 @@ Edge-fetch read bounds (so an at-cap account can't balloon function memory / tok
 daily_state.plan ≤64 KB · backups.data ≤4 MB · chat content ≤64 KB / meta ≤16 KB ·
 schedule config ≤32 KB.
 
+**Array-length CHECKs:** `tasks.worked_days` ≤ **14** session days per ongoing project
+(`tasks_worked_days_len`; mirrored by `WORKED_DAYS_CAP` in `src/lib/worked.ts` and its Deno twin
+`_shared/worked.ts`). A display/volume bound, not a limit on how much you may work — entry 0 is the
+last-worked day and never ages out. The CHECK is the backstop, since `authenticated` holds a
+table-level UPDATE grant on `tasks` and so could bypass `log_task_work()`.
+
 **Numeric ranges:** reminder offset 0–40320 min (28 d) · localHour 0–23 · free-time 0–24 h ·
 grid x/y 0–1 · commitments array 12 · recurring cadence 1–365 (client UI).
 

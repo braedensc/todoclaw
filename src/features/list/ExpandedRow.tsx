@@ -123,6 +123,7 @@ export function ExpandedRow({
           keeps wall-calendar proportions inside a wide desktop row. */}
       <div className="mt-3 max-w-[340px]">
         <SchedulePanel
+          project={task}
           taskText={task.text}
           due={task.due}
           dueTime={task.due_time}

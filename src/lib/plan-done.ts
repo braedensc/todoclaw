@@ -1,4 +1,5 @@
 import { recurringDoneToday } from './recurring'
+import { workRecency } from './worked'
 import type { Task } from '../types/task'
 import type { PlanRock } from '../types/plan'
 
@@ -6,9 +7,15 @@ import type { PlanRock } from '../types/plan'
 // crosses itself off the moment its task is marked done anywhere (grid/list/mobile ✓, or BabyClaw's
 // complete_task — either way the tasks/daily_state caches update and this re-evaluates).
 //
-// Matching mirrors the evening recap (supabase/functions/_shared/dispatch.ts buildRecapMessage):
+// "Done" depends on the task's TYPE, because each one is finished by a different gesture: a one-off
+// is archived, a recurring chore advances lastDoneAt, and an ONGOING project logs a work session —
+// its ✓ never archives it, so a session is what completing it means for today.
+//
+// Matching mirrors the evening recap (supabase/functions/_shared/dispatch.ts recapPlanItems — the
+// two must agree about what a completed rock is, or the card and the check-in contradict each other):
 //   1. by the rock's taskId (stamped at generation): today's done map, the task's permanent
-//      completed_at, or — for a recurring chore — lastDoneAt landing on today (user-local day);
+//      completed_at, lastDoneAt landing on today for a recurring chore, or a session logged today
+//      for an ongoing project (all user-local days);
 //   2. by exact task text as the fallback for legacy plans whose rocks predate taskId.
 // A rock that matches nothing (model-invented item, task deleted since planning) just stays
 // unstruck — never a false positive from fuzzy matching.
@@ -19,17 +26,32 @@ export function isPlanRockDone(
   timeZone: string,
   now: Date = new Date(),
 ): boolean {
-  const taskDone = (t: Task): boolean =>
-    doneMap[t.id] === true || !!t.completed_at || recurringDoneToday(t.recurring, timeZone, now)
+  // A done-map hit on the rock's own id stands even when the task row is gone (completed, then
+  // deleted) — findPlanTask can't match a row that no longer exists.
+  if (rock.taskId && doneMap[rock.taskId] === true) return true
+  const task = findPlanTask(rock, tasks)
+  if (!task) return false
+  // workRecency returns null for anything that is not an ongoing project, so the session arm is
+  // inert for a chore or a one-off.
+  return (
+    doneMap[task.id] === true ||
+    !!task.completed_at ||
+    recurringDoneToday(task.recurring, timeZone, now) ||
+    workRecency(task, timeZone, now)?.workedToday === true
+  )
+}
 
-  if (rock.taskId) {
-    if (doneMap[rock.taskId] === true) return true
-    const byId = tasks.find((t) => t.id === rock.taskId)
-    if (byId) return taskDone(byId)
-    // Task row gone (deleted since planning) and not in the done map — fall through to text.
+// The board task a plan item points at, or null when nothing matches (a model-invented item, or a
+// task deleted since planning). Same match order isPlanRockDone strikes on — the stamped taskId
+// first, exact task text only as the legacy fallback — so the plan card's checkbox always acts on
+// the SAME row the strikethrough tracks; the two can never disagree about which task an item is.
+export function findPlanTask(item: Pick<PlanRock, 'task' | 'taskId'>, tasks: Task[]): Task | null {
+  if (item.taskId) {
+    const byId = tasks.find((t) => t.id === item.taskId)
+    // Task row gone (deleted since planning) — fall through to text.
+    if (byId) return byId
   }
-  const text = rock.task.trim()
-  if (!text) return false
-  const byText = tasks.find((t) => t.text.trim() === text)
-  return byText ? taskDone(byText) : false
+  const text = item.task.trim()
+  if (!text) return null
+  return tasks.find((t) => t.text.trim() === text) ?? null
 }

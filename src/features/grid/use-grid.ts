@@ -3,9 +3,12 @@ import type { PointerEvent, RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { useSoftDeleteTask, useTasks, useUpdateTask } from '../tasks/use-tasks'
 import { useMarkTaskDone } from '../done/use-history'
+import { useLogWork } from '../tasks/use-worked'
 import { useTimeZone } from '../schedule/use-time-zone'
 import { useDailyState } from '../daily-state/use-daily-state'
 import { recurringCompletion, recurringDoneToday, recurringStatus } from '../../lib/recurring'
+import { primaryDoneAction } from '../../lib/task-type'
+import { workRecency } from '../../lib/worked'
 import { isDormant } from '../../lib/start-date'
 import { quadrantMeta } from '../../lib/quadrants'
 import { urgencyGlowStyle } from '../../lib/visual-urgency'
@@ -83,6 +86,7 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
   const updateTask = useUpdateTask()
   const softDelete = useSoftDeleteTask()
   const markDone = useMarkTaskDone()
+  const logWork = useLogWork()
 
   // DOM nodes for currently-rendered placed cards, keyed by task id. During a drag we mutate
   // the dragged card's `left`/`top` style directly on this node (bypassing React) so 60fps
@@ -279,26 +283,47 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
 
   const softDeleteMutate = softDelete.mutate
   const markDoneMutate = markDone.mutate
+  const logWorkMutate = logWork.mutate
 
-  // --- Mark done (shared by grid cards + popup rows) -------------------------------------
-  // Normal task: write history + today's daily_state (it leaves the grid). Recurring task:
-  // advance the cycle via `recurringCompletion` (lastDoneAt=now, doneCount+1, any one-shot
-  // `nextDueOn` cleared) WITHOUT touching history/daily_state — it is then hidden from the board
-  // for the rest of the local day (recurringDoneToday) and returns the next day when its cadence
-  // next reads due/soon. Closes any open popup.
+  // --- The primary ✓ (shared by grid cards, touch chips + popup rows) ---------------------
+  // One three-way switch on `primaryDoneAction`, so the arms can't drift from the list's:
+  //
+  //   archive          a one-off: history + today's daily_state — it leaves the grid.
+  //   recurring-cycle  a chore: advance the cycle via `recurringCompletion` (lastDoneAt=now,
+  //                    doneCount+1, any one-shot `nextDueOn` cleared so the cadence resumes from
+  //                    the REAL completion), no history — it is hidden for the rest of the local
+  //                    day (recurringDoneToday), back when its cadence next reads due/soon.
+  //   work-session     an ONGOING project: log that you put time in today. It does NOT archive and
+  //                    it does NOT move — the card stays exactly where it is; the only change is
+  //                    the control's own filled state. Tapping again un-logs today.
+  //
+  // Only the two arms that REMOVE the card close an open cluster popup: a logged session leaves the
+  // row on screen, and yanking the popup shut under the user would read as "something got filed".
   const handleDone = useCallback(
     (task: Task) => {
-      selectCluster(null)
-      if (task.recurring) {
-        updateMutate({
-          id: task.id,
-          patch: { recurring: recurringCompletion(task.recurring) },
-        })
-      } else {
-        markDoneMutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
+      switch (primaryDoneAction(task)) {
+        case 'recurring-cycle': {
+          // `recurring` is non-null by construction here (that IS the arm's condition), but the
+          // switch doesn't narrow it — read it once and bail rather than assert.
+          const rc = task.recurring
+          if (!rc) return
+          selectCluster(null)
+          updateMutate({ id: task.id, patch: { recurring: recurringCompletion(rc) } })
+          break
+        }
+        case 'work-session':
+          logWorkMutate({
+            taskId: task.id,
+            timeZone,
+            logged: !workRecency(task, timeZone)?.workedToday,
+          })
+          break
+        default:
+          selectCluster(null)
+          markDoneMutate({ taskId: task.id, text: task.text, bucket: task.bucket, timeZone })
       }
     },
-    [markDoneMutate, updateMutate, timeZone, selectCluster],
+    [markDoneMutate, updateMutate, logWorkMutate, timeZone, selectCluster],
   )
 
   // --- Reposition (grid card) drag -------------------------------------------------------

@@ -19,6 +19,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   deleted_at: null,
   completed_at: null,
   start_date: null,
+  worked_days: null,
   ...over,
 })
 

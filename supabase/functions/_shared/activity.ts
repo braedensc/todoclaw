@@ -58,6 +58,11 @@ export function describeActivity(row: ActivityRow): string {
           : `created ${t}`
     case 'completed':
       return d.type === 'recurring' ? `checked off ${t} (recurring)` : `finished ${t}`
+    // A session on an ongoing project. Phrased so it can never be misread as a finish (that project
+    // has no finish line), and deliberately without the running total — the count is a display
+    // counter, not a score, and handing it to the model invites "only N sessions" arithmetic.
+    case 'worked':
+      return `logged a work session on ${t}`
     case 'uncompleted':
       return `reopened ${t}`
     case 'deleted':
@@ -103,14 +108,20 @@ export function describeActivity(row: ActivityRow): string {
  * it. The evening recap splits on this: it once opened with "you got X and Y onto your list … good
  * little planning day — proud of you!" on a day when nothing had actually been done, because the
  * whole activity feed was handed to it as "everything they got done today".
+ *
+ * A logged work SESSION counts too: putting an hour into an ongoing project is doing the thing, not
+ * deciding to do it. It is the only non-terminal kind that qualifies — an ongoing project has no
+ * finish line, so if a session didn't count as progress the app could never credit work on one at
+ * all. Callers that specifically mean "finished" must still test the kind (recap-prompt.ts does).
  */
 export function isProgressActivity(kind: string): boolean {
-  return kind === 'completed'
+  return kind === 'completed' || kind === 'worked'
 }
 
 // Coarse buckets for the one-line tally in the deterministic fallback ("3 done · 2 created · 1 moved").
 const TALLY_LABEL: Record<string, string> = {
   completed: 'done',
+  worked: 'worked',
   created: 'created',
   deleted: 'deleted',
   moved: 'moved',

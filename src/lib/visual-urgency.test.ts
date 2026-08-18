@@ -234,6 +234,64 @@ describe('staleness', () => {
       expect(staleness(dormant, null, NOW)).toBeNull()
     })
   })
+
+  // worked_days (ongoing session log): a project you actually PUT TIME INTO is the opposite of
+  // ignored. Before this, an ongoing project chipped at every week still iced over at 90 days,
+  // because the undated clock only ever read created_at — the app knew about the sessions and
+  // said "Stale · 3mo" anyway.
+  describe('with a work-session log', () => {
+    const dayAgedBy = (days: number) => agedByDays(days).slice(0, 10)
+
+    it('an UNDATED project worked recently is not stale, however old the card is', () => {
+      const worked = {
+        created_at: agedByDays(400),
+        staged: false,
+        worked_days: [dayAgedBy(6), dayAgedBy(13), dayAgedBy(20)],
+      }
+      expect(staleness(worked, null, NOW)).toBeNull()
+    })
+
+    it("an UNDATED project's board time counts from the last session, not created_at", () => {
+      const base = { created_at: agedByDays(400), staged: false }
+      expect(staleness({ ...base, worked_days: [dayAgedBy(89)] }, null, NOW)).toBeNull()
+      expect(staleness({ ...base, worked_days: [dayAgedBy(120)] }, null, NOW)).toEqual({
+        days: 120,
+        overdue: false,
+        floor: 90,
+      })
+    })
+
+    it('a DATED project worked recently gets the same grace a fresh wake does', () => {
+      const base = { created_at: agedByDays(400), staged: false }
+      expect(staleness({ ...base, worked_days: [dayAgedBy(3)] }, -100, NOW)).toBeNull()
+      // ...and stales again once a full floor has passed with no session.
+      expect(staleness({ ...base, worked_days: [dayAgedBy(21)] }, -100, NOW)).toEqual({
+        days: 100,
+        overdue: true,
+        floor: 21,
+      })
+    })
+
+    it('takes the NEWEST session whatever order the log arrives in, and ignores junk entries', () => {
+      const base = { created_at: agedByDays(400), staged: false }
+      // Stored newest-first, but a mis-ordered or partly-malformed array must still read the max.
+      expect(
+        staleness({ ...base, worked_days: [dayAgedBy(200), dayAgedBy(2)] }, -100, NOW),
+      ).toBeNull()
+      expect(staleness({ ...base, worked_days: ['nope', ''] }, null, NOW)).toEqual({
+        days: 400,
+        overdue: false,
+        floor: 90,
+      })
+    })
+
+    it('an empty or absent log changes nothing', () => {
+      const base = { created_at: agedByDays(200), staged: false }
+      const expected = { days: 200, overdue: false, floor: 90 }
+      expect(staleness({ ...base, worked_days: [] }, null, NOW)).toEqual(expected)
+      expect(staleness({ ...base, worked_days: null }, null, NOW)).toEqual(expected)
+    })
+  })
 })
 
 describe('staleRingStyle', () => {

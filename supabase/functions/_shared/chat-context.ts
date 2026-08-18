@@ -8,6 +8,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { dayNameInTZ, daysUntilInTZ, localDateInTZ } from './dates.ts'
 import { recurringDoneToday, recurringStatus } from './recurring-status.ts'
 import { reminderDefaultFromConfig } from './reminder-default.ts'
+import { workRecency, workedPhrase } from './worked.ts'
 import { HABITS_FETCH_LIMIT, REMINDERS_FETCH_LIMIT, TASKS_FETCH_LIMIT } from './write-caps.ts'
 import {
   DEFAULT_ASSISTANT_CONFIG,
@@ -229,7 +230,7 @@ export async function loadChatContext(
         // still surfaces under DONE TODAY (a prior-day completion, absent from today's done map, drops
         // out of both). Filtering it in SQL would also hide today's completions from DONE TODAY.
         .select(
-          'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date',
+          'id, text, x, y, due, due_time, staged, recurring, ongoing, size, completed_at, start_date, worked_days',
         )
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
@@ -311,6 +312,18 @@ export async function loadChatContext(
       recurringLabel: rec?.frequencyDays ? fmtFrequency(rec.frequencyDays) : null,
       recurringStatus: recurringStatusPhrase(rec, timeZone, now),
       ongoing: (t.ongoing as boolean | null) ?? false,
+      // Session facts for an ONGOING project, collapsed to ONE raw-fact phrase ("worked yesterday,
+      // 3 days running"). Derived through the same worked.ts helper Plan My Day uses, so the card,
+      // the plan and BabyClaw can never disagree about the same project. workRecency returns null
+      // for anything that isn't ongoing, and workedPhrase returns '' for a project with no sessions
+      // — either way the rendered task line stays clean without a second type check here.
+      workedPhrase: workedPhrase(
+        workRecency(
+          { ongoing: t.ongoing as boolean | null, worked_days: t.worked_days as string[] | null },
+          timeZone,
+          now,
+        ),
+      ),
       size: (t.size as string | null) ?? null,
       // Dormant (paused) = future start date on the user's local calendar. BabyClaw still SEES a
       // paused task — labeled, in its own PAUSED block — so "what's paused?" and resume work from

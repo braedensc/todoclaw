@@ -33,6 +33,7 @@ function TouchHarness({ chatUnread = 0 }: { chatUnread?: number }) {
 const updateMutate = vi.fn()
 const softDeleteMutate = vi.fn()
 const markDoneMutate = vi.fn()
+const logWorkMutate = vi.fn()
 const addMutate = vi.fn()
 let tasksFixture: Task[] = []
 let doneTodayFixture: Record<string, boolean> = {}
@@ -48,6 +49,11 @@ vi.mock('../tasks/use-tasks', () => ({
 }))
 vi.mock('../done/use-history', () => ({
   useMarkTaskDone: () => ({ mutate: markDoneMutate }),
+}))
+// An ongoing project's ✓ logs a work SESSION through the log_task_work RPC (an optimistic
+// react-query mutation) — mocked to a spy so it is assertable without a QueryClient.
+vi.mock('../tasks/use-worked', () => ({
+  useLogWork: () => ({ mutate: logWorkMutate }),
 }))
 vi.mock('../schedule/use-user-schedule', () => ({
   useUserSchedule: () => ({ data: { timezone: 'America/New_York', config: {} } }),
@@ -80,6 +86,7 @@ function makeTask(over: Partial<Task>): Task {
     bucket: 'oneoff',
     recurring: null,
     ongoing: false,
+    worked_days: null,
     created_at: new Date(Date.now() - 86_400_000).toISOString(), // ~1 day ago (now-relative)
     deleted_at: null,
     completed_at: null,
@@ -287,6 +294,33 @@ describe('TouchGridSurface task sheet', () => {
     expect(arg.id).toBe('r1')
     expect(arg.patch.recurring.doneCount).toBe(1)
     expect(arg.patch.recurring.lastDoneAt).not.toBeNull()
+  })
+
+  // The chip itself deliberately carries no session counter (no honest room at ~76px), so the
+  // sheet's meta line is where a phone user reads the log — and its button says WORKED, because
+  // the ✓ on an ongoing project logs a session instead of finishing it.
+  it('an ongoing sheet reads back the session log and logs a session (never archives)', () => {
+    // A LOCAL (mocked-zone) wall-clock day — a UTC slice lands on the wrong day west of UTC.
+    const worked = new Date(Date.now() - 2 * 86_400_000).toLocaleDateString('en-CA', {
+      timeZone: 'America/New_York',
+    })
+    tasksFixture = [
+      makeTask({ id: 'og', text: 'Learn piano', ongoing: true, worked_days: [worked] }),
+    ]
+    render(<TouchHarness />)
+    fireEvent.click(chipFor('Learn piano'))
+
+    const sheet = screen.getByRole('dialog', { name: 'Task: Learn piano' })
+    // (The ∞ glyph is its own aria-hidden span, so match the line's own text.)
+    expect(within(sheet).getByText(/ongoing · Last worked 2 days ago/)).toBeInTheDocument()
+
+    fireEvent.click(within(sheet).getByRole('button', { name: /worked on this today/i }))
+    expect(logWorkMutate).toHaveBeenCalledWith({
+      taskId: 'og',
+      timeZone: 'America/New_York',
+      logged: true,
+    })
+    expect(markDoneMutate).not.toHaveBeenCalled()
   })
 
   it('delete is confirm-gated: soft-delete fires only after confirming', async () => {

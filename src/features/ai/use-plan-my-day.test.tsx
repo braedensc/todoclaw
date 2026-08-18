@@ -34,6 +34,7 @@ function task(over: Partial<Task> = {}): Task {
     deleted_at: null,
     completed_at: null,
     start_date: null,
+    worked_days: null,
     ...over,
   }
 }
@@ -96,6 +97,38 @@ describe('buildPlanRequest', () => {
     const req = buildPlanRequest(tasks, [], {}, TZ, NOW)
     expect(req.tasks).toHaveLength(1)
     expect(req.tasks[0]).toMatchObject({ text: 'Novel', ongoing: true })
+  })
+
+  it("carries an ongoing project's session recency as raw facts the planner can pace on", () => {
+    // NOW is Wed Jun 24 in New York; worked_days are the user's own local days, newest first.
+    const tasks = [
+      task({
+        id: 'today',
+        text: 'Novel',
+        ongoing: true,
+        worked_days: ['2026-06-24', '2026-06-23'],
+      }),
+      task({ id: 'gap', text: 'Spanish', ongoing: true, worked_days: ['2026-06-15'] }),
+      task({ id: 'fresh', text: 'Deck', ongoing: true, worked_days: null }),
+      // A plain task has no session concept — even with a stale log left by a type switch.
+      task({ id: 'plain', text: 'Milk', worked_days: ['2026-06-24'] }),
+    ]
+    const req = buildPlanRequest(tasks, [], {}, TZ, NOW)
+    expect(Object.fromEntries(req.tasks.map((t) => [t.text, t.worked]))).toEqual({
+      Novel: 'worked today, 2 days running',
+      Spanish: 'last worked 9 days ago',
+      Deck: 'no sessions logged yet',
+      Milk: '',
+    })
+    expect(Object.fromEntries(req.tasks.map((t) => [t.text, t.workedToday]))).toEqual({
+      Novel: true,
+      Spanish: false,
+      Deck: false,
+      Milk: false,
+    })
+    // The worked-today project still ships: the server needs it in `tasks` to derive today's
+    // fixed-time anchors, and drops it from the rock candidates there instead.
+    expect(req.tasks).toHaveLength(4)
   })
 
   it('passes a task size through, and defaults an untagged task to null', () => {
