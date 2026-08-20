@@ -359,6 +359,20 @@ export function isAllowedPushEndpoint(endpoint: string): boolean {
   return ALLOWED_PUSH_HOSTS.some((h) => (typeof h === 'string' ? h === host : h.test(host)))
 }
 
+/**
+ * The loggable identity of a push endpoint: its origin only. The full endpoint is a capability URL —
+ * anyone holding it can push to that browser — so it must never reach the edge logs (a third-party
+ * sink); the origin still tells the four push services apart. Never throws (a malformed row must not
+ * blow up a log line).
+ */
+export function pushEndpointOrigin(endpoint: string): string {
+  try {
+    return new URL(endpoint).origin
+  } catch {
+    return 'unparseable-endpoint'
+  }
+}
+
 export interface SendOptions {
   ttlSeconds?: number
   urgency?: 'very-low' | 'low' | 'normal' | 'high'

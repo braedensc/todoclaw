@@ -19,6 +19,7 @@ import {
   generateVapidKeys,
   importEcdhPrivateKey,
   isAllowedPushEndpoint,
+  pushEndpointOrigin,
   sendWebPush,
 } from './web-push.ts'
 
@@ -156,6 +157,15 @@ Deno.test('isAllowedPushEndpoint — accepts the four push services, rejects eve
   ]) {
     assert(!isAllowedPushEndpoint(bad), `should reject ${bad}`)
   }
+})
+
+// The full endpoint is a capability URL, so failure logs may carry only its origin (never the path).
+Deno.test('pushEndpointOrigin — origin only, and never throws on a malformed row', () => {
+  assertEquals(
+    pushEndpointOrigin('https://fcm.googleapis.com/fcm/send/secret-capability-path'),
+    'https://fcm.googleapis.com',
+  )
+  assertEquals(pushEndpointOrigin('not a url'), 'unparseable-endpoint')
 })
 
 Deno.test('sendWebPush — refuses a non-allowlisted endpoint before any fetch', async () => {

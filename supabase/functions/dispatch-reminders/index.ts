@@ -14,7 +14,13 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { adminClient } from '../_shared/admin.ts'
 import { localDateInTZ } from '../_shared/dates.ts'
 import { buildReminderContent, type ReminderContent } from '../_shared/reminder-content.ts'
-import { sendWebPush, type PushSubscription, type VapidKeys } from '../_shared/web-push.ts'
+import { errorLabel } from '../_shared/safe-error.ts'
+import {
+  pushEndpointOrigin,
+  sendWebPush,
+  type PushSubscription,
+  type VapidKeys,
+} from '../_shared/web-push.ts'
 
 // VAPID keys are server-only secrets. Unset ⇒ push is skipped but the inbox row still lands
 // (the messages table is the source of truth); dev/CI without the secrets are unaffected.
@@ -60,12 +66,15 @@ Deno.serve(async (req) => {
 
   // Retire anything the sweep missed by more than the freshness window (cron outage): an
   // hour-late "reminder" is noise, not help.
+  // DB errors log code/message only — Postgres `details`/`hint` can echo row values (task text),
+  // and edge logs are a third-party sink (see _shared/safe-error.ts). Same for every log below.
   const { data: expired, error: expireError } = await admin.rpc('expire_stale_reminders')
-  if (expireError) console.error('expire_stale_reminders failed:', expireError)
+  if (expireError)
+    console.error('expire_stale_reminders failed:', expireError.code, expireError.message)
 
   const { data: dueRows, error } = await admin.rpc('due_task_reminders', { p_limit: BATCH_LIMIT })
   if (error) {
-    console.error('due_task_reminders failed:', error)
+    console.error('due_task_reminders failed:', error.code, error.message)
     return json({ error: 'due_reminders_failed' }, 500)
   }
 
@@ -104,7 +113,9 @@ Deno.serve(async (req) => {
       sent++
     } catch (e) {
       failed++
-      console.error('reminder dispatch failed for', r.id, e)
+      // Classification only — e can be a fetch error whose message embeds the push endpoint
+      // (a capability URL) or a thrown DB error; see _shared/safe-error.ts.
+      console.error('reminder dispatch failed for', r.id, errorLabel(e))
     }
   }
 
@@ -141,12 +152,22 @@ async function pushToUser(
       endpoint: s.endpoint,
       keys: { p256dh: s.p256dh, auth: s.auth },
     }
+    // Failures log the user + endpoint ORIGIN only — the full endpoint is a capability URL (holding
+    // it means being able to push to that browser) — and the caught error is classified, not
+    // printed (a fetch error's message embeds the URL). See _shared/safe-error.ts.
     try {
       const res = await sendWebPush(subscription, payload, vapid)
       if (res.gone) await admin.rpc('prune_push_subscription', { p_endpoint: s.endpoint })
-      else if (!res.ok) console.error('push rejected for endpoint', s.endpoint, 'HTTP', res.status)
+      else if (!res.ok)
+        console.error(
+          'push rejected for user',
+          userId,
+          pushEndpointOrigin(s.endpoint),
+          'HTTP',
+          res.status,
+        )
     } catch (e) {
-      console.error('push failed for endpoint', s.endpoint, e)
+      console.error('push failed for user', userId, pushEndpointOrigin(s.endpoint), errorLabel(e))
     }
   }
 }
