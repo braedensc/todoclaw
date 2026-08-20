@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import type { Task } from '../../types/task'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
+import { isDormant } from '../../lib/start-date'
 import { clusterStaleness, staleRingStyle, urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
 import { useTaskReminders, useTaskReminderWrites } from '../reminders/use-task-reminders'
@@ -65,7 +66,6 @@ export function GridSurface({
   const {
     timeZone,
     placedTasks,
-    dormantPlaced,
     clusters,
     draggedTask,
     draggingId,
@@ -86,6 +86,7 @@ export function GridSurface({
     clusterDominant,
     clusterAccentColor,
     clusterNearestDue,
+    clusterTraits,
     urgencyGlowStyle,
   } = grid
 
@@ -160,16 +161,12 @@ export function GridSurface({
 
   // iPad hybrid (workshop PR 4): on coarse-pointer desktop, a TAP on a card (freed up by the
   // hold-to-lift reposition — use-grid) opens the touch actions popover anchored to that card.
-  // Resolved against BOTH passes — active placedTasks AND dormant cards (which are now draggable +
-  // tappable too; the popover has its own paused mode: Schedule/Delete, no Done). A task that
-  // leaves either set — completed or deleted elsewhere — drops out here, so tappedTask goes null
-  // and the popover unmounts cleanly.
-  const tappedTask = tappedCardId
-    ? (placedTasks.find((t) => t.id === tappedCardId) ??
-      dormantPlaced.find((t) => t.id === tappedCardId) ??
-      null)
-    : null
-  const tappedPaused = tappedTask != null && dormantPlaced.some((t) => t.id === tappedTask.id)
+  // Dormant (paused) cards live in placedTasks too (they cluster like any card since 2026-08-20);
+  // the popover keeps its paused mode (Schedule/Delete, no Done) via `tappedPaused`. A task that
+  // leaves the set — completed or deleted elsewhere — drops out here, so tappedTask goes null and
+  // the popover unmounts cleanly.
+  const tappedTask = tappedCardId ? (placedTasks.find((t) => t.id === tappedCardId) ?? null) : null
+  const tappedPaused = tappedTask != null && isDormant(tappedTask, timeZone)
   // A STABLE getter the popover measures against — not a node prop (would trip
   // set-state-in-effect) and not a render-written ref (trips react-compiler's no-refs-in-render).
   // getCardNode is a stable useCallback; tappedCardId is fixed for a popover instance (keyed).
@@ -178,11 +175,12 @@ export function GridSurface({
     [getCardNode, tappedCardId],
   )
 
-  // One placed card. Shared by the singleton-cluster render, the standalone dragged-card render,
-  // and the dormant "set aside" pass so all three stay byte-for-byte identical (same handlers,
-  // same schedule wiring). recurring/rename reuse the one generic updateMutate({ id, patch }); a
-  // due write goes through setDue and sets `due`/`due_time` ONLY — it never touches x/y, so setting
-  // a due date on a manually-placed card can't move it.
+  // One placed card. Shared by the singleton-cluster render and the standalone dragged-card
+  // render (dormant singletons included — they come through `clusters` like every other card) so
+  // all of them stay byte-for-byte identical (same handlers, same schedule wiring).
+  // recurring/rename reuse the one generic updateMutate({ id, patch }); a due write goes through
+  // setDue and sets `due`/`due_time` ONLY — it never touches x/y, so setting a due date on a
+  // manually-placed card can't move it.
   //
   // `paused` renders the dormant lane's SLATE DRESS (ring / ⏸ chip / 💤 flag / dim) inside GridCard,
   // but the card stays fully interactive: same reposition drag + node registration + tap→popover as
@@ -313,7 +311,7 @@ export function GridSurface({
         />
 
         <GridCanvas surfaceRef={gridRef} onBackgroundPointerDown={handleGridPointerDown}>
-          {placedTasks.length === 0 && dormantPlaced.length === 0 && (
+          {placedTasks.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted">
               <p>No tasks placed — add one above and drag it here.</p>
               {onSeeExample && (
@@ -328,24 +326,23 @@ export function GridSurface({
             </div>
           )}
 
-          {/* Dormant (paused / future start_date) cards — their OWN pass, rendered FIRST so they
-              paint BEHIND the active clustered cards (all cards are absolutely positioned; DOM
-              order is paint order). They stay out of `groups`/clustering entirely (a paused card
-              can never fold into an active bubble), but are draggable/tappable like any card — the
-              slate ⏸ dress just marks WHERE they will land when they wake. */}
-          {dormantPlaced.map((task) => renderGridCard(task, true))}
-
           {groups.map((group) => {
-            // A singleton group renders as a normal, draggable card.
+            // A singleton group renders as a normal, draggable card. A dormant (paused) singleton
+            // comes through the same path — `clusters` holds every placed card now — and takes the
+            // slate paused dress via the flag (all-dormant groups are ordered first by use-grid,
+            // so paused cards still paint BEHIND the active board).
             if (group.length === 1) {
-              return renderGridCard(group[0] as Task & { x: number; y: number })
+              const task = group[0] as Task & { x: number; y: number }
+              return renderGridCard(task, isDormant(task, timeZone))
             }
 
             // Overlapping group → a single bubble at the dominant task's coords, with the
-            // expandable popup. Accent/dominant come from lib/clustering (recurring-aware).
+            // expandable popup. Accent/dominant come from lib/clustering (recurring/paused-aware);
+            // `traits` gives the bubble its type discs (↻/∞/💤) + the all-paused slate dress.
             const dominant = clusterDominant(group, { timeZone })
             const accentColor = clusterAccentColor(group, { timeZone })
             const clusterMinD = clusterNearestDue(group, { timeZone })
+            const traits = clusterTraits(group, { timeZone })
             const open = openClusterId === dominant.id
             // Clamp the bubble by its own (wider) half-extent so it stays fully inside the canvas.
             const bp = clampPoint(dominant.x ?? 0.5, dominant.y ?? 0.5, bubbleBounds)
@@ -354,6 +351,7 @@ export function GridSurface({
                 key={dominant.id}
                 group={group}
                 accentColor={accentColor}
+                traits={traits}
                 screenX={bp.x}
                 screenY={1 - bp.y}
                 // Bubbles stay date-granular (nearest due day → tier): minute-level countdown on

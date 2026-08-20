@@ -35,7 +35,7 @@ export interface TouchGridChipProps {
   daysUntilDue: number | null
   /** Minutes until the due INSTANT for timed tasks (minutesUntilDueTime) — caller-computed. */
   minutesUntilDue: number | null
-  /** Dormant (paused) chip — read-only dress; the caller renders these behind active chips. */
+  /** Dormant (paused) chip — wears the slate ⏸ dress; otherwise a normal, draggable chip. */
   paused?: boolean
   /** Dimmed while this chip is the one being moved (tap-to-place mode). */
   dimmed?: boolean
@@ -49,14 +49,15 @@ export interface TouchGridChipProps {
   lifted?: boolean
   /**
    * Registers this chip's DOM node with the surface, which paints the drag ghost imperatively
-   * per frame (the desktop cardNodesRef pattern). Only wired for draggable (active) chips.
+   * per frame (the desktop cardNodesRef pattern). Wired for every chip — paused ones included.
    */
   chipRef?: (node: HTMLButtonElement | null) => void
   /**
    * Pointer-down from useHoldDrag.startHold — press-and-hold lifts the chip into a drag; a
    * quick release is delivered back as the tap. When wired, plain pointer clicks are ignored
    * (the hook owns tap detection) and only KEYBOARD activation (click detail 0) falls through
-   * to onTap, so Enter/Space still opens the sheet. Absent on read-only (paused) chips.
+   * to onTap, so Enter/Space still opens the sheet. Wired for every chip — a paused chip drags
+   * like any other (moving one just updates where it lands on wake).
    */
   onHoldStart?: (event: React.PointerEvent) => void
   /** Open this task's action sheet. */

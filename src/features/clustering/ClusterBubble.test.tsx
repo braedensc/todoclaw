@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ClusterBubble } from './ClusterBubble'
+import type { ClusterTraits } from '../../lib/clustering'
 import type { GlowStyle, StaleRingStyle } from '../../lib/visual-urgency'
 import type { Task } from '../../types/task'
 
@@ -47,6 +48,7 @@ function renderBubble({
   onToggle = vi.fn(),
   glow = null as GlowStyle | null,
   staleRing = null as StaleRingStyle | null,
+  traits = null as ClusterTraits | null,
 } = {}) {
   const onSurfacePointerDown = vi.fn()
   const onSurfaceClick = vi.fn()
@@ -62,6 +64,7 @@ function renderBubble({
         onToggle={onToggle}
         glow={glow}
         staleRing={staleRing}
+        traits={traits}
       />
     </div>,
   )
@@ -151,5 +154,68 @@ describe('ClusterBubble', () => {
     expect(button.style.boxShadow).toContain('rgba(50,118,205,0.95)')
     expect(button.style.boxShadow).toContain('rgba(0,0,0,.10)')
     expect(button.style.background).toBe('rgb(224, 237, 251)') // #e0edfb
+  })
+
+  // Trait discs — the card corner-disc family on the bubble: a glance says what's folded inside.
+  it('renders one trait disc per held type (↻ / ∞ / 💤), counted in the hover title', () => {
+    renderBubble({
+      traits: { paused: 1, recurring: 2, ongoing: 1, allPaused: false, recurringColor: '#c2693f' },
+    })
+    expect(screen.getByTitle('2 repeating tasks').textContent).toBe('↻')
+    expect(screen.getByTitle('1 ongoing project').textContent).toBe('∞')
+    expect(screen.getByTitle('1 paused task').textContent).toBe('💤')
+    // The ↻ disc takes the loudest folded chore's own status color.
+    expect(screen.getByTitle('2 repeating tasks').style.color).toBe('rgb(194, 105, 63)')
+  })
+
+  it('renders no discs for a cluster of plain one-off tasks', () => {
+    renderBubble({
+      traits: { paused: 0, recurring: 0, ongoing: 0, allPaused: false, recurringColor: null },
+    })
+    expect(screen.queryByTitle(/paused task|repeating task|ongoing project/)).toBeNull()
+  })
+
+  // An ALL-paused cluster is itself "set aside": the closed bubble wears the paused card's slate
+  // dress — ring + tint + a WHOLE-bubble dim on the wrapper (circle, depth rings, and trait discs
+  // dim together, like a paused card's corner chips) — and flags data-paused for E2E/style hooks.
+  it('wears the slate paused dress while closed when EVERY member is paused', () => {
+    renderBubble({
+      traits: { paused: 2, recurring: 0, ongoing: 0, allPaused: true, recurringColor: null },
+    })
+    const button = screen.getByRole('button', { name: '2 tasks stacked here' })
+    expect(button.style.boxShadow).toContain('rgba(100,116,139,1)')
+    expect(button.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
+    const bubble = screen.getByTestId('cluster-bubble')
+    expect(parseFloat(bubble.style.opacity)).toBeLessThan(1)
+    expect(bubble).toHaveAttribute('data-paused')
+    // z auto (not the usual closed-bubble z 3) so the dormant-first DOM partition actually paints
+    // an all-paused bubble BEHIND active cards, like the paused singletons it stands in for.
+    expect(bubble.style.zIndex).toBe('auto')
+  })
+
+  it('drops the paused dress once open (the expanded popup reads at full strength)', () => {
+    renderBubble({
+      open: true,
+      traits: { paused: 2, recurring: 0, ongoing: 0, allPaused: true, recurringColor: null },
+    })
+    const button = screen.getByRole('button', { name: '2 tasks stacked here' })
+    expect(button.style.boxShadow).not.toContain('rgba(100,116,139,1)')
+    expect(screen.getByTestId('cluster-bubble').style.opacity).toBe('')
+    // The 💤 trait disc stays — it's information, not dress.
+    expect(screen.getByTitle('2 paused tasks').textContent).toBe('💤')
+  })
+
+  // The discs live INSIDE the button (no pointer-events-none wrapper), so their counted titles
+  // are actually hover-reachable and a click on a disc still toggles the popup.
+  it('keeps the trait discs inside the clickable bubble button', () => {
+    const { onToggle } = renderBubble({
+      traits: { paused: 1, recurring: 0, ongoing: 0, allPaused: false, recurringColor: null },
+    })
+    const disc = screen.getByTitle('1 paused task')
+    expect(disc.closest('button')).toBe(
+      screen.getByRole('button', { name: '2 tasks stacked here' }),
+    )
+    fireEvent.click(disc)
+    expect(onToggle).toHaveBeenCalledTimes(1)
   })
 })

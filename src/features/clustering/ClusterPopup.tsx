@@ -309,9 +309,9 @@ function ClusterPopupRow({
   // consistently with the grid/list surfaces. A recurring row carries its own status color, so it
   // takes no urgency tier (mirrors the grid card gating glow on non-recurring tasks).
   const d = daysUntil(task.due, { timeZone })
-  // Paused (dormant) gates first — same lane order as the grid card. A dormant task never actually
-  // reaches a cluster (clusters compute over placedTasks, which excludes dormant), so this is a
-  // consistency backstop so the folded row can't drift from its standalone card if it ever did.
+  // Paused (dormant) gates first — same lane order as the grid card. Dormant tasks cluster like
+  // any card (2026-08-20), so a folded paused row is an everyday state here, wearing the same
+  // slate ⏸ dress as its standalone card would.
   const paused = isDormant(task, timeZone)
   // Staleness next — a folded task >= 3 weeks past due (or undated + months old) flips lanes
   // exactly like its standalone card: gating the tier to 'none' swaps the whole hot dress for
@@ -453,24 +453,25 @@ function ClusterPopupRow({
             {task.text}
           </span>
 
-          {/* Status chip: recurring marker, or ONE one-off badge in whichever lane the task is in —
-              the warm due-day chip while the deadline still means something, or the compact azure
-              "❄️ 21d" it cools into once the task has gone stale, mirroring the grid card. */}
-          {rc ? (
-            <span
-              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
-              style={{ backgroundColor: RC_COLOR[rc.code] }}
-              title={rc.label}
-            >
-              ↻
-            </span>
-          ) : paused ? (
+          {/* Status chip — ONE badge, paused gating first like every sibling surface (a paused
+              chore's most salient state is that it's asleep, so ⏸ outranks its ↻ marker — same
+              precedence as the touch chip/sheet): the slate ⏸, else the recurring marker, else
+              the one-off's warm due chip or the azure "❄️ 21d" it cools into, mirroring the card. */}
+          {paused ? (
             <span
               className="flex-shrink-0 rounded px-1 text-[9px] font-semibold"
               style={pausedChipStyle()}
               title="Paused"
             >
               {pausedChipLabel(task.start_date)}
+            </span>
+          ) : rc ? (
+            <span
+              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
+              style={{ backgroundColor: RC_COLOR[rc.code] }}
+              title={rc.label}
+            >
+              ↻
             </span>
           ) : iceBadge ? (
             <span

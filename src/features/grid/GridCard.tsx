@@ -51,12 +51,12 @@ export interface GridCardProps {
   /** True while this card is the one being dragged (so we can suppress its transition). */
   dragging: boolean
   /**
-   * DORMANT (paused / future start_date) card. Rendered as its own "set aside" pass BEHIND the
-   * active board (GridSurface) so a paused task still shows where it will land; it stays out of
-   * clustering but is otherwise fully interactive (draggable, tap→popover). Forces the paused lane
-   * FIRST — gating urgency to 'none' and suppressing the stale ring + the due chip (its deadline is
-   * intentionally deferred), exactly as staleness gates the warm lane — and wears the slate ⏸ dress.
-   * Resume is via the card's ⋯ SchedulePanel. Default false (every normal placed card).
+   * DORMANT (paused / future start_date) card. It lives in the same placed set as every other
+   * card — clustering like any of them (all-dormant groups just paint behind the active board) —
+   * and stays fully interactive (draggable, tap→popover). Forces the paused lane FIRST — gating
+   * urgency to 'none' and suppressing the stale ring + the due chip (its deadline is intentionally
+   * deferred), exactly as staleness gates the warm lane — and wears the slate ⏸ dress. Resume is
+   * via the card's ⋯ SchedulePanel. Default false (every normal placed card).
    */
   paused?: boolean
   /**

@@ -433,9 +433,11 @@ describe('GridView card visuals', () => {
   })
 })
 
-// A dormant task (future start_date) is hidden from the ACTIVE board but still rendered as its own
-// read-only "set aside" pass: a paused card at its stored x/y, dimmed with the ⏸ slate chip, out of
-// the clustering / drag machinery. (isPlaced excludes dormant; useGrid.dormantPlaced re-adds them.)
+// A dormant task (future start_date) stays on the board in the slate paused dress AND clusters
+// like any other card (2026-08-20 — isPlaced keeps dormant tasks placed; the old separate
+// non-clustering pass is gone). A paused SINGLETON renders as a dimmed ⏸ card painted behind the
+// active board; a paused card overlapping others folds into the same bubble, where the popup row
+// keeps its slate dress.
 describe('GridView paused (dormant) cards', () => {
   // Now-relative so the fixture can't rot across the daily boundary — a month out is firmly future.
   const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
@@ -488,25 +490,92 @@ describe('GridView paused (dormant) cards', () => {
     expect(within(card).getByText(/^⏸ starts /)).toBeInTheDocument()
   })
 
-  it('keeps a dormant card OUT of clustering — it never folds into an active bubble', () => {
-    // A paused card sharing an active card's coords must NOT merge into a cluster bubble: both
-    // render as standalone cards. Dormancy affects CLUSTERING, not drag — both are draggable.
+  it('folds a dormant card INTO clustering — co-located active + paused merge into one bubble', () => {
     tasksFixture = [
       makeTask({ id: 'active', text: 'Live task', x: 0.5, y: 0.5 }),
       makeTask({ id: 'zzz', text: 'Paused task', x: 0.5, y: 0.5, start_date: future }),
     ]
     render(<GridHarness />)
 
-    expect(screen.queryByTestId('cluster-bubble')).toBeNull()
+    // One bubble, no standalone cards — the paused card joins the cluster like any other.
+    const bubble = screen.getByTestId('cluster-bubble')
+    expect(screen.queryAllByTestId('grid-card')).toHaveLength(0)
+    expect(within(bubble).getByText('2')).toBeInTheDocument()
+    // The bubble hints at the folded paused member with the 💤 trait disc…
+    expect(within(bubble).getByTitle('1 paused task').textContent).toBe('💤')
+    // …but does NOT wear the all-paused slate dress (one member is live).
+    expect(bubble).not.toHaveAttribute('data-paused')
+
+    // Open the popup: the folded paused row keeps its full slate ⏸ dress; the live row doesn't.
+    fireEvent.click(within(bubble).getByRole('button', { name: /tasks stacked here/ }))
+    const popup = screen.getByTestId('cluster-popup')
+    const rows = within(popup).getAllByTestId('cluster-popup-row')
+    const pausedRow = rows.find((r) => r.textContent?.includes('Paused task'))!
+    const liveRow = rows.find((r) => r.textContent?.includes('Live task'))!
+    expect(within(pausedRow).getByText(/^⏸ starts /)).toBeInTheDocument()
+    expect(pausedRow.style.boxShadow).toContain('rgba(100,116,139,1)')
+    expect(parseFloat(pausedRow.style.opacity)).toBeLessThan(1)
+    expect(liveRow.style.opacity).toBe('')
+  })
+
+  it('a cluster of ONLY paused cards wears the slate paused dress itself', () => {
+    tasksFixture = [
+      makeTask({ id: 'z1', text: 'Nap one', x: 0.5, y: 0.5, start_date: future }),
+      makeTask({ id: 'z2', text: 'Nap two', x: 0.51, y: 0.51, start_date: future }),
+    ]
+    render(<GridHarness />)
+
+    const bubble = screen.getByTestId('cluster-bubble')
+    expect(bubble).toHaveAttribute('data-paused')
+    expect(within(bubble).getByTitle('2 paused tasks').textContent).toBe('💤')
+    const button = within(bubble).getByRole('button', { name: '2 tasks stacked here' })
+    // The paused card's slate ring + tint + whole-bubble dim, on the bubble (closed state).
+    expect(button.style.boxShadow).toContain('rgba(100,116,139,1)')
+    expect(button.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
+    expect(parseFloat(bubble.style.opacity)).toBeLessThan(1)
+  })
+
+  it('keeps a paused CHORE on the board even in its between-cycle "ok" window', () => {
+    // A recurring task whose cadence reads 'ok' (done yesterday, 30-day frequency) is normally
+    // hidden between cycles — but PAUSED, it must stay visible in the slate dress: the dormant
+    // early-return in isPlaced deliberately precedes the recurring hides, so a paused chore
+    // always shows where it will land on wake. Pins the check ORDER (mutation-tested: moving the
+    // isDormant check after the recurring hides drops this card while everything else stays green).
+    tasksFixture = [
+      makeTask({
+        id: 'pc',
+        text: 'Deep clean garage',
+        start_date: future,
+        recurring: {
+          frequencyDays: 30,
+          lastDoneAt: new Date(Date.now() - 86_400_000).toISOString(),
+          doneCount: 3,
+        },
+      }),
+    ]
+    render(<GridHarness />)
+
+    const card = screen.getByTestId('grid-card')
+    expect(card).toHaveAttribute('data-paused')
+    expect(within(card).getByText('Deep clean garage')).toBeInTheDocument()
+  })
+
+  it('paints a paused singleton BEHIND active cards (all-dormant groups order first)', () => {
+    // Far apart — no clustering. The paused card renders FIRST in DOM order (paint order), so an
+    // active card near it would always sit on top, as the old separate dormant pass guaranteed.
+    tasksFixture = [
+      makeTask({ id: 'active', text: 'Live task', x: 0.2, y: 0.2 }),
+      makeTask({ id: 'zzz', text: 'Paused task', x: 0.8, y: 0.8, start_date: future }),
+    ]
+    render(<GridHarness />)
+
     const cards = screen.getAllByTestId('grid-card')
     expect(cards).toHaveLength(2)
-    const pausedCard = cards.find((c) => c.hasAttribute('data-paused'))!
-    const activeCard = cards.find((c) => !c.hasAttribute('data-paused'))!
-    expect(within(pausedCard).getByText('Paused task')).toBeInTheDocument()
-    expect(within(activeCard).getByText('Live task')).toBeInTheDocument()
+    expect(cards[0]).toHaveAttribute('data-paused')
+    expect(cards[1]).not.toHaveAttribute('data-paused')
     // Both draggable; only the paused one wears the slate dress.
-    expect(activeCard.className).toContain('cursor-grab')
-    expect(pausedCard.className).toContain('cursor-grab')
+    expect(cards[0]!.className).toContain('cursor-grab')
+    expect(cards[1]!.className).toContain('cursor-grab')
   })
 })
 

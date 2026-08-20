@@ -163,6 +163,58 @@ describe('ClusterPopup ongoing rows', () => {
   })
 })
 
+// Dormant tasks cluster like any card (2026-08-20), so a folded PAUSED row is an everyday state:
+// it must keep the standalone paused card's full slate dress inside the popup.
+describe('ClusterPopup paused rows', () => {
+  // Now-relative so the fixture can't rot across the daily boundary — a month out is firmly future.
+  const FUTURE_START = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+
+  it('a folded paused task keeps the slate ⏸ dress: chip, ring, tint, dim, 💤 flag', () => {
+    const { row } = renderPopup([
+      // Even with an overdue due date, the paused lane gates the warm dress (deadline deferred).
+      task('zzz', { start_date: FUTURE_START, due: OVERDUE_DUE }),
+      task('live'),
+    ])
+    const paused = row('zzz')!
+    expect(paused.textContent).toContain('⏸ starts')
+    expect(paused.textContent).not.toContain('Overdue')
+    expect(paused.style.animation).toBe('') // no urgency pulse while asleep
+    // Slate ring + slate tint + whole-row dim — the same dress its standalone card wears.
+    expect(paused.style.boxShadow).toContain('rgba(100,116,139,1)')
+    expect(paused.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
+    expect(parseFloat(paused.style.opacity)).toBeLessThan(1)
+    // The 💤 corner flag (title spelled out, shared with the chip).
+    expect(
+      [...paused.querySelectorAll('[title^="Paused"]')].some((el) => el.textContent === '💤'),
+    ).toBe(true)
+    // The live row stays undimmed on plain paper.
+    const live = row('live')!
+    expect(live.style.opacity).toBe('')
+    expect(live.style.background).toBe('')
+    // The Done pill stays on a paused row — the popup row is the desktop grid card's twin, and a
+    // paused GridCard keeps its Done pill too (unlike the touch sheet/popover's paused mode).
+    // Pinned so the two surfaces can't drift apart silently in either direction.
+    expect(
+      [...paused.querySelectorAll('button')].some((b) => b.textContent?.includes('Done')),
+    ).toBe(true)
+  })
+
+  it('a paused CHORE row leads with the ⏸ chip, not its ↻ marker (paused gates first)', () => {
+    const { row } = renderPopup([
+      task('pzc', {
+        start_date: FUTURE_START,
+        recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+      }),
+    ])
+    const r = row('pzc')!
+    // Same chip precedence as the touch chip/sheet: the slate ⏸ outranks the recurring marker.
+    expect(r.textContent).toContain('⏸ starts')
+    expect(r.querySelector('[title="never done"]')).toBeNull() // no ↻ status chip in the slot
+    // The dashed recurring border stays — the chip slot is what paused claims.
+    expect(r.style.borderRightStyle).toBe('dashed')
+  })
+})
+
 describe('ClusterPopup row ⋯ schedule menu', () => {
   it('the row ⋯ opens the shared SchedulePanel (a folded task is schedulable in place)', () => {
     renderPopup([task('a')])

@@ -16,6 +16,7 @@ import {
   clusterAccentColor,
   clusterDominant,
   clusterNearestDue,
+  clusterTraits,
   computeClusters,
   mergePreviewIds,
 } from '../../lib/clustering'
@@ -44,6 +45,12 @@ import { CARD_HALF_HEIGHT, CARD_HALF_WIDTH } from './grid-constants'
  * only at status "ok" (daysLeft > 5) meant a short-cadence chore (≤5d) re-read as due/soon the
  * instant it was marked done and never left the grid — "done" looked like a no-op. So we also
  * hide it for the rest of the local day it was done (recurringDoneToday); it returns the next day.
+ *
+ * A DORMANT (paused / future start_date) task with a grid spot IS placed: it stays on the board
+ * in the slate paused dress and clusters like any other card (2026-08-20 — it used to sit out
+ * clustering in a separate render pass, which left a paused card overlapping a bubble it visibly
+ * should have joined). The recurring between-cycle hides don't apply while asleep — a paused
+ * chore always shows where it will land on wake.
  */
 function isPlaced(
   task: Task,
@@ -53,10 +60,8 @@ function isPlaced(
   if (task.staged) return false
   if (task.x == null || task.y == null) return false
   if (task.completed_at) return false
-  // Dormant (paused / future start date): off the grid until its start date arrives, then it
-  // wakes at its stored x/y. The list view's Paused group is where it lives meanwhile.
-  if (isDormant(task, timeZone)) return false
   if (doneToday[task.id]) return false
+  if (isDormant(task, timeZone)) return true
   if (recurringDoneToday(task.recurring, timeZone)) return false
   const rc = recurringStatus(task.recurring, { timeZone })
   if (rc && rc.code === 'ok') return false
@@ -260,27 +265,6 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     [tasks, doneToday, timeZone],
   )
 
-  // Dormant (paused / future start_date) tasks that already have a grid spot. `isPlaced` drops
-  // them (dormancy hides a task from the active board), so they render as their OWN read-only
-  // "set aside" pass BEHIND the clustered active cards (GridSurface) — a paused card still shows
-  // WHERE it will land when it wakes, without joining clustering or the drag/merge machinery
-  // (folding a paused card into an active cluster would break placement and let it be dragged).
-  // Same completed/staged exclusions as `isPlaced`; the only difference is it KEEPS the ones
-  // `isPlaced` drops solely for being dormant. Not registered as cluster nodes.
-  const dormantPlaced = useMemo(
-    () =>
-      tasks.filter(
-        (t): t is Task & { x: number; y: number } =>
-          !t.staged &&
-          t.x != null &&
-          t.y != null &&
-          !t.completed_at &&
-          !(doneToday ?? {})[t.id] &&
-          isDormant(t, timeZone),
-      ),
-    [tasks, doneToday, timeZone],
-  )
-
   const softDeleteMutate = softDelete.mutate
   const markDoneMutate = markDone.mutate
   const logWorkMutate = logWork.mutate
@@ -431,11 +415,16 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
 
   // Cluster over everything EXCEPT the dragged card (mirrors EisenClaw's `staticCards`,
   // planner.html:560). The dragged card renders standalone below so its DOM node stays mounted
-  // for direct-DOM movement and it can never fold into a bubble mid-drag.
-  const clusters = useMemo(
-    () => computeClusters(placedTasks.filter((t) => t.id !== draggingId)),
-    [placedTasks, draggingId],
-  )
+  // for direct-DOM movement and it can never fold into a bubble mid-drag. Dormant (paused) tasks
+  // are in `placedTasks` too, so they cluster like any card; groups that are ENTIRELY dormant are
+  // partitioned first so they paint BEHIND the active board (DOM order is paint order on the
+  // absolutely-positioned canvas) — the set-aside lane stays visually behind, as its old separate
+  // render pass did. Keys are stable, so React MOVES nodes across the partition, never remounts.
+  const clusters = useMemo(() => {
+    const groups = computeClusters(placedTasks.filter((t) => t.id !== draggingId))
+    const dormantOnly = (g: Task[]) => g.every((t) => isDormant(t, timeZone))
+    return [...groups.filter(dormantOnly), ...groups.filter((g) => !dormantOnly(g))]
+  }, [placedTasks, draggingId, timeZone])
   const draggedTask = draggingId ? placedTasks.find((t) => t.id === draggingId) : undefined
 
   // Map each rendered placed-task id → the id its on-screen node is registered under: its own id
@@ -461,7 +450,6 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     timeZone,
     placedTasks,
     pendingTasks,
-    dormantPlaced,
     clusters,
     draggedTask,
     draggingId,
@@ -484,10 +472,11 @@ export function useGrid(gridRef: RefObject<HTMLDivElement>) {
     startClusterRowEdit,
     stopClusterRowEdit,
     handleGridPointerDown,
-    // Clustering helpers (recurring-aware) for the bubble render
+    // Clustering helpers (recurring/paused-aware) for the bubble render
     clusterDominant,
     clusterAccentColor,
     clusterNearestDue,
+    clusterTraits,
     urgencyGlowStyle,
     // New-item card-in-place (rendered in the input widget's Manual mode)
     isMobile,
