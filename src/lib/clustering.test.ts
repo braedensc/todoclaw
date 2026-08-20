@@ -4,9 +4,11 @@ import {
   clusterAccentColor,
   clusterDominant,
   clusterNearestDue,
+  clusterTraits,
   computeClusters,
   mergePreviewIds,
 } from './clustering'
+import { RC_COLOR } from './recurring'
 
 function makeTask(
   id: string,
@@ -177,6 +179,20 @@ describe('clusterDominant', () => {
     const b = makeTask('b', 0.5, 0.5)
     expect(clusterDominant([a, b], opts).id).toBe('a')
   })
+
+  it('prefers an AWAKE member over a higher-scoring dormant one', () => {
+    // The dormant task out-scores the awake one, but a set-aside task never owns the bubble
+    // while an active member is present (start_date '2026-07-01' is future vs opts.now 06-23).
+    const dormantHigh = makeTask('zzz', 0.9, 0.9, { start_date: '2026-07-01' })
+    const awakeLow = makeTask('awake', 0.1, 0.1)
+    expect(clusterDominant([dormantHigh, awakeLow], opts).id).toBe('awake')
+  })
+
+  it('falls back to the highest-scoring dormant member when ALL members are dormant', () => {
+    const dormantLow = makeTask('low', 0.1, 0.1, { start_date: '2026-07-01' })
+    const dormantHigh = makeTask('high', 0.9, 0.9, { start_date: '2026-07-01' })
+    expect(clusterDominant([dormantLow, dormantHigh], opts).id).toBe('high')
+  })
 })
 
 describe('clusterAccentColor', () => {
@@ -242,5 +258,70 @@ describe('clusterNearestDue', () => {
     // …but a merely-overdue member (under the floor) still reads hot.
     const overdue = makeTask('od', 0.5, 0.5, { due: '2026-06-12' }) // -20
     expect(clusterNearestDue([stale, overdue], opts)).toBe(-20)
+  })
+
+  it('ignores DORMANT members — a paused deadline is deferred, not urgent', () => {
+    // Due tomorrow but paused until August: its own card suppresses the due chip, so it must not
+    // make the bubble pulse either. The active member's later date wins.
+    const paused = makeTask('p', 0.5, 0.5, { due: '2026-07-03', start_date: '2026-08-01' })
+    const active = makeTask('a', 0.5, 0.5, { due: '2026-07-10' }) // +8
+    expect(clusterNearestDue([paused, active], opts)).toBe(8)
+    // A cluster of ONLY paused members has no warm glow at all.
+    expect(clusterNearestDue([paused], opts)).toBeNull()
+  })
+})
+
+describe('clusterTraits', () => {
+  const opts = { timeZone: 'UTC', now: new Date('2026-06-23T12:00:00Z') }
+
+  it('counts each type and never flags a mixed group all-paused', () => {
+    const paused = makeTask('p', 0.5, 0.5, { start_date: '2026-07-01' })
+    // Never done → 'overdue' status.
+    const rec = makeTask('r', 0.5, 0.5, {
+      recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+    })
+    const ong = makeTask('o', 0.5, 0.5, { ongoing: true })
+    const plain = makeTask('t', 0.5, 0.5)
+    expect(clusterTraits([paused, rec, ong, plain], opts)).toEqual({
+      paused: 1,
+      recurring: 1,
+      ongoing: 1,
+      allPaused: false,
+      recurringColor: RC_COLOR.overdue,
+    })
+  })
+
+  it('flags all-paused only when EVERY member is dormant', () => {
+    const p1 = makeTask('p1', 0.5, 0.5, { start_date: '2026-07-01' })
+    const p2 = makeTask('p2', 0.5, 0.5, { start_date: '2026-08-01' })
+    expect(clusterTraits([p1, p2], opts).allPaused).toBe(true)
+    expect(clusterTraits([p1, p2], opts).paused).toBe(2)
+  })
+
+  it('takes the LOUDEST recurring status color across recurring members', () => {
+    // Done yesterday on a 30-day cadence → 'ok'; never done → 'overdue'. Overdue out-shouts ok.
+    const ok = makeTask('ok', 0.5, 0.5, {
+      recurring: { frequencyDays: 30, lastDoneAt: '2026-06-22T12:00:00Z', doneCount: 3 },
+    })
+    const od = makeTask('od', 0.5, 0.5, {
+      recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+    })
+    expect(clusterTraits([ok, od], opts)).toMatchObject({
+      recurring: 2,
+      recurringColor: RC_COLOR.overdue,
+    })
+    expect(clusterTraits([ok], opts).recurringColor).toBe(RC_COLOR.ok)
+  })
+
+  it('a paused chore ticks BOTH paused and recurring (paused overlays the type)', () => {
+    const pausedChore = makeTask('pc', 0.5, 0.5, {
+      start_date: '2026-07-01',
+      recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+    })
+    expect(clusterTraits([pausedChore], opts)).toMatchObject({
+      paused: 1,
+      recurring: 1,
+      allPaused: true,
+    })
   })
 })

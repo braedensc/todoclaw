@@ -3,9 +3,13 @@ import { BottomSheet } from '../../components/BottomSheet'
 import { quadrantMeta } from '../../lib/quadrants'
 import { RC_COLOR, recurringStatus } from '../../lib/recurring'
 import { daysUntil } from '../../lib/scoring'
+import { isDormant } from '../../lib/start-date'
 import {
   dueChipStyle,
   gridChipLabel,
+  PAUSED_OPACITY,
+  pausedChipLabel,
+  pausedChipStyle,
   staleBadge,
   staleChipStyle,
   staleness,
@@ -34,23 +38,28 @@ export function TouchClusterSheet({ group, timeZone, onClose, onPick }: TouchClu
       <div className="flex max-h-[60dvh] flex-col gap-1.5 overflow-y-auto overscroll-contain">
         {group.map((task) => {
           // Same lane gating as every sibling surface (TouchGridChip / TouchTaskSheet /
-          // GridCard / desktop ClusterPopup rows): staleness gates the warm tier so a row can
-          // never contradict the chip and sheet it opens into. (No paused branch: dormant tasks
-          // never reach clusters.)
+          // GridCard / desktop ClusterPopup rows): paused gates first, then staleness gates the
+          // warm tier, so a row can never contradict the chip and sheet it opens into.
           const rc = recurringStatus(task.recurring, { timeZone })
           const d = daysUntil(task.due, { timeZone })
-          const stale = rc ? null : staleness(task, d)
+          const paused = isDormant(task, timeZone)
+          const stale = rc || paused ? null : staleness(task, d)
           const frost = stale ? staleBadge(stale) : null
-          const tier = rc || stale ? 'none' : urgencyTier(d, null)
+          const tier = rc || stale || paused ? 'none' : urgencyTier(d, null)
           const topColor = rc ? RC_COLOR[rc.code] : quadrantMeta(task.x ?? 0.5, task.y ?? 0.5).color
           return (
             <button
               key={task.id}
               type="button"
               data-task-id={task.id}
+              {...(paused ? { 'data-paused': '' } : {})}
               onClick={() => onPick(task)}
               className="flex min-h-[52px] items-center gap-2.5 rounded-lg border border-border bg-card px-3 text-left"
-              style={{ borderLeft: `4px solid ${topColor}` }}
+              // A paused row dims whole, like its chip/card everywhere else.
+              style={{
+                borderLeft: `4px solid ${topColor}`,
+                ...(paused ? { opacity: PAUSED_OPACITY } : {}),
+              }}
             >
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
                 {rc && (
@@ -60,7 +69,14 @@ export function TouchClusterSheet({ group, timeZone, onClose, onPick }: TouchClu
                 )}
                 {task.text}
               </span>
-              {rc ? (
+              {paused ? (
+                <span
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                  style={pausedChipStyle()}
+                >
+                  {pausedChipLabel(task.start_date)}
+                </span>
+              ) : rc ? (
                 <span
                   className="shrink-0 text-xs font-semibold"
                   style={{ color: RC_COLOR[rc.code] }}

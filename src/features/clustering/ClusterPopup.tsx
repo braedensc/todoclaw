@@ -309,9 +309,9 @@ function ClusterPopupRow({
   // consistently with the grid/list surfaces. A recurring row carries its own status color, so it
   // takes no urgency tier (mirrors the grid card gating glow on non-recurring tasks).
   const d = daysUntil(task.due, { timeZone })
-  // Paused (dormant) gates first — same lane order as the grid card. A dormant task never actually
-  // reaches a cluster (clusters compute over placedTasks, which excludes dormant), so this is a
-  // consistency backstop so the folded row can't drift from its standalone card if it ever did.
+  // Paused (dormant) gates first — same lane order as the grid card. Dormant tasks cluster like
+  // any card (2026-08-20), so a folded paused row is an everyday state here, wearing the same
+  // slate ⏸ dress as its standalone card would.
   const paused = isDormant(task, timeZone)
   // Staleness next — a folded task >= 3 weeks past due (or undated + months old) flips lanes
   // exactly like its standalone card: gating the tier to 'none' swaps the whole hot dress for

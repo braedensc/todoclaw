@@ -1,6 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { Task } from '../../types/task'
-import type { GlowStyle, StaleRingStyle } from '../../lib/visual-urgency'
+import type { ClusterTraits } from '../../lib/clustering'
+import { ONGOING_GLYPH } from '../../lib/task-type'
+import {
+  PAUSED_OPACITY,
+  pausedChipStyle,
+  pausedRingStyle,
+  type GlowStyle,
+  type StaleRingStyle,
+} from '../../lib/visual-urgency'
 import { CLUSTER_BUBBLE_SIZE, CLUSTER_DEPTH_OFFSET } from './cluster-constants'
 
 export interface ClusterBubbleProps {
@@ -8,6 +16,13 @@ export interface ClusterBubbleProps {
   group: Task[]
   /** Accent color (from `clusterAccentColor`) for the ring, count, and depth rings. */
   accentColor: string
+  /**
+   * Which task types the cluster holds (from `clusterTraits`). Drives the mini trait discs along
+   * the bubble's top edge (↻ repeating / ∞ ongoing / 💤 paused — the card corner-disc family, so
+   * a bubble hints at what's folded inside) and, when EVERY member is dormant (`allPaused`), the
+   * bubble's own paused dress: slate ring + tint + dim while closed, exactly like a paused card.
+   */
+  traits?: ClusterTraits | null
   /** Screen-space coordinates 0..1 (already y-inverted by the caller). */
   screenX: number
   screenY: number
@@ -52,6 +67,7 @@ export interface ClusterBubbleProps {
 export function ClusterBubble({
   group,
   accentColor,
+  traits,
   screenX,
   screenY,
   glow,
@@ -63,6 +79,50 @@ export function ClusterBubble({
 }: ClusterBubbleProps) {
   // Behind the bubble: one faint ring per extra task, up to two (slice 1..3 → two rings).
   const depthRings = group.slice(1, 3)
+
+  // All members dormant → the bubble itself wears the paused dress while closed (slate ring +
+  // tint + PAUSED_OPACITY dim), mirroring a standalone paused card. Mixed clusters stay in the
+  // active dress — the 💤 trait disc below is what says "one of these is paused". By construction
+  // an all-paused group has no glow (clusterNearestDue skips dormant) and no stale ring (a
+  // dormant task is never stale), so the slate ring composes onto the resting shadow alone.
+  const pausedDress = !open && traits?.allPaused ? pausedRingStyle() : null
+
+  // The mini trait discs — the card corner-disc family, worn along the bubble's top edge. Each is
+  // decorative (aria-hidden) with a counted hover title; the loudest recurring member's RC color
+  // paints the ↻, ∞ takes the brand primary (matching the card's ongoing badge), 💤 the slate.
+  const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+  const traitDiscs = [
+    ...(traits && traits.ongoing > 0
+      ? [
+          {
+            key: 'ongoing',
+            glyph: ONGOING_GLYPH,
+            title: plural(traits.ongoing, 'ongoing project'),
+            className: 'border-primary text-primary',
+          },
+        ]
+      : []),
+    ...(traits && traits.recurring > 0
+      ? [
+          {
+            key: 'recurring',
+            glyph: '↻',
+            title: plural(traits.recurring, 'repeating task'),
+            color: traits.recurringColor ?? undefined,
+          },
+        ]
+      : []),
+    ...(traits && traits.paused > 0
+      ? [
+          {
+            key: 'paused',
+            glyph: '💤',
+            title: plural(traits.paused, 'paused task'),
+            color: pausedChipStyle().backgroundColor,
+          },
+        ]
+      : []),
+  ]
 
   const wrapperStyle: CSSProperties = {
     left: `${screenX * 100}%`,
@@ -84,15 +144,23 @@ export function ClusterBubble({
     // gets — and a stale cluster gains the same cool ring its coldest folded card would show.
     boxShadow: open
       ? '0 6px 20px rgba(0,0,0,.18)'
-      : [glow?.boxShadow ?? '0 2px 8px rgba(0,0,0,.10)', staleRing?.boxShadow]
+      : [
+          glow?.boxShadow ?? '0 2px 8px rgba(0,0,0,.10)',
+          staleRing?.boxShadow,
+          pausedDress?.boxShadow,
+        ]
           .filter(Boolean)
           .join(', '),
     ...(!open && glow?.animation ? { animation: glow.animation } : {}),
     // Closed-only card tint: the warm urgency fill if any, else the icy stale fill (its coldest
-    // member's) — the cold-side mirror of the warm tint, matching a standalone card.
-    ...(!open && (glow?.background ?? staleRing?.background)
-      ? { background: glow?.background ?? staleRing?.background }
+    // member's) or the slate paused fill — the cool-side mirrors of the warm tint, matching a
+    // standalone card.
+    ...(!open && (glow?.background ?? staleRing?.background ?? pausedDress?.background)
+      ? { background: glow?.background ?? staleRing?.background ?? pausedDress?.background }
       : {}),
+    // An all-paused bubble dims whole while closed, like a paused card (open restores full
+    // opacity so the expanded popup reads clearly).
+    ...(pausedDress ? { opacity: PAUSED_OPACITY } : {}),
   }
 
   return (
@@ -100,6 +168,7 @@ export function ClusterBubble({
       ref={bubbleRef}
       data-testid="cluster-bubble"
       data-task-id={group[0]?.id}
+      {...(traits?.allPaused ? { 'data-paused': '' } : {})}
       className="absolute"
       style={wrapperStyle}
       // Stop BOTH events at the wrapper: the grid canvas dismisses popups on pointerdown
@@ -140,6 +209,25 @@ export function ClusterBubble({
           tasks
         </span>
       </button>
+
+      {/* Trait discs — overhanging the top-right arc like a card's corner disc. Rendered after
+          the button so they paint over it; pointer-events-none keeps the whole circle clickable. */}
+      {traitDiscs.length > 0 && (
+        <div aria-hidden className="pointer-events-none absolute -right-1 -top-1 z-10 flex gap-0.5">
+          {traitDiscs.map((d) => (
+            <span
+              key={d.key}
+              title={d.title}
+              className={`flex h-4 w-4 items-center justify-center rounded-full border bg-card text-[9px] leading-none shadow-sm ${
+                'className' in d ? d.className : ''
+              }`}
+              style={'color' in d ? { borderColor: d.color, color: d.color } : undefined}
+            >
+              {d.glyph}
+            </span>
+          ))}
+        </div>
+      )}
 
       {children}
     </div>

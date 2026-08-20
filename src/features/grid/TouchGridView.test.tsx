@@ -127,16 +127,27 @@ describe('TouchGridSurface rendering', () => {
     expect(screen.queryByText('Staged')).toBeNull()
   })
 
-  it('renders a dormant (paused) task as a read-only data-paused chip, never clustered', () => {
+  it('folds a dormant (paused) chip into clustering — one bubble wearing the 💤 trait disc', () => {
     const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
     tasksFixture = [
       makeTask({ id: 'a', text: 'Active here', x: 0.5, y: 0.5 }),
       makeTask({ id: 'z', text: 'Paused here', x: 0.51, y: 0.51, start_date: future }),
     ]
     render(<TouchHarness />)
-    // Co-located active + paused: two chips, no cluster bubble (dormant is excluded upstream).
-    expect(screen.getAllByTestId('touch-chip')).toHaveLength(2)
-    expect(screen.queryByTestId('cluster-bubble')).toBeNull()
+    // Co-located active + paused now merge like any two chips (2026-08-20): one bubble, no
+    // standalone chips — and the bubble's 💤 disc says a paused member is folded inside.
+    expect(screen.queryByTestId('touch-chip')).toBeNull()
+    const bubble = screen.getByTestId('cluster-bubble')
+    expect(within(bubble).getByText('2')).toBeInTheDocument()
+    expect(within(bubble).getByTitle('1 paused task').textContent).toBe('💤')
+  })
+
+  it('a lone dormant chip still wears the paused dress (data-paused + ⏸ chip)', () => {
+    const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+    tasksFixture = [
+      makeTask({ id: 'z', text: 'Paused here', x: 0.51, y: 0.51, start_date: future }),
+    ]
+    render(<TouchHarness />)
     expect(chipFor('Paused here').dataset.paused).toBe('true')
     expect(within(chipFor('Paused here')).getByText(/⏸ starts/)).toBeInTheDocument()
   })
@@ -224,6 +235,23 @@ describe('TouchGridSurface rendering', () => {
     tasksFixture = [makeTask({ id: 'og', text: 'Learn piano', ongoing: true })]
     render(<TouchHarness />)
     expect(within(chipFor('Learn piano')).getByTitle('Ongoing project').textContent).toBe('∞')
+  })
+
+  it('a paused cluster member keeps its ⏸ chip + dim in the member list', () => {
+    const future = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+    tasksFixture = [
+      makeTask({ id: 'a', text: 'Active here', x: 0.5, y: 0.5 }),
+      makeTask({ id: 'z', text: 'Paused here', x: 0.51, y: 0.51, start_date: future }),
+    ]
+    render(<TouchHarness />)
+    fireEvent.click(within(screen.getByTestId('cluster-bubble')).getByRole('button'))
+    const list = screen.getByRole('dialog', { name: '2 tasks here' })
+    const pausedRow = within(list).getByText('Paused here').closest('button')!
+    expect(pausedRow).toHaveAttribute('data-paused')
+    expect(within(pausedRow).getByText(/^⏸ starts /)).toBeInTheDocument()
+    expect(parseFloat(pausedRow.style.opacity)).toBeLessThan(1)
+    const activeRow = within(list).getByText('Active here').closest('button')!
+    expect(activeRow.style.opacity).toBe('')
   })
 
   it('a stale cluster member shows the same ❄️ chip in the member list (lane-gating parity)', () => {

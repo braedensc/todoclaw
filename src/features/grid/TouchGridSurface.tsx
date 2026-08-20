@@ -6,6 +6,7 @@ import { quadrantMeta } from '../../lib/quadrants'
 import { QUADRANT_CENTER } from '../../lib/quadrant-summary'
 import { daysUntil } from '../../lib/scoring'
 import { minutesUntilDueTime } from '../../lib/dates'
+import { isDormant } from '../../lib/start-date'
 import { clusterStaleness, staleRingStyle, urgencyTier } from '../../lib/visual-urgency'
 import { useNow } from '../../hooks/use-now'
 import { useElementSize } from '../../hooks/use-element-size'
@@ -96,7 +97,6 @@ export function TouchGridSurface({
   const {
     timeZone,
     placedTasks,
-    dormantPlaced,
     clusters,
     handleDone,
     updateMutate,
@@ -104,6 +104,7 @@ export function TouchGridSurface({
     clusterDominant,
     clusterAccentColor,
     clusterNearestDue,
+    clusterTraits,
     urgencyGlowStyle,
   } = grid
 
@@ -147,18 +148,14 @@ export function TouchGridSurface({
   }
 
   // Everything derives from live query data, so a task completed or deleted elsewhere (another
-  // device, realtime) closes its own sheet / cancels its own move by simply vanishing.
-  const selected =
-    placedTasks.find((t) => t.id === selectedId) ??
-    dormantPlaced.find((t) => t.id === selectedId) ??
-    null
-  const selectedPaused = selected != null && dormantPlaced.some((t) => t.id === selected.id)
+  // device, realtime) closes its own sheet / cancels its own move by simply vanishing. Dormant
+  // (paused) chips live in placedTasks too — they cluster like any chip since 2026-08-20; the
+  // sheet keeps its paused mode via `selectedPaused`.
+  const selected = placedTasks.find((t) => t.id === selectedId) ?? null
+  const selectedPaused = selected != null && isDormant(selected, timeZone)
   const openGroup =
     clusters.find((g) => g.length > 1 && clusterDominant(g, { timeZone }).id === clusterId) ?? null
-  // Dormant chips are draggable too (they show WHERE a paused task will land when it wakes), so
-  // every drag lookup searches BOTH passes — active placed chips and the dormant "set aside" pass.
-  const findPlaced = (id: string): Task | undefined =>
-    placedTasks.find((t) => t.id === id) ?? dormantPlaced.find((t) => t.id === id)
+  const findPlaced = (id: string): Task | undefined => placedTasks.find((t) => t.id === id)
   const movingTask = (movingId ? findPlaced(movingId) : undefined) ?? null
 
   const daysFor = (task: Task) => daysUntil(task.due, { timeZone })
@@ -396,41 +393,20 @@ export function TouchGridSurface({
           </span>
 
           {/* Empty state. */}
-          {placedTasks.length === 0 && dormantPlaced.length === 0 && (
+          {placedTasks.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-8 text-center text-sm text-muted">
               No tasks placed yet — tap ＋ to add one.
             </div>
           )}
 
-          {/* Dormant (paused) chips — a distinct pass BEHIND active chips, never clustered, but
-              still repositionable: the same press-and-hold drag as active chips (dragging one just
-              updates WHERE it will land when it wakes; start_date is untouched, so it stays
-              dormant). The paused dress (slate ring / ⏸ chip / 💤 flag / dim) is unchanged. */}
+          {/* Chips + cluster bubbles (same cluster data as desktop). Dormant (paused) chips come
+              through `clusters` like every other chip — a paused chip overlapping an active one
+              folds into the same bubble; a paused SINGLETON wears the slate dress via the flag
+              (all-dormant groups are ordered first by use-grid, so paused chips paint behind).
+              Repositioning a paused chip just updates WHERE it lands when it wakes; start_date is
+              untouched, so it stays dormant. Placed tasks always carry coordinates; the ?? 0.5
+              fallbacks only satisfy the wider Task type the cluster groups are typed with. */}
           <div data-testid="chip-layer" className={movingTask ? 'pointer-events-none' : undefined}>
-            {dormantPlaced.map((task) => {
-              const p = clampPoint(task.x, task.y, chipBounds)
-              return (
-                <TouchGridChip
-                  key={`${task.id}:${chipEpoch}`}
-                  task={task}
-                  screenX={p.x}
-                  screenY={1 - p.y}
-                  daysUntilDue={daysFor(task)}
-                  minutesUntilDue={minutesFor(task)}
-                  timeZone={timeZone}
-                  paused
-                  dimmed={movingId === task.id}
-                  lifted={drag.draggingId === task.id}
-                  chipRef={registerChip(task.id)}
-                  onHoldStart={drag.startHold(task.id)}
-                  onTap={() => setSelectedId(task.id)}
-                />
-              )
-            })}
-
-            {/* Active chips + cluster bubbles (same cluster data as desktop). Placed tasks
-                always carry coordinates; the ?? 0.5 fallbacks only satisfy the wider Task type
-                the cluster groups are typed with. */}
             {clusters.map((group) => {
               if (group.length === 1) {
                 const task = group[0]
@@ -448,6 +424,7 @@ export function TouchGridSurface({
                     daysUntilDue={daysFor(task)}
                     minutesUntilDue={minutesFor(task)}
                     timeZone={timeZone}
+                    paused={isDormant(task, timeZone)}
                     dimmed={movingId === task.id}
                     lifted={drag.draggingId === task.id}
                     chipRef={registerChip(task.id)}
@@ -464,6 +441,7 @@ export function TouchGridSurface({
                   key={dominant.id}
                   group={group}
                   accentColor={clusterAccentColor(group, { timeZone })}
+                  traits={clusterTraits(group, { timeZone })}
                   screenX={p.x}
                   screenY={1 - p.y}
                   glow={urgencyGlowStyle(urgencyTier(clusterNearestDue(group, { timeZone }), null))}

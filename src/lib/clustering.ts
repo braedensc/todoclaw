@@ -8,8 +8,9 @@
 
 import type { Task } from '../types/task'
 import { quadrantMeta } from './quadrants'
-import { RC_COLOR, recurringStatus } from './recurring'
+import { RC_COLOR, recurringStatus, type RecurringCode } from './recurring'
 import { daysUntil, taskScore, type ScoringOpts } from './scoring'
+import { isDormant } from './start-date'
 import { STALE_OVERDUE_FLOOR_DAYS } from './visual-urgency'
 
 /** Cluster overlap thresholds (html:147). */
@@ -89,9 +90,15 @@ export function mergePreviewIds(
 /**
  * The dominant task of a cluster — the one with the highest `taskScore` (html:167-173).
  * Ties resolve to the earliest task in the group.
+ *
+ * DORMANT (paused) members can cluster, but they never OWN the bubble while an awake member is
+ * present: the dominant anchors the bubble's position, accent, and node id, and a set-aside task
+ * shouldn't define how an active stack reads. A group of ONLY dormant tasks falls back to the
+ * whole group, so an all-paused bubble still has a dominant.
  */
 export function clusterDominant(group: Task[], opts: ScoringOpts): Task {
-  const [first, ...rest] = group
+  const awake = group.filter((t) => !isDormant(t, opts.timeZone, opts.now))
+  const [first, ...rest] = awake.length > 0 ? awake : group
   if (first === undefined) throw new Error('clusterDominant: empty group')
   let best = first
   let bestScore = taskScore(best, opts)
@@ -119,19 +126,71 @@ export function clusterAccentColor(group: Task[], opts: ScoringOpts): string {
 
 /**
  * Whole days until the nearest due date within a cluster (`daysUntil`), considering only the
- * group's NON-recurring, NON-STALE tasks — a recurring task carries its own status color, not an
- * urgency glow, and a stale member (>= 21d past due) has flipped to the cool lane, so it must not
- * keep the bubble pulsing hot (mirrors the per-card lane flip in `staleness`). Returns the
- * smallest such value, or `null` when no member qualifies. Drives the cluster bubble's urgency
- * glow (mirrors the per-card `daysUntil(due)` on the grid).
+ * group's NON-recurring, NON-STALE, NON-DORMANT tasks — a recurring task carries its own status
+ * color, not an urgency glow; a stale member (>= 21d past due) has flipped to the cool lane; and
+ * a dormant (paused) member's deadline is intentionally deferred (its own card suppresses the due
+ * chip, so it must not make the bubble pulse either). Returns the smallest such value, or `null`
+ * when no member qualifies. Drives the cluster bubble's urgency glow (mirrors the per-card
+ * `daysUntil(due)` on the grid).
  */
 export function clusterNearestDue(group: Task[], opts: ScoringOpts): number | null {
   let min: number | null = null
   for (const t of group) {
     if (t.recurring) continue
+    if (isDormant(t, opts.timeZone, opts.now)) continue
     const d = daysUntil(t.due, opts)
     if (d === null || d <= -STALE_OVERDUE_FLOOR_DAYS) continue
     if (min === null || d < min) min = d
   }
   return min
+}
+
+/**
+ * Which task types a cluster holds — drives the bubble's trait badges (↻ / ∞ / 💤) and, when
+ * every member is dormant, the bubble's own paused dress. Counts are per type (recurring and
+ * ongoing are mutually exclusive on a task; paused overlays either), so one member can tick both
+ * `paused` and a type count.
+ */
+export interface ClusterTraits {
+  /** Dormant (paused / future start_date) members. */
+  paused: number
+  /** Repeating-chore members. */
+  recurring: number
+  /** Ongoing-project members. */
+  ongoing: number
+  /** Every member is dormant — the whole bubble is "set aside" (slate ring + dim). */
+  allPaused: boolean
+  /**
+   * Accent for the ↻ trait disc: the RC_COLOR of the LOUDEST recurring member's status
+   * (overdue > due > soon > ok), so the disc reads like the most urgent folded chore's own
+   * badge. Null when no member is recurring.
+   */
+  recurringColor: string | null
+}
+
+/** Louder statuses first — the ↻ trait disc takes the most urgent folded chore's color. */
+const RC_RANK: Record<RecurringCode, number> = { overdue: 0, due: 1, soon: 2, ok: 3 }
+
+export function clusterTraits(group: Task[], opts: ScoringOpts): ClusterTraits {
+  let paused = 0
+  let recurring = 0
+  let ongoing = 0
+  let loudest: RecurringCode | null = null
+  for (const t of group) {
+    if (isDormant(t, opts.timeZone, opts.now)) paused++
+    const status = recurringStatus(t.recurring, opts)
+    if (status) {
+      recurring++
+      if (loudest === null || RC_RANK[status.code] < RC_RANK[loudest]) loudest = status.code
+    } else if (t.ongoing) {
+      ongoing++
+    }
+  }
+  return {
+    paused,
+    recurring,
+    ongoing,
+    allPaused: group.length > 0 && paused === group.length,
+    recurringColor: loudest ? RC_COLOR[loudest] : null,
+  }
 }
