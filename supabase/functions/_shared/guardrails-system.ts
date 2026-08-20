@@ -53,11 +53,14 @@ export async function recordUsageForUser(
   userId: string,
   inputTokens: number,
   outputTokens: number,
+  // The model the call actually ran on (cfg.planModel for the dispatcher) — prices the spend;
+  // omitted ⇒ the conservative Sonnet default rates (mirrors recordUsage).
+  model?: string,
 ): Promise<void> {
   try {
     await admin.rpc('ai_budget_add_for_user', {
       p_user_id: userId,
-      p_micros: costMicros(inputTokens, outputTokens),
+      p_micros: costMicros(inputTokens, outputTokens, model),
     })
   } catch {
     /* best-effort: the spend is small + bounded (≤ 1 plan + 1 recap/user/day) and the per-user

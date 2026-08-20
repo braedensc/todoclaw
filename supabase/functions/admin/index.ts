@@ -1,12 +1,17 @@
-// admin — backs the owner Admin panel. Two actions on one Bearer-authenticated endpoint:
+// admin — backs the owner Admin panel. Three actions on one Bearer-authenticated endpoint:
 //
 //   • whoami       — ANY authenticated caller. Returns { isOwner } about the CALLER ONLY, so the
 //                    frontend can decide whether to reveal the (otherwise hidden) admin entry
 //                    WITHOUT the owner's user id ever being shipped to the client. A non-owner just
 //                    gets { isOwner: false } (a plain 200) — it leaks nothing about who the owner is.
 //   • get_overview — OWNER-ONLY, read-only: AI spend (global pool + per-user roster), system stats,
-//                    integration status, and the current guardrail config. 403 for non-owners. The
-//                    write path (set_config) lands in a follow-up.
+//                    integration status, and the current guardrail config. 403 for non-owners.
+//   • set_config   — OWNER-ONLY write: a PARTIAL guardrail-config patch (only the keys to change),
+//                    Zod-clamped here (numeric knobs bounded by HARD_MAX, models by the per-feature
+//                    allowlists), then applied via the service_role app_config_set DEFINER RPC
+//                    (20260820210850 — clamps again, audits, and returns the fresh config). The
+//                    verified caller id is passed as p_updated_by (no auth.uid() under
+//                    service_role). Responds with the same fresh-overview shape as get_overview.
 //
 // Owner gate is the SAME server-side OWNER_USER_ID check as generate-invite (isOwner,
 // _shared/owner.ts) — the frontend useIsOwner() only hides UI, so a non-owner who forces the page
@@ -17,7 +22,9 @@
 // BOOLEANS only — no secret VALUES ever leave the server.
 //
 // Contract: POST { action: 'whoami' } → { isOwner }; POST { action: 'get_overview' } (owner only) →
-// { config, globalSpend, roster, systemStats, integrations }. Both require a Bearer token.
+// { config, globalSpend, roster, systemStats, integrations }; POST { action: 'set_config',
+// config: <partial patch> } (owner only) → the same overview shape, freshly read after the write.
+// All require a Bearer token.
 
 import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
@@ -25,9 +32,28 @@ import { userClient, requireUser } from '../_shared/auth.ts'
 import { isOwner } from '../_shared/owner.ts'
 import { adminClient } from '../_shared/admin.ts'
 import { ipThrottleOk } from '../_shared/ip-throttle.ts'
+import { HARD_MAX } from '../_shared/guardrails-config.ts'
+import { ALLOWED_CHAT_MODELS, ALLOWED_PLAN_MODELS } from '../_shared/guardrails-constants.ts'
+
+// Partial patch — every key optional; unknown keys rejected so a typo can't silently no-op.
+// Bounds mirror the clamp stack's other layers (table CHECKs / app_config_set / loadConfig).
+const ConfigPatchSchema = z
+  .object({
+    globalBudgetCapMicros: z.number().int().min(0).max(HARD_MAX.global).optional(),
+    userBudgetCapMicros: z.number().int().min(0).max(HARD_MAX.user).optional(),
+    aiBudgetBaseMicros: z.number().int().min(0).max(HARD_MAX.base).optional(),
+    chatHourLimit: z.number().int().min(0).max(HARD_MAX.chatHour).optional(),
+    chatDayLimit: z.number().int().min(0).max(HARD_MAX.chatDay).optional(),
+    planHourLimit: z.number().int().min(0).max(HARD_MAX.planHour).optional(),
+    planDayLimit: z.number().int().min(0).max(HARD_MAX.planDay).optional(),
+    chatModel: z.enum(ALLOWED_CHAT_MODELS).optional(),
+    planModel: z.enum(ALLOWED_PLAN_MODELS).optional(),
+  })
+  .strict()
 
 const BodySchema = z.object({
-  action: z.enum(['whoami', 'get_overview']),
+  action: z.enum(['whoami', 'get_overview', 'set_config']),
+  config: ConfigPatchSchema.optional(),
 })
 
 // Which server-side secrets / integrations are configured — BOOLEANS ONLY, never the values. Lets
@@ -87,7 +113,9 @@ Deno.serve(async (req) => {
     // owner gate above.
     const admin = adminClient()
 
-    if (body.action === 'get_overview') {
+    // One overview read, shared by get_overview and set_config (which answers with fresh state so
+    // the panel never renders a stale config after a write).
+    const readOverview = async (): Promise<Response> => {
       const [configRes, globalRes, rosterRes, statsRes] = await Promise.all([
         admin.rpc('app_config_get'),
         admin.rpc('ai_budget_status_admin'),
@@ -104,6 +132,19 @@ Deno.serve(async (req) => {
         systemStats: statsRes.data,
         integrations: integrationStatus(),
       })
+    }
+
+    if (body.action === 'get_overview') return readOverview()
+
+    if (body.action === 'set_config') {
+      if (!body.config || Object.keys(body.config).length === 0)
+        return json({ error: 'invalid_request' }, 400)
+      const { error } = await admin.rpc('app_config_set', {
+        p_updated_by: user.id,
+        p_config: body.config,
+      })
+      if (error) return json({ error: 'write_failed', detail: error.message }, 500)
+      return readOverview()
     }
 
     return json({ error: 'unknown_action' }, 400)

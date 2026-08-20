@@ -14,7 +14,10 @@ export const LIMITS: Record<Feature, { hour: number; day: number }> = {
   plan_my_day: { hour: 10, day: 10 },
 }
 
-// $20.00/month, in micro-dollars (millionths of a USD). Default global kill-switch cap.
+// $20.00/month, in micro-dollars (millionths of a USD). The FALLBACK global kill-switch cap —
+// applied only when app_config can't be read. The LIVE ceiling was re-seeded to $60 (migration
+// 20260820210850: it becomes the manual ceiling of the scaled cap); the fallback deliberately
+// stays at the old $20 so a config outage degrades to the tighter, safer bound.
 export const BUDGET_CAP_MICROS = 20_000_000
 
 // Per-user monthly sub-cap, $10.00 (half the global pool) — Issue 3 of the 2026-07-06 audit. The $20
@@ -39,3 +42,32 @@ export const SPEND_ALERT_FRACTION = 0.8
 // Default owner spend-alert threshold = 80% of the default per-user cap ($8). Kept for tests /
 // back-compat; recordUsage uses the fraction against the live cap.
 export const USER_SPEND_ALERT_MICROS = 8_000_000
+
+// ─── model knobs (2026-08-20, phase-0 cost scaling) ─────────────────────────────────────────────
+
+// Anthropic list pricing in MICRO-DOLLARS PER TOKEN (micros = tokens × rate). Verified 2026-08-20:
+// haiku-4-5 $1/$5, sonnet-5 $3/$15 standard ($2/$10 introductory through 2026-08-31 — the standard
+// rate conservatively over-counts until then, the safe direction for a kill-switch), opus-5 $5/$25.
+// costMicros (guardrails.ts) reads this table; an UNKNOWN model id falls back to the Sonnet row.
+export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'claude-haiku-4-5': { input: 1, output: 5 },
+  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-opus-5': { input: 5, output: 25 },
+}
+
+// Per-feature model ALLOWLISTS — mirror the app_config CHECK constraints (migration
+// 20260820210850); keep the three in sync (SQL CHECK, app_config_set validation, these arrays).
+// Chat excludes Opus BY DESIGN: a worst-case chat call (~60k input tokens, ai-chat
+// MAX_TOTAL_CHARS) on Opus would breach the fixed $0.20 per-call clamp (PER_CALL_CEILING_MICROS).
+// The plan path's prompt is small — worst case ≈ $0.10 on Opus (pinned in guardrails.test.ts) —
+// so plan may run Opus and the clamp stays untouched.
+export const ALLOWED_CHAT_MODELS = ['claude-haiku-4-5', 'claude-sonnet-5'] as const
+export const ALLOWED_PLAN_MODELS = ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'] as const
+
+// Defaults when app_config is unreadable or predates the model columns — the pre-knob behavior.
+export const DEFAULT_CHAT_MODEL = 'claude-sonnet-5'
+export const DEFAULT_PLAN_MODEL = 'claude-sonnet-5'
+
+// Default base of the scaled monthly budget, $10.00 (effective cap = min(base + perUserCap ×
+// activeUsers, global ceiling, $100 HARD_MAX) — enforcement lands in the cap-scaling follow-up).
+export const AI_BUDGET_BASE_MICROS = 10_000_000

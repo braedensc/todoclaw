@@ -2,7 +2,16 @@ import { useState, type ReactNode } from 'react'
 import { goBack } from '../../lib/route'
 import { useIsOwner } from '../auth/use-is-owner'
 import { InviteManager } from '../settings/InviteManager'
-import { useAdminOverview, formatUsd, type AdminOverview, type RosterRow } from './use-admin'
+import {
+  useAdminOverview,
+  useSetAdminConfig,
+  formatUsd,
+  CHAT_MODEL_OPTIONS,
+  PLAN_MODEL_OPTIONS,
+  MODEL_LABELS,
+  type AdminOverview,
+  type RosterRow,
+} from './use-admin'
 import { LIMIT_GROUPS, type LimitGroup, type LimitKind } from './limits-reference'
 
 // AdminPage — the OWNER-ONLY control room (a full page on the Done/Reminders template, ADR-0027).
@@ -268,15 +277,71 @@ function OverviewTab({ data }: { data: AdminOverview }) {
   )
 }
 
+// One labelled model dropdown (Guardrails tab). Options come from the per-feature allowlists.
+function ModelSelect({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string
+  options: readonly string[]
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1 text-sm">
+      <label htmlFor={id} className="text-muted">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-border-strong bg-panel px-2 py-1 text-sm font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        {options.map((m) => (
+          <option key={m} value={m}>
+            {MODEL_LABELS[m] ?? m}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 function GuardrailsTab({ data }: { data: AdminOverview }) {
   const { config } = data
+  const setConfig = useSetAdminConfig()
+  // Local selection, seeded from the live config; Save sends only the keys that changed.
+  const [chatModel, setChatModel] = useState<string | null>(null)
+  const [planModel, setPlanModel] = useState<string | null>(null)
   if (!config) return <p className="py-6 text-sm text-muted">Guardrail config unavailable.</p>
+
+  const chatValue = chatModel ?? config.chatModel
+  const planValue = planModel ?? config.planModel
+  const dirty = chatValue !== config.chatModel || planValue !== config.planModel
+
+  const save = () => {
+    const patch: { chatModel?: string; planModel?: string } = {}
+    if (chatValue !== config.chatModel) patch.chatModel = chatValue
+    if (planValue !== config.planModel) patch.planModel = planValue
+    setConfig.mutate(patch, {
+      onSuccess: () => {
+        setChatModel(null)
+        setPlanModel(null)
+      },
+    })
+  }
+
   return (
     <Section
       title="Guardrails"
-      hint="The AI cost caps and rate limits currently in effect. Editing lands in a follow-up."
+      hint="The AI cost caps and rate limits currently in effect. Models are editable here; cap editing lands in a follow-up."
     >
-      <Row label="Global monthly budget" value={formatUsd(config.globalBudgetCapMicros)} />
+      <Row label="Global budget ceiling" value={formatUsd(config.globalBudgetCapMicros)} />
       <Row label="Per-user monthly cap" value={formatUsd(config.userBudgetCapMicros)} />
       <Row
         label="Chat rate limit"
@@ -286,7 +351,40 @@ function GuardrailsTab({ data }: { data: AdminOverview }) {
         label="Plan My Day rate limit"
         value={`${config.planHourLimit}/hr · ${config.planDayLimit}/day`}
       />
-      <Row label="Model" value="claude-sonnet-5" />
+      <div className="mt-3 border-t border-border pt-2">
+        <h4 className="mb-1 text-sm font-medium text-ink">Models</h4>
+        <ModelSelect
+          id="admin-chat-model"
+          label="Chat model"
+          value={chatValue}
+          options={CHAT_MODEL_OPTIONS}
+          onChange={setChatModel}
+        />
+        <ModelSelect
+          id="admin-plan-model"
+          label="Plan model"
+          value={planValue}
+          options={PLAN_MODEL_OPTIONS}
+          onChange={setPlanModel}
+        />
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={save}
+            disabled={!dirty || setConfig.isPending}
+            className="rounded-full border border-primary/60 px-3.5 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-default disabled:border-border disabled:text-muted-light"
+          >
+            {setConfig.isPending ? 'Saving…' : 'Save models'}
+          </button>
+          {setConfig.isError && (
+            <span className="text-xs text-danger">Couldn’t save — try again.</span>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-muted">
+          Takes effect within ~30s (server config cache) — no deploy. Chat never runs Opus: a
+          worst-case chat call would breach the fixed $0.20 per-call ceiling.
+        </p>
+      </div>
     </Section>
   )
 }

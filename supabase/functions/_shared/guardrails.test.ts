@@ -24,6 +24,37 @@ Deno.test('costMicros: Sonnet 5 standard pricing ($3/$15 per 1M) → micro-dolla
   assertEquals(costMicros(0, 0), 0)
 })
 
+Deno.test('costMicros: per-model pricing (haiku $1/$5, sonnet $3/$15, opus $5/$25)', () => {
+  // Haiku 4.5.
+  assertEquals(costMicros(1_000_000, 0, 'claude-haiku-4-5'), 1_000_000)
+  assertEquals(costMicros(0, 1_000_000, 'claude-haiku-4-5'), 5_000_000)
+  assertEquals(costMicros(2_000, 500, 'claude-haiku-4-5'), 4_500)
+  // Sonnet 5 named explicitly == the default path.
+  assertEquals(costMicros(2_000, 500, 'claude-sonnet-5'), costMicros(2_000, 500))
+  // Opus 5.
+  assertEquals(costMicros(1_000_000, 0, 'claude-opus-5'), 5_000_000)
+  assertEquals(costMicros(0, 1_000_000, 'claude-opus-5'), 25_000_000)
+  assertEquals(costMicros(2_000, 500, 'claude-opus-5'), 22_500)
+})
+
+Deno.test('costMicros: unknown / missing model falls back to the Sonnet rates', () => {
+  // A bug that drops the model (or an id outside MODEL_PRICING) must keep the exact historical
+  // Sonnet accounting — never NaN, never zero-priced spend.
+  assertEquals(costMicros(2_000, 500, 'claude-nonexistent-9'), costMicros(2_000, 500))
+  assertEquals(costMicros(2_000, 500, undefined), 13_500)
+})
+
+Deno.test('Opus plan headroom: a worst-case plan call stays under the $0.20 per-call clamp', () => {
+  // WHY Opus is PLAN-ONLY and the $0.20 clamp is unchanged: the plan prompt is small — a generous
+  // worst case (10k input tokens, full 2048-token output) on Opus 5 ($5/$25) costs
+  // 10_000×5 + 2048×25 = 101_200 micros ≈ $0.10, comfortably inside PER_CALL_CEILING_MICROS.
+  // Chat can reach ~60k input tokens (ai-chat MAX_TOTAL_CHARS ≈ 15k+ tokens, worst-case 1 char/tok
+  // ~60k), which on Opus would be 60_000×5 + 2048×25 = 351_200 > 200_000 — that is exactly why
+  // ALLOWED_CHAT_MODELS excludes Opus while ALLOWED_PLAN_MODELS includes it.
+  assertEquals(costMicros(10_000, 2048, 'claude-opus-5'), 101_200)
+  assertEquals(costMicros(10_000, 2048, 'claude-opus-5') < PER_CALL_CEILING_MICROS, true)
+})
+
 Deno.test('budget cap is $20.00 in micro-dollars', () => {
   assertEquals(BUDGET_CAP_MICROS, 20_000_000)
 })
@@ -106,3 +137,29 @@ Deno.test('recordUsage binds the budget add to the usage id (M2)', async () => {
   const tokens = calls.find((c) => c.name === 'ai_usage_record_tokens')
   assertEquals((tokens?.args as { p_id: string }).p_id, 'usage-123')
 })
+
+Deno.test(
+  'recordUsage prices the budget add at the model it was told the call ran on',
+  async () => {
+    // The model knob only means anything if the ledger charges the model's OWN rates — a haiku call
+    // billed at sonnet rates would triple-count, an opus call at sonnet rates would under-count.
+    _resetConfigCache()
+    const calls: Array<{ name: string; args: unknown }> = []
+    const client = {
+      rpc(name: string, args?: unknown) {
+        calls.push({ name, args })
+        if (name === 'ai_user_budget_check')
+          return Promise.resolve({ data: 10_000_000, error: null })
+        return Promise.resolve({ data: null, error: null })
+      },
+      auth: { getUser: () => Promise.resolve({ data: { user: null }, error: null }) },
+    } as unknown as SupabaseClient
+
+    await recordUsage(client, 'usage-h', 2000, 500, 'chat', 'claude-haiku-4-5')
+    const add = calls.find((c) => c.name === 'ai_budget_add')
+    assertEquals(add?.args, {
+      p_usage_id: 'usage-h',
+      p_micros: costMicros(2000, 500, 'claude-haiku-4-5'),
+    })
+  },
+)

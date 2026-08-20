@@ -64,6 +64,10 @@ export const DEFINER_GRANT_ALLOWLIST = {
     writesScopedToAuthUid: 'read-only',
     note: 'Returns the single global guardrail-config row (id=1); read-only, intentionally not user-scoped.',
   },
+  ai_active_user_count: {
+    writesScopedToAuthUid: 'read-only',
+    note: 'Aggregate COUNT of ai_user_budget_ledger rows for a period — no ids, emails, or amounts (no per-user data). Read at precheck by the scaled-budget cap (phase 0, 20260820210850); no writes.',
+  },
   chat_list_previews: {
     writesScopedToAuthUid: 'read-only',
     note: 'Reads the caller’s own chat sessions/messages (filtered by auth.uid()) for the list preview; no writes.',

@@ -8,7 +8,14 @@ import { createElement, type ReactNode } from 'react'
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('../../lib/supabase', () => ({ supabase: { functions: { invoke } } }))
 
-import { useAdminOverview, formatUsd, type AdminOverview } from './use-admin'
+import {
+  useAdminOverview,
+  useSetAdminConfig,
+  formatUsd,
+  CHAT_MODEL_OPTIONS,
+  PLAN_MODEL_OPTIONS,
+  type AdminOverview,
+} from './use-admin'
 
 function makeWrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -49,6 +56,49 @@ describe('useAdminOverview', () => {
     invoke.mockResolvedValue({ data: null, error: new Error('forbidden') })
 
     const { result } = renderHook(() => useAdminOverview(), { wrapper: makeWrapper() })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+  })
+})
+
+describe('model allowlists', () => {
+  it('chat excludes Opus; plan includes it (mirrors the server allowlists)', () => {
+    expect([...CHAT_MODEL_OPTIONS]).toEqual(['claude-haiku-4-5', 'claude-sonnet-5'])
+    expect([...PLAN_MODEL_OPTIONS]).toEqual([
+      'claude-haiku-4-5',
+      'claude-sonnet-5',
+      'claude-opus-5',
+    ])
+  })
+})
+
+describe('useSetAdminConfig', () => {
+  beforeEach(() => invoke.mockReset())
+
+  it('invokes set_config with the partial patch and resolves to the fresh overview', async () => {
+    const overview: AdminOverview = {
+      config: null,
+      globalSpend: null,
+      roster: [],
+      systemStats: null,
+      integrations: {},
+    }
+    invoke.mockResolvedValue({ data: overview, error: null })
+
+    const { result } = renderHook(() => useSetAdminConfig(), { wrapper: makeWrapper() })
+    result.current.mutate({ chatModel: 'claude-haiku-4-5' })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(invoke).toHaveBeenCalledWith('admin', {
+      body: { action: 'set_config', config: { chatModel: 'claude-haiku-4-5' } },
+    })
+    expect(result.current.data).toEqual(overview)
+  })
+
+  it('surfaces a write failure as a mutation error', async () => {
+    invoke.mockResolvedValue({ data: null, error: new Error('write_failed') })
+
+    const { result } = renderHook(() => useSetAdminConfig(), { wrapper: makeWrapper() })
+    result.current.mutate({ planModel: 'claude-opus-5' })
     await waitFor(() => expect(result.current.isError).toBe(true))
   })
 })

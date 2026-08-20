@@ -12,7 +12,14 @@ import {
   CACHE_TTL_MS,
   _resetConfigCache,
 } from './guardrails-config.ts'
-import { BUDGET_CAP_MICROS, USER_BUDGET_CAP_MICROS, LIMITS } from './guardrails-constants.ts'
+import {
+  BUDGET_CAP_MICROS,
+  USER_BUDGET_CAP_MICROS,
+  AI_BUDGET_BASE_MICROS,
+  DEFAULT_CHAT_MODEL,
+  DEFAULT_PLAN_MODEL,
+  LIMITS,
+} from './guardrails-constants.ts'
 
 // A fake client whose .rpc(name) returns a fixed reply and counts the calls (loadConfig only ever
 // calls rpc('app_config_get')).
@@ -27,7 +34,9 @@ function fake(reply: { data?: unknown; error?: { message: string } | null }) {
   return { client, calls: () => calls }
 }
 
-// A well-formed app_config_get() payload == the seeded defaults.
+// A well-formed app_config_get() payload == the seeded defaults. Deliberately WITHOUT the
+// 2026-08-20 optional keys (chatModel/planModel/aiBudgetBaseMicros) — the pre-migration shape,
+// which must keep parsing (see the optional-key tests below).
 const seed = {
   globalBudgetCapMicros: BUDGET_CAP_MICROS,
   userBudgetCapMicros: USER_BUDGET_CAP_MICROS,
@@ -40,12 +49,16 @@ const seed = {
 Deno.test('FALLBACK_CONFIG is exactly the guardrails constants (single source of truth)', () => {
   assertEquals(FALLBACK_CONFIG.globalBudgetCapMicros, BUDGET_CAP_MICROS)
   assertEquals(FALLBACK_CONFIG.userBudgetCapMicros, USER_BUDGET_CAP_MICROS)
+  assertEquals(FALLBACK_CONFIG.budgetBaseMicros, AI_BUDGET_BASE_MICROS)
+  assertEquals(FALLBACK_CONFIG.chatModel, DEFAULT_CHAT_MODEL)
+  assertEquals(FALLBACK_CONFIG.planModel, DEFAULT_PLAN_MODEL)
   assertEquals(FALLBACK_CONFIG.limits, LIMITS)
 })
 
 Deno.test('HARD_MAX ceilings are >= the defaults (seeding never trips a read-side clamp)', () => {
   assert(HARD_MAX.global >= BUDGET_CAP_MICROS)
   assert(HARD_MAX.user >= USER_BUDGET_CAP_MICROS)
+  assert(HARD_MAX.base >= AI_BUDGET_BASE_MICROS)
   assert(HARD_MAX.chatHour >= LIMITS.chat.hour)
   assert(HARD_MAX.chatDay >= LIMITS.chat.day)
   assert(HARD_MAX.planHour >= LIMITS.plan_my_day.hour)
@@ -58,8 +71,75 @@ Deno.test('parseConfig: valid payload → the config unchanged (within range)', 
   assertEquals(parseConfig(seed), {
     globalBudgetCapMicros: BUDGET_CAP_MICROS,
     userBudgetCapMicros: USER_BUDGET_CAP_MICROS,
+    budgetBaseMicros: AI_BUDGET_BASE_MICROS,
+    chatModel: DEFAULT_CHAT_MODEL,
+    planModel: DEFAULT_PLAN_MODEL,
     limits: LIMITS,
   })
+})
+
+Deno.test(
+  'parseConfig: the 2026-08-20 keys are OPTIONAL — absent ⇒ defaults, config intact',
+  () => {
+    // Functions auto-deploy on merge, so a new build can read a PRE-migration app_config row. The
+    // model/base keys being absent must yield their defaults — NOT collapse the whole config to
+    // FALLBACK_CONFIG (which would wipe the owner's tuned caps).
+    const tuned = { ...seed, globalBudgetCapMicros: 42_000_000, chatHourLimit: 99 }
+    const c = parseConfig(tuned)
+    assert(c !== null)
+    assertEquals(c.globalBudgetCapMicros, 42_000_000) // tuned value survives
+    assertEquals(c.limits.chat.hour, 99)
+    assertEquals(c.chatModel, DEFAULT_CHAT_MODEL)
+    assertEquals(c.planModel, DEFAULT_PLAN_MODEL)
+    assertEquals(c.budgetBaseMicros, AI_BUDGET_BASE_MICROS)
+  },
+)
+
+Deno.test('parseConfig: valid model values are honored (haiku chat, opus plan)', () => {
+  const c = parseConfig({
+    ...seed,
+    chatModel: 'claude-haiku-4-5',
+    planModel: 'claude-opus-5',
+    aiBudgetBaseMicros: 25_000_000,
+  })
+  assert(c !== null)
+  assertEquals(c.chatModel, 'claude-haiku-4-5')
+  assertEquals(c.planModel, 'claude-opus-5')
+  assertEquals(c.budgetBaseMicros, 25_000_000)
+})
+
+Deno.test(
+  'parseConfig: an invalid model value falls back for THAT key only — config otherwise intact',
+  () => {
+    // Opus is NOT in the chat allowlist (per-call clamp math); a stored opus chatModel must
+    // degrade to the default chat model while the rest — including a valid planModel and the
+    // owner's tuned caps — parses through untouched.
+    const c = parseConfig({
+      ...seed,
+      globalBudgetCapMicros: 42_000_000,
+      chatModel: 'claude-opus-5',
+      planModel: 'claude-haiku-4-5',
+    })
+    assert(c !== null)
+    assertEquals(c.chatModel, DEFAULT_CHAT_MODEL)
+    assertEquals(c.planModel, 'claude-haiku-4-5')
+    assertEquals(c.globalBudgetCapMicros, 42_000_000)
+    // Wrong types degrade the same way (never null the whole config).
+    const d = parseConfig({ ...seed, chatModel: 7, planModel: null, aiBudgetBaseMicros: 'x' })
+    assert(d !== null)
+    assertEquals(d.chatModel, DEFAULT_CHAT_MODEL)
+    assertEquals(d.planModel, DEFAULT_PLAN_MODEL)
+    assertEquals(d.budgetBaseMicros, AI_BUDGET_BASE_MICROS)
+  },
+)
+
+Deno.test('parseConfig: aiBudgetBaseMicros clamps to HARD_MAX.base (read-side defense)', () => {
+  const c = parseConfig({ ...seed, aiBudgetBaseMicros: 999_000_000 })
+  assert(c !== null)
+  assertEquals(c.budgetBaseMicros, HARD_MAX.base)
+  const d = parseConfig({ ...seed, aiBudgetBaseMicros: -5 })
+  assert(d !== null)
+  assertEquals(d.budgetBaseMicros, 0)
 })
 
 Deno.test('parseConfig: over-max values are clamped to HARD_MAX (read-side defense)', () => {

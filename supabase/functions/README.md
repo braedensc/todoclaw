@@ -12,8 +12,9 @@ _shared/        # shared modules (imported by each function via ../_shared/*.ts)
   auth.ts        # caller-JWT-scoped Supabase client (RLS applies; no service-role here)
   admin.ts       # the ONE service-role client (ADR-0030) — redeem-invite (createUser) + generate-invite (mint_invite RPC)
   invite-code.ts # high-entropy Crockford-base32 invite-code generator + redeem URL
-  anthropic.ts   # Anthropic SDK client factory + MODEL/MAX_TOKENS (owner key from env)
-  guardrails.ts  # per-user rate limits + global budget kill-switch + cost math
+  anthropic.ts   # Anthropic SDK client factory + MAX_TOKENS; MODEL = the default only — the live
+                 #   model is an owner-tunable app_config knob (chat_model/plan_model, allowlisted)
+  guardrails.ts  # per-user rate limits + global budget kill-switch + model-aware cost math
   weather.ts     # wttr.in summary (cached ~30min via weather_cache) + resolveLocation (nearest_area echo)
   plan-prompt.ts # Plan My Day prompt builder + emit_plan tool (structured output)
   plan-inputs.ts # server-side buildPlanRequest (task/habit selection + date math, ported from src/lib)

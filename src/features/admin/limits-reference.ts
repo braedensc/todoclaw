@@ -41,15 +41,43 @@ export const LIMIT_GROUPS: LimitGroup[] = [
   {
     id: 'spend',
     title: 'AI spend / budget',
-    hint: 'Cost kill-switches. Global + per-user caps are owner-tunable in the Guardrails tab.',
+    hint: 'Cost kill-switches. Global ceiling + per-user cap and the models are owner-tunable in the Guardrails tab.',
     defaultOpen: true,
     rows: [
-      { name: 'Global monthly pool', value: '$20/mo (≤ $100)', scope: 'global', kind: 'tunable' },
+      {
+        name: 'Global budget ceiling',
+        value: '$60/mo (≤ $100)',
+        scope: 'global',
+        kind: 'tunable',
+      },
       { name: 'Per-user monthly cap', value: '$10/mo (≤ $50)', scope: 'per user', kind: 'tunable' },
+      {
+        name: 'Scaled-budget base',
+        value: '$10/mo (≤ $100)',
+        scope: 'global',
+        kind: 'tunable',
+      },
       { name: 'Per-call spend ceiling', value: '$0.20', scope: 'per call', kind: 'fixed' },
       { name: 'Owner spend alert', value: '80% of per-user cap', scope: 'per user', kind: 'fixed' },
       { name: 'Output tokens', value: '2048 / call', scope: 'per call', kind: 'fixed' },
-      { name: 'Token cost basis', value: '$3 in · $15 out / 1M', scope: 'per call', kind: 'fixed' },
+      {
+        name: 'Chat model',
+        value: 'Sonnet 5 (allowed: Haiku 4.5 · Sonnet 5)',
+        scope: 'global',
+        kind: 'tunable',
+      },
+      {
+        name: 'Plan model',
+        value: 'Sonnet 5 (allowed: + Opus 5)',
+        scope: 'global',
+        kind: 'tunable',
+      },
+      {
+        name: 'Token cost basis',
+        value: 'per model: $1/$5 · $3/$15 · $5/$25 per 1M',
+        scope: 'per call',
+        kind: 'fixed',
+      },
     ],
   },
   {

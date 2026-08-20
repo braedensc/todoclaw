@@ -94,11 +94,14 @@ export async function signIn(env: EvalEnvLike, email: string, password: string):
  * ledgers, so a suite run never trips guardrails left over from a previous run. LOCAL ONLY —
  * env.ts guarantees that. Note: the functions-serve isolate caches guardrail config ~30s. */
 export async function prepareStack(sql: Sql): Promise<void> {
+  // Models pinned to the defaults for determinism: an owner-flipped knob on a local stack must
+  // not silently re-baseline the chat suite onto a different model.
   await sql`
     update app_config set
       chat_hour_limit = 200, chat_day_limit = 2000,
       plan_hour_limit = 50, plan_day_limit = 50,
-      global_budget_cap_micros = 100000000, user_budget_cap_micros = 50000000
+      global_budget_cap_micros = 100000000, user_budget_cap_micros = 50000000,
+      chat_model = 'claude-sonnet-5', plan_model = 'claude-sonnet-5'
     where id = 1`
   for (const table of ['ai_usage', 'ai_user_budget_ledger', 'ai_budget_ledger']) {
     try {

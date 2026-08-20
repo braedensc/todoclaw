@@ -8,9 +8,10 @@
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { precheck, recordUsage } from './guardrails.ts'
+import { loadConfig } from './guardrails-config.ts'
 import { errorLabel } from './safe-error.ts'
 import { adminClient } from './auth.ts'
-import { anthropic, MODEL, MAX_TOKENS } from './anthropic.ts'
+import { anthropic, MAX_TOKENS } from './anthropic.ts'
 import { getWeather } from './weather.ts'
 import { localDateInTZ } from './dates.ts'
 import { buildPlanRequest } from './plan-inputs.ts'
@@ -32,16 +33,19 @@ export type PlanRunResult = { ok: true; plan: PlanResult } | { ok: false; reason
 
 // The pure Anthropic call: build the prompt, force emit_plan, return the structured plan + token
 // usage. Shared by the interactive path (runPlanForUser) and the proactive dispatcher (ADR-0031),
-// which each supply their own inputs + guardrails. Throws if the model returns no tool use.
+// which each supply their own inputs + guardrails — and each passes the model EXPLICITLY
+// (cfg.planModel from loadConfig; required so no call site can silently drift off the knob).
+// Throws if the model returns no tool use.
 export async function generatePlan(
   a: Anthropic,
   req: PlanRequest,
   config: ScheduleConfig | null,
   weather: string | null,
-  memories: string[] = [],
+  memories: string[],
+  model: string,
 ): Promise<{ plan: PlanResult; usage: { input: number; output: number } }> {
   const msg = await a.messages.create({
-    model: MODEL,
+    model,
     max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildUserPrompt(req, config, weather, memories) }],
@@ -125,8 +129,17 @@ export async function runPlanForUser(
 
     const req = buildPlanRequest(tasksRes.data ?? [], habitsRes.data ?? [], doneMap, timeZone, now)
 
-    const { plan, usage } = await generatePlan(anthropic(), req, config, weather, memories)
-    await recordUsage(client, gate.usageId, usage.input, usage.output, 'plan_my_day')
+    // Live plan model (cached ~30s per isolate; precheck above already warmed the same read).
+    const cfg = await loadConfig(client)
+    const { plan, usage } = await generatePlan(
+      anthropic(),
+      req,
+      config,
+      weather,
+      memories,
+      cfg.planModel,
+    )
+    await recordUsage(client, gate.usageId, usage.input, usage.output, 'plan_my_day', cfg.planModel)
 
     const { error } = await client.rpc('save_daily_plan', { p_date: date, p_plan: plan })
     if (error) {

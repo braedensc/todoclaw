@@ -1,11 +1,12 @@
 // run-recap.ts — the Anthropic call for the AI evening recap. Mirrors run-plan.ts generatePlan:
 // build the prompt, force emit_recap, return the body + token usage. Unlike generatePlan it
 // PERSISTS NOTHING — the dispatcher enriches the already-claimed message with the returned body.
-// Throws if the model returns no tool use or an empty body (the caller falls back to the
-// deterministic recap on any throw).
+// The model arrives EXPLICITLY from the caller (the dispatcher's cfg.planModel — the recap rides
+// the plan knob, just as it shares the plan_my_day feature key). Throws if the model returns no
+// tool use or an empty body (the caller falls back to the deterministic recap on any throw).
 
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
-import { MODEL, MAX_TOKENS } from './anthropic.ts'
+import { MAX_TOKENS } from './anthropic.ts'
 import {
   RECAP_SYSTEM_PROMPT,
   EMIT_RECAP_TOOL,
@@ -16,9 +17,10 @@ import {
 export async function generateRecap(
   a: Anthropic,
   req: RecapRequest,
+  model: string,
 ): Promise<{ body: string; usage: { input: number; output: number } }> {
   const msg = await a.messages.create({
-    model: MODEL,
+    model,
     max_tokens: MAX_TOKENS,
     system: RECAP_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildRecapUserPrompt(req) }],
