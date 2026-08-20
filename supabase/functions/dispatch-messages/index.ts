@@ -265,7 +265,15 @@ async function maybeGeneratePlan(
       memories,
       cfg.planModel,
     )
-    await recordUsageForUser(admin, userId, usage.input, usage.output, cfg.planModel)
+    await recordUsageForUser(
+      admin,
+      userId,
+      usage.input,
+      usage.output,
+      cfg.planModel,
+      usage.cacheWrite,
+      usage.cacheRead,
+    )
     await admin.rpc('save_daily_plan_for_user', {
       p_user_id: userId,
       p_date: localDate,
@@ -313,7 +321,15 @@ async function maybeGenerateRecap(
       },
       cfg.planModel,
     )
-    await recordUsageForUser(admin, userId, usage.input, usage.output, cfg.planModel)
+    await recordUsageForUser(
+      admin,
+      userId,
+      usage.input,
+      usage.output,
+      cfg.planModel,
+      usage.cacheWrite,
+      usage.cacheRead,
+    )
     return body
   } catch (e) {
     // Classification only — an Anthropic error message can embed prompt fragments (task titles).

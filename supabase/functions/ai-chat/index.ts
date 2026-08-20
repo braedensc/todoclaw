@@ -30,7 +30,7 @@ import {
   type ToolContext,
   type ToolResult,
 } from '../_shared/chat-tools.ts'
-import { buildSystem } from '../_shared/chat-prompt.ts'
+import { buildSystemBlocks } from '../_shared/chat-prompt.ts'
 import { loadChatContext } from '../_shared/chat-context.ts'
 import { runPlanForUser } from '../_shared/run-plan.ts'
 import {
@@ -134,7 +134,12 @@ Deno.serve(async (req) => {
   // check state, schedule summary, per-user assistant config) for the system prompt, plus a label
   // map (task/habit/memory id → text) for the destructive-confirmation summaries.
   const { context, timeZone, labelById, memoryEnabled } = await loadChatContext(client)
-  const system = buildSystem(context)
+  // Two system blocks (chat-prompt.ts): block 1 = the per-user-stable prefix with an ephemeral
+  // cache breakpoint (also caches the tool defs, which render before system), block 2 = the
+  // volatile context. Guarantees cache reads on iterations 2+ of the tool loop below even before
+  // any cross-turn hit. NOTE: the memoryEnabled tool filter yields two tool arrays ⇒ two distinct
+  // cache prefixes per model — expected, not a bug.
+  const system = buildSystemBlocks(context)
 
   // Kill switch (primary enforcement): when memory is off the model never even SEES the memory tools.
   const tools = (memoryEnabled
@@ -154,9 +159,20 @@ Deno.serve(async (req) => {
       const sse = new SseWriter(controller)
       let inTok = 0
       let outTok = 0
+      let cacheWriteTok = 0
+      let cacheReadTok = 0
       const flushUsage = async () => {
         try {
-          await recordUsage(client, gate.usageId, inTok, outTok, 'chat', cfg.chatModel)
+          await recordUsage(
+            client,
+            gate.usageId,
+            inTok,
+            outTok,
+            'chat',
+            cfg.chatModel,
+            cacheWriteTok,
+            cacheReadTok,
+          )
         } catch {
           /* bookkeeping is best-effort */
         }
@@ -299,8 +315,10 @@ Deno.serve(async (req) => {
             })
             ms.on('text', (delta: string) => sse.send({ type: 'text-delta', text: delta }))
             const final = await ms.finalMessage()
-            inTok += final.usage.input_tokens
+            inTok += final.usage.input_tokens // uncached remainder only, once cache_control is set
             outTok += final.usage.output_tokens
+            cacheWriteTok += final.usage.cache_creation_input_tokens ?? 0
+            cacheReadTok += final.usage.cache_read_input_tokens ?? 0
 
             if (final.stop_reason !== 'tool_use') {
               messages.push({ role: 'assistant', content: final.content })

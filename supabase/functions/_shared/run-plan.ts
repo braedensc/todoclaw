@@ -43,11 +43,18 @@ export async function generatePlan(
   weather: string | null,
   memories: string[],
   model: string,
-): Promise<{ plan: PlanResult; usage: { input: number; output: number } }> {
+): Promise<{
+  plan: PlanResult
+  usage: { input: number; output: number; cacheWrite: number; cacheRead: number }
+}> {
   const msg = await a.messages.create({
     model,
     max_tokens: MAX_TOKENS,
-    system: SYSTEM_PROMPT,
+    // The system prompt is fully static and all dynamic content lives in the user message, so one
+    // ephemeral breakpoint (5-min TTL) on the last/only system block caches tools + system
+    // together. The dispatcher's batch then shares one cache entry across every user on the
+    // single owner key (byte-stable prefix — ADR 2026-08-20 §4).
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: buildUserPrompt(req, config, weather, memories) }],
     tools: [EMIT_PLAN_TOOL as unknown as Anthropic.Tool],
     tool_choice: { type: 'tool', name: 'emit_plan' },
@@ -66,7 +73,14 @@ export async function generatePlan(
   if (!plan) throw new Error('The planner did not return a plan.')
   return {
     plan,
-    usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens },
+    usage: {
+      input: msg.usage.input_tokens,
+      output: msg.usage.output_tokens,
+      // With cache_control above, input_tokens is the uncached remainder — carry the cache counts
+      // so the ledger can price the write (1.25×) and read (0.1×) terms. `?? 0` guards SDK nulls.
+      cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
+      cacheRead: msg.usage.cache_read_input_tokens ?? 0,
+    },
   }
 }
 
@@ -139,7 +153,16 @@ export async function runPlanForUser(
       memories,
       cfg.planModel,
     )
-    await recordUsage(client, gate.usageId, usage.input, usage.output, 'plan_my_day', cfg.planModel)
+    await recordUsage(
+      client,
+      gate.usageId,
+      usage.input,
+      usage.output,
+      'plan_my_day',
+      cfg.planModel,
+      usage.cacheWrite,
+      usage.cacheRead,
+    )
 
     const { error } = await client.rpc('save_daily_plan', { p_date: date, p_plan: plan })
     if (error) {

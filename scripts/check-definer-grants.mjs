@@ -83,7 +83,7 @@ export const DEFINER_GRANT_ALLOWLIST = {
   },
   ai_usage_record_tokens: {
     writesScopedToAuthUid: 'yes',
-    note: 'Updates only the caller’s own usage row (`update ai_usage … where id = p_id and user_id = auth.uid()`). #314.',
+    note: 'Updates only the caller’s own usage row (`update ai_usage … where id = p_id and user_id = auth.uid()`). #314; widened to 5 args (input/output + cache creation/read counts) for prompt caching, 20260820215424 — same own-row fence, 3-arg overload dropped.',
   },
   // Flipped INVOKER→DEFINER alongside the reminder pipeline hardening (#311/#312).
   set_task_reminder: {

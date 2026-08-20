@@ -128,6 +128,23 @@ Deno.test('recordUsageForUser: prices the add at the model the dispatcher passed
   })
 })
 
+Deno.test(
+  'recordUsageForUser: cache counts land in the priced add (write 1.25× / read 0.1×)',
+  async () => {
+    // With cache_control on the dispatcher's plan/recap calls, usage.input is the uncached
+    // remainder — the add must include the cache terms or the shared budget under-counts.
+    const f = fakeClient({ ai_budget_add_for_user: { data: null } })
+    await recordUsageForUser(f.client, 'user-1', 1000, 500, 'claude-sonnet-5', 8_000, 2_000)
+    assertEquals(f.calls[0], {
+      name: 'ai_budget_add_for_user',
+      args: {
+        p_user_id: 'user-1',
+        p_micros: costMicros(1000, 500, 'claude-sonnet-5', 8_000, 2_000),
+      },
+    })
+  },
+)
+
 Deno.test('recordUsageForUser: best-effort — a failing RPC never throws', async () => {
   const f = fakeClient({
     ai_budget_add_for_user: () => {

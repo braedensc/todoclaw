@@ -59,6 +59,9 @@ git checkout my-prompt-tweak && npm run eval -- --baseline results/baseline.json
 Cost: a full sweep is real money on the eval key (chat scenarios dominate). Iterate with
 `--filter`/`--kind`/`--no-judge`; save full sweeps for decisions. The console prints a token/cost
 estimate per run; reports land in `evals/results/` (gitignored — transcripts stay local).
+Prompt caching (PR 3) cuts sweep cost: plan/recap system prompts carry a 5-min-TTL cache
+breakpoint, so back-to-back scenarios read the cached prefix (~0.1× input rate) instead of
+re-billing it — the report's estimate includes the cache write (1.25×) and read (0.1×) terms.
 
 ## Layout
 

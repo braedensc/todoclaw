@@ -63,7 +63,10 @@ export async function judge(
   scenarioTitle: string,
   rubric: string,
   rendered: string,
-): Promise<{ judgment: Judgment; usage: { input: number; output: number } }> {
+): Promise<{
+  judgment: Judgment
+  usage: { input: number; output: number; cacheWrite: number; cacheRead: number }
+}> {
   const msg = await a.messages.create({
     model,
     max_tokens: MAX_TOKENS,
@@ -81,7 +84,12 @@ export async function judge(
   if (!toolUse || toolUse.type !== 'tool_use') throw new Error('judge returned no judgment')
   return {
     judgment: toolUse.input as Judgment,
-    usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens },
+    usage: {
+      input: msg.usage.input_tokens,
+      output: msg.usage.output_tokens,
+      cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
+      cacheRead: msg.usage.cache_read_input_tokens ?? 0,
+    },
   }
 }
 

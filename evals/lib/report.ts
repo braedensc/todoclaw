@@ -60,12 +60,20 @@ export function printSummary(report: RunReport): { failed: number; expectedFail:
   const passed = report.results.filter((res) => overallPass(res)).length
   const inTok = report.results.reduce((n, res) => n + res.usage.input, 0)
   const outTok = report.results.reduce((n, res) => n + res.usage.output, 0)
+  // Prompt-cache tokens (optional on pre-PR-3 reports): input is the UNCACHED remainder once
+  // cache_control is in play — writes bill at 1.25× and reads at 0.1× of the input rate.
+  const cwTok = report.results.reduce((n, res) => n + (res.usage.cacheWrite ?? 0), 0)
+  const crTok = report.results.reduce((n, res) => n + (res.usage.cacheRead ?? 0), 0)
   // prod-model pricing (input $3/M, output $15/M) — an estimate for the console, not billing truth
-  const estUsd = (inTok * 3 + outTok * 15) / 1_000_000
+  const estUsd = (inTok * 3 + outTok * 15 + cwTok * 3 * 1.25 + crTok * 3 * 0.1) / 1_000_000
+  const cacheBit =
+    cwTok || crTok
+      ? ` · cache ${cwTok.toLocaleString()} written / ${crTok.toLocaleString()} read`
+      : ''
   lines.push(
     '',
     `${passed}/${total} passed · ${failed} failed · ${expectedFail} expected-fail (pending PRs)`,
-    `tokens: ${inTok.toLocaleString()} in / ${outTok.toLocaleString()} out (≈$${estUsd.toFixed(2)})`,
+    `tokens: ${inTok.toLocaleString()} in / ${outTok.toLocaleString()} out${cacheBit} (≈$${estUsd.toFixed(2)})`,
   )
   console.log(lines.join('\n'))
   return { failed, expectedFail }

@@ -254,7 +254,9 @@ export interface ScenarioResult {
   /** Extra artifacts for the report (plan JSON, recap body, chat transcript render). */
   artifact?: unknown
   durationMs: number
-  usage: { input: number; output: number }
+  // cacheWrite/cacheRead: prompt-cache token counts (optional — reports saved before PR 3 lack
+  // them; readers use `?? 0`). input is the UNCACHED remainder once cache_control is in play.
+  usage: { input: number; output: number; cacheWrite?: number; cacheRead?: number }
   error?: string
 }
 

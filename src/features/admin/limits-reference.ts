@@ -74,7 +74,14 @@ export const LIMIT_GROUPS: LimitGroup[] = [
       },
       {
         name: 'Token cost basis',
-        value: 'per model: $1/$5 · $3/$15 · $5/$25 per 1M',
+        value:
+          'per model: $1/$5 · $3/$15 · $5/$25 per 1M + cache write 1.25× / read 0.1× of input rate',
+        scope: 'per call',
+        kind: 'fixed',
+      },
+      {
+        name: 'Prompt caching',
+        value: '5-min TTL; floors: Haiku 4096 · Sonnet 1024 · Opus 512 tokens',
         scope: 'per call',
         kind: 'fixed',
       },
