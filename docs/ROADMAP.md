@@ -183,14 +183,16 @@ The blocker set. Each is a hard prerequisite the moment a stranger can create an
 8. **Production auth config version-controlled + verifiable** — every prod auth setting (HIBP,
    confirm-email, session timebox, password policy) is an un-versioned dashboard toggle; you
    can't safely flip `enable_signup` without confirming these are on and drift-protected.
-9. **Sentry `beforeSend` PII scrubber, confirmed on the prod DSN** — Sentry is active with none;
-   task text / titles / email can flow to a third-party processor unscrubbed today.
+9. **Sentry `beforeSend` PII scrubber, confirmed on the prod DSN** — the scrubber ships in
+   `src/lib/sentry-scrub.ts` (2026-08-20: strips request bodies, emails, breadcrumb payloads,
+   JWTs); what remains is confirming a scrubbed event on the prod DSN after deploy.
 
 ### By gate
 
 **G1 — do now, regardless (cheap, high-leverage):** the automated RLS isolation tests (#1
 above); a CI guard that every new `public` table has RLS + an owner policy; the Sentry PII
-scrubber; strip PII from `ai-chat` `console.error` logs; alert when the global AI kill-switch
+scrubber *(shipped 2026-08-20)*; strip PII from `ai-chat` `console.error` logs *(shipped
+2026-08-20 — `_shared/safe-error.ts`)*; alert when the global AI kill-switch
 trips; test backup **restore** (not just backup); owner-account **MFA + break-glass** (the owner
 account is the whole-tenant blast radius — service_role, admin panel).
 

@@ -15,6 +15,7 @@
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
+import { errorLabel } from '../_shared/safe-error.ts'
 import { userClient, adminClient, requireUser } from '../_shared/auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from '../_shared/anthropic.ts'
 import { precheck, recordUsage } from '../_shared/guardrails.ts'
@@ -95,6 +96,8 @@ function summaryLabelId(input: unknown): string {
 Deno.serve(async (req) => {
   const pre = preflight(req)
   if (pre) return pre
+  // Request-scoped id for log correlation — error logs carry this instead of the error payload.
+  const reqId = crypto.randomUUID()
   const cors = corsHeaders(req.headers.get('Origin'))
   const jsonErr = (body: unknown, status: number) =>
     new Response(JSON.stringify(body), {
@@ -395,9 +398,11 @@ Deno.serve(async (req) => {
         sse.send({ type: 'error', code: 'tool-loop-cap', message: 'Too many tool steps.' })
         sse.close()
       } catch (e) {
-        // Log the real error server-side; the client still needs an error event to stop the
-        // stream, but the human-readable text stays generic (no internal detail disclosure).
-        console.error('ai-chat failed:', e)
+        // The client still needs an error event to stop the stream, and its text stays generic
+        // (no internal detail disclosure). The server log gets a CLASSIFICATION, not the error
+        // itself — an Anthropic SDK error can interpolate the user's chat/task text into its
+        // message, and edge logs are a third-party sink. See _shared/safe-error.ts.
+        console.error(`ai-chat failed [${reqId}]:`, errorLabel(e))
         await flushUsage()
         sse.send({
           type: 'error',
