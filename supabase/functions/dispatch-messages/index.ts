@@ -33,7 +33,13 @@ import {
   type RecapContext,
 } from '../_shared/dispatch.ts'
 import { normalizeActivity, type ActivityRow } from '../_shared/activity.ts'
-import { sendWebPush, type PushSubscription, type VapidKeys } from '../_shared/web-push.ts'
+import { errorLabel } from '../_shared/safe-error.ts'
+import {
+  pushEndpointOrigin,
+  sendWebPush,
+  type PushSubscription,
+  type VapidKeys,
+} from '../_shared/web-push.ts'
 import type { ScheduleConfig } from '../_shared/plan-prompt.ts'
 
 const EMPTY_INPUTS: DispatchInputs = {
@@ -76,7 +82,9 @@ Deno.serve(async (req) => {
 
   const { data: candidates, error } = await admin.rpc('notification_candidates')
   if (error) {
-    console.error('notification_candidates failed:', error)
+    // DB errors log code/message only — Postgres `details`/`hint` can echo row values, and edge
+    // logs are a third-party sink (see _shared/safe-error.ts). Same for every log below.
+    console.error('notification_candidates failed:', error.code, error.message)
     return json({ error: 'candidates_failed' }, 500)
   }
 
@@ -117,7 +125,13 @@ Deno.serve(async (req) => {
           p_user_id: c.user_id,
           p_local_date: localDate,
         })
-        if (actError) console.error('task_activity_for_user failed for', c.user_id, actError)
+        if (actError)
+          console.error(
+            'task_activity_for_user failed for',
+            c.user_id,
+            actError.code,
+            actError.message,
+          )
         else activity = normalizeActivity(actJson)
       }
 
@@ -172,7 +186,13 @@ Deno.serve(async (req) => {
             p_title: rich.title,
             p_body: rich.body,
           })
-          if (enrichError) console.error('enrich_message failed for', c.user_id, enrichError)
+          if (enrichError)
+            console.error(
+              'enrich_message failed for',
+              c.user_id,
+              enrichError.code,
+              enrichError.message,
+            )
           else content = rich
         }
       }
@@ -190,7 +210,12 @@ Deno.serve(async (req) => {
             p_body: body,
           })
           if (enrichError)
-            console.error('enrich_message (recap) failed for', c.user_id, enrichError)
+            console.error(
+              'enrich_message (recap) failed for',
+              c.user_id,
+              enrichError.code,
+              enrichError.message,
+            )
           else content = { title: content.title, body }
         }
       }
@@ -199,7 +224,9 @@ Deno.serve(async (req) => {
       sent++
     } catch (e) {
       failed++
-      console.error('dispatch failed for user', c.user_id, e)
+      // Classification only — e can be a fetch error whose message embeds the push endpoint
+      // (a capability URL) or a thrown DB error; see _shared/safe-error.ts.
+      console.error('dispatch failed for user', c.user_id, errorLabel(e))
     }
   }
 
@@ -242,7 +269,8 @@ async function maybeGeneratePlan(
     })
     return plan as DispatchPlan
   } catch (e) {
-    console.error('plan generation failed for', userId, e)
+    // Classification only — an Anthropic error message can embed prompt fragments (task titles).
+    console.error('plan generation failed for', userId, errorLabel(e))
     return null
   }
 }
@@ -277,7 +305,8 @@ async function maybeGenerateRecap(
     await recordUsageForUser(admin, userId, usage.input, usage.output)
     return body
   } catch (e) {
-    console.error('recap generation failed for', userId, e)
+    // Classification only — an Anthropic error message can embed prompt fragments (task titles).
+    console.error('recap generation failed for', userId, errorLabel(e))
     return null
   }
 }
@@ -309,12 +338,22 @@ async function pushToUser(
       endpoint: s.endpoint,
       keys: { p256dh: s.p256dh, auth: s.auth },
     }
+    // Failures log the user + endpoint ORIGIN only — the full endpoint is a capability URL (holding
+    // it means being able to push to that browser) — and the caught error is classified, not
+    // printed (a fetch error's message embeds the URL). See _shared/safe-error.ts.
     try {
       const res = await sendWebPush(subscription, payload, vapid)
       if (res.gone) await admin.rpc('prune_push_subscription', { p_endpoint: s.endpoint })
-      else if (!res.ok) console.error('push rejected for endpoint', s.endpoint, 'HTTP', res.status)
+      else if (!res.ok)
+        console.error(
+          'push rejected for user',
+          userId,
+          pushEndpointOrigin(s.endpoint),
+          'HTTP',
+          res.status,
+        )
     } catch (e) {
-      console.error('push failed for endpoint', s.endpoint, e)
+      console.error('push failed for user', userId, pushEndpointOrigin(s.endpoint), errorLabel(e))
     }
   }
 }
