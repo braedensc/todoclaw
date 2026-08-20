@@ -193,7 +193,7 @@ red). Scheduled workflows run only from `main`.
 | A frontend/public var (`VITE_*`) | Vercel env (prod) + your `.env.local` (local) |
 | A server secret (Anthropic key, VAPID, dispatch, owner id, webhook) | `supabase secrets set …` on the prod project |
 | A CI/backup/deploy secret or variable | GitHub → Settings → Secrets and variables → Actions |
-| AI budget caps / rate limits / model | code constants in `supabase/functions/_shared/guardrails.ts` + `_shared/anthropic.ts` → **needs a deploy** (the $0.20 per-call ceiling is _also_ hardcoded in two SQL migrations — change both) |
+| AI budget caps / rate limits / models | **live knobs** — Admin panel → Guardrails (`app_config` via the `set_config` action; models are allowlisted per feature). No deploy. Fallback defaults live in `_shared/guardrails-constants.ts`; the $0.20 per-call ceiling stays a fixed rail hardcoded in TS + two SQL migrations — change all if ever touched |
 | Auth policy (signups off, email confirm, redirect URLs) | Supabase → Authentication |
 | Security response headers / CSP | `vercel.json` |
 | Who is "owner" | `OWNER_USER_ID` (Supabase secret) — the gate for `generate-invite` + `admin`. The frontend reveals the owner UI via the `admin` `whoami` action, so no owner id ships to the client |

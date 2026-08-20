@@ -17,8 +17,9 @@ import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
 import { errorLabel } from '../_shared/safe-error.ts'
 import { userClient, adminClient, requireUser } from '../_shared/auth.ts'
-import { anthropic, MODEL, MAX_TOKENS } from '../_shared/anthropic.ts'
+import { anthropic, MAX_TOKENS } from '../_shared/anthropic.ts'
 import { precheck, recordUsage } from '../_shared/guardrails.ts'
+import { loadConfig } from '../_shared/guardrails-config.ts'
 import { ipThrottleOk } from '../_shared/ip-throttle.ts'
 import { SseWriter } from '../_shared/sse.ts'
 import {
@@ -125,6 +126,10 @@ Deno.serve(async (req) => {
   if (!gate.ok)
     return jsonErr({ error: gate.reason }, gate.reason === 'budget-exhausted' ? 503 : 429)
 
+  // Live chat model (owner-tunable, allowlisted — see guardrails-config.ts). Cached per isolate
+  // ~30s; precheck above already warmed the same read, so this adds no round-trip.
+  const cfg = await loadConfig(client)
+
   // Rich per-request context (active + done-today tasks with grid position, habits with today's
   // check state, schedule summary, per-user assistant config) for the system prompt, plus a label
   // map (task/habit/memory id → text) for the destructive-confirmation summaries.
@@ -151,7 +156,7 @@ Deno.serve(async (req) => {
       let outTok = 0
       const flushUsage = async () => {
         try {
-          await recordUsage(client, gate.usageId, inTok, outTok, 'chat')
+          await recordUsage(client, gate.usageId, inTok, outTok, 'chat', cfg.chatModel)
         } catch {
           /* bookkeeping is best-effort */
         }
@@ -286,7 +291,7 @@ Deno.serve(async (req) => {
             pendingToolUses = null
           } else {
             const ms = a.messages.stream({
-              model: MODEL,
+              model: cfg.chatModel,
               max_tokens: MAX_TOKENS,
               system,
               messages: mergeConsecutive(messages), // fold any adjacent same-role turns for the API

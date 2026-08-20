@@ -117,6 +117,17 @@ Deno.test('recordUsageForUser: posts the exact micro cost to ai_budget_add_for_u
   })
 })
 
+Deno.test('recordUsageForUser: prices the add at the model the dispatcher passed', async () => {
+  // The dispatcher threads cfg.planModel through — the ledger must charge that model's own rates
+  // (an omitted model bills the conservative Sonnet default, proven by the test above).
+  const f = fakeClient({ ai_budget_add_for_user: { data: null } })
+  await recordUsageForUser(f.client, 'user-1', 1000, 500, 'claude-opus-5')
+  assertEquals(f.calls[0], {
+    name: 'ai_budget_add_for_user',
+    args: { p_user_id: 'user-1', p_micros: costMicros(1000, 500, 'claude-opus-5') },
+  })
+})
+
 Deno.test('recordUsageForUser: best-effort — a failing RPC never throws', async () => {
   const f = fakeClient({
     ai_budget_add_for_user: () => {

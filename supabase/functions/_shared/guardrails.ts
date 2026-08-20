@@ -20,6 +20,8 @@ import {
   PER_CALL_CEILING_MICROS,
   USER_SPEND_ALERT_MICROS,
   SPEND_ALERT_FRACTION,
+  MODEL_PRICING,
+  DEFAULT_CHAT_MODEL,
   type Feature,
 } from './guardrails-constants.ts'
 
@@ -34,6 +36,7 @@ export {
   PER_CALL_CEILING_MICROS,
   USER_SPEND_ALERT_MICROS,
   SPEND_ALERT_FRACTION,
+  MODEL_PRICING,
   type Feature,
 }
 
@@ -56,13 +59,16 @@ function utcPeriod(now: Date = new Date()): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
 }
 
-// Sonnet 5 STANDARD pricing: $3 / 1M input tokens, $15 / 1M output tokens (identical to Sonnet 4.6).
-// Converting to micros: micros = (input/1e6)*3*1e6 + (output/1e6)*15*1e6 = input*3 + output*15.
-// Sonnet 5's INTRODUCTORY pricing ($2/$10 through 2026-08-31) is cheaper, so this formula slightly
-// OVER-counts spend until then — a conservative, safe direction for the kill-switch (it can only
-// trip early, never late), and it self-corrects when standard pricing kicks in. No dated code to revert.
-export function costMicros(inputTokens: number, outputTokens: number): number {
-  return Math.round(inputTokens * 3 + outputTokens * 15)
+// Model-aware cost in micro-dollars: rates come from MODEL_PRICING (guardrails-constants.ts —
+// micros per token, so micros = input×rate.in + output×rate.out). A missing or UNKNOWN model id
+// falls back to the Sonnet row ($3/$15 standard — the pre-knob formula), so every legacy caller
+// and any bug that drops the model keeps the exact historical accounting. Sonnet 5's INTRODUCTORY
+// pricing ($2/$10 through 2026-08-31) is cheaper than the standard rate charged here, so until
+// then this slightly OVER-counts spend — the conservative, safe direction for a kill-switch (it
+// can only trip early, never late), and it self-corrects when standard pricing kicks in.
+export function costMicros(inputTokens: number, outputTokens: number, model?: string): number {
+  const rate = MODEL_PRICING[model ?? DEFAULT_CHAT_MODEL] ?? MODEL_PRICING[DEFAULT_CHAT_MODEL]
+  return Math.round(inputTokens * rate.input + outputTokens * rate.output)
 }
 
 export type PrecheckResult =
@@ -113,6 +119,9 @@ export async function recordUsage(
   inputTokens: number,
   outputTokens: number,
   feature: Feature,
+  // The model the call actually ran on (cfg.chatModel / cfg.planModel) — prices the spend.
+  // Optional: a caller that omits it is billed at the conservative Sonnet default rates.
+  model?: string,
 ): Promise<void> {
   await client.rpc('ai_usage_record_tokens', {
     p_id: usageId,
@@ -121,7 +130,7 @@ export async function recordUsage(
   })
   await client.rpc('ai_budget_add', {
     p_usage_id: usageId,
-    p_micros: costMicros(inputTokens, outputTokens),
+    p_micros: costMicros(inputTokens, outputTokens, model),
   })
 
   // Owner spend-alert (best-effort). Read the caller's NEW monthly total, reconstruct the pre-call
@@ -131,7 +140,7 @@ export async function recordUsage(
   try {
     const cfg = await loadConfig(client)
     const alertMicros = Math.round(cfg.userBudgetCapMicros * SPEND_ALERT_FRACTION)
-    const added = Math.min(costMicros(inputTokens, outputTokens), PER_CALL_CEILING_MICROS)
+    const added = Math.min(costMicros(inputTokens, outputTokens, model), PER_CALL_CEILING_MICROS)
     const { data: remaining } = await client.rpc('ai_user_budget_check', {
       p_cap_micros: cfg.userBudgetCapMicros,
     })

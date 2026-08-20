@@ -10,6 +10,7 @@ import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { generatePlan } from '../../supabase/functions/_shared/run-plan.ts'
 import { generateRecap } from '../../supabase/functions/_shared/run-recap.ts'
 import { buildPlanRequest } from '../../supabase/functions/_shared/plan-inputs.ts'
+import { DEFAULT_PLAN_MODEL } from '../../supabase/functions/_shared/guardrails-constants.ts'
 import { DEFAULT_TZ, PLAN_NOW } from './fixture-dates.ts'
 import { driveChat } from './chat-driver.ts'
 import {
@@ -88,12 +89,15 @@ async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResu
       sc.timeZone ?? DEFAULT_TZ,
       PLAN_NOW,
     )
+    // Evals pin the DEFAULT plan model — a local stack whose owner flipped the knob must not
+    // silently re-baseline the suite (prepareStack also resets the app_config columns).
     const { plan, usage: gu } = await generatePlan(
       opts.anthropic,
       req,
       sc.schedule ?? null,
       sc.weather ?? null,
       sc.memories ?? [],
+      DEFAULT_PLAN_MODEL,
     )
     usage.input += gu.input
     usage.output += gu.output
@@ -133,7 +137,7 @@ async function runRecap(sc: RecapScenario, opts: RunOptions): Promise<ScenarioRe
     usage,
   }
   try {
-    const { body, usage: gu } = await generateRecap(opts.anthropic, sc.request)
+    const { body, usage: gu } = await generateRecap(opts.anthropic, sc.request, DEFAULT_PLAN_MODEL)
     usage.input += gu.input
     usage.output += gu.output
     const deterministic = opts.mock

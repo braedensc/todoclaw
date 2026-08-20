@@ -8,8 +8,9 @@ import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
 import { errorLabel } from '../_shared/safe-error.ts'
 import { userClient, adminClient, requireUser } from '../_shared/auth.ts'
-import { anthropic, MODEL, MAX_TOKENS } from '../_shared/anthropic.ts'
+import { anthropic, MAX_TOKENS } from '../_shared/anthropic.ts'
 import { precheck, recordUsage } from '../_shared/guardrails.ts'
+import { loadConfig } from '../_shared/guardrails-config.ts'
 import { ipThrottleOk } from '../_shared/ip-throttle.ts'
 import { getWeather } from '../_shared/weather.ts'
 import {
@@ -72,9 +73,12 @@ Deno.serve(async (req) => {
     const location = typeof config?.location === 'string' ? config.location.trim() : ''
     const weather = location ? await getWeather(adminClient(), location) : null
 
+    // Live plan model (owner-tunable, allowlisted — see guardrails-config.ts). Cached per isolate
+    // ~30s; precheck above already warmed the same read.
+    const cfg = await loadConfig(client)
     const a = anthropic()
     const msg = await a.messages.create({
-      model: MODEL,
+      model: cfg.planModel,
       max_tokens: MAX_TOKENS,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildUserPrompt(payload, config, weather, memories) }],
@@ -89,6 +93,7 @@ Deno.serve(async (req) => {
       msg.usage.input_tokens,
       msg.usage.output_tokens,
       'plan_my_day',
+      cfg.planModel,
     )
 
     // A truncated response can still carry a tool_use block, but its JSON input is cut off — the

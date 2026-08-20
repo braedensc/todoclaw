@@ -11,6 +11,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { adminClient } from '../_shared/admin.ts'
 import { anthropic } from '../_shared/anthropic.ts'
 import { precheckForUser, recordUsageForUser } from '../_shared/guardrails-system.ts'
+import { loadConfig } from '../_shared/guardrails-config.ts'
 import { generatePlan } from '../_shared/run-plan.ts'
 import { generateRecap } from '../_shared/run-recap.ts'
 import { buildPlanRequest } from '../_shared/plan-inputs.ts'
@@ -254,14 +255,17 @@ async function maybeGeneratePlan(
     // just means a memory-less plan, never a dropped push.
     const { data: memData } = await admin.rpc('memories_for_user', { p_user_id: userId })
     const memories = Array.isArray(memData) ? (memData as string[]) : []
+    // Live plan model (owner-tunable; precheckForUser above already warmed the cached read).
+    const cfg = await loadConfig(admin)
     const { plan, usage } = await generatePlan(
       anthropic(),
       req,
       (inputs.config ?? null) as ScheduleConfig | null,
       null,
       memories,
+      cfg.planModel,
     )
-    await recordUsageForUser(admin, userId, usage.input, usage.output)
+    await recordUsageForUser(admin, userId, usage.input, usage.output, cfg.planModel)
     await admin.rpc('save_daily_plan_for_user', {
       p_user_id: userId,
       p_date: localDate,
@@ -293,16 +297,23 @@ async function maybeGenerateRecap(
     const habitsKept = inputs.habits
       .filter((h) => h.active && inputs.habit_done[h.id])
       .map((h) => h.text)
-    const { body, usage } = await generateRecap(anthropic(), {
-      dayName: recapCtx.dayName,
-      name: greetName(inputs),
-      done,
-      open,
-      activity,
-      upcoming: upcomingItems(inputs, recapCtx),
-      habitsKept,
-    })
-    await recordUsageForUser(admin, userId, usage.input, usage.output)
+    // The recap rides the plan model knob (it also reuses the plan_my_day feature key — the
+    // one-claimed-recap/user/day claim is what bounds it, so the pairing is intentional).
+    const cfg = await loadConfig(admin)
+    const { body, usage } = await generateRecap(
+      anthropic(),
+      {
+        dayName: recapCtx.dayName,
+        name: greetName(inputs),
+        done,
+        open,
+        activity,
+        upcoming: upcomingItems(inputs, recapCtx),
+        habitsKept,
+      },
+      cfg.planModel,
+    )
+    await recordUsageForUser(admin, userId, usage.input, usage.output, cfg.planModel)
     return body
   } catch (e) {
     // Classification only — an Anthropic error message can embed prompt fragments (task titles).

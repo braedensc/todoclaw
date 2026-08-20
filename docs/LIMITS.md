@@ -11,7 +11,8 @@ owner‑tunable.
 >
 > **Keeping this current.** When you add or change a limit, update the matching row here in
 > the same PR. This is a reference, not a spec — code + the `src/lib/*.test.ts` oracle are
-> authoritative for behavior. Last full sweep: **2026‑07‑22**.
+> authoritative for behavior. Last full sweep: **2026‑07‑22** · spend/model rows re-verified
+> **2026‑08‑20** (phase‑0 model knobs + $60 ceiling re-seed).
 
 ---
 
@@ -96,12 +97,15 @@ clamped read-side to `HARD_MAX` (`guardrails-config.ts`) and by DB CHECK
 
 | Limit | Value | Scope | Tunable? |
 |---|---|---|---|
-| Global monthly pool (`BUDGET_CAP_MICROS`) | **$20.00/mo** | global | owner-tunable ≤ **$100** |
+| Global budget ceiling (`global_budget_cap_micros`) | **$60.00/mo** seeded (TS fallback `BUDGET_CAP_MICROS` stays $20 on a failed config read) | global | owner-tunable ≤ **$100** |
 | Per-user monthly sub-cap (`USER_BUDGET_CAP_MICROS`) | **$10.00/mo** | per-user | owner-tunable ≤ **$50** (must stay ≤ global) |
+| Scaled-budget base (`ai_budget_base_micros`) | **$10.00/mo** (effective cap = min(base + per-user cap × active users, ceiling, $100) — enforcement lands in the cap-scaling follow-up) | global | owner-tunable ≤ **$100** |
 | Per-call spend ceiling (`PER_CALL_CEILING_MICROS`) | **$0.20** | per-call | **fixed** rail (also SQL-clamped in `ai_budget_add`) |
 | Owner spend-alert (`SPEND_ALERT_FRACTION`) | **80%** of per-user cap | per-user | fixed fraction |
 | Output tokens per call (`MAX_TOKENS`) | **2048** | per-call | fixed |
-| Token cost formula (`costMicros`) | **$3/1M in, $15/1M out** | per-call | fixed (conservative over-count) |
+| Chat model (`chat_model`) | **claude-sonnet-5** (allowlist: haiku-4-5 · sonnet-5 — no Opus: a worst-case chat call would breach the $0.20 clamp) | global | owner-tunable (Guardrails tab) |
+| Plan/recap model (`plan_model`) | **claude-sonnet-5** (allowlist: haiku-4-5 · sonnet-5 · opus-5 — plan worst case ≈ $0.10 on Opus) | global | owner-tunable (Guardrails tab) |
+| Token cost basis (`MODEL_PRICING` / `costMicros`) | per model, per 1M: **$1/$5** haiku · **$3/$15** sonnet · **$5/$25** opus (unknown id ⇒ sonnet rates) | per-call | fixed (conservative over-count) |
 | Config cache TTL (`CACHE_TTL_MS`) | 30s | per-worker | fixed |
 
 Enforcement order (`precheck`): global pool → per-user sub-cap → per-user rate limit. Ledgers
