@@ -242,7 +242,8 @@ async function runAiUsageGrantProbe(client, failures) {
       const rec = await client.query(
         `select public.ai_usage_check_and_record('_probe', 5, 5) as id`,
       )
-      await client.query(`select public.ai_usage_record_tokens($1, 1, 2)`, [rec.rows[0].id])
+      // 5-arg signature since 20260820215424 (prompt caching): input, output, cache write, cache read.
+      await client.query(`select public.ai_usage_record_tokens($1, 1, 2, 3, 4)`, [rec.rows[0].id])
     } catch (e) {
       ctrlErr = `${e.code} ${e.message}`
     }
