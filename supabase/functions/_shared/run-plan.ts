@@ -8,6 +8,7 @@
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { precheck, recordUsage } from './guardrails.ts'
+import { errorLabel } from './safe-error.ts'
 import { adminClient } from './auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from './anthropic.ts'
 import { getWeather } from './weather.ts'
@@ -129,13 +130,15 @@ export async function runPlanForUser(
 
     const { error } = await client.rpc('save_daily_plan', { p_date: date, p_plan: plan })
     if (error) {
-      // Log the real DB error server-side; the user only ever gets a plain-language reason.
-      console.error('save_daily_plan failed:', error)
+      // Log the DB error's code/message only — Postgres `details` can echo row values (the
+      // plan's free text); the user only ever gets a plain-language reason.
+      console.error('save_daily_plan failed:', error.code, error.message)
       return { ok: false, reason: "I couldn't save your plan just now — please try again." }
     }
     return { ok: true, plan }
   } catch (e) {
-    console.error('plan run failed:', e)
+    // Classification only — an Anthropic error message can embed prompt fragments (task titles).
+    console.error('plan run failed:', errorLabel(e))
     return { ok: false, reason: "I couldn't plan your day just now — please try again." }
   }
 }

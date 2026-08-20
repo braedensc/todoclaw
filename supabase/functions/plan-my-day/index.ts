@@ -6,6 +6,7 @@
 
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
+import { errorLabel } from '../_shared/safe-error.ts'
 import { userClient, adminClient, requireUser } from '../_shared/auth.ts'
 import { anthropic, MODEL, MAX_TOKENS } from '../_shared/anthropic.ts'
 import { precheck, recordUsage } from '../_shared/guardrails.ts'
@@ -104,8 +105,9 @@ Deno.serve(async (req) => {
     if (!plan) return json({ error: 'no_plan' }, 502)
     return json({ plan })
   } catch (e) {
-    // Log the real error server-side; return a generic code so no internal detail reaches the client.
-    console.error('plan-my-day failed:', e)
+    // Classification only (an Anthropic error can embed the prompt's task titles — see
+    // _shared/safe-error.ts); return a generic code so no internal detail reaches the client.
+    console.error('plan-my-day failed:', errorLabel(e))
     return json({ error: 'plan_failed' }, 500)
   }
 })
