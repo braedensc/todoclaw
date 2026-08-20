@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Sentry from '@sentry/react'
 import { registerSW } from 'virtual:pwa-register'
 import { initAppUpdate } from './lib/app-update'
+import { scrubSentryEvent } from './lib/sentry-scrub'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
 // Self-hosted fonts (no external Google Fonts request — privacy). Fraunces (variable)
@@ -30,6 +31,10 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     // (vite.config.ts); empty locally → undefined, so Sentry omits the release instead of
     // tagging a bare "todoclaw@".
     release: __GIT_COMMIT_SHA__ ? `todoclaw@${__GIT_COMMIT_SHA__}` : undefined,
+    // PII scrubber (G1): Sentry is a third-party processor, so strip request bodies, emails,
+    // breadcrumb payloads (task/chat text) and any JWT-shaped string before an event leaves
+    // the browser. See src/lib/sentry-scrub.ts.
+    beforeSend: scrubSentryEvent,
   })
 }
 
