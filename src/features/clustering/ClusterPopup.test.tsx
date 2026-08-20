@@ -191,6 +191,27 @@ describe('ClusterPopup paused rows', () => {
     const live = row('live')!
     expect(live.style.opacity).toBe('')
     expect(live.style.background).toBe('')
+    // The Done pill stays on a paused row — the popup row is the desktop grid card's twin, and a
+    // paused GridCard keeps its Done pill too (unlike the touch sheet/popover's paused mode).
+    // Pinned so the two surfaces can't drift apart silently in either direction.
+    expect(
+      [...paused.querySelectorAll('button')].some((b) => b.textContent?.includes('Done')),
+    ).toBe(true)
+  })
+
+  it('a paused CHORE row leads with the ⏸ chip, not its ↻ marker (paused gates first)', () => {
+    const { row } = renderPopup([
+      task('pzc', {
+        start_date: FUTURE_START,
+        recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
+      }),
+    ])
+    const r = row('pzc')!
+    // Same chip precedence as the touch chip/sheet: the slate ⏸ outranks the recurring marker.
+    expect(r.textContent).toContain('⏸ starts')
+    expect(r.querySelector('[title="never done"]')).toBeNull() // no ↻ status chip in the slot
+    // The dashed recurring border stays — the chip slot is what paused claims.
+    expect(r.style.borderRightStyle).toBe('dashed')
   })
 })
 

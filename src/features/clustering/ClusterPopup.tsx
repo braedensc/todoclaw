@@ -453,24 +453,25 @@ function ClusterPopupRow({
             {task.text}
           </span>
 
-          {/* Status chip: recurring marker, or ONE one-off badge in whichever lane the task is in —
-              the warm due-day chip while the deadline still means something, or the compact azure
-              "❄️ 21d" it cools into once the task has gone stale, mirroring the grid card. */}
-          {rc ? (
-            <span
-              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
-              style={{ backgroundColor: RC_COLOR[rc.code] }}
-              title={rc.label}
-            >
-              ↻
-            </span>
-          ) : paused ? (
+          {/* Status chip — ONE badge, paused gating first like every sibling surface (a paused
+              chore's most salient state is that it's asleep, so ⏸ outranks its ↻ marker — same
+              precedence as the touch chip/sheet): the slate ⏸, else the recurring marker, else
+              the one-off's warm due chip or the azure "❄️ 21d" it cools into, mirroring the card. */}
+          {paused ? (
             <span
               className="flex-shrink-0 rounded px-1 text-[9px] font-semibold"
               style={pausedChipStyle()}
               title="Paused"
             >
               {pausedChipLabel(task.start_date)}
+            </span>
+          ) : rc ? (
+            <span
+              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
+              style={{ backgroundColor: RC_COLOR[rc.code] }}
+              title={rc.label}
+            >
+              ↻
             </span>
           ) : iceBadge ? (
             <span

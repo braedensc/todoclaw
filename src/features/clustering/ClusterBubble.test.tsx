@@ -176,7 +176,8 @@ describe('ClusterBubble', () => {
   })
 
   // An ALL-paused cluster is itself "set aside": the closed bubble wears the paused card's slate
-  // dress — ring + tint + whole-bubble dim — and flags data-paused for E2E/style hooks.
+  // dress — ring + tint + a WHOLE-bubble dim on the wrapper (circle, depth rings, and trait discs
+  // dim together, like a paused card's corner chips) — and flags data-paused for E2E/style hooks.
   it('wears the slate paused dress while closed when EVERY member is paused', () => {
     renderBubble({
       traits: { paused: 2, recurring: 0, ongoing: 0, allPaused: true, recurringColor: null },
@@ -184,8 +185,12 @@ describe('ClusterBubble', () => {
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.boxShadow).toContain('rgba(100,116,139,1)')
     expect(button.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
-    expect(parseFloat(button.style.opacity)).toBeLessThan(1)
-    expect(screen.getByTestId('cluster-bubble')).toHaveAttribute('data-paused')
+    const bubble = screen.getByTestId('cluster-bubble')
+    expect(parseFloat(bubble.style.opacity)).toBeLessThan(1)
+    expect(bubble).toHaveAttribute('data-paused')
+    // z auto (not the usual closed-bubble z 3) so the dormant-first DOM partition actually paints
+    // an all-paused bubble BEHIND active cards, like the paused singletons it stands in for.
+    expect(bubble.style.zIndex).toBe('auto')
   })
 
   it('drops the paused dress once open (the expanded popup reads at full strength)', () => {
@@ -195,8 +200,22 @@ describe('ClusterBubble', () => {
     })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.boxShadow).not.toContain('rgba(100,116,139,1)')
-    expect(button.style.opacity).toBe('')
+    expect(screen.getByTestId('cluster-bubble').style.opacity).toBe('')
     // The 💤 trait disc stays — it's information, not dress.
     expect(screen.getByTitle('2 paused tasks').textContent).toBe('💤')
+  })
+
+  // The discs live INSIDE the button (no pointer-events-none wrapper), so their counted titles
+  // are actually hover-reachable and a click on a disc still toggles the popup.
+  it('keeps the trait discs inside the clickable bubble button', () => {
+    const { onToggle } = renderBubble({
+      traits: { paused: 1, recurring: 0, ongoing: 0, allPaused: false, recurringColor: null },
+    })
+    const disc = screen.getByTitle('1 paused task')
+    expect(disc.closest('button')).toBe(
+      screen.getByRole('button', { name: '2 tasks stacked here' }),
+    )
+    fireEvent.click(disc)
+    expect(onToggle).toHaveBeenCalledTimes(1)
   })
 })

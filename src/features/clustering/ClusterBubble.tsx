@@ -88,8 +88,10 @@ export function ClusterBubble({
   const pausedDress = !open && traits?.allPaused ? pausedRingStyle() : null
 
   // The mini trait discs — the card corner-disc family, worn along the bubble's top edge. Each is
-  // decorative (aria-hidden) with a counted hover title; the loudest recurring member's RC color
-  // paints the ↻, ∞ takes the brand primary (matching the card's ongoing badge), 💤 the slate.
+  // decorative to assistive tech (aria-hidden — the popup lists the members properly) but carries a
+  // counted hover title, so they live INSIDE the button: a hover shows the count, a click is still
+  // a click on the bubble. The loudest recurring member's RC color paints the ↻, ∞ takes the brand
+  // primary (matching the card's ongoing badge), 💤 the slate.
   const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
   const traitDiscs = [
     ...(traits && traits.ongoing > 0
@@ -128,9 +130,16 @@ export function ClusterBubble({
     left: `${screenX * 100}%`,
     top: `${screenY * 100}%`,
     transform: 'translate(-50%, -50%)',
-    zIndex: open ? 60 : 3,
+    // Closed bubbles normally float above cards (z 3) — but an all-paused bubble stays at z auto
+    // so the dormant-first DOM partition (use-grid) actually paints it BEHIND active cards, like
+    // the paused singletons it stands in for. Open always raises for the popup.
+    zIndex: open ? 60 : traits?.allPaused ? 'auto' : 3,
     userSelect: 'none',
     touchAction: 'none',
+    // An all-paused bubble dims WHOLE while closed — circle, depth rings, and trait discs alike,
+    // exactly as a paused card dims its own corner chips with it (open restores full strength so
+    // the expanded popup reads clearly; the popup itself is portaled out and never dims).
+    ...(pausedDress ? { opacity: PAUSED_OPACITY } : {}),
   }
 
   const bubbleStyle: CSSProperties = {
@@ -158,9 +167,6 @@ export function ClusterBubble({
     ...(!open && (glow?.background ?? staleRing?.background ?? pausedDress?.background)
       ? { background: glow?.background ?? staleRing?.background ?? pausedDress?.background }
       : {}),
-    // An all-paused bubble dims whole while closed, like a paused card (open restores full
-    // opacity so the expanded popup reads clearly).
-    ...(pausedDress ? { opacity: PAUSED_OPACITY } : {}),
   }
 
   return (
@@ -208,26 +214,28 @@ export function ClusterBubble({
         <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted">
           tasks
         </span>
-      </button>
 
-      {/* Trait discs — overhanging the top-right arc like a card's corner disc. Rendered after
-          the button so they paint over it; pointer-events-none keeps the whole circle clickable. */}
-      {traitDiscs.length > 0 && (
-        <div aria-hidden className="pointer-events-none absolute -right-1 -top-1 z-10 flex gap-0.5">
-          {traitDiscs.map((d) => (
-            <span
-              key={d.key}
-              title={d.title}
-              className={`flex h-4 w-4 items-center justify-center rounded-full border bg-card text-[9px] leading-none shadow-sm ${
-                'className' in d ? d.className : ''
-              }`}
-              style={'color' in d ? { borderColor: d.color, color: d.color } : undefined}
-            >
-              {d.glyph}
-            </span>
-          ))}
-        </div>
-      )}
+        {/* Trait discs — overhanging the top-right arc like a card's corner disc. INSIDE the
+            button so a hover surfaces each disc's counted title and a click on a disc is still a
+            click on the bubble (a sibling row needed pointer-events-none, which killed the
+            tooltips). z-10 keeps them over the circle's border. */}
+        {traitDiscs.length > 0 && (
+          <span aria-hidden className="absolute -right-1 -top-1 z-10 flex gap-0.5">
+            {traitDiscs.map((d) => (
+              <span
+                key={d.key}
+                title={d.title}
+                className={`flex h-4 w-4 items-center justify-center rounded-full border bg-card text-[9px] leading-none shadow-sm ${
+                  'className' in d ? d.className : ''
+                }`}
+                style={'color' in d ? { borderColor: d.color, color: d.color } : undefined}
+              >
+                {d.glyph}
+              </span>
+            ))}
+          </span>
+        )}
+      </button>
 
       {children}
     </div>

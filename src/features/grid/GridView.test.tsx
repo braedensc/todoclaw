@@ -529,10 +529,35 @@ describe('GridView paused (dormant) cards', () => {
     expect(bubble).toHaveAttribute('data-paused')
     expect(within(bubble).getByTitle('2 paused tasks').textContent).toBe('💤')
     const button = within(bubble).getByRole('button', { name: '2 tasks stacked here' })
-    // The paused card's slate ring + tint + dim, on the bubble (closed state).
+    // The paused card's slate ring + tint + whole-bubble dim, on the bubble (closed state).
     expect(button.style.boxShadow).toContain('rgba(100,116,139,1)')
     expect(button.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
-    expect(parseFloat(button.style.opacity)).toBeLessThan(1)
+    expect(parseFloat(bubble.style.opacity)).toBeLessThan(1)
+  })
+
+  it('keeps a paused CHORE on the board even in its between-cycle "ok" window', () => {
+    // A recurring task whose cadence reads 'ok' (done yesterday, 30-day frequency) is normally
+    // hidden between cycles — but PAUSED, it must stay visible in the slate dress: the dormant
+    // early-return in isPlaced deliberately precedes the recurring hides, so a paused chore
+    // always shows where it will land on wake. Pins the check ORDER (mutation-tested: moving the
+    // isDormant check after the recurring hides drops this card while everything else stays green).
+    tasksFixture = [
+      makeTask({
+        id: 'pc',
+        text: 'Deep clean garage',
+        start_date: future,
+        recurring: {
+          frequencyDays: 30,
+          lastDoneAt: new Date(Date.now() - 86_400_000).toISOString(),
+          doneCount: 3,
+        },
+      }),
+    ]
+    render(<GridHarness />)
+
+    const card = screen.getByTestId('grid-card')
+    expect(card).toHaveAttribute('data-paused')
+    expect(within(card).getByText('Deep clean garage')).toBeInTheDocument()
   })
 
   it('paints a paused singleton BEHIND active cards (all-dormant groups order first)', () => {
