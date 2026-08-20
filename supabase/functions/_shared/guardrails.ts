@@ -13,6 +13,7 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { sendSpendAlert } from './spend-alert.ts'
 import { loadConfig } from './guardrails-config.ts'
+import { alertGlobalBudgetTrip, loadEffectiveCap, utcPeriod } from './effective-cap.ts'
 import {
   LIMITS,
   BUDGET_CAP_MICROS,
@@ -54,11 +55,6 @@ export function crossedSpendAlert(
   return prevMicros < thresholdMicros && nextMicros >= thresholdMicros
 }
 
-// 'YYYY-MM' in UTC — matches the period key the SQL ledgers use (to_char(now() at time zone 'utc')).
-function utcPeriod(now: Date = new Date()): string {
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
-}
-
 // Model-aware cost in micro-dollars: rates come from MODEL_PRICING (guardrails-constants.ts —
 // micros per token, so micros = input×rate.in + output×rate.out). A missing or UNKNOWN model id
 // falls back to the Sonnet row ($3/$15 standard — the pre-knob formula), so every legacy caller
@@ -77,15 +73,33 @@ export type PrecheckResult =
 
 // Pre-call gate: budget kill-switches FIRST (cheap, no write — don't charge a rate-limit unit
 // against an already-paused month), then the per-user rate limit (which records the request).
-// Order: global monthly pool → per-user monthly sub-cap → rate limit.
+// Order: global monthly pool → per-user monthly sub-cap → rate limit. The global gate enforces the
+// SCALED cap (ADR 2026-08-20 Decision 3): min(base + per-user cap × active users, manual ceiling,
+// $100) via loadEffectiveCap — a failed active-count read degrades to cap = base, never unbounded.
 export async function precheck(client: SupabaseClient, feature: Feature): Promise<PrecheckResult> {
   const cfg = await loadConfig(client)
+  const { capMicros, activeUserCount } = await loadEffectiveCap(client, cfg)
   const { data: remaining, error: budgetErr } = await client.rpc('ai_budget_check', {
-    p_cap_micros: cfg.globalBudgetCapMicros,
+    p_cap_micros: capMicros,
   })
   if (budgetErr) return { ok: false, reason: 'budget-exhausted', detail: budgetErr.message }
-  if (typeof remaining === 'number' && remaining <= 0)
+  if (typeof remaining === 'number' && remaining <= 0) {
+    // The GLOBAL pool tripped — all AI is paused. Page the owner (best-effort, deduped once per
+    // period per isolate in alertGlobalBudgetTrip; never fails the caller's request).
+    try {
+      await alertGlobalBudgetTrip({
+        period: utcPeriod(),
+        capMicros,
+        activeUserCount,
+        baseMicros: cfg.budgetBaseMicros,
+        ceilingMicros: cfg.globalBudgetCapMicros,
+        source: `precheck:${feature}`,
+      })
+    } catch {
+      /* alerting is best-effort */
+    }
     return { ok: false, reason: 'budget-exhausted' }
+  }
 
   // Per-user monthly sub-cap: one account can't drain the shared pool (Issue 3, 2026-07-06 audit).
   const { data: userRemaining, error: userErr } = await client.rpc('ai_user_budget_check', {
@@ -177,8 +191,11 @@ export async function getStatus(client: SupabaseClient): Promise<AiStatus> {
   const cfg = await loadConfig(client)
   // The caller's real headroom is the smaller of the global pool and their per-user sub-cap —
   // report/pause on whichever is tighter so the banner matches what precheck will actually enforce.
+  // The global side uses the same SCALED effective cap as precheck (loadEffectiveCap) — a banner
+  // computed off the raw ceiling would claim headroom precheck doesn't grant.
+  const { capMicros } = await loadEffectiveCap(client, cfg)
   const [globalRes, userRes] = await Promise.all([
-    client.rpc('ai_budget_check', { p_cap_micros: cfg.globalBudgetCapMicros }),
+    client.rpc('ai_budget_check', { p_cap_micros: capMicros }),
     client.rpc('ai_user_budget_check', { p_cap_micros: cfg.userBudgetCapMicros }),
   ])
   const globalRemaining = typeof globalRes.data === 'number' ? globalRes.data : 0

@@ -16,8 +16,9 @@ import { LIMIT_GROUPS, type LimitGroup, type LimitKind } from './limits-referenc
 
 // AdminPage — the OWNER-ONLY control room (a full page on the Done/Reminders template, ADR-0027).
 // Tabbed (Overview · Guardrails · Limits · Invites · System) so the growing pile of owner info stays
-// scannable. Read-only: AI spend, the live guardrail config, a full limits reference, system stats +
-// integration status, and invite management. Editable caps land in a follow-up.
+// scannable: AI spend (metered against the scaled EFFECTIVE cap), the live guardrail config (models
+// + the scaled-budget base editable in Guardrails), a full limits reference, system stats +
+// integration status, and invite management.
 //
 // Two guards: this component early-returns a fallback when !useIsOwner() (below), and App only mounts
 // it when isOwner. Both are UI-only — every privileged datum comes from the `admin` Edge Function,
@@ -46,13 +47,23 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
   )
 }
 
-function SpendMeter({ spent, cap }: { spent: number; cap: number }) {
+// spent vs the EFFECTIVE cap (the scaled value precheck enforces), not the raw manual ceiling —
+// the meter must show how close AI is to actually pausing.
+function SpendMeter({
+  spent,
+  cap,
+  label = 'Global budget',
+}: {
+  spent: number
+  cap: number
+  label?: string
+}) {
   const pct = cap > 0 ? Math.min(100, Math.round((spent / cap) * 100)) : 0
   const danger = pct >= 80
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between text-sm">
-        <span className="text-muted">Global budget</span>
+        <span className="text-muted">{label}</span>
         <span className="font-medium text-ink">
           {formatUsd(spent)} <span className="text-muted">/ {formatUsd(cap)}</span>
         </span>
@@ -262,10 +273,24 @@ function DataTab({
 
 function OverviewTab({ data }: { data: AdminOverview }) {
   const { globalSpend, roster } = data
+  // Fall back to the raw ceiling only when a stale edge fn omits the scaled fields (deploy skew).
+  const scaled = typeof data.effectiveCapMicros === 'number'
   return (
     <Section title="AI spend this month" hint="Live from the budget ledgers.">
       {globalSpend ? (
-        <SpendMeter spent={globalSpend.spentMicros} cap={globalSpend.capMicros} />
+        <>
+          <SpendMeter
+            spent={globalSpend.spentMicros}
+            cap={data.effectiveCapMicros ?? globalSpend.capMicros}
+            label={scaled ? 'Global budget (effective cap)' : 'Global budget'}
+          />
+          {scaled && (
+            <p className="mt-1 text-xs text-muted">
+              Cap scales with adoption — {data.activeUserCount ?? 0} active AI{' '}
+              {data.activeUserCount === 1 ? 'user' : 'users'} this month. Breakdown in Guardrails.
+            </p>
+          )}
+        </>
       ) : (
         <p className="text-sm text-muted">Budget status unavailable.</p>
       )}
@@ -312,26 +337,41 @@ function ModelSelect({
   )
 }
 
+// Client-side mirror of HARD_MAX.base ($100) — the server re-clamps (Zod + app_config_set + table
+// CHECK), so drift here only mislabels the input bound, never widens what can be stored.
+const BASE_MAX_USD = 100
+
 function GuardrailsTab({ data }: { data: AdminOverview }) {
   const { config } = data
   const setConfig = useSetAdminConfig()
-  // Local selection, seeded from the live config; Save sends only the keys that changed.
+  // Local edits, seeded from the live config; Save sends only the keys that changed.
   const [chatModel, setChatModel] = useState<string | null>(null)
   const [planModel, setPlanModel] = useState<string | null>(null)
+  const [baseInput, setBaseInput] = useState<string | null>(null) // dollars, as typed
   if (!config) return <p className="py-6 text-sm text-muted">Guardrail config unavailable.</p>
 
   const chatValue = chatModel ?? config.chatModel
   const planValue = planModel ?? config.planModel
-  const dirty = chatValue !== config.chatModel || planValue !== config.planModel
+  const baseValue = baseInput ?? String(config.aiBudgetBaseMicros / 1_000_000)
+  const baseMicros = Math.round(Number(baseValue) * 1_000_000)
+  const baseValid =
+    baseValue.trim() !== '' &&
+    Number.isFinite(baseMicros) &&
+    baseMicros >= 0 &&
+    baseMicros <= BASE_MAX_USD * 1_000_000
+  const baseDirty = baseValid && baseMicros !== config.aiBudgetBaseMicros
+  const dirty = chatValue !== config.chatModel || planValue !== config.planModel || baseDirty
 
   const save = () => {
-    const patch: { chatModel?: string; planModel?: string } = {}
+    const patch: { chatModel?: string; planModel?: string; aiBudgetBaseMicros?: number } = {}
     if (chatValue !== config.chatModel) patch.chatModel = chatValue
     if (planValue !== config.planModel) patch.planModel = planValue
+    if (baseDirty) patch.aiBudgetBaseMicros = baseMicros
     setConfig.mutate(patch, {
       onSuccess: () => {
         setChatModel(null)
         setPlanModel(null)
+        setBaseInput(null)
       },
     })
   }
@@ -339,9 +379,14 @@ function GuardrailsTab({ data }: { data: AdminOverview }) {
   return (
     <Section
       title="Guardrails"
-      hint="The AI cost caps and rate limits currently in effect. Models are editable here; cap editing lands in a follow-up."
+      hint="The AI cost caps and rate limits currently in effect. Effective cap = min(base + per-user cap × active users, manual ceiling, $100 hard max)."
     >
-      <Row label="Global budget ceiling" value={formatUsd(config.globalBudgetCapMicros)} />
+      <Row
+        label="Effective global cap"
+        value={formatUsd(data.effectiveCapMicros ?? config.globalBudgetCapMicros)}
+      />
+      <Row label="Active AI users (this month)" value={data.activeUserCount ?? '—'} />
+      <Row label="Manual ceiling" value={formatUsd(config.globalBudgetCapMicros)} />
       <Row label="Per-user monthly cap" value={formatUsd(config.userBudgetCapMicros)} />
       <Row
         label="Chat rate limit"
@@ -352,7 +397,25 @@ function GuardrailsTab({ data }: { data: AdminOverview }) {
         value={`${config.planHourLimit}/hr · ${config.planDayLimit}/day`}
       />
       <div className="mt-3 border-t border-border pt-2">
-        <h4 className="mb-1 text-sm font-medium text-ink">Models</h4>
+        <h4 className="mb-1 text-sm font-medium text-ink">Models &amp; budget base</h4>
+        <div className="flex items-center justify-between gap-3 py-1 text-sm">
+          <label htmlFor="admin-budget-base" className="text-muted">
+            Scaled-budget base ($/mo)
+          </label>
+          <input
+            id="admin-budget-base"
+            type="number"
+            min={0}
+            max={BASE_MAX_USD}
+            step={1}
+            value={baseValue}
+            onChange={(e) => setBaseInput(e.target.value)}
+            className="w-24 rounded-lg border border-border-strong bg-panel px-2 py-1 text-right text-sm font-medium text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          />
+        </div>
+        {!baseValid && (
+          <p className="text-xs text-danger">Base must be a dollar amount from 0 to 100.</p>
+        )}
         <ModelSelect
           id="admin-chat-model"
           label="Chat model"
@@ -371,18 +434,18 @@ function GuardrailsTab({ data }: { data: AdminOverview }) {
           <button
             type="button"
             onClick={save}
-            disabled={!dirty || setConfig.isPending}
+            disabled={!dirty || !baseValid || setConfig.isPending}
             className="rounded-full border border-primary/60 px-3.5 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-default disabled:border-border disabled:text-muted-light"
           >
-            {setConfig.isPending ? 'Saving…' : 'Save models'}
+            {setConfig.isPending ? 'Saving…' : 'Save changes'}
           </button>
           {setConfig.isError && (
             <span className="text-xs text-danger">Couldn’t save — try again.</span>
           )}
         </div>
         <p className="mt-1 text-xs text-muted">
-          Takes effect within ~30s (server config cache) — no deploy. Chat never runs Opus: a
-          worst-case chat call would breach the fixed $0.20 per-call ceiling.
+          Takes effect within ~30s (server config + active-count caches) — no deploy. Chat never
+          runs Opus: a worst-case chat call would breach the fixed $0.20 per-call ceiling.
         </p>
       </div>
     </Section>

@@ -22,9 +22,10 @@
 // BOOLEANS only — no secret VALUES ever leave the server.
 //
 // Contract: POST { action: 'whoami' } → { isOwner }; POST { action: 'get_overview' } (owner only) →
-// { config, globalSpend, roster, systemStats, integrations }; POST { action: 'set_config',
-// config: <partial patch> } (owner only) → the same overview shape, freshly read after the write.
-// All require a Bearer token.
+// { config, globalSpend, roster, systemStats, integrations, activeUserCount, effectiveCapMicros };
+// POST { action: 'set_config', config: <partial patch> } (owner only) → the same overview shape,
+// freshly read after the write. All require a Bearer token. activeUserCount/effectiveCapMicros are
+// the scaled-cap view (2026-08-20): what precheck actually enforces this period.
 
 import { z } from 'npm:zod@4.4.3'
 import { corsHeaders, preflight } from '../_shared/cors.ts'
@@ -32,8 +33,9 @@ import { userClient, requireUser } from '../_shared/auth.ts'
 import { isOwner } from '../_shared/owner.ts'
 import { adminClient } from '../_shared/admin.ts'
 import { ipThrottleOk } from '../_shared/ip-throttle.ts'
-import { HARD_MAX } from '../_shared/guardrails-config.ts'
+import { HARD_MAX, FALLBACK_CONFIG, parseConfig } from '../_shared/guardrails-config.ts'
 import { ALLOWED_CHAT_MODELS, ALLOWED_PLAN_MODELS } from '../_shared/guardrails-constants.ts'
+import { effectiveCapMicros } from '../_shared/effective-cap.ts'
 
 // Partial patch — every key optional; unknown keys rejected so a typo can't silently no-op.
 // Bounds mirror the clamp stack's other layers (table CHECKs / app_config_set / loadConfig).
@@ -116,21 +118,31 @@ Deno.serve(async (req) => {
     // One overview read, shared by get_overview and set_config (which answers with fresh state so
     // the panel never renders a stale config after a write).
     const readOverview = async (): Promise<Response> => {
-      const [configRes, globalRes, rosterRes, statsRes] = await Promise.all([
+      const [configRes, globalRes, rosterRes, statsRes, activeRes] = await Promise.all([
         admin.rpc('app_config_get'),
         admin.rpc('ai_budget_status_admin'),
         admin.rpc('ai_user_spend_roster'),
         admin.rpc('admin_system_stats'),
+        admin.rpc('ai_active_user_count'),
       ])
       const firstError =
         configRes.error || globalRes.error || rosterRes.error || statsRes.error || null
       if (firstError) return json({ error: 'read_failed', detail: firstError.message }, 500)
+      // Scaled-cap view for the panel — same fail-safe as the enforcement readers: a failed count
+      // reads as 0 ⇒ effective cap = base (never a 500; the count is display + formula input only).
+      const cfg = parseConfig(configRes.data) ?? FALLBACK_CONFIG
+      const activeUserCount =
+        typeof activeRes.data === 'number' && Number.isFinite(activeRes.data)
+          ? Math.max(0, Math.floor(activeRes.data))
+          : 0
       return json({
         config: configRes.data,
         globalSpend: globalRes.data,
         roster: rosterRes.data ?? [],
         systemStats: statsRes.data,
         integrations: integrationStatus(),
+        activeUserCount,
+        effectiveCapMicros: effectiveCapMicros(cfg, activeUserCount),
       })
     }
 

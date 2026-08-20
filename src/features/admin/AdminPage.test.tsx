@@ -63,6 +63,9 @@ const OVERVIEW = {
     lastMessageAt: null,
   },
   integrations: { anthropicKey: true, vapidPublicKey: false },
+  // Scaled-cap view: 2 active users ⇒ min($10 base + $10×2, $60 ceiling, $100) = $30.
+  activeUserCount: 2,
+  effectiveCapMicros: 30_000_000,
 }
 
 beforeEach(() => {
@@ -77,6 +80,64 @@ describe('AdminPage', () => {
     expect(screen.getByText('AI spend this month')).toBeInTheDocument()
     // Overview is NOT showing the Limits reference yet.
     expect(screen.queryByText('Per-IP throttles')).not.toBeInTheDocument()
+  })
+
+  it('SpendMeter meters spend against the EFFECTIVE cap, not the raw ceiling', () => {
+    render(<AdminPage />)
+    // $6.20 spent of the $30 effective cap — NOT the $20 raw capMicros or the $60 ceiling.
+    expect(screen.getByText('Global budget (effective cap)')).toBeInTheDocument()
+    expect(screen.getByText('/ $30.00')).toBeInTheDocument()
+    expect(screen.queryByText('/ $20.00')).not.toBeInTheDocument()
+    expect(screen.getByText(/2 active AI users this month/)).toBeInTheDocument()
+  })
+
+  it('SpendMeter falls back to the raw cap when the edge fn omits the scaled fields', () => {
+    overviewState.current = {
+      isLoading: false,
+      isError: false,
+      data: { ...OVERVIEW, activeUserCount: undefined, effectiveCapMicros: undefined },
+      error: null,
+    }
+    render(<AdminPage />)
+    expect(screen.getByText('Global budget')).toBeInTheDocument()
+    expect(screen.getByText('/ $20.00')).toBeInTheDocument()
+  })
+
+  it('Guardrails tab labels base, active count, effective cap, and manual ceiling distinctly', () => {
+    render(<AdminPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Guardrails' }))
+    // Effective cap ($30) vs the manual ceiling ($60) — different rows, different numbers.
+    expect(screen.getByText('Effective global cap')).toBeInTheDocument()
+    expect(screen.getByText('$30.00')).toBeInTheDocument()
+    expect(screen.getByText('Manual ceiling')).toBeInTheDocument()
+    expect(screen.getByText('$60.00')).toBeInTheDocument()
+    expect(screen.getByText('Active AI users (this month)')).toBeInTheDocument()
+    // The base is the editable input, seeded in dollars.
+    expect(screen.getByLabelText('Scaled-budget base ($/mo)')).toHaveValue(10)
+  })
+
+  it('Guardrails tab: editing the base saves aiBudgetBaseMicros (and only that)', () => {
+    render(<AdminPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Guardrails' }))
+    const save = screen.getByRole('button', { name: /Save changes/ })
+    expect(save).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Scaled-budget base ($/mo)'), {
+      target: { value: '15' },
+    })
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    expect(mutateSpy).toHaveBeenCalledTimes(1)
+    expect(mutateSpy.mock.calls[0]?.[0]).toEqual({ aiBudgetBaseMicros: 15_000_000 })
+  })
+
+  it('Guardrails tab: an out-of-range base disables Save instead of sending it', () => {
+    render(<AdminPage />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Guardrails' }))
+    fireEvent.change(screen.getByLabelText('Scaled-budget base ($/mo)'), {
+      target: { value: '250' },
+    })
+    expect(screen.getByRole('button', { name: /Save changes/ })).toBeDisabled()
+    expect(screen.getByText(/Base must be a dollar amount/)).toBeInTheDocument()
   })
 
   it('switches to the Limits tab and shows the grouped, read-only reference', () => {
@@ -112,7 +173,7 @@ describe('AdminPage', () => {
     render(<AdminPage />)
     fireEvent.click(screen.getByRole('tab', { name: 'Guardrails' }))
 
-    const save = screen.getByRole('button', { name: /Save models/ })
+    const save = screen.getByRole('button', { name: /Save changes/ })
     expect(save).toBeDisabled() // nothing changed yet
 
     // Flip the PLAN model only; the chat model stays untouched and must not ride along.

@@ -4,6 +4,8 @@ import { assertEquals } from 'jsr:@std/assert@1'
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import {
   costMicros,
+  precheck,
+  getStatus,
   recordUsage,
   BUDGET_CAP_MICROS,
   USER_BUDGET_CAP_MICROS,
@@ -13,6 +15,8 @@ import {
   LIMITS,
 } from './guardrails.ts'
 import { _resetConfigCache } from './guardrails-config.ts'
+import { AI_BUDGET_BASE_MICROS } from './guardrails-constants.ts'
+import { _resetActiveCountCache, _resetGlobalTripAlert } from './effective-cap.ts'
 
 Deno.test('costMicros: Sonnet 5 standard pricing ($3/$15 per 1M) → micro-dollars', () => {
   // 1M input = $3 = 3,000,000 micros; 1M output = $15 = 15,000,000 micros.
@@ -163,3 +167,132 @@ Deno.test(
     })
   },
 )
+
+// ─── scaled effective cap: the interactive readers (precheck + getStatus) ───────────────────────
+
+// A fake client with per-RPC replies, plus the .from() chain + auth getStatus needs. An RPC missing
+// from `replies` answers { data: null, error: null } — which for app_config_get means "fall back to
+// the constants" and for ai_active_user_count means "failed count → 0" (the fail-safe path).
+type RpcReply = { data?: unknown; error?: { message: string } | null }
+
+function fakeReaderClient(replies: Record<string, RpcReply>) {
+  const calls: { name: string; args?: Record<string, unknown> }[] = []
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    gt: () => Promise.resolve({ count: 0 }),
+  }
+  const client = {
+    rpc(name: string, args?: Record<string, unknown>) {
+      calls.push({ name, args })
+      return Promise.resolve(replies[name] ?? { data: null, error: null })
+    },
+    from: () => chain,
+    auth: { getUser: () => Promise.resolve({ data: { user: null }, error: null }) },
+  } as unknown as SupabaseClient
+  return { calls, client }
+}
+
+function resetCapCaches() {
+  _resetConfigCache()
+  _resetActiveCountCache()
+  _resetGlobalTripAlert()
+}
+
+Deno.test('precheck (reader 1): passes the SCALED effective cap to ai_budget_check', async () => {
+  resetCapCaches()
+  // Fallback config (app_config_get → null) + a failed count (ai_active_user_count → null) ⇒
+  // cap = base ($10) — NOT the flat BUDGET_CAP_MICROS ($20). This is the fail-safe floor.
+  const f = fakeReaderClient({
+    ai_budget_check: { data: 5_000_000 },
+    ai_user_budget_check: { data: 4_000_000 },
+    ai_usage_check_and_record: { data: 'usage-1' },
+  })
+  const res = await precheck(f.client, 'chat')
+  assertEquals(res, { ok: true, usageId: 'usage-1' })
+  const budget = f.calls.find((c) => c.name === 'ai_budget_check')
+  assertEquals(budget?.args, { p_cap_micros: AI_BUDGET_BASE_MICROS })
+})
+
+Deno.test('precheck: the cap scales with the active-user count (ceiling-clamped)', async () => {
+  resetCapCaches()
+  // Fallback config: base $10 + $10×5 = $60 → clamped by the $20 fallback ceiling.
+  const f = fakeReaderClient({
+    ai_active_user_count: { data: 5 },
+    ai_budget_check: { data: 5_000_000 },
+    ai_user_budget_check: { data: 4_000_000 },
+    ai_usage_check_and_record: { data: 'usage-1' },
+  })
+  await precheck(f.client, 'chat')
+  const budget = f.calls.find((c) => c.name === 'ai_budget_check')
+  assertEquals(budget?.args, { p_cap_micros: BUDGET_CAP_MICROS })
+})
+
+Deno.test('precheck: a live config scales past the old flat cap', async () => {
+  resetCapCaches()
+  // The post-re-seed shape: $60 ceiling, base $10, per-user $10, 2 active users ⇒ $30 enforced.
+  const f = fakeReaderClient({
+    app_config_get: {
+      data: {
+        globalBudgetCapMicros: 60_000_000,
+        userBudgetCapMicros: USER_BUDGET_CAP_MICROS,
+        aiBudgetBaseMicros: AI_BUDGET_BASE_MICROS,
+        chatHourLimit: 30,
+        chatDayLimit: 100,
+        planHourLimit: 10,
+        planDayLimit: 10,
+      },
+    },
+    ai_active_user_count: { data: 2 },
+    ai_budget_check: { data: 5_000_000 },
+    ai_user_budget_check: { data: 4_000_000 },
+    ai_usage_check_and_record: { data: 'usage-1' },
+  })
+  await precheck(f.client, 'chat')
+  const budget = f.calls.find((c) => c.name === 'ai_budget_check')
+  assertEquals(budget?.args, { p_cap_micros: 30_000_000 })
+  resetCapCaches() // don't leak the cached tuned config into later tests
+})
+
+Deno.test('getStatus (reader 2): banner math uses the same effective cap as precheck', async () => {
+  resetCapCaches()
+  const f = fakeReaderClient({
+    ai_active_user_count: { data: 5 },
+    ai_budget_check: { data: 2_000_000 },
+    ai_user_budget_check: { data: 9_000_000 },
+  })
+  const status = await getStatus(f.client)
+  const budget = f.calls.find((c) => c.name === 'ai_budget_check')
+  // Fallback config + 5 active ⇒ ceiling-clamped $20 — identical to what precheck enforces.
+  assertEquals(budget?.args, { p_cap_micros: BUDGET_CAP_MICROS })
+  assertEquals(status.paused, false)
+  assertEquals(status.budgetRemainingMicros, 2_000_000) // min(global, per-user)
+})
+
+Deno.test('precheck: a global trip pages the owner once — deduped on the next trip', async () => {
+  resetCapCaches()
+  Deno.env.set('AI_SPEND_ALERT_WEBHOOK_URL', 'https://hooks.example.com/xyz')
+  const realFetch = globalThis.fetch
+  let posts = 0
+  let lastBody: Record<string, unknown> = {}
+  globalThis.fetch = ((_url: string, init?: RequestInit) => {
+    posts++
+    lastBody = JSON.parse((init?.body as string) ?? '{}')
+    return Promise.resolve(new Response(null, { status: 204 }))
+  }) as unknown as typeof fetch
+  try {
+    const f = fakeReaderClient({ ai_budget_check: { data: 0 } })
+    const res = await precheck(f.client, 'chat')
+    assertEquals(res, { ok: false, reason: 'budget-exhausted' })
+    assertEquals(posts, 1)
+    assertEquals(lastBody.event, 'ai_global_budget_tripped')
+    assertEquals(lastBody.source, 'precheck:chat')
+    // Every subsequent blocked request in this isolate/period: no re-page.
+    await precheck(f.client, 'chat')
+    assertEquals(posts, 1)
+  } finally {
+    globalThis.fetch = realFetch
+    Deno.env.delete('AI_SPEND_ALERT_WEBHOOK_URL')
+    resetCapCaches()
+  }
+})
