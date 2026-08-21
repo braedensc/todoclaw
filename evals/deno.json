@@ -2,7 +2,8 @@
   "lock": false,
   "tasks": {
     "eval": "deno run --allow-env --allow-net --allow-read --allow-write=results --allow-run=supabase run.ts",
-    "check": "deno check run.ts",
+    "prefixes": "deno run --allow-env --allow-net --allow-read tools/count-prefixes.ts",
+    "check": "deno check run.ts tools/count-prefixes.ts",
     "test": "deno test --allow-env --allow-read lib/"
   }
 }

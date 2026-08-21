@@ -1,12 +1,14 @@
 // ongoing-sessions.ts — BabyClaw's WORKED-vs-FINISHED distinction on an ONGOING PROJECT.
 //
-// Pins PR #347 ("log work sessions instead of archiving, and pace them"), which is UNMERGED — every
-// scenario here carries expectFailUntil. Before it, an ongoing project's only ✓/complete path ran
-// set_task_done: a user reporting *progress* ("I worked on the novel today") got their standing
-// project stamped completed_at, dropped into the Done log, and archived off the board. There was no
-// way at all to record chipping away at one.
+// Pins PR #347 ("log work sessions instead of archiving, and pace them"), merged 2026-08-18.
+// These ran as expectFailUntil while #347 was open; the tags were retired on merge (per the
+// harness rule that a tag must genuinely fail on main) and the scenarios are ordinary
+// expected-pass now. Before #347, an ongoing project's only ✓/complete path ran set_task_done:
+// a user reporting *progress* ("I worked on the novel today") got their standing project stamped
+// completed_at, dropped into the Done log, and archived off the board. There was no way at all to
+// record chipping away at one.
 //
-// What each scenario pins (all against the PR head ef805dd, not main):
+// What each scenario pins:
 //  - ongo-log-session-not-complete — progress ⇒ log_work, never complete_task. capabilities/tasks.ts
 //    log_work ("NEVER use complete_task for this — on an ongoing project that FINISHES the project
 //    for good"), chat-prompt.ts "WORKED vs FINISHED".
@@ -18,15 +20,11 @@
 //    complete_task. The headline behavior change, and the exact place a mis-steered model destroys
 //    data.
 //
-// Why these genuinely fail on main rather than passing by luck: `log_work` does not exist in main's
-// capability registry, and the local stack serves this worktree's functions — the tool cannot be
-// called, so toolExecutedOk('log_work') is a guaranteed fail until #347 merges.
-//
-// The archival canary is the Done-log row, not the column: DbSnapshot has no `worked_days` (the
-// column does not exist on main), so "a session was logged" is asserted as tool-trace + the
-// NEGATIVE of archival — completed_at null, not in today's done map, and no history row. See the
-// harness note in this file's owner report for the direct dbWorkedToday() combinator that becomes
-// possible once #347 lands.
+// The archival canary is the Done-log row, not the column: evals/lib's DbSnapshot doesn't carry
+// `worked_days`, so "a session was logged" is asserted as tool-trace + the NEGATIVE of archival —
+// completed_at null, not in today's done map, and no history row. A direct dbWorkedToday()
+// combinator (the column exists now that #347 is merged) is a reasonable follow-up if these
+// indirect checks ever prove too loose.
 //
 // Chat seeds MUST be now-relative (dayOffsetISO with no base) — the HTTP path can't pin the clock.
 // Nothing here depends on the wall-clock hour or the weekday.
@@ -109,8 +107,8 @@ function bodyLacks(turnIdx: number, match: RegExp, label: string): ChatCheck {
 // ---------- fixtures ----------
 
 /** One ongoing project with no session history at all, plus a mundane dated companion so the board
- * isn't a single-task board. `worked_days` is deliberately NOT seeded — the column doesn't exist on
- * main and db.ts can't write it, so every session in these scenarios is created in-conversation. */
+ * isn't a single-task board. `worked_days` is deliberately NOT seeded — evals/lib's db.ts doesn't
+ * write it, so every session in these scenarios is created in-conversation. */
 const novelSeed = () => ({
   tasks: [
     {
@@ -139,7 +137,6 @@ export const scenarios: ChatScenario[] = [
     title: 'Progress on an ongoing project logs a SESSION — it must never archive the project',
     tags: ['ongoing', 'log-work', 'lifecycle', 'regression'],
     persona: 'novelist chipping away at a standing project',
-    expectFailUntil: 'ongoing work sessions (#347)',
     seed: novelSeed,
     turns: [{ say: 'I worked on the novel for about two hours today — got a chapter drafted.' }],
     checks: [
@@ -174,7 +171,6 @@ export const scenarios: ChatScenario[] = [
     title: "Taking back a session they didn't actually do un-logs it, and still archives nothing",
     tags: ['ongoing', 'log-work', 'un-log', 'correction'],
     persona: 'novelist correcting themselves',
-    expectFailUntil: 'ongoing work sessions (#347)',
     seed: novelSeed,
     turns: [
       { say: 'I put an hour into the novel today.' },
@@ -210,7 +206,6 @@ export const scenarios: ChatScenario[] = [
       'Both branches in one conversation: progress logs a session, "finished for good" archives',
     tags: ['ongoing', 'log-work', 'complete', 'confirm-gate', 'lifecycle'],
     persona: 'two standing projects, one still running and one genuinely over',
-    expectFailUntil: 'ongoing work sessions (#347)',
     seed: () => ({
       tasks: [
         {
