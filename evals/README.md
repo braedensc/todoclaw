@@ -40,13 +40,29 @@ reach it) and to edge-function deploys. Type-checking is Deno's (`npm run eval:c
 ## Running
 
 ```sh
-npm run eval -- --list                 # what would run
-npm run eval -- --kind plan            # one surface
-npm run eval -- --filter pause         # by tag/id substring
+npm run eval -- --list                 # what would run (respects --kind/--filter; runs nothing)
+npm run eval -- --kind plan            # one surface: chat | plan | recap
+npm run eval -- --filter pause         # substring match on scenario id OR any tag
 npm run eval -- --no-judge             # deterministic checks only (cheapest)
 npm run eval -- --mock                 # zero-API pipeline smoke (plan/recap only)
 npm run eval -- --repeat 3             # flakiness estimate (models are stochastic)
+npm run eval:prefixes                  # FREE: cached-prefix tokens vs each model's cache floor
 ```
+
+**Running a subset.** `--kind` picks a surface; `--filter` narrows further by substring against
+the scenario id and its tags. Every family file gives its scenarios a shared id prefix (`ongo-`
+chat/ongoing-sessions, `safe-` chat/safety-injection, `pers-` chat/personas-complex, `pong-`
+plan/plan-ongoing-sessions, `pedge-` plan/plan-edge-cases, `plan-` plan/plan-rules, …), so a
+prefix filter runs exactly one family — e.g. a one-family shakedown before a paid sweep:
+
+```sh
+npm run eval -- --filter ongo- --list      # confirm what it selects, THEN
+npm run eval -- --filter ongo- --no-judge  # run just that family, deterministic checks only
+```
+
+Both flags combine (`--kind chat --filter confirm`); always `--list` first before a paid run.
+Other knobs: `--repeat N`, `--concurrency N` (plan/recap pool, default 3), `--judge-model <id>`
+(defaults to the prod model — leave it there, see the gate below), `--no-fail-exit`.
 
 **Prompt-experiment workflow (git-native):**
 
@@ -62,6 +78,39 @@ estimate per run; reports land in `evals/results/` (gitignored — transcripts s
 Prompt caching (PR 3) cuts sweep cost: plan/recap system prompts carry a 5-min-TTL cache
 breakpoint, so back-to-back scenarios read the cached prefix (~0.1× input rate) instead of
 re-billing it — the report's estimate includes the cache write (1.25×) and read (0.1×) terms.
+Whether a given MODEL gets any cache benefit depends on its floor — `npm run eval:prefixes`
+(free, key only, no local stack) prints each surface's real prefix size against each allowlisted
+model's minimum cacheable length.
+
+## Model-switch gate
+
+**No production model flip without a before/after eval run** (Braeden's gate, 2026-08-20). For a
+chat-only switch — e.g. flipping `chat_model` from Sonnet to Haiku — the protocol is:
+
+1. **Shakedown** — run ONE family through the filter to flush harness rot before spending on a
+   sweep: `npm run eval:check`, then `npm run eval -- --filter ongo- --no-judge`. Fix anything
+   stale (dead expectFailUntil tags, drifted checks) first.
+2. **Baseline on main** — the full chat suite on the current prod model (Sonnet):
+   `npm run eval -- --kind chat --save-baseline`.
+3. **Candidate sweep** — point the LOCAL stack's `app_config.chat_model` at the candidate (Haiku)
+   via the local admin panel / `set_config`, then
+   `npm run eval -- --kind chat --baseline results/baseline.json`.
+4. **Targeted repeats** — `--filter <scenario id> --repeat 3` ONLY on scenarios that flaked or
+   regressed; never blanket-repeat the whole suite.
+5. **Flip** — only if the deterministic checks hold and the judge deltas are acceptable. The
+   sensitive families are injection resistance (`safe-`), the destructive confirm gates, and the
+   8-step personas (`pers-`). The flip itself is an admin-panel config change, not a deploy.
+
+Rules that keep the comparison honest:
+
+- **Plan/recap families are excluded** from a chat-only switch — that's what `--kind chat` does.
+  A `plan_model` switch would mirror the same protocol with `--kind plan`.
+- **The judge stays on the strong model** in BOTH runs — never point `--judge-model` at the
+  candidate, or the two runs' scores aren't comparable.
+- **Run scenario batches back-to-back**: the cached prefixes carry a 5-minute TTL, so a pause
+  longer than that between batches re-bills the full prefix at the 1.25× write rate.
+- Before trusting cache savings in the sweep budget, check `npm run eval:prefixes` — a prefix
+  below the candidate model's floor (Haiku's is 4096 tokens) gets no caching at all.
 
 ## Layout
 
@@ -78,6 +127,8 @@ lib/
   runner.ts          orchestration (chat sequential; plan/recap pooled)
   mock.ts            canned client for --mock
 scenarios/           one file per family, one owner per file; registry in index.ts
+tools/
+  count-prefixes.ts  FREE prefix-vs-cache-floor measurement (npm run eval:prefixes)
 ```
 
 ## Authoring scenarios

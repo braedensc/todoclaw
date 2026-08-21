@@ -22,6 +22,7 @@
     "eval": "cd evals && deno task eval --",
     "eval:check": "cd evals && deno task check",
     "eval:test": "cd evals && deno task test",
+    "eval:prefixes": "cd evals && deno task prefixes",
     "gen:icons": "node scripts/generate-pwa-icons.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:rls": "node scripts/check-rls.mjs",

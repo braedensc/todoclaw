@@ -1,10 +1,12 @@
 // plan-ongoing-sessions.ts — Plan My Day's pacing of ONGOING PROJECTS off their session history.
 //
-// Pins PR #347 ("log work sessions instead of archiving, and pace them"), which is UNMERGED — every
-// scenario here carries expectFailUntil. On main the planner sees no session facts at all, so a
-// project the user already spent the day on is an ordinary, very tempting big-rock candidate.
+// Pins PR #347 ("log work sessions instead of archiving, and pace them"), merged 2026-08-18.
+// These ran as expectFailUntil while #347 was open; the tags were retired on merge (per the
+// harness rule that a tag must genuinely fail on main) and the scenarios are ordinary
+// expected-pass now. Without #347's session facts the planner would see a project the user
+// already spent the day on as an ordinary, very tempting big-rock candidate.
 //
-// What each scenario pins (against the PR head ef805dd):
+// What each scenario pins:
 //  - pong-worked-today-off-the-table      — worked-today is STRUCTURALLY unschedulable, not a rule
 //    the model is asked to follow: taskLines drops it from the candidates, the ALREADY WORKED TODAY
 //    block carries no [T#], and resolvePlanTaskIds' keep()/isWorkedToday drops any rock or nudge
@@ -18,21 +20,23 @@
 //  - pong-long-gap-picked-back-up-no-guilt— a months-old project is fully fresh and may earn the day,
 //    but the plan must NEVER name the gap or imply neglect.
 //
-// EVERY fixture here is stacked so the pre-merge failure comes from the missing session facts and
-// NOTHING ELSE. The trap when authoring one of these is a board where main's own rules already point
-// away from the project — then the scenario passes on main, the expectFailUntil tag hides it, and the
-// coverage is silently zero. So in each fixture the ongoing project main must NOT get to schedule is
-// the strongest SCHEDULABLE thing on the board — it outranks every other rock candidate on both axes
-// and on size — and anything due today is either an anchor the app surfaces itself or an S a quick
-// win covers, so main's rule-1 deadline gate never does the work #347's pacing rule is supposed to
-// do. Verified by rendering buildUserPrompt over these fixtures on both main and the PR head.
+// EVERY fixture here is stacked so a failure can come from the session facts going missing and
+// NOTHING ELSE — the board is deliberately stacked FOR the project the pacing rule must keep off
+// the plan. The trap when authoring one of these is a board where the planner's other rules
+// already point away from the project — then the scenario passes even if #347's pacing regresses,
+// and the coverage is silently zero. So in each fixture the ongoing project that must NOT be
+// scheduled is the strongest SCHEDULABLE thing on the board — it outranks every other rock
+// candidate on both axes and on size — and anything due today is either an anchor the app
+// surfaces itself or an S a quick win covers, so the rule-1 deadline gate never does the work the
+// pacing rule is supposed to do. (Originally verified by rendering buildUserPrompt over these
+// fixtures on both pre- and post-#347 trees.)
 //
 // Clock pinned: every date derives from PLAN_NOW (a Tuesday) via dayOffsetISO — rot-free forever.
 //
-// Typing note: evals/lib/types.ts PlanTaskRow has no `worked_days` yet (plan-inputs.ts TaskRow gains
-// it in #347). runner.ts passes `sc.tasks` straight into the real buildPlanRequest, so the key only
-// needs to survive at RUNTIME — the local WorkedTaskRow alias below carries it through without
-// touching evals/lib. Worth folding into PlanTaskRow once #347 merges.
+// Typing note: evals/lib/types.ts PlanTaskRow still has no `worked_days` (plan-inputs.ts TaskRow
+// gained it in #347). runner.ts passes `sc.tasks` straight into the real buildPlanRequest, so the
+// key only needs to survive at RUNTIME — the local WorkedTaskRow alias below carries it through
+// without touching evals/lib. Worth folding into PlanTaskRow eventually.
 
 import { dayOffsetISO, DEFAULT_TZ, PLAN_NOW } from '../../lib/fixture-dates.ts'
 import {
@@ -190,11 +194,11 @@ export const scenarios: PlanScenario[] = [
     title: 'A project already worked today is not on the table — the day goes light instead',
     tags: ['plan', 'ongoing', 'worked-today', 'pacing'],
     persona: 'user who already did their session before opening the app',
-    expectFailUntil: 'ongoing work sessions (#347)',
     // The ONLY grid task is an ongoing project with a session logged today (and two days before).
-    // Under #347 the rock candidates come back EMPTY — taskLines renders "(nothing on the grid is
-    // available today — see ALREADY WORKED TODAY)" — so a light day is the honest read. On main the
-    // planner sees a high-placed L project with nothing competing and makes it the big rock.
+    // The rock candidates come back EMPTY — taskLines renders "(nothing on the grid is available
+    // today — see ALREADY WORKED TODAY)" — so a light day is the honest read. Without the session
+    // facts the planner would see a high-placed L project with nothing competing and make it the
+    // big rock, which is exactly the regression this scenario exists to catch.
     tasks: [
       task({
         id: 'wt1',
@@ -229,18 +233,18 @@ export const scenarios: PlanScenario[] = [
     title: 'Worked-today drops the rock, never the fixed-time anchor',
     tags: ['plan', 'ongoing', 'worked-today', 'anchors', 'regression'],
     persona: 'ongoing project with a booked studio slot at 2 PM',
-    expectFailUntil: 'ongoing work sessions (#347)',
     // The trap: the worked-today skip lives in the RENDERER because req.tasks also feeds
     // deriveAnchors. 'Studio session' proves the anchor survives; 'Write the novel' is what makes
     // this discriminate — a rock on the studio alone would be dropped by main's existing isAnchored
     // rule, so the anchored task cannot fail main on its own.
     //
     // The dry cleaning is due TODAY (S, no time, so deriveAnchors ignores it) purely to keep the
-    // expectFailUntil tag honest. Without it the only due-today item is the 2 PM anchor, and main's
-    // rule 1 ("never hand a slot to an undated task while something due today is still unplanned")
-    // can be read as blocking the novel — main would then emit bigRock null for a reason that has
-    // nothing to do with #347, and this scenario would quietly pass pre-merge. A due-today quick
-    // win closes that gate the way rule 1 intends, leaving the big-rock slot genuinely open.
+    // scenario discriminating. Without it the only due-today item is the 2 PM anchor, and rule 1
+    // ("never hand a slot to an undated task while something due today is still unplanned") can be
+    // read as blocking the novel — the planner would then emit bigRock null for a reason that has
+    // nothing to do with the worked-today skip, and a regression of that skip would go unnoticed.
+    // A due-today quick win closes that gate the way rule 1 intends, leaving the big-rock slot
+    // genuinely open.
     tasks: [
       task({
         id: 'an1',
@@ -282,20 +286,19 @@ export const scenarios: PlanScenario[] = [
       'Three days running and worked yesterday: the project rests, real deadlines take the day',
     tags: ['plan', 'ongoing', 'pacing', 'deadlines'],
     persona: 'mid-push writer with actual deadlines this week',
-    expectFailUntil: 'ongoing work sessions (#347)',
     // "worked yesterday, 3 days running" is the strongest leave-it-alone signal in the prompt
     // (plan-prompt.ts: "three or more days in a row — let it rest; something else has earned the
     // day"). That rule is the ONLY thing this fixture may rely on, so the board is deliberately
-    // stacked FOR the novel on every axis main can see: it dominates the grant proposal on BOTH
-    // importance (90 vs 70) and urgency (72 vs 60), it is the biggest item (XL vs L), and main's
+    // stacked FOR the novel on every other axis: it dominates the grant proposal on BOTH
+    // importance (90 vs 70) and urgency (72 vs 60), it is the biggest item (XL vs L), and the
     // ONGOING PROJECTS block tells the planner to PREFER making one the big rock when few deadlines
-    // press. Strip the session facts (i.e. run this on main) and the novel is the obvious pick.
+    // press. Strip the session facts and the novel is the obvious pick.
     //
     // The board is still NOT quiet — the streak rule's escape hatch ("pick it again only if the
     // board is genuinely quiet") must not be what carries the scenario: a real L deliverable is due
-    // in 3 days and an S is due today, so #347 has somewhere honest to hand the day. The S also
-    // clears main's rule-1 deadline gate as a quick win, which is what leaves the big-rock slot
-    // genuinely free for the novel pre-merge.
+    // in 3 days and an S is due today, so the pacing rule has somewhere honest to hand the day.
+    // The S also clears the rule-1 deadline gate as a quick win, which is what keeps the big-rock
+    // slot genuinely contested.
     tasks: [
       task({
         id: 'wy1',
@@ -339,16 +342,14 @@ export const scenarios: PlanScenario[] = [
     title: 'A months-old project may earn the day — and the plan never names the gap',
     tags: ['plan', 'ongoing', 'pacing', 'tone'],
     persona: 'user returning to a project they parked in the summer',
-    expectFailUntil: 'ongoing work sessions (#347)',
     // 41 days is "weeks or months ago": fully fresh, judged on its own merits, and the prompt is
     // explicit that the gap is NEVER named to the user.
     //
-    // The pre-merge failure has to come from the decoy, so the decoy is not a near-twin of the
-    // atlas: 'Write the novel' (worked today) outranks it on BOTH axes (importance 90 vs 80,
-    // urgency 78 vs 50) and is the bigger item (XL vs L). Main cannot see the session at all, so it
-    // sees the strongest thing on the board and grabs it — neverPlanned then fails for the right
-    // reason. Two similarly-placed projects would have made this a coin flip and the
-    // expectFailUntil tag a lie half the time.
+    // A worked-today-skip regression has to surface through the decoy, so the decoy is not a
+    // near-twin of the atlas: 'Write the novel' (worked today) outranks it on BOTH axes
+    // (importance 90 vs 80, urgency 78 vs 50) and is the bigger item (XL vs L). A planner blind to
+    // the session facts sees the strongest thing on the board and grabs it — neverPlanned then
+    // fails for the right reason. Two similarly-placed projects would have made this a coin flip.
     tasks: [
       task({
         id: 'lg1',
