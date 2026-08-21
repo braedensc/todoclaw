@@ -56,11 +56,16 @@ export async function recordUsageForUser(
   // The model the call actually ran on (cfg.planModel for the dispatcher) — prices the spend;
   // omitted ⇒ the conservative Sonnet default rates (mirrors recordUsage).
   model?: string,
+  // Prompt-cache counts (cache_creation_input_tokens / cache_read_input_tokens) — with
+  // cache_control in play inputTokens is the uncached remainder only, so the ledger add must
+  // include the cache terms (write 1.25×, read 0.1× of the input rate). Mirrors recordUsage.
+  cacheWriteTokens = 0,
+  cacheReadTokens = 0,
 ): Promise<void> {
   try {
     await admin.rpc('ai_budget_add_for_user', {
       p_user_id: userId,
-      p_micros: costMicros(inputTokens, outputTokens, model),
+      p_micros: costMicros(inputTokens, outputTokens, model, cacheWriteTokens, cacheReadTokens),
     })
   } catch {
     /* best-effort: the spend is small + bounded (≤ 1 plan + 1 recap/user/day) and the per-user

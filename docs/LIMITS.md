@@ -105,7 +105,8 @@ clamped read-side to `HARD_MAX` (`guardrails-config.ts`) and by DB CHECK
 | Output tokens per call (`MAX_TOKENS`) | **2048** | per-call | fixed |
 | Chat model (`chat_model`) | **claude-sonnet-5** (allowlist: haiku-4-5 · sonnet-5 — no Opus: a worst-case chat call would breach the $0.20 clamp) | global | owner-tunable (Guardrails tab) |
 | Plan/recap model (`plan_model`) | **claude-sonnet-5** (allowlist: haiku-4-5 · sonnet-5 · opus-5 — plan worst case ≈ $0.10 on Opus) | global | owner-tunable (Guardrails tab) |
-| Token cost basis (`MODEL_PRICING` / `costMicros`) | per model, per 1M: **$1/$5** haiku · **$3/$15** sonnet · **$5/$25** opus (unknown id ⇒ sonnet rates) | per-call | fixed (conservative over-count) |
+| Token cost basis (`MODEL_PRICING` / `costMicros`) | per model, per 1M: **$1/$5** haiku · **$3/$15** sonnet · **$5/$25** opus (unknown id ⇒ sonnet rates) + cache terms: **1.25×** input rate per cache-write token, **0.1×** per cache-read token (`usage.input_tokens` is the uncached remainder) | per-call | fixed (conservative over-count) |
+| Prompt caching (`cache_control` ephemeral) | 5-min TTL on the static plan/recap system prompts and chat's stable prefix (persona + prefs + memory); per-model cacheable-prefix floors: haiku **4096** tok · sonnet-5 **1024** · opus-5 **512** (below-floor breakpoints are a silent no-op) | per-call | fixed (Anthropic price sheet) |
 | Config cache TTL (`CACHE_TTL_MS`) | 30s | per-worker | fixed |
 
 Enforcement order (`precheck`): global pool → per-user sub-cap → per-user rate limit. Ledgers

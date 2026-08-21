@@ -54,7 +54,7 @@ async function maybeJudge(
   title: string,
   rubric: string | undefined,
   rendered: string,
-  usage: { input: number; output: number },
+  usage: { input: number; output: number; cacheWrite: number; cacheRead: number },
 ): Promise<ScenarioResult['judge']> {
   if (!rubric || !opts.judgeClient) return undefined
   const { judgment, usage: ju } = await judge(
@@ -66,12 +66,14 @@ async function maybeJudge(
   )
   usage.input += ju.input
   usage.output += ju.output
+  usage.cacheWrite += ju.cacheWrite
+  usage.cacheRead += ju.cacheRead
   return judgment
 }
 
 async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResult> {
   const started = Date.now()
-  const usage = { input: 0, output: 0 }
+  const usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }
   const base: Omit<ScenarioResult, 'deterministic'> = {
     id: sc.id,
     kind: sc.kind,
@@ -101,6 +103,8 @@ async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResu
     )
     usage.input += gu.input
     usage.output += gu.output
+    usage.cacheWrite += gu.cacheWrite
+    usage.cacheRead += gu.cacheRead
     const deterministic = opts.mock
       ? [{ name: 'pipeline (mock mode — checks skipped)', pass: true }]
       : (sc.checks ?? []).flatMap((check) => flat(check(plan, sc)))
@@ -126,7 +130,7 @@ async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResu
 
 async function runRecap(sc: RecapScenario, opts: RunOptions): Promise<ScenarioResult> {
   const started = Date.now()
-  const usage = { input: 0, output: 0 }
+  const usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }
   const base: Omit<ScenarioResult, 'deterministic'> = {
     id: sc.id,
     kind: sc.kind,
@@ -140,6 +144,8 @@ async function runRecap(sc: RecapScenario, opts: RunOptions): Promise<ScenarioRe
     const { body, usage: gu } = await generateRecap(opts.anthropic, sc.request, DEFAULT_PLAN_MODEL)
     usage.input += gu.input
     usage.output += gu.output
+    usage.cacheWrite += gu.cacheWrite
+    usage.cacheRead += gu.cacheRead
     const deterministic = opts.mock
       ? [{ name: 'pipeline (mock mode — checks skipped)', pass: true }]
       : (sc.checks ?? []).flatMap((check) => flat(check(body, sc)))
@@ -169,7 +175,8 @@ async function runChat(
   ctx: { sql: Sql; env: Awaited<ReturnType<typeof resolveEvalEnv>> },
 ): Promise<ScenarioResult> {
   const started = Date.now()
-  const usage = { input: 0, output: 0 } // chat spend is recorded server-side; judge spend lands here
+  // chat spend is recorded server-side; judge spend lands here
+  const usage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }
   const base: Omit<ScenarioResult, 'deterministic'> = {
     id: sc.id,
     kind: sc.kind,

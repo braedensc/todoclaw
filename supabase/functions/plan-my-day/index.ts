@@ -80,13 +80,17 @@ Deno.serve(async (req) => {
     const msg = await a.messages.create({
       model: cfg.planModel,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      // Static system prompt + one ephemeral breakpoint (5-min TTL) caches tools + system
+      // together; every plan call (this endpoint, run-plan.ts, the dispatch batch) shares the
+      // same cache entry per model on the single owner key. Mirrors run-plan.ts generatePlan.
+      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: buildUserPrompt(payload, config, weather, memories) }],
       tools: [EMIT_PLAN_TOOL as unknown as Anthropic.Tool],
       tool_choice: { type: 'tool', name: 'emit_plan' },
     })
 
-    // Record actual token cost against the budget ledger (best-effort).
+    // Record actual token cost against the budget ledger (best-effort). With cache_control above,
+    // input_tokens is the uncached remainder — the cache counts carry the rest of the bill.
     await recordUsage(
       client,
       gate.usageId,
@@ -94,6 +98,8 @@ Deno.serve(async (req) => {
       msg.usage.output_tokens,
       'plan_my_day',
       cfg.planModel,
+      msg.usage.cache_creation_input_tokens ?? 0,
+      msg.usage.cache_read_input_tokens ?? 0,
     )
 
     // A truncated response can still carry a tool_use block, but its JSON input is cut off — the

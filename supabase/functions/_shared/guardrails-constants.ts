@@ -71,3 +71,13 @@ export const DEFAULT_PLAN_MODEL = 'claude-sonnet-5'
 // Default base of the scaled monthly budget, $10.00 (effective cap = min(base + perUserCap ×
 // activeUsers, global ceiling, $100 HARD_MAX) — enforcement lands in the cap-scaling follow-up).
 export const AI_BUDGET_BASE_MICROS = 10_000_000
+
+// ─── prompt caching (2026-08-20, phase-0 PR 3) ─────────────────────────────────────────────────
+
+// Anthropic prompt-cache billing, as multiples of the model's INPUT rate: a cache WRITE
+// (usage.cache_creation_input_tokens, 5-min TTL) bills at 1.25×, a cache READ
+// (usage.cache_read_input_tokens) at 0.1×. Once any request carries cache_control,
+// usage.input_tokens is the UNCACHED REMAINDER only — costMicros must add these two terms or the
+// budget kill-switch under-counts every cached call. Fixed by Anthropic's price sheet, not tunable.
+export const CACHE_WRITE_INPUT_MULTIPLIER = 1.25
+export const CACHE_READ_INPUT_MULTIPLIER = 0.1

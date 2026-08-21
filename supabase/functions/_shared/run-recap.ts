@@ -18,11 +18,17 @@ export async function generateRecap(
   a: Anthropic,
   req: RecapRequest,
   model: string,
-): Promise<{ body: string; usage: { input: number; output: number } }> {
+): Promise<{
+  body: string
+  usage: { input: number; output: number; cacheWrite: number; cacheRead: number }
+}> {
   const msg = await a.messages.create({
     model,
     max_tokens: MAX_TOKENS,
-    system: RECAP_SYSTEM_PROMPT,
+    // Fully static system prompt (all dynamic content is in the user message): one ephemeral
+    // breakpoint (5-min TTL) caches tools + system together, shared across the dispatcher's
+    // whole evening batch. Mirrors run-plan.ts.
+    system: [{ type: 'text', text: RECAP_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: buildRecapUserPrompt(req) }],
     tools: [EMIT_RECAP_TOOL as unknown as Anthropic.Tool],
     tool_choice: { type: 'tool', name: 'emit_recap' },
@@ -33,5 +39,13 @@ export async function generateRecap(
   }
   const body = String((toolUse.input as { body?: unknown }).body ?? '').trim()
   if (!body) throw new Error('The recap writer returned an empty message.')
-  return { body, usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens } }
+  return {
+    body,
+    usage: {
+      input: msg.usage.input_tokens,
+      output: msg.usage.output_tokens,
+      cacheWrite: msg.usage.cache_creation_input_tokens ?? 0,
+      cacheRead: msg.usage.cache_read_input_tokens ?? 0,
+    },
+  }
 }

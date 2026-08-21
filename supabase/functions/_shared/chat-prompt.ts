@@ -587,15 +587,44 @@ function activityBlock(activity: PromptActivity[]): string {
   )
 }
 
-// The full system prompt: stable persona/rules, then folded per-user preferences, then saved
-// memories, then the live context (rules-first ordering — the persona/rules always come before any
-// user-derived DATA). Kept compact (summarized rows, capped counts) to bound token cost.
-export function buildSystem(ctx: ChatContext): string {
-  const parts = [SYSTEM_PREFIX]
+// A system content block, structurally compatible with the Anthropic SDK's TextBlockParam (this
+// module stays SDK-import-free — it is pure prompt building).
+export interface SystemBlock {
+  type: 'text'
+  text: string
+  cache_control?: { type: 'ephemeral' }
+}
+
+// The system prompt as TWO content blocks, split at the '\n\n' seam buildSystem already used —
+// the bytes the model sees are identical to the single-string prompt (buildSystem below joins
+// these same blocks, and chat-prompt.test.ts's assertions on that join are the equivalence proof).
+//
+//   Block 1 (cache_control ephemeral, 5-min TTL): SYSTEM_PREFIX + USER PREFERENCES + SAVED
+//     MEMORY — stable per user across turns AND byte-identical across the up-to-8 iterations of
+//     one tool loop, so even a cold conversation gets guaranteed cache reads from iteration 2 on.
+//     The breakpoint on the LAST stable block caches the tool definitions with it (tools render
+//     before system in Anthropic's prefix order).
+//   Block 2 (uncached): the volatile contextBlock (TODAY/nowTime, tasks, plan, activity, habits)
+//     — minute-granular, so caching it would only pay the 1.25× write surcharge for nothing.
+//
+// Rules-first ordering is preserved: persona/rules always precede any user-derived DATA.
+export function buildSystemBlocks(ctx: ChatContext): SystemBlock[] {
+  const stable = [SYSTEM_PREFIX]
   const cfg = configLines(ctx.assistant)
-  if (cfg.length) parts.push(`=== USER PREFERENCES ===\n${cfg.join('\n')}`)
+  if (cfg.length) stable.push(`=== USER PREFERENCES ===\n${cfg.join('\n')}`)
   const mem = memoryBlock(ctx.memories)
-  if (mem) parts.push(mem)
-  parts.push(contextBlock(ctx))
-  return parts.join('\n\n')
+  if (mem) stable.push(mem)
+  return [
+    { type: 'text', text: stable.join('\n\n'), cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: contextBlock(ctx) },
+  ]
+}
+
+// The full system prompt as one string: stable persona/rules, then folded per-user preferences,
+// then saved memories, then the live context. Exactly the join of buildSystemBlocks — kept (and
+// pinned by chat-prompt.test.ts) as the byte-equivalence oracle for the block split above.
+export function buildSystem(ctx: ChatContext): string {
+  return buildSystemBlocks(ctx)
+    .map((b) => b.text)
+    .join('\n\n')
 }

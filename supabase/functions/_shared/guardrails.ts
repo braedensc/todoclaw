@@ -22,6 +22,8 @@ import {
   SPEND_ALERT_FRACTION,
   MODEL_PRICING,
   DEFAULT_CHAT_MODEL,
+  CACHE_WRITE_INPUT_MULTIPLIER,
+  CACHE_READ_INPUT_MULTIPLIER,
   type Feature,
 } from './guardrails-constants.ts'
 
@@ -37,6 +39,8 @@ export {
   USER_SPEND_ALERT_MICROS,
   SPEND_ALERT_FRACTION,
   MODEL_PRICING,
+  CACHE_WRITE_INPUT_MULTIPLIER,
+  CACHE_READ_INPUT_MULTIPLIER,
   type Feature,
 }
 
@@ -66,9 +70,25 @@ function utcPeriod(now: Date = new Date()): string {
 // pricing ($2/$10 through 2026-08-31) is cheaper than the standard rate charged here, so until
 // then this slightly OVER-counts spend — the conservative, safe direction for a kill-switch (it
 // can only trip early, never late), and it self-corrects when standard pricing kicks in.
-export function costMicros(inputTokens: number, outputTokens: number, model?: string): number {
+//
+// Prompt-cache terms (phase-0 PR 3): with cache_control in play, inputTokens is the UNCACHED
+// remainder only — cache writes bill at 1.25× and reads at 0.1× of the model's input rate
+// (Anthropic price sheet). Both default to 0 so every pre-caching caller keeps its exact cost.
+// One Math.round at the end (the fractional multipliers must not round per-term).
+export function costMicros(
+  inputTokens: number,
+  outputTokens: number,
+  model?: string,
+  cacheWriteTokens = 0,
+  cacheReadTokens = 0,
+): number {
   const rate = MODEL_PRICING[model ?? DEFAULT_CHAT_MODEL] ?? MODEL_PRICING[DEFAULT_CHAT_MODEL]
-  return Math.round(inputTokens * rate.input + outputTokens * rate.output)
+  return Math.round(
+    inputTokens * rate.input +
+      outputTokens * rate.output +
+      cacheWriteTokens * rate.input * CACHE_WRITE_INPUT_MULTIPLIER +
+      cacheReadTokens * rate.input * CACHE_READ_INPUT_MULTIPLIER,
+  )
 }
 
 export type PrecheckResult =
@@ -122,15 +142,22 @@ export async function recordUsage(
   // The model the call actually ran on (cfg.chatModel / cfg.planModel) — prices the spend.
   // Optional: a caller that omits it is billed at the conservative Sonnet default rates.
   model?: string,
+  // Prompt-cache counts from the same usage object (cache_creation_input_tokens /
+  // cache_read_input_tokens). With cache_control in play inputTokens is the uncached remainder
+  // only — these two carry the rest of the bill (write 1.25×, read 0.1× of the input rate).
+  cacheWriteTokens = 0,
+  cacheReadTokens = 0,
 ): Promise<void> {
   await client.rpc('ai_usage_record_tokens', {
     p_id: usageId,
     p_input: inputTokens,
     p_output: outputTokens,
+    p_cache_creation: cacheWriteTokens,
+    p_cache_read: cacheReadTokens,
   })
   await client.rpc('ai_budget_add', {
     p_usage_id: usageId,
-    p_micros: costMicros(inputTokens, outputTokens, model),
+    p_micros: costMicros(inputTokens, outputTokens, model, cacheWriteTokens, cacheReadTokens),
   })
 
   // Owner spend-alert (best-effort). Read the caller's NEW monthly total, reconstruct the pre-call
@@ -140,7 +167,10 @@ export async function recordUsage(
   try {
     const cfg = await loadConfig(client)
     const alertMicros = Math.round(cfg.userBudgetCapMicros * SPEND_ALERT_FRACTION)
-    const added = Math.min(costMicros(inputTokens, outputTokens, model), PER_CALL_CEILING_MICROS)
+    const added = Math.min(
+      costMicros(inputTokens, outputTokens, model, cacheWriteTokens, cacheReadTokens),
+      PER_CALL_CEILING_MICROS,
+    )
     const { data: remaining } = await client.rpc('ai_user_budget_check', {
       p_cap_micros: cfg.userBudgetCapMicros,
     })
