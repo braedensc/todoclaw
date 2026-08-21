@@ -41,24 +41,36 @@ export const LIMIT_GROUPS: LimitGroup[] = [
   {
     id: 'spend',
     title: 'AI spend / budget',
-    hint: 'Cost kill-switches. Global ceiling + per-user cap and the models are owner-tunable in the Guardrails tab.',
+    hint: 'Cost kill-switches. The enforced global cap SCALES with active users; base, manual ceiling, per-user cap, and the models are owner-tunable in the Guardrails tab.',
     defaultOpen: true,
     rows: [
       {
-        name: 'Global budget ceiling',
+        name: 'Effective global cap',
+        value: 'min(base + per-user cap × active users, ceiling, $100)',
+        scope: 'global',
+        kind: 'fixed',
+      },
+      {
+        name: 'Manual global ceiling',
         value: '$60/mo (≤ $100)',
         scope: 'global',
         kind: 'tunable',
       },
-      { name: 'Per-user monthly cap', value: '$10/mo (≤ $50)', scope: 'per user', kind: 'tunable' },
       {
         name: 'Scaled-budget base',
         value: '$10/mo (≤ $100)',
         scope: 'global',
         kind: 'tunable',
       },
+      { name: 'Per-user monthly cap', value: '$10/mo (≤ $50)', scope: 'per user', kind: 'tunable' },
       { name: 'Per-call spend ceiling', value: '$0.20', scope: 'per call', kind: 'fixed' },
       { name: 'Owner spend alert', value: '80% of per-user cap', scope: 'per user', kind: 'fixed' },
+      {
+        name: 'Global-trip alert',
+        value: 'owner webhook, once/period',
+        scope: 'global',
+        kind: 'fixed',
+      },
       { name: 'Output tokens', value: '2048 / call', scope: 'per call', kind: 'fixed' },
       {
         name: 'Chat model',

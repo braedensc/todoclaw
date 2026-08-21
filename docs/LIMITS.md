@@ -12,7 +12,7 @@ owner‑tunable.
 > **Keeping this current.** When you add or change a limit, update the matching row here in
 > the same PR. This is a reference, not a spec — code + the `src/lib/*.test.ts` oracle are
 > authoritative for behavior. Last full sweep: **2026‑07‑22** · spend/model rows re-verified
-> **2026‑08‑20** (phase‑0 model knobs + $60 ceiling re-seed).
+> **2026‑08‑20** (phase‑0 model knobs + $60 ceiling re-seed + scaled effective cap).
 
 ---
 
@@ -97,20 +97,24 @@ clamped read-side to `HARD_MAX` (`guardrails-config.ts`) and by DB CHECK
 
 | Limit | Value | Scope | Tunable? |
 |---|---|---|---|
-| Global budget ceiling (`global_budget_cap_micros`) | **$60.00/mo** seeded (TS fallback `BUDGET_CAP_MICROS` stays $20 on a failed config read) | global | owner-tunable ≤ **$100** |
-| Per-user monthly sub-cap (`USER_BUDGET_CAP_MICROS`) | **$10.00/mo** | per-user | owner-tunable ≤ **$50** (must stay ≤ global) |
-| Scaled-budget base (`ai_budget_base_micros`) | **$10.00/mo** (effective cap = min(base + per-user cap × active users, ceiling, $100) — enforcement lands in the cap-scaling follow-up) | global | owner-tunable ≤ **$100** |
+| **Effective global cap** (`effectiveCapMicros`, `_shared/effective-cap.ts`) | **min(base + per-user cap × active users, manual ceiling, $100 `HARD_MAX.global`)** — computed in TS at check time, enforced by all three readers (`precheck`, `getStatus`, `precheckForUser`); active = `ai_active_user_count()` (this UTC month's distinct spenders, cached 30s); a failed count ⇒ 0 ⇒ cap = base (fail-safe) | global | formula fixed; inputs tunable |
+| Manual global ceiling (`global_budget_cap_micros`) | **$60.00/mo** seeded (TS fallback `BUDGET_CAP_MICROS` stays $20 on a failed config read) | global | owner-tunable ≤ **$100** |
+| Per-user monthly sub-cap (`USER_BUDGET_CAP_MICROS`) | **$10.00/mo** (also the per-active-user increment of the effective cap) | per-user | owner-tunable ≤ **$50** (must stay ≤ global) |
+| Scaled-budget base (`ai_budget_base_micros`) | **$10.00/mo** — the effective cap's floor (and its value whenever the active-count read fails) | global | owner-tunable ≤ **$100** (Guardrails tab) |
 | Per-call spend ceiling (`PER_CALL_CEILING_MICROS`) | **$0.20** | per-call | **fixed** rail (also SQL-clamped in `ai_budget_add`) |
 | Owner spend-alert (`SPEND_ALERT_FRACTION`) | **80%** of per-user cap | per-user | fixed fraction |
+| Global-trip alert (`alertGlobalBudgetTrip`, `_shared/effective-cap.ts`) | owner webhook (`AI_SPEND_ALERT_WEBHOOK_URL`, same transport as the per-user alert) when the global pool exhausts at `precheck`/`precheckForUser`; deduped **once per UTC period per isolate** (duplicates across isolates tolerated; a failed send retries on the next trip) | global | fixed |
 | Output tokens per call (`MAX_TOKENS`) | **2048** | per-call | fixed |
 | Chat model (`chat_model`) | **claude-sonnet-5** (allowlist: haiku-4-5 · sonnet-5 — no Opus: a worst-case chat call would breach the $0.20 clamp) | global | owner-tunable (Guardrails tab) |
 | Plan/recap model (`plan_model`) | **claude-sonnet-5** (allowlist: haiku-4-5 · sonnet-5 · opus-5 — plan worst case ≈ $0.10 on Opus) | global | owner-tunable (Guardrails tab) |
 | Token cost basis (`MODEL_PRICING` / `costMicros`) | per model, per 1M: **$1/$5** haiku · **$3/$15** sonnet · **$5/$25** opus (unknown id ⇒ sonnet rates) + cache terms: **1.25×** input rate per cache-write token, **0.1×** per cache-read token (`usage.input_tokens` is the uncached remainder) | per-call | fixed (conservative over-count) |
 | Prompt caching (`cache_control` ephemeral) | 5-min TTL on the static plan/recap system prompts and chat's stable prefix (persona + prefs + memory); per-model cacheable-prefix floors: haiku **4096** tok · sonnet-5 **1024** · opus-5 **512** (below-floor breakpoints are a silent no-op) | per-call | fixed (Anthropic price sheet) |
 | Config cache TTL (`CACHE_TTL_MS`) | 30s | per-worker | fixed |
+| Active-user count cache TTL (`COUNT_CACHE_TTL_MS`, `_shared/effective-cap.ts`) | 30s (failed reads never cached) | per-worker | fixed |
 
-Enforcement order (`precheck`): global pool → per-user sub-cap → per-user rate limit. Ledgers
-live in **no-grant DEFINER-only** tables (`ai_budget_ledger`, `ai_user_budget_ledger`).
+Enforcement order (`precheck`): global pool (at the **effective** scaled cap) → per-user sub-cap →
+per-user rate limit. Ledgers live in **no-grant DEFINER-only** tables (`ai_budget_ledger`,
+`ai_user_budget_ledger`).
 
 ---
 

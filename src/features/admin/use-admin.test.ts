@@ -36,12 +36,15 @@ describe('useAdminOverview', () => {
   beforeEach(() => invoke.mockReset())
 
   it('invokes the admin function with { action: get_overview } and returns the data', async () => {
+    // Includes the 2026-08-20 scaled-cap fields — they ride the same payload untouched.
     const overview: AdminOverview = {
       config: null,
       globalSpend: null,
       roster: [],
       systemStats: null,
       integrations: {},
+      activeUserCount: 2,
+      effectiveCapMicros: 30_000_000,
     }
     invoke.mockResolvedValue({ data: overview, error: null })
 

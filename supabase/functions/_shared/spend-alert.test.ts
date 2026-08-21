@@ -3,8 +3,12 @@
 import { assertEquals, assertStringIncludes } from 'jsr:@std/assert@1'
 import {
   buildAlertPayload,
+  buildGlobalAlertPayload,
+  formatGlobalBudgetAlert,
   formatSpendAlert,
+  sendGlobalBudgetAlert,
   sendSpendAlert,
+  type GlobalBudgetAlert,
   type SpendAlert,
 } from './spend-alert.ts'
 
@@ -72,6 +76,68 @@ Deno.test('sendSpendAlert POSTs the JSON payload to the configured URL', async (
     assertEquals(seenUrl, 'https://hooks.example.com/xyz')
     assertEquals(seenMethod, 'POST')
     assertEquals(seenBody.event, 'ai_user_spend_alert')
+    assertEquals(seenBody.text, seenBody.content)
+  } finally {
+    Deno.env.delete('AI_SPEND_ALERT_WEBHOOK_URL')
+  }
+})
+
+// ─── global kill-switch trip alert ──────────────────────────────────────────────────────────────
+
+const GLOBAL_SAMPLE: GlobalBudgetAlert = {
+  period: '2026-08',
+  capMicros: 30_000_000,
+  activeUserCount: 2,
+  baseMicros: 10_000_000,
+  ceilingMicros: 60_000_000,
+  source: 'precheck:chat',
+}
+
+Deno.test('formatGlobalBudgetAlert renders the cap breakdown, period, and source', () => {
+  const msg = formatGlobalBudgetAlert(GLOBAL_SAMPLE)
+  assertStringIncludes(msg, '$30.00') // the tripped effective cap
+  assertStringIncludes(msg, '$10.00') // base
+  assertStringIncludes(msg, '$60.00') // manual ceiling
+  assertStringIncludes(msg, '2 active users')
+  assertStringIncludes(msg, '2026-08')
+  assertStringIncludes(msg, 'precheck:chat')
+  assertStringIncludes(msg, 'paused') // says what it MEANS, not just numbers
+})
+
+Deno.test('buildGlobalAlertPayload mirrors the dual text/content shape + structured fields', () => {
+  const p = buildGlobalAlertPayload(GLOBAL_SAMPLE)
+  assertEquals(p.text, p.content)
+  assertEquals(typeof p.text, 'string')
+  assertEquals(p.event, 'ai_global_budget_tripped')
+  assertEquals(p.capMicros, 30_000_000)
+  assertEquals(p.activeUserCount, 2)
+  assertEquals(p.period, '2026-08')
+  assertEquals(p.source, 'precheck:chat')
+})
+
+Deno.test('sendGlobalBudgetAlert is a NO-OP (no fetch) when the webhook URL is unset', async () => {
+  Deno.env.delete('AI_SPEND_ALERT_WEBHOOK_URL')
+  let called = false
+  const fakeFetch = (() => {
+    called = true
+    return Promise.resolve(new Response(null, { status: 200 }))
+  }) as unknown as typeof fetch
+  const sent = await sendGlobalBudgetAlert(GLOBAL_SAMPLE, fakeFetch)
+  assertEquals(sent, false)
+  assertEquals(called, false)
+})
+
+Deno.test('sendGlobalBudgetAlert POSTs the payload to the configured URL', async () => {
+  Deno.env.set('AI_SPEND_ALERT_WEBHOOK_URL', 'https://hooks.example.com/xyz')
+  try {
+    let seenBody: Record<string, unknown> = {}
+    const fakeFetch = ((_url: string, init: RequestInit) => {
+      seenBody = JSON.parse(init.body as string)
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }) as unknown as typeof fetch
+    const sent = await sendGlobalBudgetAlert(GLOBAL_SAMPLE, fakeFetch)
+    assertEquals(sent, true)
+    assertEquals(seenBody.event, 'ai_global_budget_tripped')
     assertEquals(seenBody.text, seenBody.content)
   } finally {
     Deno.env.delete('AI_SPEND_ALERT_WEBHOOK_URL')

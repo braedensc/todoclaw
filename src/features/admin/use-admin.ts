@@ -64,6 +64,12 @@ export interface AdminOverview {
   roster: RosterRow[]
   systemStats: SystemStats | null
   integrations: Record<string, boolean>
+  /** Distinct AI spenders this UTC month — the scaled cap's multiplier. Optional so a briefly
+   * stale edge function (deploy skew) degrades to the pre-scaling display, not a crash. */
+  activeUserCount?: number
+  /** min(base + per-user cap × active users, manual ceiling, $100) — the cap precheck actually
+   * enforces this period. Optional for the same deploy-skew reason. */
+  effectiveCapMicros?: number
 }
 
 export const ADMIN_OVERVIEW_KEY = ['admin_overview'] as const

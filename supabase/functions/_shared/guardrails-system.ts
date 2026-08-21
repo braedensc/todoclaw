@@ -9,22 +9,39 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.108.2'
 import { costMicros, type Feature, type PrecheckResult } from './guardrails.ts'
 import { loadConfig } from './guardrails-config.ts'
+import { alertGlobalBudgetTrip, loadEffectiveCap, utcPeriod } from './effective-cap.ts'
 
 // Pre-call gate for a named user: global pool → per-user sub-cap → rate limit (records the request).
 // Mirrors precheck() but every RPC is the service_role _for_user / _system variant. Same ordering, so
-// an already-paused month is never charged a rate-limit unit.
+// an already-paused month is never charged a rate-limit unit. The global gate enforces the SAME
+// scaled effective cap as the interactive precheck (loadEffectiveCap — the service_role client is
+// covered by ai_active_user_count's grant), and trips the same owner alert when the pool exhausts.
 export async function precheckForUser(
   admin: SupabaseClient,
   userId: string,
   feature: Feature,
 ): Promise<PrecheckResult> {
   const cfg = await loadConfig(admin)
+  const { capMicros, activeUserCount } = await loadEffectiveCap(admin, cfg)
   const { data: remaining, error: budgetErr } = await admin.rpc('ai_budget_check_system', {
-    p_cap_micros: cfg.globalBudgetCapMicros,
+    p_cap_micros: capMicros,
   })
   if (budgetErr) return { ok: false, reason: 'budget-exhausted', detail: budgetErr.message }
-  if (typeof remaining === 'number' && remaining <= 0)
+  if (typeof remaining === 'number' && remaining <= 0) {
+    try {
+      await alertGlobalBudgetTrip({
+        period: utcPeriod(),
+        capMicros,
+        activeUserCount,
+        baseMicros: cfg.budgetBaseMicros,
+        ceilingMicros: cfg.globalBudgetCapMicros,
+        source: `dispatch:${feature}`,
+      })
+    } catch {
+      /* alerting is best-effort */
+    }
     return { ok: false, reason: 'budget-exhausted' }
+  }
 
   const { data: userRemaining, error: userErr } = await admin.rpc('ai_user_budget_check_for_user', {
     p_user_id: userId,
