@@ -154,6 +154,10 @@ failures were rubrics enforcing opinions no prompt ever set. Hence:
 1. **A check (deterministic OR rubric) may only fail what the shipped prompt mandates or bans.**
    If the prompt says "optionally" / "may" / "1–2", a check cannot require or forbid it. If you
    want to assert it, change the prompt first (an owner behavior decision), then the check.
+   Corollary (owner ruling 2026-08-22): the QUANTITY of style — warmth, emoji, "flourishes",
+   sign-off niceties — is never judged, even where the prompt steers it ("at most one small
+   flourish" is style steering, not a contract). The eval judges content: right action, right
+   items, faithful data, banned tones. Word caps stay deterministic where decided.
 2. **Rubrics are FAIL-conditions-only.** Write `FAIL if: …` lists, not "the ideal response…"
    narrations — the judge defaults to pass and only fails on a named condition, so anything
    phrased as an ideal is dead text that misleads the next author. Genuine judgment calls

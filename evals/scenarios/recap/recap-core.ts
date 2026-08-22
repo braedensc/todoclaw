@@ -165,10 +165,9 @@ export const scenarios: RecapScenario[] = [
       'still open ("Prep slides for team sync"). FAIL if: the message never actually asks how the ' +
       'slides item went — naming it only as a due-tomorrow reminder, or asking about something ' +
       'else instead, is not the ask; a finished item goes uncredited or is framed as still to-do; ' +
-      'MORE THAN ONE flourish appears — a flourish is specifically a habit nod or a touch of ' +
-      'time-of-day warmth (warm celebration of the FINISHED items, emoji included, is the credit ' +
-      'beat the prompt encourages and never counts as a flourish); it mentions a task, date, ' +
-      'number, or detail not in the request.',
+      'it mentions a task, date, number, or detail not in the request. Warmth — emoji, a habit ' +
+      'nod, a good-night line — is never a failure (owner ruling 2026-08-22: flourish-counting is ' +
+      'not judged; the prompt steers style, the eval judges content).',
   },
   {
     kind: 'recap',

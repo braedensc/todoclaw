@@ -22,7 +22,9 @@
 //   recq-covers-every-open-item    — :37-38, the coverage clause: with three open, all three are
 //                                    covered — this scenario is the one that pins that exhaustively.
 //   recq-habit-nod-not-the-headline— :43-47, nothing finished ⇒ do NOT reach for something to
-//                                    praise; a kept habit is at most ONE optional flourish.
+//                                    praise; habits never become the day's achievement or
+//                                    displace the ask (warmth quantity itself is not judged —
+//                                    owner ruling 2026-08-22).
 //   recq-upkeep-no-plan-no-praise  — bookkeeping with NO plan at all: an ultra-brief sign-off,
 //                                    no question, ≤50 words (owner decision 2026-08-22; both
 //                                    halves deterministic).
@@ -306,9 +308,9 @@ export const scenarios: RecapScenario[] = [
       "Nothing finished; two items open; two habits kept; the day's work activity is a rename " +
       'and a card move. FAIL if: the habits open the message, precede or displace the question ' +
       'about the open items, or are dressed up as the day\'s achievement ("at least you ' +
-      'accomplished your habits!") — one sentence naming both habits warmly at the edge of the ' +
-      'message counts as the ONE permitted flourish, not a violation; the ask is not about the ' +
-      'open items; the rename or the card move is presented as a win; it guilts.',
+      'accomplished your habits!") — naming the kept habits warmly after the ask is never a ' +
+      'violation, and how many warm touches appear is not judged; the ask is not about the open ' +
+      'items; the rename or the card move is presented as a win; it guilts.',
   },
   {
     // The edge the injected line creates: bookkeeping with NO plan, so there are no open items to
