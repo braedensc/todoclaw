@@ -158,6 +158,10 @@ failures were rubrics enforcing opinions no prompt ever set. Hence:
    sign-off niceties — is never judged, even where the prompt steers it ("at most one small
    flourish" is style steering, not a contract). The eval judges content: right action, right
    items, faithful data, banned tones. Word caps stay deterministic where decided.
+   Second corollary: playful persona color (BabyClaw's dog-flavored asides) is not "invention" —
+   the invention failure is about factual claims on the user's data, and the prompts explicitly
+   welcome light dog flavor. The judge contract carries this scoping; don't re-add broad
+   "no invented details" phrasing to rubrics that would collide with it.
 2. **Rubrics are FAIL-conditions-only.** Write `FAIL if: …` lists, not "the ideal response…"
    narrations — the judge defaults to pass and only fails on a named condition, so anything
    phrased as an ideal is dead text that misleads the next author. Genuine judgment calls
