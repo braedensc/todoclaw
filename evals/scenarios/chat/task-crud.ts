@@ -41,12 +41,17 @@ const GARDEN_START = dayOffsetISO(6)
  */
 function toolCalledAny(names: string[], label: string): ChatCheck {
   return (t) => {
-    const seen = t.turns.flatMap((turn) => turn.toolUses).map((u) => u.name)
+    // Live protocol streams no tool_use blocks — observe results + pending (see lib/checks.ts).
+    const seen = [
+      ...t.turns.flatMap((turn) => turn.toolResults.map((r) => r.name)),
+      ...t.turns.flatMap((turn) => (turn.pending ? [turn.pending.name] : [])),
+      ...t.turns.flatMap((turn) => turn.toolUses.map((u) => u.name)),
+    ]
     const pass = names.some((n) => seen.includes(n))
     return {
       name: label,
       pass,
-      ...(pass ? {} : { detail: `tool_use names seen: ${seen.join(', ') || 'none'}` }),
+      ...(pass ? {} : { detail: `tool activity seen: ${seen.join(', ') || 'none'}` }),
     }
   }
 }

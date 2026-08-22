@@ -192,8 +192,10 @@ export const scenarios: ChatScenario[] = [
     ],
     checks: [
       toolNotCalled('set_reminder'),
+      // Inputs never stream on the live protocol (lib/checks.ts) — the surgical removal is read
+      // from the result display: `Removed the 1 day reminder from "…"` (capabilities/tasks.ts).
       toolCalled('remove_reminder', {
-        where: (input) => input.minutes_before === 1440,
+        display: /removed the 1 day reminder/i,
         label: 'day-before offset removed via remove_reminder (not a full clear + re-add)',
       }),
       reminderOffsets('flight', []),
@@ -265,14 +267,9 @@ export const scenarios: ChatScenario[] = [
     ],
     checks: [
       toolExecutedOk('create_habit'),
-      toolCalled('add_habit_step', {
-        where: (input) => /journal/i.test(String(input.text ?? '')),
-        label: 'journal step added',
-      }),
-      toolCalled('add_habit_step', {
-        where: (input) => /read/i.test(String(input.text ?? '')),
-        label: 'read-a-chapter step added',
-      }),
+      // Step text is read from the result display: `Added the step "…" to …` (habits.ts).
+      toolCalled('add_habit_step', { display: /journal/i, label: 'journal step added' }),
+      toolCalled('add_habit_step', { display: /read/i, label: 'read-a-chapter step added' }),
       noVisibleLeak(),
       statusLineAlways(),
       noErrorEvents(),
@@ -349,8 +346,10 @@ export const scenarios: ChatScenario[] = [
       { say: "Shelve the gym habit for now — my knee's acting up. I'll pick it back up later." },
     ],
     checks: [
+      // active:false is read from the result display — 'Paused the habit …' vs 'Activated the
+      // habit …' (habits.ts set_habit_active); inputs never stream on the live protocol.
       toolCalled('set_habit_active', {
-        where: (input) => input.active === false,
+        display: /paused the habit/i,
         label: 'habit deactivated via set_habit_active(false)',
       }),
       toolNotCalled('delete_habit'),

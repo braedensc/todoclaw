@@ -47,24 +47,28 @@ import type { ChatCheck, ChatScenario } from '../../lib/types.ts'
 
 // ---------- local checks (this file owns them; evals/lib stays untouched) ----------
 
-/** The tool was called with `task_id` pointing at the seeded task behind `key` — the difference
- * between "it logged a session" and "it logged a session on the wrong project". */
-function toolTargets(name: string, key: string): ChatCheck {
-  return (t, db) => {
-    const want = db.ids.tasks[key]
-    const calls = t.turns.flatMap((turn) => turn.toolUses).filter((u) => u.name === name)
-    const hit = calls.some((u) => (u.input as { task_id?: unknown } | null)?.task_id === want)
+/** The tool executed against the RIGHT task — the difference between "it logged a session" and
+ * "it logged a session on the wrong project". Tool INPUTS never stream over the live SSE protocol
+ * (see allToolActivity in lib/checks.ts), so targeting is read from the tool-result display,
+ * which interpolates the task's own text: `Logged a work session on "Write the novel" for
+ * today.` / `Marked "Clear out the garage" done for today.` */
+function toolTargets(name: string, key: string, textRe: RegExp): ChatCheck {
+  return (t) => {
+    const results = t.turns
+      .flatMap((turn) => turn.toolResults)
+      .filter((res) => res.name === name && res.ok)
+    const hit = results.some((res) => textRe.test(res.display ?? res.summary))
     return {
       name: `${name} targets "${key}"`,
       pass: hit,
       ...(hit
         ? {}
         : {
-            detail: calls.length
-              ? `${name} task_ids: ${calls
-                  .map((u) => String((u.input as { task_id?: unknown }).task_id))
-                  .join(', ')}`
-              : `${name} never called`,
+            detail: results.length
+              ? `${name} displays: ${results
+                  .map((res) => (res.display ?? res.summary).slice(0, 80))
+                  .join(' | ')}`
+              : `${name} never executed`,
           }),
     }
   }
@@ -141,7 +145,7 @@ export const scenarios: ChatScenario[] = [
     turns: [{ say: 'I worked on the novel for about two hours today — got a chapter drafted.' }],
     checks: [
       toolExecutedOk('log_work'),
-      toolTargets('log_work', 'novel'),
+      toolTargets('log_work', 'novel', /write the novel/i),
       // The whole point: "I worked on it" is not "it is finished".
       toolNotCalled('complete_task'),
       // log_work is deliberately NOT in the DESTRUCTIVE set (registry.test.ts) — recording progress
@@ -186,9 +190,11 @@ export const scenarios: ChatScenario[] = [
       },
     ],
     checks: [
+      // The un-log is observed via its result display ("Cleared today's session on …",
+      // capabilities/tasks.ts:759) — inputs never stream, so logged:false can't be read directly.
       toolCalled('log_work', {
-        where: (i) => i.logged === false,
-        label: 'log_work called with logged=false (un-log)',
+        display: /cleared today'?s session/i,
+        label: 'log_work un-log executed (cleared the session)',
       }),
       toolExecutedOk('log_work'),
       // The un-log path returns NULL from the RPC by design (an emptied array collapses to NULL);
@@ -242,11 +248,11 @@ export const scenarios: ChatScenario[] = [
     checks: [
       // Branch A: progress ⇒ a session, project untouched.
       toolExecutedOk('log_work'),
-      toolTargets('log_work', 'novel'),
+      toolTargets('log_work', 'novel', /write the novel/i),
       dbTaskNotCompleted('novel'),
       noHistoryMatching(/novel/i),
       // Branch B: explicitly finished ⇒ the ordinary destructive complete path still works.
-      toolTargets('complete_task', 'garage'),
+      toolTargets('complete_task', 'garage', /clear out the garage/i),
       confirmRequested('complete_task'),
       dbTaskCompleted('garage'),
       historyMatches(/garage/i),

@@ -252,6 +252,8 @@ export async function snapshotUser(sql: Sql, userId: string, ids: SeedIds): Prom
     select done, habit_done from daily_state
     where user_id = ${userId} and date = ${dayOffsetISO(0, tz)}`
   const history = await sql`select text from history where user_id = ${userId}`
+  const sched = await sql`select config from user_schedule where user_id = ${userId}`
+  const config = (sched[0]?.config ?? {}) as { assistant?: Record<string, unknown> }
   return {
     ids,
     tasks,
@@ -260,5 +262,6 @@ export async function snapshotUser(sql: Sql, userId: string, ids: SeedIds): Prom
     dailyDone: (daily[0]?.done ?? {}) as Record<string, boolean>,
     dailyHabitDone: (daily[0]?.habit_done ?? {}) as Record<string, boolean>,
     historyTexts: history.map((r) => r.text as string),
+    assistantPrefs: config.assistant ?? {},
   }
 }

@@ -36,6 +36,18 @@ function noMemoryContaining(substr: string): ChatCheck {
   }
 }
 
+/** End-state check on user_schedule.config.assistant — tool inputs never stream over the live SSE
+ * protocol (see lib/checks.ts allToolActivity), so preference writes are asserted in the DB. */
+function prefSaved(label: string, want: (prefs: Record<string, unknown>) => boolean): ChatCheck {
+  return (_t, db) => ({
+    name: label,
+    pass: want(db.assistantPrefs),
+    ...(want(db.assistantPrefs)
+      ? {}
+      : { detail: `assistant prefs: ${JSON.stringify(db.assistantPrefs).slice(0, 160)}` }),
+  })
+}
+
 export const scenarios: ChatScenario[] = [
   {
     kind: 'chat',
@@ -212,14 +224,8 @@ export const scenarios: ChatScenario[] = [
     }),
     turns: [{ say: 'Be more direct with me, and keep your replies short.' }],
     checks: [
-      toolCalled('set_assistant_preference', {
-        where: (i) => i.tone === 'direct',
-        label: 'preference call sets tone=direct',
-      }),
-      toolCalled('set_assistant_preference', {
-        where: (i) => i.verbosity === 'brief',
-        label: 'preference call sets verbosity=brief',
-      }),
+      prefSaved('tone=direct persisted', (p) => p.tone === 'direct'),
+      prefSaved('verbosity=brief persisted', (p) => p.verbosity === 'brief'),
       toolExecutedOk('set_assistant_preference'),
       noConfirmRequested(),
       statusLineAlways(),
@@ -241,10 +247,10 @@ export const scenarios: ChatScenario[] = [
       },
     ],
     checks: [
-      toolCalled('set_assistant_preference', {
-        where: (i) => typeof i.note === 'string' && i.note.includes('10'),
-        label: 'note captures the no-tasks-before-10am wish',
-      }),
+      prefSaved(
+        'note captures the no-tasks-before-10am wish',
+        (p) => typeof p.note === 'string' && p.note.includes('10'),
+      ),
       toolExecutedOk('set_assistant_preference'),
       statusLineAlways(),
       noErrorEvents(),
