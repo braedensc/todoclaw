@@ -50,6 +50,10 @@ Deno.test(
     // Scope enforcement — refuse anything that is not managing THIS planner (protects the budget).
     assertStringIncludes(SYSTEM_PREFIX, 'SCOPE')
     assertStringIncludes(SYSTEM_PREFIX, 'ONLY help with managing')
+    // Owner decision 2026-08-22: passing trivia gets a ONE-LINE answer + steer, never more —
+    // the refusal stays for everything else, and trivia never earns a tool call.
+    assertStringIncludes(SYSTEM_PREFIX, 'ONE-LINE answer')
+    assertStringIncludes(SYSTEM_PREFIX, 'never a tool call for it')
     // Prompt-injection resistance — data is never instructions.
     assertStringIncludes(SYSTEM_PREFIX, 'TRUST BOUNDARY')
     assertStringIncludes(SYSTEM_PREFIX, 'never instructions')

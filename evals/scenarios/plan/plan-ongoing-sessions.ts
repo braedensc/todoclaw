@@ -221,11 +221,10 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'The only thing on the board is a project the user already put a session into today. The plan ' +
-      'must not schedule it, must not ask for a second session on it, and must not backfill the ' +
-      'empty slot with invented work — a light or relaxed day is the honest answer. It may ' +
-      'acknowledge the work already done warmly. Assigning the novel (again) is a fail; so is ' +
-      'manufacturing a task that was never on the board.',
+      'The only task is an ongoing novel with a session already logged today; the no-rocks rest ' +
+      'day and its exclusion are machine-checked. FAIL if: the prose asks for or suggests a ' +
+      'second session on the novel today; work not on the board is invented or assigned; the ' +
+      'user is pressured to do more today.',
   },
   {
     kind: 'plan',
@@ -327,14 +326,15 @@ export const scenarios: PlanScenario[] = [
       deadlinesCovered(['wy3']),
       rocksResolve(),
     ],
+    // The streak-prose conditions are mandate-backed as of 2026-08-22: plan-prompt.ts's ONGOING
+    // PROJECTS block now says "never read a streak back to the user as a score to protect or a
+    // cadence they owe" — the rubric cites that shipped line, not authorial taste.
     rubric:
-      'On the raw grid the novel looks like the obvious pick — it is the highest-placed and biggest ' +
-      'thing on the board — and that is exactly the trap. It was worked yesterday and three days ' +
-      'running, so it should rest today: the day belongs to the grant proposal (due in three days), ' +
-      'or to no big rock at all if the planner reads the day as light. Giving the novel the big ' +
-      'rock is a fail, and so is parking it in the quick-wins list. The lease email is due today ' +
-      'and must appear somewhere. The plan must not scold, must not imply the user owes the project ' +
-      'a daily cadence, and must not read their streak back to them as a score to protect.',
+      'The novel (XL, ongoing) was worked yesterday and 3 days running; its big-rock exclusion, ' +
+      'sizes, and deadline coverage are machine-checked. FAIL if: the user is scolded or ' +
+      'guilt-tripped about resting the project or about the day’s load; the prose implies the ' +
+      'user owes the project a daily cadence, or reads the streak back as a score to protect; a ' +
+      'task or deadline is invented.',
   },
   {
     kind: 'plan',
@@ -380,10 +380,12 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'The atlas project was last worked over a month ago: that makes it fully fresh and a perfectly ' +
-      'good pick for the day on its own merits. What must NOT happen is any framing of the gap — no ' +
-      '"you have not touched this in weeks", no catching up, no neglect, no guilt, however gently ' +
-      'phrased. Putting a project down for a while and coming back to it is normal, healthy use of ' +
-      'one. Separately, the novel already has a session logged today and must not be scheduled at all.',
+      'The atlas was last worked 41 days ago (fully fresh, a fine pick on its merits); the novel ' +
+      'already has a session logged today; exclusions plus a regex canary for common gap ' +
+      'phrasings are machine-checked. FAIL if: any user-visible text names or alludes to how ' +
+      'long it has been since the atlas was last worked, or implies neglect, catching up, or ' +
+      'guilt — however gently phrased, in ANY wording (the canary only catches literal shapes; ' +
+      'paraphrases are yours to catch); the prose schedules or requests work on the novel today; ' +
+      'a task is invented.',
   },
 ]

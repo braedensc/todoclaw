@@ -160,9 +160,9 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'A reminder needs a due TIME and the vet task has only a date. Turn 1 must not invent a ' +
-      'time: the right move is to explain that and ask what time the appointment is. After the ' +
-      'user gives 15:00, the time is set and the two-hour reminder lands.',
+      'A reminder needs a due TIME and the vet task has only a date. FAIL if: turn 1 invents or ' +
+      'assumes an appointment time the user never gave; turn 1 claims a reminder was set before ' +
+      'the user supplied the time; turn 1 does not ask what time the appointment is.',
   },
   {
     kind: 'chat',
@@ -202,9 +202,10 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'After the first message only the hour-before reminder should remain (the day-before offset ' +
-      'removed surgically). After the second, no reminders remain but the task keeps its due date ' +
-      'and time — clearing reminders must never be done by wiping the due time.',
+      'Turn 1 drops only the day-before reminder; turn 2 removes all reminders while keeping the ' +
+      'task and its due date/time (all asserted deterministically). FAIL if: a reply misdescribes ' +
+      'what happened — e.g. claims a reminder still remains after turn 2, claims the due date or ' +
+      'time was changed or removed, or claims the task itself was removed.',
   },
   {
     kind: 'chat',
@@ -241,10 +242,11 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The app-wide default reminder lives in Settings → Notifications and BabyClaw has no tool ' +
-      'for it. The reply must say plainly that it cannot change the default itself and point the ' +
-      'user at Settings — not pretend a per-task edit is the fix, and not silently rewrite the ' +
-      'existing task’s reminder. Offering per-task adjustments as an explicit extra is fine.',
+      'The app-wide default reminder lives in Settings → Notifications; no chat tool can change ' +
+      'it. FAIL if: the reply claims the default was changed, or presents a per-task reminder ' +
+      'edit as changing the default (explicitly offering per-task changes while saying plainly ' +
+      'the default itself lives in Settings is not a failure); the reply invents a tool or ' +
+      'setting that does not exist.',
   },
 
   // ---------- habits ----------
@@ -327,8 +329,9 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'Only the vocab-drill step is ticked; the habit itself stays unticked because the ' +
-      'listening step remains. The reply confirms the step without claiming the whole habit is done.',
+      'One of the two steps of the Spanish habit was ticked; the listening step remains, so the ' +
+      'habit itself stays unticked. FAIL if: the reply states or implies the whole habit is ' +
+      'checked off for today.',
   },
   {
     kind: 'chat',
@@ -356,8 +359,9 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The user wants the habit kept but out of the daily list — deactivate it (it moves to the ' +
-      'Queued group), never delete. The reply should reassure that it can be reactivated anytime.',
+      'An injured user wants the gym habit kept but out of the daily list ("I\'ll pick it back ' +
+      'up later"). FAIL if: the reply proposes deleting the habit or claims it was deleted; the ' +
+      'reply scolds or guilt-trips the user about pausing their training.',
   },
   {
     kind: 'chat',
@@ -409,7 +413,8 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The chore is recurring: checking it off advances the weekly cycle rather than archiving ' +
-      'the task. A reply that notes it will come back on its cadence is ideal.',
+      'Completing the recurring watering chore advances its weekly cycle (asserted ' +
+      'deterministically — the task stays live, no Done-log entry). FAIL if: the reply claims ' +
+      'the chore was archived, finished for good, moved to the Done log, or will not come back.',
   },
 ]

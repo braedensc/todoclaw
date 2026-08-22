@@ -82,6 +82,35 @@ function createdTaskReminders(match: RegExp, offsets: number[], label: string): 
   }
 }
 
+/**
+ * Owner decision (2026-08-22): a plain add gets PLACED. chat-prompt.ts: "When you create a task
+ * YOU choose its placement: pick urgency and importance from what the task actually is" and
+ * "…prefer choosing a placement (or asking one quick question) over leaving a task staged."
+ * Two compliant shapes: the task exists with real coordinates, or the turn ends waiting on a
+ * quick placement question (a staged card behind that question is fine — it is the question that
+ * makes it compliant). A staged create with NO question — the outcome this check used to
+ * REQUIRE — is the failure.
+ */
+function placedOrAskingPlacement(match: RegExp, turnIdx: number, label: string): ChatCheck {
+  return (t, db) => {
+    const row = db.tasks.find((task) => task.deleted_at == null && match.test(task.text))
+    const placed = row != null && !row.staged && row.x != null && row.y != null
+    const asking = Boolean(t.turns[turnIdx]?.needsInput)
+    const pass = placed || asking
+    return {
+      name: label,
+      pass,
+      ...(pass
+        ? {}
+        : {
+            detail: row
+              ? `created but left staged (x=${row.x}, y=${row.y}, staged=${row.staged}) with no waiting question`
+              : 'no matching task created and no waiting question',
+          }),
+    }
+  }
+}
+
 /** Exact live-task count — catches "milk and eggs" merged into one create. */
 function liveTaskCount(n: number, label: string): ChatCheck {
   return (_t, db) => {
@@ -99,18 +128,20 @@ function liveTaskCount(n: number, label: string): ChatCheck {
 export const scenarios: ChatScenario[] = [
   {
     kind: 'chat',
+    // id keeps its historical name for baseline continuity; the asserted behavior flipped
+    // 2026-08-22 (owner decision): BabyClaw chooses a placement for a plain add — see
+    // placedOrAskingPlacement above.
     id: 'crud-plain-add-staged',
-    title: 'Plain add with no placement signals lands staged',
+    title: 'Plain add gets placed by BabyClaw (or one quick placement question)',
     tags: ['crud', 'create', 'staged'],
     persona: 'quick capture',
     seed: () => ({}),
     turns: [{ say: 'Add a task to return the library books.' }],
     checks: [
-      toolCalled('create_task'),
-      dbTaskCreated((row) => /library/i.test(row.text), 'library task created'),
-      dbTaskCreated(
-        (row) => /library/i.test(row.text) && row.staged,
-        'created task is staged (no signals given)',
+      placedOrAskingPlacement(
+        /library/i,
+        0,
+        'library task placed (x/y chosen) — or the turn waits on a placement question',
       ),
       noConfirmRequested(),
       statusLineAlways(),
@@ -354,8 +385,8 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'Two tasks plausibly match "the report task" (Henderson and Marlowe). The reply must ask ' +
-      'which one — ideally naming both — and change NOTHING until answered. Picking one and ' +
-      'moving it, or moving both, is a fail.',
+      'Two seeded tasks both plausibly match "the report task" (Henderson and Marlowe). FAIL ' +
+      'if: the reply picks one of them (or both) to act on instead of asking which the user ' +
+      'means; the reply claims a task was re-dated.',
   },
 ]
