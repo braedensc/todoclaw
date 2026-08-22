@@ -337,19 +337,16 @@ export const scenarios: RecapScenario[] = [
       habitsKept: [],
     },
     // Owner decision 2026-08-22 (after three paid runs of steadily-warmer padding): a nothing-day
-    // gets an ULTRA-BRIEF sign-off — one or two short lines, NO question. buildRecapUserPrompt now
-    // sends a dedicated instruction for this shape (the old line told the model to ask about open
-    // items that did not exist — the tension that produced the padding). Both halves are decided
-    // behavior, so both are DETERMINISTIC here: no '?' anywhere, and a 50-word cap (generous for
-    // "one or two short lines"; the old 120 cap let five padded sentences through).
+    // gets an ULTRA-BRIEF sign-off — one or two short lines, no question. The 50-word cap is the
+    // deterministic half (generous for "one or two short lines"; the old 120 cap let five padded
+    // sentences through — the cap is what killed the padding). The no-question half is RUBRIC-only
+    // by a second owner ruling (2026-08-22, same day): a bare '?' ban failed "Quiet one today,
+    // huh?" — a rhetorical tag, not an ask — so the judge now draws the line the character class
+    // can't: soliciting a report/decision fails, conversational warmth does not. The prompt still
+    // says "no question" (stricter prompt than check is the safe direction).
     checks: [
       recapSignoff(),
       recapMaxWords(50),
-      ((body) => ({
-        name: 'asks no question on a nothing-day',
-        pass: !body.includes('?'),
-        ...(body.includes('?') ? { detail: body.slice(0, 160) } : {}),
-      })) as RecapCheck,
       recapNoHeaders(),
       bodyLacks(/\bproud\b/i, 'never says "proud" of a day of pure bookkeeping'),
       bodyLacks(/planning day/i, 'never calls it a "planning day"'),
@@ -374,8 +371,10 @@ export const scenarios: RecapScenario[] = [
       'No plan and nothing finished; the only activity is board upkeep, which the app ' +
       'deliberately hands the model only as an aggregate count. FAIL if: it pads beyond a brief ' +
       'kind good-evening — a reassurance essay ("some days are slower and that\'s allowed… no ' +
-      'pressure either way"), news, or any solicitation of a report-back (an imperative "let me ' +
-      'know how things went" fails even without a "?"); it names or describes any specific ' +
+      'pressure either way"), news, or any solicitation of a report, decision, or plan from the ' +
+      'user ("anything you want to carry forward?" and an imperative "let me know how things ' +
+      'went" both fail; a purely rhetorical tag that expects no answer, like "quiet one today, ' +
+      'huh?", does not); it names or describes any specific ' +
       'upkeep item (the shed shelving, the furnace filter — the model is never given these, so a ' +
       'mention means invention or a reverted withholding mechanism); the tidying earns more than ' +
       'a passing "board looks tidier" half-clause; the day is framed as an achievement in any ' +
