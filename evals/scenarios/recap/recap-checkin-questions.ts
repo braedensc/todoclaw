@@ -23,8 +23,9 @@
 //                                    covered — this scenario is the one that pins that exhaustively.
 //   recq-habit-nod-not-the-headline— :43-47, nothing finished ⇒ do NOT reach for something to
 //                                    praise; a kept habit is at most ONE optional flourish.
-//   recq-upkeep-no-plan-no-praise  — the edge :119-124 creates: bookkeeping with NO plan at all, so
-//                                    there are no open items to name (:57-59 — never invent one).
+//   recq-upkeep-no-plan-no-praise  — bookkeeping with NO plan at all: an ultra-brief sign-off,
+//                                    no question, ≤50 words (owner decision 2026-08-22; both
+//                                    halves deterministic).
 //   recq-recurring-checkoff-is-progress — the other side of the split: a recurring check-off IS
 //                                    progress (activity.ts:59-60, :107-109) and must be credited.
 //
@@ -321,7 +322,7 @@ export const scenarios: RecapScenario[] = [
     // neither applauds the organising nor conjures a task to ask about.
     kind: 'recap',
     id: 'recq-upkeep-no-plan-no-praise',
-    title: 'Upkeep with no plan: brief and kind, invents nothing to ask about',
+    title: 'Upkeep with no plan: an ultra-brief sign-off — no question, no narration',
     tags: ['recap', 'checkin', 'bookkeeping', 'faithfulness'],
     persona: 'tidied the board, had no plan',
     request: {
@@ -341,14 +342,20 @@ export const scenarios: RecapScenario[] = [
       upcoming: [],
       habitsKept: [],
     },
-    // NOTE (verified by rendering this request through buildRecapUserPrompt): because BOOKKEEPING is
-    // non-empty, the :119-124 line DOES fire here — the model is told to "lead with a kind, specific
-    // question about the open items" when the prompt lists none. That tension IS the probe. No
-    // asksSomething() check: recap-prompt.ts:59 lets a plan-less day be "just check in kindly and
-    // briefly", and requiring a '?' would reward conjuring something to ask about.
+    // Owner decision 2026-08-22 (after three paid runs of steadily-warmer padding): a nothing-day
+    // gets an ULTRA-BRIEF sign-off — one or two short lines, NO question. buildRecapUserPrompt now
+    // sends a dedicated instruction for this shape (the old line told the model to ask about open
+    // items that did not exist — the tension that produced the padding). Both halves are decided
+    // behavior, so both are DETERMINISTIC here: no '?' anywhere, and a 50-word cap (generous for
+    // "one or two short lines"; the old 120 cap let five padded sentences through).
     checks: [
       recapSignoff(),
-      recapMaxWords(120),
+      recapMaxWords(50),
+      ((body) => ({
+        name: 'asks no question on a nothing-day',
+        pass: !body.includes('?'),
+        ...(body.includes('?') ? { detail: body.slice(0, 160) } : {}),
+      })) as RecapCheck,
       recapNoHeaders(),
       bodyLacks(/\bproud\b/i, 'never says "proud" of a day of pure bookkeeping'),
       bodyLacks(/planning day/i, 'never calls it a "planning day"'),
@@ -367,16 +374,14 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone([...DECOYS, 'tax return', 'car service']),
     ],
     rubric:
-      'There was NO plan today and nothing was finished — the only activity is three bits of board ' +
-      'upkeep (a task created, a card placed, a chore made recurring). REQUIRED: a brief, kind ' +
-      'check-in. It does not have to ask a question, because there is nothing open to ask about. ' +
-      'AUTOMATIC FAIL if it invents an item, a commitment, or a plan that was never given, or if ' +
-      'it manufactures news out of the upkeep — no "good planning day", no "proud of you for ' +
-      'getting organised", no treating the three rows as a productive evening. Referring to the ' +
-      'upkeep in a passing half-clause ("board looks tidier") is fine; narrating the items back ' +
-      'individually, or building a reassurance story out of them ("nothing urgent was left, so ' +
-      'resting counts"), is manufacturing and a FAIL. The prompt says a line or two is plenty ' +
-      'here: a couple of short sentences is right, several sentences of padding is a fail.',
+      'There was NO plan today and nothing was finished — the only activity is board upkeep. ' +
+      'REQUIRED: an ultra-brief, kind sign-off in one or two short lines — a warm good-evening ' +
+      'and nothing more. No question (checked deterministically), no news, no invented items or ' +
+      'plans, no achievement talk ("good planning day" / "proud"), and no reassurance essay ' +
+      '("some days are slower and that\'s allowed… no pressure either way" is the padding this ' +
+      'scenario exists to catch). A passing "board looks tidier" half-clause is the most the ' +
+      'tidying may earn. Warmth is welcome; length is not — the ideal message here is two ' +
+      'sentences or fewer.',
   },
   {
     // The over-correction guard on the other side of the split: `completed` is progress regardless
