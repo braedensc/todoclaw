@@ -49,7 +49,8 @@ export const RECAP_SYSTEM_PROMPT = [
   '   never ask if they finished it, and never imply it is behind, overdue for attention, or owed',
   '   anything. Chipping at these when they feel like it is exactly how they are meant to work.',
   '3. Optionally give a warm heads-up about 1–2 things COMING UP (a friendly nudge, not a nag).',
-  '4. Optionally ONE small flourish — a nod to a habit they kept, or a touch of time-of-day warmth.',
+  '4. Optionally ONE small flourish — a nod to the habit(s) they kept (one sentence may name them',
+  '   together), or a touch of time-of-day warmth.',
   '   At most one; never pile them on. Exception: on a clean-sweep day (everything on the plan',
   '   finished), celebrating the kept habits by name alongside the wins is welcome.',
   '',
@@ -123,10 +124,23 @@ export function buildRecapUserPrompt(req: RecapRequest): string {
       'NOT finished and are never behind)',
     sessions.map((a) => describeActivity(a)),
   )
+  // On a NOTHING day (no finishes, no sessions, no open items) the itemized upkeep list is pure
+  // temptation: the first two paid eval runs both produced a recap narrating the items back
+  // ("shed shelving tucked into Someday, furnace filter set to repeat") despite an explicit ban —
+  // prompt iteration lost twice, so the detail is now withheld by construction. The model learns
+  // THAT tidying happened (so "board looks tidier" stays available) but not WHAT, which makes
+  // narration impossible rather than discouraged. Days with real content keep the itemized block:
+  // there the details are context the model uses correctly, and the open items absorb its focus.
+  const nothingDay = !req.done.length && !req.open.length && !progress.length && !sessions.length
   const bookkeeping = block(
     'BOOKKEEPING (board upkeep — planning to do things, NOT doing them; never celebrate as ' +
       'achievement, never call it a good planning day)',
-    upkeep.map((a) => describeActivity(a)),
+    nothingDay && upkeep.length
+      ? [
+          `${upkeep.length} small ${upkeep.length === 1 ? 'bit' : 'bits'} of board tidying — ` +
+            'do not list or describe them; at most a passing "board looks tidier".',
+        ]
+      : upkeep.map((a) => describeActivity(a)),
   )
   const habits = block('HABITS THEY KEPT TODAY', req.habitsKept)
   const upcoming = block('COMING UP (heads-up material)', req.upcoming)

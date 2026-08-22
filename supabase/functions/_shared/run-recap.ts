@@ -37,8 +37,12 @@ export async function generateRecap(
   if (!toolUse || toolUse.type !== 'tool_use') {
     throw new Error('The recap writer did not return a message.')
   }
-  const body = String((toolUse.input as { body?: unknown }).body ?? '').trim()
+  let body = String((toolUse.input as { body?: unknown }).body ?? '').trim()
   if (!body) throw new Error('The recap writer returned an empty message.')
+  // Cosmetic repair, not rejection (same philosophy as resolvePlanTaskIds, #350): the signoff is
+  // a hard format rule the model occasionally drops — the 2026-08-22 paid eval run shipped a body
+  // ending on a bare 🐾. A missing signoff never costs the user the message; append it.
+  if (!/—\s*BabyClaw\s*🐾$/u.test(body)) body = `${body}\n\n— BabyClaw 🐾`
   return {
     body,
     usage: {

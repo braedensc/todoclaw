@@ -123,6 +123,31 @@ Deno.test('a pure-bookkeeping day is asked about, never congratulated', () => {
   assertStringIncludes(p, 'STILL OPEN FROM THEIR PLAN')
 })
 
+// A NOTHING day (no finishes, no sessions, no open items) withholds the upkeep DETAIL by
+// construction: two paid eval runs both narrated the items back despite an explicit ban, so the
+// model now learns THAT tidying happened but not WHAT. Days with real content keep the itemized
+// block (pinned by the tests above).
+Deno.test('buildRecapUserPrompt: nothing-day upkeep is aggregated, never itemized', () => {
+  const p = buildRecapUserPrompt({
+    dayName: 'Saturday',
+    name: null,
+    done: [],
+    open: [],
+    activity: [
+      activity('created', 'Sort the shed shelving'),
+      activity('made_recurring', 'Change the furnace filter', { frequency_days: 90 }),
+    ],
+    upcoming: [],
+    habitsKept: [],
+  })
+  assertStringIncludes(p, 'BOOKKEEPING')
+  assertStringIncludes(p, '2 small bits of board tidying')
+  assertStringIncludes(p, 'do not list or describe them')
+  // The item texts themselves must be absent — narration is impossible, not discouraged.
+  assert(!p.includes('shed shelving'))
+  assert(!p.includes('furnace filter'))
+})
+
 // A session on an ongoing project is real work, but it is NOT a finish — the model must be able to
 // say "nice hour on the novel" without either congratulating them for completing it or implying the
 // project is behind. So sessions ride in their own block, not in FINISHED and not in BOOKKEEPING.
