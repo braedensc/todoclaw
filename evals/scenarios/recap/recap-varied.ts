@@ -274,8 +274,7 @@ export const scenarios: RecapScenario[] = [
       'One finish (the inbox clear-out); the newsletter launch comes off its pause tomorrow ' +
       '(mentioning it is optional); one kept habit. FAIL if: the inbox finish goes uncredited; ' +
       'the newsletter is framed as late, pressured, or deadline-bound (it is only waking back ' +
-      'up), or given invented detail about what the launch involves; flourishes are piled on ' +
-      'beyond one small nod.',
+      'up), or given invented detail about what the launch involves.',
   },
   {
     // Owner decision 2026-08-22: greeting by name is OPTIONAL. buildRecapUserPrompt injects the
