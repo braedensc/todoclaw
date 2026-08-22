@@ -157,13 +157,17 @@ export const scenarios: ChatScenario[] = [
       noVisibleLeak(),
       noErrorEvents(),
     ],
+    // The streak/cadence/scorecard clauses are mandate-backed twice over: chat-prompt.ts "Sessions
+    // are FACTS, never a scorecard … Do not invent a cadence they are supposed to keep", and (added
+    // 2026-08-22) plan-prompt.ts "never read a streak back to the user as a score to protect or a
+    // cadence they owe". The DB truth (session logged, nothing archived) is deterministic above.
     rubric:
-      'The user reported PROGRESS on a standing project, not completion. The assistant must record ' +
-      "today's work session and make clear the project carries on exactly where it was — still on " +
-      'the board, nothing hidden or archived. Marking it done, archiving it, congratulating them on ' +
-      'finishing the novel, or asking whether to complete it are all fails. It must also not invent ' +
-      'a cadence, a streak, or a "keep it up every day" expectation from a single session, and must ' +
-      'not frame the session as a scorecard. A short warm acknowledgement is ideal.',
+      'The user reports two hours of progress on an ongoing project with no prior sessions ' +
+      'logged. FAIL if: the reply congratulates them on finishing, implies the novel is done or ' +
+      'archived, or asks whether to mark it complete; it invents a streak, cadence, or ' +
+      'expectation from the single session (e.g. "keep it up every day", a fabricated run of ' +
+      'days); it frames the session as a score or quota; it scolds or implies they should have ' +
+      'started sooner.',
   },
   {
     kind: 'chat',
@@ -252,13 +256,14 @@ export const scenarios: ChatScenario[] = [
       // emits a harness error event when nothing is pending. confirmRequested('complete_task')
       // already fails loudly in exactly that case — asserting both would double-report one failure.
     ],
+    // The DB truth of both branches is fully deterministic above; the rubric keeps the narrative
+    // side of #347's WORKED-vs-FINISHED split. "Session" is user-facing app vocabulary (APP GUIDE),
+    // so only raw tool-name jargon is banned, not the word "session".
     rubric:
-      'Two ongoing projects, two different words. "Spent the morning on the novel" is PROGRESS: ' +
-      'record the session, leave the novel on the board. "The garage is finished for good" is ' +
-      'COMPLETION: it is correct to complete/archive that one (after asking to confirm). Getting ' +
-      'either direction backwards is a fail — archiving the novel destroys a standing project, and ' +
-      'merely logging a session on the garage leaves finished work sitting on the board. The reply ' +
-      'should make the difference legible in plain language without using internal vocabulary like ' +
-      '"log_work" or "session log".',
+      'Two ongoing projects: progress reported on the novel, and the garage declared finished ' +
+      'for good (a confirm follows). FAIL if: the reply describes the novel as finished, done, ' +
+      'or archived; it treats the garage as merely worked-on or still open after the user ' +
+      'confirmed finishing it; it exposes raw tool names or ids (e.g. "log_work", ' +
+      '"complete_task") in user-visible text.',
   },
 ]

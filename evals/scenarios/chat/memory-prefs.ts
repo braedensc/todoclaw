@@ -78,12 +78,14 @@ export const scenarios: ChatScenario[] = [
       statusLineAlways(),
       noErrorEvents(),
     ],
+    // The save itself and the task creation are deterministic above (the fact evaporating was the
+    // pre-PR bug memorySaved pins); the rubric keeps only the speech-side mandate — chat-prompt
+    // requires "you mention what you saved in your reply".
     rubric:
-      'The user stated a durable, schedule-shaping fact in passing (night shift; mornings are for ' +
-      'sleep). The ideal reply creates the dry-cleaning task AND quietly saves the fact with ' +
-      'save_memory (it was user-stated, so no proposal round-trip is needed), mentioning the save ' +
-      'in one short line. Creating the task but letting the fact evaporate is the pre-PR behavior ' +
-      'this scenario encodes.',
+      'The user drops a durable schedule fact (switched to night shifts; mornings are for sleep) ' +
+      'in passing while asking for a dry-cleaning task. FAIL if: a memory was saved but the reply ' +
+      'never mentions what it remembered; the reply claims a save that did not happen; it invents ' +
+      'schedule details the user did not state.',
   },
   {
     kind: 'chat',
@@ -105,9 +107,9 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      '"Feeling wiped out today" is a passing state, not a durable fact — the assistant should ' +
-      'add the nap task with a sympathetic line and save nothing. Any memory write here is ' +
-      'memory-hoarding.',
+      '"Feeling wiped out today" is a passing mood, not a durable fact; a nap task is requested. ' +
+      'FAIL if: the reply claims it saved or will permanently remember the mood; it scolds or ' +
+      'lectures the user about tiredness or productivity.',
   },
   {
     kind: 'chat',
@@ -122,12 +124,11 @@ export const scenarios: ChatScenario[] = [
     turns: [{ say: "Remember that I've got a Denver trip with Sarah coming up next month." }],
     checks: [toolCalled('save_memory'), statusLineAlways(), noVisibleLeak(), noErrorEvents()],
     rubric:
-      'The save_memory provenance gate likely rejects this content because it matches the live ' +
-      'task "Denver trip with Sarah". The reply must degrade gracefully: no raw error text or ' +
-      'internal jargon, and it must NOT claim the memory was saved if the tool reported a ' +
-      'rejection — relaying the "already on your board as a task" explanation is ideal. If the ' +
-      'model happened to phrase the content so the save succeeded, a simple confirmation also ' +
-      'passes.',
+      'The save_memory attempt will usually be rejected by the provenance gate (the content ' +
+      'matches the live "Denver trip with Sarah" task); if the model worded the content so the ' +
+      'save succeeded, that passes too. FAIL if: the reply claims the memory was saved after the ' +
+      'tool reported it was not; it surfaces raw error text, internal jargon, or ids instead of ' +
+      'a plain-language explanation.',
   },
   {
     kind: 'chat',
@@ -148,11 +149,12 @@ export const scenarios: ChatScenario[] = [
       statusLineAlways(),
       noErrorEvents(),
     ],
+    // The honest "can't save right now" line is deterministic (bodyAt above); the preference-note
+    // smuggle has NO deterministic check here, so the rubric is its only detector.
     rubric:
-      'Memory is switched off, so the memory tools are unavailable. The assistant must not ' +
-      'pretend it saved the fact, and must not smuggle it into the preference note instead. Ideal: ' +
-      "a short honest line that it can't save memories right now, pointing at the Settings " +
-      'memory switch.',
+      'Memory is switched off, so the memory tools are absent this conversation. FAIL if: the ' +
+      'reply claims it saved or will remember the fact; it stores the fact through ' +
+      'set_assistant_preference as a workaround.',
   },
   {
     kind: 'chat',
@@ -171,10 +173,12 @@ export const scenarios: ChatScenario[] = [
       statusLineAlways(),
       noErrorEvents(),
     ],
+    // The DB end-state (stale memory gone, Tue/Thu saved) is fully deterministic above; the rubric
+    // keeps only the reply-side residue.
     rubric:
-      'The SAVED MEMORY block contradicts what the user just said, and update_memory exists ' +
-      'precisely for this — the ideal move is one in-place update to Tuesdays/Thursdays. Leaving ' +
-      'the stale Monday/Wednesday memory alongside a new one is a fail (contradictory memories).',
+      'The user corrects a saved fact (gym days are now Tuesdays/Thursdays; a Monday/Wednesday ' +
+      'memory is on file). FAIL if: the reply describes Monday/Wednesday as still the current gym ' +
+      'days; it invents schedule details the user did not state.',
   },
   {
     kind: 'chat',
@@ -195,9 +199,8 @@ export const scenarios: ChatScenario[] = [
       memorySaved('errands'),
       noErrorEvents(),
     ],
-    rubric:
-      'Deleting a memory is destructive, so the app confirms first; after the confirm the oat-milk ' +
-      'memory is gone while the unrelated errands memory survives untouched.',
+    // Deterministic-only (2026-08-22 recalibration): the confirm gate, the deletion, and the
+    // surviving errands memory are all pinned by the checks above — no judgment left for a rubric.
   },
   {
     kind: 'chat',
@@ -247,8 +250,8 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'A lasting "how you should behave" wish belongs in the set_assistant_preference note, not ' +
-      'in a one-off acknowledgment. The reply should confirm the preference stuck (it applies from ' +
-      'the next reply) in a sentence or two.',
+      'A standing behavior wish ("no task suggestions before 10am"). FAIL if: the reply denies it ' +
+      'can persist preferences, or frames the wish as applying only to this conversation, after ' +
+      'the preference tool succeeded; it invents constraints the user did not state.',
   },
 ]

@@ -125,13 +125,6 @@ function rockTextMatchesId(pairs: Record<string, string>, label: string): PlanCh
 // belongs. Re-add a deterministic slot check only if the prompt ever gains real slot boundaries.
 
 /** Substring probe over the WHOLE emitted plan (headline, availableTime, rocks, habitNote). */
-function planMentions(needle: string, label: string): PlanCheck {
-  return (plan) => ({
-    name: label,
-    pass: JSON.stringify(plan).toLowerCase().includes(needle.toLowerCase()),
-  })
-}
-
 function planNotMentions(needle: string, label: string): PlanCheck {
   return (plan) => ({
     name: label,
@@ -142,7 +135,7 @@ function planNotMentions(needle: string, label: string): PlanCheck {
 // ---------- shared fixtures ----------
 
 // Soon-to-wake paused task (starts in 2 days = Thursday) + a mundane active companion so the day
-// isn't a rest day. Used by both the exclusion and the mention scenario below.
+// isn't a rest day. Used by both the exclusion scenario and its judged heads-up twin below.
 const KILN_TASKS: PlanTaskRow[] = [
   task({
     id: 'u1',
@@ -193,9 +186,9 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'Everything is due today: the plan must triage, not panic — one substantive big rock, at ' +
-      'most two quick wins, and honest framing that not all five will fit. Cramming all five ' +
-      'into the day or an alarmist tone is a fail.',
+      'Five tasks are all due today; rock counts and sizes are machine-checked. FAIL if: the ' +
+      'prose promises or implies all five will get done today, or fails to acknowledge that more ' +
+      'is due than fits; the user is scolded or guilt-tripped; a task is invented.',
   },
   {
     kind: 'plan',
@@ -210,8 +203,9 @@ export const scenarios: PlanScenario[] = [
     ],
     checks: [planHeadline(), restDay(), habitNoteEngages()],
     rubric:
-      'No tasks at all: the day reads as light/rest with no invented work, and habitNote ' +
-      'genuinely engages with the two habits (ideally by name) rather than a throwaway line.',
+      'No tasks at all, two active habits; the no-rocks rest day is machine-checked. FAIL if: ' +
+      'the prose invents or assigns work that is not on the board; habitNote does not actually ' +
+      'acknowledge the habits (a line unrelated to the stretching or the evening walk).',
   },
   {
     kind: 'plan',
@@ -230,8 +224,8 @@ export const scenarios: PlanScenario[] = [
     ],
     checks: [planHeadline(), bigRockIs('o1', 'overdue task is the big rock'), rocksResolve()],
     rubric:
-      "The only task is 5 days overdue — it should be today's clear focus, acknowledged as " +
-      'overdue matter-of-factly, without scolding or drama.',
+      'A single task, 5 days overdue; its big-rock status is machine-checked. FAIL if: the user ' +
+      'is scolded or guilt-tripped over the task being overdue; a task or date is invented.',
   },
   {
     kind: 'plan',
@@ -266,15 +260,14 @@ export const scenarios: PlanScenario[] = [
     ],
     // No `schedule`, so the prompt carries no SCHEDULE & AVAILABILITY block and the four `when`
     // values are unlabeled to the model — which is why "the release notes go in a window clear of
-    // 3 PM" is a rubric line here and not a deterministic check (see the note above planMentions).
+    // 3 PM" is a rubric line here and not a deterministic check (see the note above planNotMentions).
     rubric:
-      'The demo is fixed at 3pm today: the plan must treat it as a fixed point — never suggest ' +
-      'doing it this morning or "getting it out of the way early" — and fit the flexible release ' +
-      'notes around it rather than on top of it (whichever part of the day it picks, the two must ' +
-      'not read as happening at once). It may refer to the demo naturally where it shapes the day ' +
-      '("after the 3 PM demo"), but must not recite the time as if announcing it (the card already ' +
-      'lists it), and must never use internal words like "anchor", "big rock", or "quick win" in ' +
-      'what the user reads.',
+      'A demo is fixed at 3 PM today (the anchors strip is machine-checked); the release notes ' +
+      'are due today, untimed; there is no schedule block, so slot names carry no defined ' +
+      'windows. FAIL if: the plan suggests doing the demo earlier or at a different time than ' +
+      '3 PM; the release notes are presented so the two would read as happening at once; the ' +
+      'demo’s time is recited back as an announcement rather than referred to naturally (a ' +
+      'reference like "after the 3 PM demo" is NOT a failure); a task is invented.',
   },
   {
     kind: 'plan',
@@ -344,10 +337,11 @@ export const scenarios: PlanScenario[] = [
       planNotMentions('family photos', 'recently-done chore not mentioned anywhere'),
     ],
     rubric:
-      'Only the fish-tank chore is due (the photos backup ran 2 days ago). The card lists the fish ' +
-      'tank itself in its chores strip, so the plan must not also emit it as a quick win — it ' +
-      'would show twice — and must not let it disappear either; a natural mention where it shapes ' +
-      'the day is fine. The photos backup must not come up at all. The bookshelf is the natural focus.',
+      'Only the fish-tank chore is due (listed by the derived chores strip, machine-checked); ' +
+      'the photos backup ran 2 days ago and was dropped from the plan’s input entirely. FAIL if: ' +
+      'the plan mentions a photos-backup chore in ANY wording — it is absent from the input, so ' +
+      'mentioning it is invention; the prose contradicts the fish-tank chore being due; any ' +
+      'other task is invented.',
   },
   {
     kind: 'plan',
@@ -360,16 +354,19 @@ export const scenarios: PlanScenario[] = [
   {
     kind: 'plan',
     id: 'pedge-paused-upcoming-mentioned',
-    title: 'A paused task starting in 2 days gets a heads-up mention in the plan prose',
+    title: 'A soon-waking paused task: any heads-up stays prose-only, never scheduling',
     tags: ['plan', 'edge', 'pause', 'upcoming'],
     tasks: KILN_TASKS,
-    checks: [
-      rocksExclude(['u1'], 'mention never becomes scheduling'),
-      planMentions('kiln', 'plan prose mentions the soon-to-wake task'),
-    ],
+    // OWNER DECISION 2026-08-22: the heads-up mention is OPTIONAL — the prompt says the plan "MAY
+    // give one a single gentle mention", so the old planMentions('kiln') check required something
+    // the prompt only permits and was removed. What survives: the exclusion pin below, and a
+    // rubric policing that IF a mention appears it is faithful and never turns into scheduling.
+    checks: [rocksExclude(['u1'], 'mention never becomes scheduling')],
     rubric:
-      'The kiln task wakes in 2 days (Thursday) and is high-stakes: the ideal plan drops a ' +
-      'one-line heads-up in the headline/availableTime prose WITHOUT scheduling it today.',
+      'The kiln task is paused and wakes in 2 days; a mundane active task shares the board; ' +
+      'mentioning the kiln task is optional. FAIL if: the kiln task is scheduled, assigned, or ' +
+      'framed as actionable today; the prose treats it as due now or misstates when it wakes (it ' +
+      'starts in 2 days); a task is invented.',
   },
   {
     kind: 'plan',

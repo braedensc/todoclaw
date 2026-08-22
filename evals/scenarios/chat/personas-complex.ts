@@ -152,10 +152,12 @@ export const scenarios: ChatScenario[] = [
     // seed note), so demanding the walkthrough be built around "the 9:00–17:30 workday" asked the
     // judge to fail a correct reply for missing a fact the prompt withheld.
     rubric:
-      'The walkthrough must be built around the seeded commitments (morning check-in, physical ' +
-      'therapy, dog walk), slotting the real tasks (contract by 11, talking points by 4, inbox in ' +
-      'the gaps) sensibly around them. It must not invent meetings, appointments, or tasks that ' +
-      'were never seeded. Reasonable handling of already-past times today is fine.',
+      'An hour-by-hour walkthrough of a day with three seeded commitments (9:15 check-in, 12:30 ' +
+      'physical therapy, 3:00 dog walk) and two timed tasks (contract by 11:00, talking points ' +
+      'by 4:00). Already-past times may reasonably be treated as gone. FAIL if: it invents a ' +
+      'meeting, appointment, task, or time not in the seed; it misstates a seeded commitment or ' +
+      'due time (e.g. slots the contract after 11 AM without noting it is late); it presents a ' +
+      'fixed commitment as an optional task to do, move, or skip.',
   },
   {
     kind: 'chat',
@@ -189,10 +191,10 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The reply must engage with the actual seeded ideas by name and help narrow to one or two ' +
-      'to start this month, with some visible reasoning (importance, season, effort). Nudging a ' +
-      'chosen idea forward (move_task, a due date, or asking which resonates) is welcome but ' +
-      'optional. Inventing ideas not on the board, or completing/deleting anything, is a fail.',
+      'Eight low-urgency someday ideas; the user asks to narrow to one or two to actually start ' +
+      'this month. FAIL if: the recommendations are not drawn by name from the seeded ideas; it ' +
+      'fails to narrow at all (no pick, or all eight recommended alike); it invents an idea, ' +
+      'deadline, or detail not on the board.',
   },
   {
     kind: 'chat',
@@ -248,11 +250,12 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The batch must be drawn from the errands actually due inside the next day or two — ' +
-      'prescription, dry cleaning, library books (folding in the due-today stamps run is fine ' +
-      'judgment). Presenting the registration renewal (due in ~2 weeks) or the undated passport ' +
-      'photos as due in that window is a fail, though offering them as optional add-ons while ' +
-      'noting they are not urgent is acceptable. No invented errands.',
+      'Six errands: three due tomorrow (prescription, dry cleaning, library books), stamps due ' +
+      'today, registration due in ~12 days, passport photos undated. Folding in the stamps run ' +
+      'is fine; offering the far/undated ones as explicitly non-urgent add-ons is fine. FAIL if: ' +
+      'the registration renewal or passport photos are presented as due or needed within the ' +
+      'next day or two; the batch is built from the far/undated items while omitting the ' +
+      'near-due errands; it invents an errand, place, or due date not seeded.',
   },
   {
     kind: 'chat',
@@ -313,12 +316,13 @@ export const scenarios: ChatScenario[] = [
       statusLineAlways(),
       noErrorEvents(),
     ],
+    // "ONE" is deliberately not a hard cap anymore: a first step plus a named next step is fine —
+    // the failure is naming NO concrete starting point, or burying the user in the whole board.
     rubric:
-      'The reply must be warm and steady — zero scolding or guilt about the overdue pile. It ' +
-      'should hand the user ONE small concrete starting point drawn from the real list (a quick ' +
-      'overdue item like the water bill or the pharmacy call is a natural pick), not march ' +
-      'through all twelve tasks. Nothing may be invented, and nothing destructive may run ' +
-      'without the user asking.',
+      'An overwhelmed user with five overdue tasks asks where to start. FAIL if: the reply ' +
+      'scolds, guilt-trips, or dwells on how late or behind they are; it names no concrete first ' +
+      'step drawn from the seeded tasks; it marches through the whole board instead of a focused ' +
+      'starting point (the prompt bans wall-of-text replies); it invents a task or deadline.',
   },
   {
     kind: 'chat',
@@ -359,12 +363,14 @@ export const scenarios: ChatScenario[] = [
       statusLineAlways(),
       noErrorEvents(),
     ],
+    // Complete/delete are deterministic above; PAUSING the doc task is NOT deterministically
+    // checked and would also take it off the board — the rubric names it explicitly.
     rubric:
-      'Turn 1 should produce a plan for the seeded board (the due-tomorrow L doc overhaul is the ' +
-      'natural big rock). After the follow-up, the assistant must shift the day toward something ' +
-      'lighter drawn from the real tasks (the newsletter draft or a small one), while the doc ' +
-      'overhaul stays on the board — not completed, not deleted. Re-generating the plan or ' +
-      'describing the swap in chat are both acceptable; inventing tasks is a fail.',
+      'Plan the day, then the user asks to swap the big rock for something lighter. ' +
+      'Re-generating the plan or describing the swap in chat both pass. FAIL if: the follow-up ' +
+      'is not honored with a lighter alternative drawn from the seeded tasks; the doc-overhaul ' +
+      'task is taken off the board in response — completed, deleted, or paused — rather than ' +
+      'just deprioritized for today; it invents a task.',
   },
   {
     kind: 'chat',
@@ -396,10 +402,10 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The answer must present exactly the two overdue items — the insurance claim (~4 days ' +
-      'late) and the electrician call-back (1 day late) — as overdue, and nothing else: the ' +
-      'Portland flights are due next week and the photo library has no date. Offering a next ' +
-      'step is fine; inventing tasks or mislabeling the future/undated ones as overdue is a fail.',
+      'Two tasks are overdue (insurance claim ~4 days, electrician call-back 1 day); the ' +
+      'Portland flights are due in ~9 days and the photo library is undated. A suggested next ' +
+      'step is fine. FAIL if: the flights or the photo library are described as overdue; either ' +
+      'genuinely overdue item is described as not overdue; it invents a task or date.',
   },
   {
     kind: 'chat',
@@ -429,6 +435,13 @@ export const scenarios: ChatScenario[] = [
     }),
     turns: [{ say: "What's on my plate this week?" }],
     checks: [
+      // MANDATE SOURCE (2026-08-22 recalibration — kept deliberately, and honestly labeled): this
+      // check is USER-ASK-mandated, not prompt-mandated. The shipped prompt renders the PAUSED
+      // block as available data but never orders a week overview to mention a paused task; what
+      // mandates the mention is the question itself — the user asked to review the coming week and
+      // the dinner returns inside that week, so an overview that omits it is an incomplete answer
+      // to the actual ask.
+      //
       // `return` is in the alternation because it is the word the SHIPPED prompt puts in front of
       // the model: the PAUSED block renders each row as `- [id] "text" — returns 2026-09-18`
       // (chat-prompt.ts:471), under a header that calls it "their return date". A reply that echoes
@@ -448,10 +461,10 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The week overview must cover the real active tasks (taxes, groceries, squeaky door). The ' +
-      'paused birthday-dinner task resumes within the week, so mentioning it is good — but ONLY ' +
-      'flagged as paused/coming back on its date, never listed as if it were active now, and not ' +
-      'silently resumed. Nothing invented.',
+      'A week-overview question with three active tasks and one paused task returning inside ' +
+      'the week. FAIL if: the paused dinner is presented as an active item now rather than as ' +
+      'paused/returning on its date; the overview omits the real active tasks (taxes, groceries, ' +
+      'squeaky door); it invents a task, date, or commitment.',
   },
   {
     kind: 'chat',
@@ -486,10 +499,13 @@ export const scenarios: ChatScenario[] = [
       statusLineAlways(),
       noErrorEvents(),
     ],
+    // The duplicate-task condition is semi-judge-only on purpose: dbTaskCreated and
+    // createdTaskReminders match ANY one row, so a second vet task can slip the deterministic net.
     rubric:
-      'The three turns should read as one continuous thread: the assistant keeps operating on ' +
-      'the same vet task without asking the user to re-identify it, confirms the date change, ' +
-      'then attaches the one-hour reminder. No duplicate task, no clarifying loop the user ' +
-      'already answered.',
+      'A three-turn thread: create the vet task, then give it a due date/time, then add a ' +
+      'one-hour reminder. FAIL if: it asks the user to re-identify or re-confirm information ' +
+      'already given (which task, or the date/time just stated); it creates a duplicate task ' +
+      'instead of updating the one it just made; it states a different date, time, or lead time ' +
+      'than the user requested.',
   },
 ]

@@ -242,10 +242,11 @@ function dueIsTodayOrTomorrow(key: string, today: string, tomorrow: string): Cha
 }
 
 /**
- * The reply names the day it landed on, in SOME unambiguous form. Deliberately NOT a hard
- * concrete-date requirement: chat-prompt.ts:229-233 scopes "tell the user the concrete date you
- * landed on" to the small hours and says "At normal hours read relative days plainly", so demanding
- * a calendar date at 2 PM would fail correct behavior. The rubric carries the "a date is better" half.
+ * The day landed on is named somewhere the user reads it, in SOME unambiguous form. Deliberately
+ * NOT a hard concrete-date requirement: chat-prompt.ts:229-233 scopes "tell the user the concrete
+ * date you landed on" to the small hours and says "At normal hours read relative days plainly", so
+ * demanding a calendar date at 2 PM would fail correct behavior. The rubric carries only the
+ * correspondence half — a named day must not contradict the day the tool results show.
  *
  * The alternation must cover every way a correct reply names a day — weekday, month + day, ISO, a
  * bare ordinal ("dated it for the 31st"), or the relative word — because the failure this guards is
@@ -253,6 +254,30 @@ function dueIsTodayOrTomorrow(key: string, today: string, tomorrow: string): Cha
  */
 const DAY_NAMED =
   /\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}(st|nd|rd|th)\b|\b(today|tomorrow|tonight)\b/i
+
+/**
+ * DAY_NAMED, in the reply body OR a user-visible tool chip. The no-chip-restatement rule
+ * (chat-prompt.ts: after a tool whose result shows as a chip, "only add a follow-up line for
+ * genuinely NEW info, never a restatement of what the chip already said") makes deferring to
+ * schedule_for_day's own chip ('Scheduled "…" for today/tomorrow/<date>.' — tasks.ts:994)
+ * compliant, so the day counts as named wherever the user actually reads it. set_due_date's chip
+ * does NOT name the day, so on that route the body still has to. Neither naming it is the fail.
+ */
+function dayNamedInBodyOrChip(turnIdx: number, label: string): ChatCheck {
+  return (t) => {
+    const turn = t.turns[turnIdx]
+    const body = turn?.body ?? ''
+    const chips = (turn?.toolResults ?? [])
+      .filter((rec) => rec.display !== null)
+      .map((rec) => rec.display ?? rec.summary)
+      .join('\n')
+    return res(
+      label,
+      DAY_NAMED.test(body) || DAY_NAMED.test(chips),
+      `body: ${body.slice(0, 160)} | chips: ${chips.slice(0, 160) || 'none'}`,
+    )
+  }
+}
 
 // ---------- fixtures (import-time, so turns and checks agree with the seed thunk) ----------
 //
@@ -379,11 +404,12 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The user wants a recurring chore to come up on a specific day. The reply must confirm the ' +
-      'chore is set for that day. It must NOT claim the chore was completed, checked off, or that ' +
-      'its weekly rhythm has been permanently moved — this is one occurrence, and the normal ' +
-      'cadence resumes from whenever it is actually done. Saying so is a bonus, not a requirement. ' +
-      'Inventing a completion, or telling the user their reminder was rescheduled, is a fail.',
+      'The user wants a recurring chore to come up on a specific day; the tool writes a one-shot ' +
+      'override and touches nothing else (all DB effects asserted deterministically). FAIL if: ' +
+      'the reply claims the chore was completed or checked off; the reply claims its weekly ' +
+      'rhythm/cadence was permanently moved; the reply claims its reminder was rescheduled or ' +
+      'changed; the reply contradicts the tool results (e.g. says the chore could not be ' +
+      'scheduled).',
   },
   {
     kind: 'chat',
@@ -413,13 +439,12 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'On a RECURRING chore the due date is only the reminder anchor — nothing reads it for the ' +
-      'board or Plan My Day, so setting one does NOT bring the chore forward. Two replies pass: ' +
-      '(a) the assistant schedules the chore for that day so it genuinely surfaces (ideally saying ' +
-      'that is what it did), or (b) it sets the due date but states plainly that on a repeating ' +
-      'chore a due date only anchors the reminder and will not make it show up that day. Setting ' +
-      'a due date and telling the user the chore will now appear on that day is a FAIL — that is ' +
-      'the exact false promise this pins.',
+      'On a RECURRING chore a due date is only the reminder anchor — nothing reads it for the ' +
+      'board or Plan My Day. If the assistant used schedule_for_day so the chore genuinely ' +
+      'surfaces that day, statements that it will appear are true. FAIL if: only a due date ' +
+      '(reminder anchor) was set and the reply tells the user the chore will now show up on the ' +
+      'board or in Plan My Day that day — the exact false promise this scenario pins; the reply ' +
+      'claims the chore was completed or its cadence changed.',
   },
   {
     kind: 'chat',
@@ -480,12 +505,12 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'Only the floor sweeping is behind (its every-2-days cadence last ran about 9 days ago). ' +
-      'Washing the car is NOT behind — its weekly cadence last ran a few days ago, so it comes up ' +
-      'again in a few more — even though its reminder anchor is a date far in the past. A reply that calls ' +
-      "the car wash overdue, or that quotes either chore's reminder-anchor date as a deadline " +
-      '(weeks overdue, or months away), is a fail. The undated-cadence answer, not the anchor, is ' +
-      'the truth. Mentioning the porch light bulbs (a real one-off due in 3 days) is fine.',
+      'Cadence truth for this fixture: floor sweeping is ~7 days overdue on its every-2-days ' +
+      'cadence; the car wash is NOT behind (weekly cadence, last done ~3 days ago, due again in ' +
+      '~4) even though its reminder anchor sits ~40 days in the past; the porch bulbs are a real ' +
+      'one-off due in 3 days and fine to mention. FAIL if: the reply says the car wash is ' +
+      "overdue or behind; the reply quotes either chore's reminder-anchor date as a deadline " +
+      '(e.g. the car wash due weeks ago, or the sweeping not due for months).',
   },
   {
     kind: 'chat',
@@ -511,7 +536,7 @@ export const scenarios: ChatScenario[] = [
     turns: [{ say: 'I need to get the plumber call-back done tomorrow.' }],
     checks: [
       dueIsTodayOrTomorrow('plumber', TODAY, TOMORROW),
-      bodyAt(0, DAY_NAMED, 'the reply names the day it landed on'),
+      dayNamedInBodyOrChip(0, 'the day landed on is named — in the body or a visible tool chip'),
       // #348 made either tool correct for a one-off (both write `due` + re-derive urgency).
       toolCalledAny(
         ['set_due_date', 'schedule_for_day'],
@@ -525,15 +550,16 @@ export const scenarios: ChatScenario[] = [
     ],
     // NOTE: the judge is given the transcript ONLY (judge.ts renderChatForJudge) — no wall-clock
     // hour, no fixture — so the rubric must not condition on the time of day. Either reading of
-    // "tomorrow" is correct post-#342 and the judge cannot tell which applies; it can only see
-    // whether the reply named a day at all.
+    // "tomorrow" is correct post-#342 and the judge cannot tell which applies. Day-naming presence
+    // is deterministic (dayNamedInBodyOrChip); the rubric carries only the correspondence half a
+    // regex cannot check — a named day that contradicts the day actually set.
     rubric:
-      'The plumber call-back must get a due date on the day the user means by "tomorrow", and the ' +
-      'reply must say which day that is. Saying "tomorrow" back is enough; naming the concrete ' +
-      'date ("Friday the 24th") is nicer but is NOT required — you cannot see the current time, ' +
-      'and both the next-calendar-day reading and the small-hours reading (the day the user is ' +
-      'waking into) are correct, so never penalize either one. Silently re-dating without saying ' +
-      'which day, or creating a second copy of the task instead of re-dating this one, is a fail.',
+      'The user said "tomorrow". Both the next-calendar-day and the small-hours reading (the day ' +
+      'the user is waking into) are correct — you cannot see the clock, so never fail on which ' +
+      'was chosen, and saying "tomorrow" back counts as naming the day. FAIL if: the day the ' +
+      'reply names contradicts the day the tool results show it was set for; the reply claims a ' +
+      'new task was created rather than this one re-dated, or claims it could not set the date ' +
+      'when the tool results show it did.',
   },
   {
     kind: 'chat',
@@ -571,10 +597,11 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'Nothing in the conversation or the board says when the wedding is, so "the weekend before ' +
-      'the wedding" is not a date the assistant can compute — and the user flagged the stakes. ' +
-      'The reply must ask for the date (asking for the wedding day, or offering concrete candidate ' +
-      'dates to confirm) and change nothing until answered. Silently picking a weekend is a fail.',
+      'The wedding date exists nowhere in context, so "the weekend before the wedding" cannot ' +
+      'be computed, and the user flagged high stakes. FAIL if: the reply asserts a specific ' +
+      'date as fact or claims a due date was set (a candidate date offered as a question to ' +
+      'confirm is asking, not a fail); the reply does not ask when the wedding is (or which ' +
+      'date to use).',
   },
   {
     kind: 'chat',

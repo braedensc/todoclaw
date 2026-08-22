@@ -86,11 +86,10 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'The big rock should be one of the substantive tasks (the due-soon L report is the natural ' +
-      'pick over the undated XL refactor). Quick wins should be genuinely small. The plumber email ' +
-      'is due TODAY and must appear — deadlines decide who gets into the plan, substance only ranks ' +
-      'the candidates that got in, so an undated errand must not take a slot ahead of it. The habit ' +
-      'gets a nod in habitNote. No task is invented.',
+      'A mixed-size board: an L report due in 2 days, an S plumber email due today, an M slide ' +
+      'prep due tomorrow, plus undated distractors; one active habit (Morning run). Sizes and ' +
+      'deadline coverage are machine-checked. FAIL if: habitNote does not acknowledge the Morning ' +
+      'run habit; the prose invents a task, deadline, or detail not in the fixture.',
   },
   {
     kind: 'plan',
@@ -113,7 +112,8 @@ export const scenarios: PlanScenario[] = [
     // earns a substantial focused block, so the model must NOT inflate one into the big rock. Either
     // outcome is valid (it's a non-deterministic call): a relaxed day (bigRock null) — optionally
     // with a no-pressure nudge — or a single light focus. The checks pin only the invariants that
-    // hold either way; the rubric judges the softer "didn't manufacture a mandatory big rock" quality.
+    // hold either way; the rubric fails only false urgency, assignment-framed nudges, and
+    // mandatory-big-rock framing (nothing on this board is due, so claimed pressure is invention).
     tasks: [
       task({ id: 'lv1', text: 'Sort through old photos', x: 0.2, y: 0.25, size: 'S' }),
       task({ id: 'lv2', text: 'Reorganize the bookshelf', x: 0.15, y: 0.2, size: 'M' }),
@@ -122,11 +122,12 @@ export const scenarios: PlanScenario[] = [
     habits: [{ text: 'Drink more water', active: true }],
     checks: [planHeadline(), rocksResolve(), bigRockNeverS(), nudgeContract()],
     rubric:
-      'The board holds only minor, non-urgent, undated tasks. The plan must NOT manufacture a ' +
-      'mandatory-feeling big rock out of one of them (the ongoing "Practice guitar" included). A ' +
-      'relaxed day is a perfectly good outcome: if it rests, the framing is calm and any nudge is a ' +
-      'no-pressure "if you want something to do" suggestion, not an assignment. If it instead names ' +
-      'a single light focus, that is also fine. No task is invented.',
+      'The board holds only three minor, undated, low-importance/low-urgency tasks (one an ' +
+      'ongoing guitar project); a relaxed day, a nudge, or a single light focus are all valid ' +
+      'shapes. FAIL if: the plan claims something is due, urgent, or pressing (nothing is); a ' +
+      'nudge is framed as an assignment or instruction rather than a no-pressure option; a big ' +
+      'rock is framed as mandatory ("you must/need to do this today"); the prose invents a task ' +
+      'or deadline.',
   },
   {
     kind: 'plan',
@@ -164,9 +165,14 @@ export const scenarios: PlanScenario[] = [
       task({ id: 'a2', text: 'Finish expense report', x: 0.7, y: 0.6, size: 'M', due: D(0) }),
     ],
     checks: [rocksExclude(['a1'], 'future appointment left out of today'), rocksResolve()],
+    // No deadlinesCovered here, so the rubric is the only detector for a2 (due today) going
+    // missing; the "do it early" prose ban and the invented-prep ban are prompt mandates that only
+    // the judge can see (rocksExclude catches an emitted rock, not a prose suggestion).
     rubric:
-      'The dentist appointment is on a fixed future day — the plan must not schedule it today ' +
-      'or tell the user to do it early. The expense report (due today) is the natural focus.',
+      'A dentist appointment sits on a fixed day 3 days out; an expense report is due today. FAIL ' +
+      'if: the plan tells the user to do, knock out, finish, or get ahead on the dentist ' +
+      'appointment before its day; the due-today expense report is absent from the plan; the ' +
+      'prose invents prep work or tasks not on the board.',
   },
   {
     kind: 'plan',
@@ -199,10 +205,10 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'The plants chore is 3 days overdue, so the card lists it in its own chores strip — the plan ' +
-      'must NOT also hand it out as a quick win (it would show twice), and must not act as though ' +
-      'the day is empty of it either: counting its small cost, or mentioning it naturally where it ' +
-      'shapes the day, is right. The blog post is the natural focus.',
+      'A weekly plants chore is 3 days overdue (the card’s own chores strip lists it; a rock ' +
+      'duplicating it is dropped before judging); an undated M blog post is the only grid task. ' +
+      'FAIL if: the prose contradicts the overdue chore (e.g. claims nothing is due or overdue ' +
+      'today); the user is scolded or guilt-tripped over the overdue chore; a task is invented.',
   },
   {
     kind: 'plan',
@@ -243,9 +249,11 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'One task is due today and another is 2 days overdue. Both must be in the plan. An undated ' +
-      'ongoing project or a task due in 3-6 days must not take a slot while either is unplanned — ' +
-      'substance ranks the candidates that deadlines already let in, it does not outrank a deadline.',
+      'One task is due today and one is 2 days overdue, against an undated ongoing project and ' +
+      'two far-dated tasks; coverage and precedence are machine-checked. FAIL if: the prose ' +
+      'scolds or guilt-trips over the overdue parking ticket; the prose contradicts the deadlines ' +
+      '(claims nothing is due, or presents the far-dated items as urgent); a task or date is ' +
+      'invented.',
   },
   {
     kind: 'plan',
@@ -272,7 +280,8 @@ export const scenarios: PlanScenario[] = [
     ],
     checks: [planHeadline(), deadlinesCovered(['c1']), rocksResolve()],
     rubric:
-      'Laundry is due today. It must appear on the card — in the chores strip is correct and ' +
-      'expected; what must never happen is it vanishing while undated work fills the plan.',
+      'Weekly laundry is due today and reaches the card via the derived chores strip ' +
+      '(machine-checked); the rest of the board is undated or dated days out. FAIL if: the prose ' +
+      'denies or contradicts that laundry is due today; a task or deadline is invented.',
   },
 ]

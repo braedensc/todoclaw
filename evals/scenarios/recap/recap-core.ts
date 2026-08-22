@@ -161,12 +161,12 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone(DECOYS),
     ],
     rubric:
-      'Two plan items finished, one still open ("Prep slides for team sync"). REQUIRED: the recap ' +
-      'asks how the open slides went — a real question ("did they get started?"), not a reminder ' +
-      'that they are due tomorrow — and credits the two finished items by name and warmly. The ' +
-      'tomorrow heads-up and the habit nod are OPTIONAL trim: at most one small flourish, never ' +
-      'piled on. A warm message that spends its whole budget celebrating and never asks about the ' +
-      'slides is a FAIL however nice it sounds. Mentions ONLY items from the request.',
+      'Two plan items finished ("Write the quarterly report", "Email the plumber back"), one ' +
+      'still open ("Prep slides for team sync"). FAIL if: the message never actually asks how the ' +
+      'slides item went — naming it only as a due-tomorrow reminder, or asking about something ' +
+      'else instead, is not the ask; a finished item goes uncredited or is framed as still to-do; ' +
+      'flourishes are piled on beyond the single small nod the prompt allows; it mentions a task, ' +
+      'date, number, or detail not in the request.',
   },
   {
     kind: 'recap',
@@ -193,10 +193,10 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone(DECOYS),
     ],
     rubric:
-      'Nothing finished and one thing open ("File quarterly taxes"). REQUIRED: name it and ask how ' +
-      'it went, and make plain that a slow day is fine — "not today" and "I rested" should read as ' +
-      'perfectly good answers. It must NOT scold, must NOT reach for something to praise (there is ' +
-      'nothing to praise here), and must not invent accomplishments. A kind message that never ' +
-      'asks about the taxes is a FAIL.',
+      'Nothing was finished; one item is open ("File quarterly taxes"). FAIL if: it never asks ' +
+      'how the taxes went (an ask about anything else does not count); it reaches for something ' +
+      'to praise or claims any accomplishment (there is none); it scolds or pressures, or nothing ' +
+      'in it makes plain that a slow day is fine ("not today" must read as a perfectly good ' +
+      'answer); it invents an item or detail.',
   },
 ]

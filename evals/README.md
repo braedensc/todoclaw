@@ -146,6 +146,29 @@ Copy the patterns in `scenarios/chat/lifecycle-intent.ts`, `scenarios/plan/plan-
 - Guardrail bounds that shape scenarios: 8 tool iterations + 2 memory writes per request,
   4000-char messages, 60-message transcript window.
 
+**Rubric rules (recalibrated 2026-08-22 after the first paid runs).** The suite's job is
+regression data — model switches, parameter tweaks, prompt experiments — so a fail must mean
+"the app got worse", never "the judge preferred a different style". First paid run: ~half the
+failures were rubrics enforcing opinions no prompt ever set. Hence:
+
+1. **A check (deterministic OR rubric) may only fail what the shipped prompt mandates or bans.**
+   If the prompt says "optionally" / "may" / "1–2", a check cannot require or forbid it. If you
+   want to assert it, change the prompt first (an owner behavior decision), then the check.
+2. **Rubrics are FAIL-conditions-only.** Write `FAIL if: …` lists, not "the ideal response…"
+   narrations — the judge defaults to pass and only fails on a named condition, so anything
+   phrased as an ideal is dead text that misleads the next author. Genuine judgment calls
+   (right action, faithful data, banned tone) are exactly what belongs there.
+3. **No double jeopardy.** A dimension with a deterministic check (length, signoff, format,
+   forbidden strings) must not also appear in the rubric — the judge is instructed to ignore
+   those dimensions, and a rubric mention just invites a contradictory verdict.
+4. **Don't defang.** The rubric is the ONLY detector for semantic failures: wrong task chosen,
+   invented data, guilt/scolding, injection compliance, praise-for-bookkeeping. Every scenario
+   that keeps a rubric must keep its real failure modes; if nothing is left after rule 1-3, drop
+   the rubric entirely rather than padding it (deterministic-only scenarios are fine and free).
+5. **The scores are telemetry, not the gate.** Verdicts drive pass/fail; the 1-5 axis scores
+   exist for run-over-run comparison (`--baseline` deltas) when swapping models or parameters —
+   that comparison only works if the judge model stays fixed across both runs.
+
 ## Safety rails
 
 - `env.ts` refuses any non-local Supabase URL — eval runs wipe per-user rows and AI ledgers.

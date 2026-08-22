@@ -157,14 +157,12 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone(DECOYS),
     ],
     rubric:
-      'NOTHING was finished today. Two things are still open (the compost bins, the fence panels), ' +
-      "and the day's only activity is board upkeep about three OTHER tasks — a task created, one " +
-      'given a due date, one moved between quadrants. REQUIRED: the message opens on the open ' +
-      'items and asks how they went, warmly, with "not today" left as a perfectly fine answer. ' +
-      'AUTOMATIC FAIL if it leads with the upkeep ("you got a wheelbarrow onto the list"), ' +
-      'congratulates the organising in any form, or never actually asks. Kind-but-question-free is ' +
-      'a fail. At most a passing half-clause, late in the message, may note the board got tidier — ' +
-      "and it must not read as the day's achievement.",
+      'Nothing was finished; two items are open (the compost bins, the fence panels); the only ' +
+      'activity is board upkeep on three OTHER tasks. FAIL if: the message does not lead with the ' +
+      'question about the open items (a brief hello first is fine — substantive content before ' +
+      "the ask is not); the organising is congratulated or framed as the day's achievement in " +
+      'any wording; the upkeep earns more than one passing half-clause; the ask is not about the ' +
+      'open items; it guilts, or nothing leaves "not today" as a perfectly fine answer.',
   },
   {
     // A fixed commitment reaches the recap as an ordinary `open` string: dispatch.ts:362-368 folds
@@ -214,15 +212,13 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone(DECOYS),
     ],
     rubric:
-      'Three things were still open, and one of them is a booked appointment ("Physio appointment ' +
-      '— 8:30 at the clinic"). REQUIRED: the appointment is the first thing ASKED about — ahead of ' +
-      'the insurance email and the plants. A one-line warm credit of the genuinely-finished inbox ' +
-      'MAY open the message, but the physio question must come immediately after it — an opening ' +
-      'credit that runs multiple sentences, or a physio ask buried after other open items, is a ' +
-      'FAIL. Praise aimed at bookkeeping (rather than the real finish) is always a FAIL. The other ' +
-      'open items should also be covered — dropping the smallest ("Water the plants") to stay ' +
-      'inside one short paragraph is a reasonable trade, not a failure. No invented detail about ' +
-      'what the appointment was for.',
+      'Three items open, one a booked appointment ("Physio appointment — 8:30 at the clinic"); ' +
+      'the inbox was genuinely finished. FAIL if: the physio is not the first open item actually ' +
+      'ASKED about (mention order is deterministic; fail here if it is mentioned early but the ' +
+      'real ask lands after asks about the insurance or the plants); an opening credit for the ' +
+      'inbox runs multiple sentences before the physio question; praise is aimed at having the ' +
+      'list organised rather than at the real finish; it invents detail about what the ' +
+      'appointment was for.',
   },
   {
     // The suite's one EXHAUSTIVE-coverage probe: recap-prompt.ts:37-38 ("Cover them, not just the
@@ -260,11 +256,11 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone(DECOYS),
     ],
     rubric:
-      'Exactly three items are still open. REQUIRED: all three are asked about — together, in one ' +
-      'natural sentence ("did the router go back, the sweep get booked, and Priya get her ' +
-      'redlines?"), not picked over one at a time and not laid out as a checklist or a list of ' +
-      'bullets. Asking about one and dropping the other two is a FAIL. The venue deposit still ' +
-      'gets its warm moment, and the whole thing stays one short paragraph.',
+      'One finish (the venue deposit) and exactly three open items. FAIL if: any of the three ' +
+      'open items is never actually asked about (naming without asking does not count — the ' +
+      'deterministic checks already require all three names); the asks read as an item-by-item ' +
+      'checklist or bulleted interrogation instead of being grouped naturally together; the ' +
+      'deposit finish goes uncredited.',
   },
   {
     // Nothing finished, but two habits were kept — the nearest thing to reach for when beat 2 says
@@ -307,14 +303,12 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone(DECOYS),
     ],
     rubric:
-      "Nothing was finished; the day's work activity is a rename and a card move; two habits were " +
-      'kept. REQUIRED: name both open items and ask how they went — the question is the spine. ' +
-      'The kept habits may earn ONE brief flourish at the edge of the message, and one sentence ' +
-      'that names both habits warmly ("nice that the run and journaling still happened") counts ' +
-      'as ONE flourish, not two — do not fail it for covering both. FAIL only if the habits OPEN ' +
-      'the message, displace or precede the question about the open items, or are dressed up as ' +
-      'the day\'s achievement ("at least you accomplished your habits!"). The rename and the ' +
-      'card move are bookkeeping and are not wins. Still warm, still no guilt.',
+      "Nothing finished; two items open; two habits kept; the day's work activity is a rename " +
+      'and a card move. FAIL if: the habits open the message, precede or displace the question ' +
+      'about the open items, or are dressed up as the day\'s achievement ("at least you ' +
+      'accomplished your habits!") — one sentence naming both habits warmly at the edge of the ' +
+      'message counts as the ONE permitted flourish, not a violation; the ask is not about the ' +
+      'open items; the rename or the card move is presented as a win; it guilts.',
   },
   {
     // The edge the injected line creates: bookkeeping with NO plan, so there are no open items to
@@ -362,8 +356,11 @@ export const scenarios: RecapScenario[] = [
       // Two paid runs (2026-08-22) narrated both upkeep items back despite an explicit prompt
       // ban, so buildRecapUserPrompt now WITHHOLDS the item texts on a nothing-day (aggregate
       // count only) — this check pins that mechanism end-to-end: it can only fail if someone
-      // reverts the aggregation AND the model narrates again. recapSignoff() likewise pins
-      // generateRecap's append-if-missing signoff repair, not just model compliance.
+      // reverts the aggregation AND the model narrates again. It fires only when BOTH items
+      // appear; naming even ONE is covered by the rubric, which spells the withheld items out
+      // because the judge sees the raw request JSON and would not count a single one as
+      // invention unaided. recapSignoff() likewise pins generateRecap's append-if-missing
+      // signoff repair, not just model compliance.
       ((body) => ({
         name: 'does not narrate both upkeep items back',
         pass: !(/shed|shelving/i.test(body) && /furnace|filter/i.test(body)),
@@ -374,14 +371,15 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone([...DECOYS, 'tax return', 'car service']),
     ],
     rubric:
-      'There was NO plan today and nothing was finished — the only activity is board upkeep. ' +
-      'REQUIRED: an ultra-brief, kind sign-off in one or two short lines — a warm good-evening ' +
-      'and nothing more. No question (checked deterministically), no news, no invented items or ' +
-      'plans, no achievement talk ("good planning day" / "proud"), and no reassurance essay ' +
-      '("some days are slower and that\'s allowed… no pressure either way" is the padding this ' +
-      'scenario exists to catch). A passing "board looks tidier" half-clause is the most the ' +
-      'tidying may earn. Warmth is welcome; length is not — the ideal message here is two ' +
-      'sentences or fewer.',
+      'No plan and nothing finished; the only activity is board upkeep, which the app ' +
+      'deliberately hands the model only as an aggregate count. FAIL if: it pads beyond a brief ' +
+      'kind good-evening — a reassurance essay ("some days are slower and that\'s allowed… no ' +
+      'pressure either way"), news, or any solicitation of a report-back (an imperative "let me ' +
+      'know how things went" fails even without a "?"); it names or describes any specific ' +
+      'upkeep item (the shed shelving, the furnace filter — the model is never given these, so a ' +
+      'mention means invention or a reverted withholding mechanism); the tidying earns more than ' +
+      'a passing "board looks tidier" half-clause; the day is framed as an achievement in any ' +
+      'wording.',
   },
   {
     // The over-correction guard on the other side of the split: `completed` is progress regardless
@@ -416,11 +414,10 @@ export const scenarios: RecapScenario[] = [
       recapMentionsNone(DECOYS),
     ],
     rubric:
-      'Two recurring chores were genuinely checked off today and one task was created; the ' +
-      'postmortem is still open. REQUIRED: the check-offs are credited as real things done — they ' +
-      'are completions, not board upkeep, and lumping them in with "you tidied the board" or ' +
-      'dismissing them because they repeat is a FAIL. The postmortem must still be asked about. ' +
-      'The created task is bookkeeping and earns nothing. Because something WAS finished, a warm ' +
-      'nod to the chores is right — but it must not crowd out the question.',
+      'Two recurring chores were genuinely checked off, one task was created, and the postmortem ' +
+      'is still open. FAIL if: the check-offs are lumped in with board tidying, dismissed because ' +
+      'they repeat, or otherwise not credited as real things done; it never asks how the ' +
+      'postmortem is going; the created gutters task is celebrated or presented as progress (a ' +
+      'passing mention of it is not a fail).',
   },
 ]

@@ -356,15 +356,17 @@ export const scenarios: PlanScenario[] = [
       noSchemaVocabulary(),
       rocksResolve(),
     ],
+    // The #345 report verbatim lives in the first FAIL condition: the card echoed the schedule's
+    // full 4.5h untouched. focusScaledDown pins the rock DURATIONS; the availableTime PROSE is
+    // judge-only. rocksExclude does not scan the nudge, so a nudge/prose-side session for the
+    // parked canoe is also the rubric's to catch.
     rubric:
-      'A half-day job at the shop starts at 2 PM, against ~4.5h of personal time — so most of the ' +
-      'day is already spoken for, and availableTime must say so honestly rather than repeat the ' +
-      '4.5h figure untouched. The water bill is due today and belongs in the plan; the text to ' +
-      'Marcus is due tomorrow, so pulling it forward is fine and leaving it for tomorrow is equally ' +
-      'fine. The ongoing canoe project sits LOW on both importance and urgency: the user parked it, ' +
-      'so an empty focus slot is not a reason to hand it a session (a no-pressure aside is fine; a ' +
-      'scheduled block is not). Copy must read like a person — referring to "the 2 PM appointment" ' +
-      'is good, reciting the strip’s times or calling it a "fixed anchor" is a fail.',
+      'A half-day shop job starts at 2 PM against ~4.5h of personal time; rock totals are ' +
+      'machine-checked. FAIL if: availableTime/headline presents the ~4.5h as fully available, ' +
+      'or fails to say the appointment consumes most of the day; the prose hands the parked ' +
+      'canoe project a scheduled session or block for today (a no-pressure aside is NOT a ' +
+      'failure); the fixed time is recited back as an announcement rather than referred to ' +
+      'naturally; a task is invented.',
   },
   {
     kind: 'plan',
@@ -420,14 +422,11 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'A wisdom-tooth extraction is booked for 1 PM and carries no stated length — the plan has to ' +
-      'judge the cost from what it plainly is (a procedure plus recovery, not a quick errand) and ' +
-      'size the day down accordingly. The grant draft is a real deadline two days out, but a full ' +
-      '2h session today is dishonest; a much smaller piece of it, or leaving it for tomorrow with ' +
-      'that said plainly, are both good answers. The due-today pharmacy email is small and belongs ' +
-      'in the plan. Copy must read like a person: referring to the 1 PM appointment naturally where ' +
-      'it shapes the day is good (the plan is explicitly allowed to do that), while reciting the ' +
-      'strip’s times back as an announcement, or calling it a "fixed anchor", is a fail.',
+      'A 1 PM wisdom-tooth extraction carries no stated length; rock durations and deadline ' +
+      'coverage are machine-checked. FAIL if: the prose treats the surgery as a quick or trivial ' +
+      'errand, or sizes the day as if it were fully free; the fixed time is recited back as an ' +
+      'announcement rather than referred to naturally (a natural reference like "after the 1 PM ' +
+      'appointment" is NOT a failure); a task is invented.',
   },
   {
     kind: 'plan',
@@ -487,12 +486,10 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'Three things are due today — a 2 PM call plus two small errands — and one undated project ' +
-      'is sitting there looking interesting. The call happens at its time whether or not the plan ' +
-      'says so, and both errands are due today, so all three must reach the card. The garage ' +
-      'project is the only substantial thing here and may take the focus once the deadlines are ' +
-      'covered, but never a quick-win slot. Referring to the call naturally is good; reciting ' +
-      'its time back, or calling it an "anchor", is a fail.',
+      'A 2 PM call plus two due-today errands and one undated L project; coverage, sizes, and ' +
+      'the anchor strip are machine-checked. FAIL if: the plan suggests moving the 2 PM call or ' +
+      'doing it at another time; the call’s time is recited back as an announcement rather than ' +
+      'referred to naturally; a task is invented.',
   },
   {
     kind: 'plan',
@@ -558,11 +555,11 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'The card already fills itself twice over today: a ~2h deposition at 1 PM, and two chores the ' +
-      'user’s own cadence says happen today (one never done, one two days past its cadence). It must not ' +
-      're-list any of them as work — but it also must not let the one real deliverable, the signed ' +
-      'estimate due today, fall off the card. With a 2h commitment inside ~4.5h of personal time, ' +
-      'the day it plans on top should be modest and said honestly. The cassette-digitizing project ' +
-      'sits low on both axes — the user parked it, so it does not get today’s focus by default.',
+      'A ~2h deposition at 1 PM plus two due-today chores already fill the card’s own strips; ' +
+      'one real deliverable is due today; totals and coverage are machine-checked. FAIL if: ' +
+      'availableTime/headline sizes the day as if the full ~4.5h were free, ignoring the ' +
+      'deposition’s cost; the prose or nudge hands the parked cassette project a scheduled ' +
+      'session; the strips’ times or chores are recited back as a duplicate list; a task is ' +
+      'invented.',
   },
 ]

@@ -44,7 +44,7 @@ export const scenarios: ChatScenario[] = [
   {
     kind: 'chat',
     id: 'movie-first-response',
-    title: 'Keep-but-hide intent: first response should offer pause, not completion',
+    title: 'Keep-but-hide intent: first response offers pause, not completion',
     tags: ['lifecycle', 'pause', 'intent', 'regression'],
     persona: 'errand tracker',
     seed: movieSeed,
@@ -62,12 +62,11 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The task on the board is "go to the movie" — a fixed-day event whose reminder the user ' +
-      'explicitly wants to keep. The ideal first response offers to PAUSE the task (or set its ' +
-      'start date) until the movie day, explaining it keeps the task and its reminders while ' +
-      'hiding it from plans until then. Proposing to mark it done or delete it is a fail ' +
-      '(completing hides the task and stops its reminders — the opposite of the stated intent). ' +
-      'Asking a short clarifying question that includes pause as an option is acceptable.',
+      'The board task is "go see the movie" — a fixed-day event (due in 4 days, with a reminder); ' +
+      'the user bought the tickets and wants the task kept, reminder intact, but not promoted in ' +
+      'plans. FAIL if: the reply proposes or attempts marking the task done or deleting it; the ' +
+      'reply neither pauses the task (or sets a start date) until around the movie day, nor ' +
+      'offers to, nor asks a clarifying question that includes pausing as an option.',
   },
   {
     kind: 'chat',
@@ -95,12 +94,12 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'By the end of the conversation the movie task must be paused (start date on the movie ' +
-      'day or nearby), NOT completed, NOT deleted. Pausing until the movie day itself (or ' +
-      'earlier) keeps the due date and reminder intact — the ideal outcome here. (Pausing PAST ' +
-      'the due day clears the due date by design; if the assistant did that it must say so and ' +
-      'ask about a new date, but for this request landing on the movie day is the right call.) ' +
-      'Bonus: the assistant explains that pause keeps the reminder.',
+      'Multi-turn: the user explicitly instructs "pause it so it comes back on the day of the ' +
+      'movie"; the DB end state (paused, not completed or deleted) is checked deterministically. ' +
+      'FAIL if: the reply describes the outcome contrary to the tool results (e.g. claims the ' +
+      'task was completed, deleted, or that its reminder was removed when it was not); the pause ' +
+      "landed AFTER the movie's due day — clearing the due date and reminders — and the reply " +
+      'does not say so and ask about a new due date.',
   },
   {
     kind: 'chat',
@@ -153,11 +152,10 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'The task was due ~3 weeks ago and is being paused for two more weeks. The assistant must ' +
-      'pause it AND surface that the old due date was cleared (it would have come back already ' +
-      'overdue), then ask — or offer to set — a new due date for when it returns. Silently ' +
-      'pausing without mentioning the cleared due date is a fail; inventing a new due date ' +
-      'without asking is also a fail.',
+      'The task was due ~3 weeks ago and is paused for two more weeks, so the pause cleared the ' +
+      'stale due date (asserted deterministically). FAIL if: the reply does not mention that the ' +
+      'old due date was cleared; the reply does not ask for — or offer to set — a new due date ' +
+      'for when the task returns; the assistant sets a new due date the user never gave.',
   },
   {
     kind: 'chat',
@@ -193,7 +191,9 @@ export const scenarios: ChatScenario[] = [
       noErrorEvents(),
     ],
     rubric:
-      'After the decline the assistant must acknowledge without executing anything, without ' +
-      'guilt-tripping, and offer a sensible next step (e.g. remind later / split the task).',
+      'The user declined the completion confirm with "wait, not yet — I only finished the first ' +
+      'form". FAIL if: the reply claims or implies the task was marked done anyway; the reply ' +
+      'pushes the user to confirm the same completion again despite the stated "not yet"; the ' +
+      'reply scolds or guilt-trips the user about not being finished.',
   },
 ]

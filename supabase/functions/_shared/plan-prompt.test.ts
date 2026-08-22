@@ -374,6 +374,9 @@ Deno.test('SYSTEM_PROMPT paces ongoing projects on raw facts, with no verdict an
   // …and a long gap is never framed as neglect.
   assertStringIncludes(SYSTEM_PROMPT, 'NEVER name the gap to')
   assertStringIncludes(SYSTEM_PROMPT, 'never imply neglect')
+  // Streaks are reasoning input, never user-visible verdict prose (owner doctrine: no
+  // mechanical cadence — extended to streak read-backs 2026-08-22).
+  assertStringIncludes(SYSTEM_PROMPT, 'never read a streak back')
   // Worked today is stated as off-the-table, matching the id-less block.
   assertStringIncludes(SYSTEM_PROMPT, 'ALREADY LOGGED TODAY is not on the table at all')
   // Still no verdict vocabulary anywhere the model reads.
