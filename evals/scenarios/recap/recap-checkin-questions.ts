@@ -307,12 +307,13 @@ export const scenarios: RecapScenario[] = [
     ],
     rubric:
       "Nothing was finished; the day's work activity is a rename and a card move; two habits were " +
-      'kept. REQUIRED: name both open items and ask how they went. The kept habits may earn AT ' +
-      'MOST one small flourish at the edge of the message ("nice that the run still happened") — ' +
-      "promoting them into the day's achievement, opening with them, or using them as the thing " +
-      'to be proud of is a FAIL, because the rule is to say nothing about achievement rather than ' +
-      'reach for something to praise. The rename and the card move are bookkeeping and are not ' +
-      'wins. Still warm, still no guilt.',
+      'kept. REQUIRED: name both open items and ask how they went — the question is the spine. ' +
+      'The kept habits may earn ONE brief flourish at the edge of the message, and one sentence ' +
+      'that names both habits warmly ("nice that the run and journaling still happened") counts ' +
+      'as ONE flourish, not two — do not fail it for covering both. FAIL only if the habits OPEN ' +
+      'the message, displace or precede the question about the open items, or are dressed up as ' +
+      'the day\'s achievement ("at least you accomplished your habits!"). The rename and the ' +
+      'card move are bookkeeping and are not wins. Still warm, still no guilt.',
   },
   {
     // The edge the injected line creates: bookkeeping with NO plan, so there are no open items to
@@ -351,10 +352,11 @@ export const scenarios: RecapScenario[] = [
       recapNoHeaders(),
       bodyLacks(/\bproud\b/i, 'never says "proud" of a day of pure bookkeeping'),
       bodyLacks(/planning day/i, 'never calls it a "planning day"'),
-      // "At most a passing half-clause" (recap-prompt.ts): one upkeep item named in passing is
-      // tolerable; naming BOTH is narrating the bookkeeping list back — the exact shape the
-      // 2026-08-22 paid run produced ("the shed shelving is tucked away … the furnace filter's
-      // now on its 90-day repeat") and the sharpened prompt now bans outright.
+      // Two paid runs (2026-08-22) narrated both upkeep items back despite an explicit prompt
+      // ban, so buildRecapUserPrompt now WITHHOLDS the item texts on a nothing-day (aggregate
+      // count only) — this check pins that mechanism end-to-end: it can only fail if someone
+      // reverts the aggregation AND the model narrates again. recapSignoff() likewise pins
+      // generateRecap's append-if-missing signoff repair, not just model compliance.
       ((body) => ({
         name: 'does not narrate both upkeep items back',
         pass: !(/shed|shelving/i.test(body) && /furnace|filter/i.test(body)),
