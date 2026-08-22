@@ -146,6 +146,11 @@ Deno.test('buildRecapUserPrompt: nothing-day upkeep is aggregated, never itemize
   // The item texts themselves must be absent — narration is impossible, not discouraged.
   assert(!p.includes('shed shelving'))
   assert(!p.includes('furnace filter'))
+  // Owner decision 2026-08-22: a nothing-day is an ULTRA-BRIEF sign-off — one or two short lines,
+  // no question. The ask-about-open-items instruction must NOT fire (there is nothing open).
+  assertStringIncludes(p, 'ONE or TWO short lines')
+  assertStringIncludes(p, 'no question')
+  assert(!p.includes('question about the open items'))
 })
 
 // A session on an ongoing project is real work, but it is NOT a finish — the model must be able to
