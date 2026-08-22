@@ -15,8 +15,9 @@
 //                                    comes BEFORE any mention of the day's board upkeep. The
 //                                    bookkeeping rows name tasks that are NOT the open items, so
 //                                    lead-order is actually measurable here (see its comment).
-//   recq-fixed-commitment-first    — :38-40, ORDERING only: the appointment is asked about first,
-//                                    ahead of the other open items and ahead of the praise beat.
+//   recq-fixed-commitment-first    — beat 1, ORDERING of the asks: the appointment is asked about
+//                                    ahead of every other OPEN item. A one-line credit of a genuine
+//                                    finish may open the message (owner decision 2026-08-22).
 //                                    Exhaustive coverage is deliberately NOT required here.
 //   recq-covers-every-open-item    — :37-38, the coverage clause: with three open, all three are
 //                                    covered — this scenario is the one that pins that exhaustively.
@@ -171,7 +172,7 @@ export const scenarios: RecapScenario[] = [
     // recognise the appointment from the item's own wording, which is exactly what :38-40 asks of it.
     kind: 'recap',
     id: 'recq-fixed-commitment-first',
-    title: 'Fixed commitment leads: the appointment is asked about before any other beat',
+    title: 'Fixed commitment leads the asks: the appointment beats every other open item',
     tags: ['recap', 'checkin', 'anchors', 'ordering'],
     persona: 'had an appointment booked today',
     request: {
@@ -187,25 +188,25 @@ export const scenarios: RecapScenario[] = [
       upcoming: [],
       habitsKept: [],
     },
-    // SCOPE: this scenario measures ORDER, not coverage. recap-prompt.ts:38-40 says the fixed
-    // commitment "beats any other beat in the message" — so the deterministic checks pin that the
-    // physio precedes the other open items AND the praise beat (the cleared inbox, which the first
-    // draft left out of the `later` list — the exact hole that let a recap open on the inbox win).
-    // Coverage is a FLOOR of one other open item, not all three: "Water the plants" is the most
-    // droppable item on the board, and a fully-correct recap that leads on the physio, covers the
-    // insurance email, credits the inbox and lets the plants go inside 120 words must not fail a
-    // deterministic check. Exhaustive three-of-three coverage is recq-covers-every-open-item's job;
-    // the rubric below still asks the judge for it here.
+    // SCOPE: this scenario measures the ORDER OF THE ASKS, not coverage. Owner decision
+    // 2026-08-22 (after 3/3 paid repeats failed the stricter reading): a one-line credit of a
+    // GENUINE finish (the cleared inbox) may open the message — that is not the #346 bug, which
+    // was praise for mere bookkeeping. What stays mandatory (recap-prompt.ts beat 1): the fixed
+    // commitment is the first thing ASKED about, before any other open item, immediately after
+    // any opening credit. So the deterministic `later` list holds the other OPEN items only —
+    // /inbox/i (the praise) is deliberately NOT in it. "Immediately after" and bookkeeping-praise
+    // stay rubric territory. Coverage is a FLOOR of one other open item ("Water the plants" is
+    // droppable inside 120 words); exhaustive coverage is recq-covers-every-open-item's job.
     checks: [
       recapSignoff(),
       recapMaxWords(120),
       recapNoHeaders(),
       mentionsBefore(
-        'asks about the physio before the other open items and before the praise',
+        'asks about the physio before the other open items',
         // Widened past 'physio': "did the 8:30 appointment go okay?" names the same commitment
         // faithfully, and a needle that misses it would fail a correct, correctly-ordered recap.
         /physio|clinic|appointment|8:30/i,
-        [/insurance/i, /\bplant/i, /inbox/i],
+        [/insurance/i, /\bplant/i],
       ),
       mentionsAnyOf('covers at least one other open item', ['insurance', 'plant']),
       asksSomething(),
@@ -213,11 +214,12 @@ export const scenarios: RecapScenario[] = [
     ],
     rubric:
       'Three things were still open, and one of them is a booked appointment ("Physio appointment ' +
-      '— 8:30 at the clinic"). REQUIRED: the appointment is the FIRST thing asked about — ahead of ' +
-      'the insurance email, the plants, AND ahead of the praise for the cleared inbox. "Did the ' +
-      'physio go okay?" should read as the reason the message exists. Opening with the inbox win ' +
-      'and burying the physio is a FAIL. The other open items should also be covered — ideally all ' +
-      'three asked about together — but dropping the smallest one ("Water the plants") to stay ' +
+      '— 8:30 at the clinic"). REQUIRED: the appointment is the first thing ASKED about — ahead of ' +
+      'the insurance email and the plants. A one-line warm credit of the genuinely-finished inbox ' +
+      'MAY open the message, but the physio question must come immediately after it — an opening ' +
+      'credit that runs multiple sentences, or a physio ask buried after other open items, is a ' +
+      'FAIL. Praise aimed at bookkeeping (rather than the real finish) is always a FAIL. The other ' +
+      'open items should also be covered — dropping the smallest ("Water the plants") to stay ' +
       'inside one short paragraph is a reasonable trade, not a failure. No invented detail about ' +
       'what the appointment was for.',
   },
@@ -349,6 +351,14 @@ export const scenarios: RecapScenario[] = [
       recapNoHeaders(),
       bodyLacks(/\bproud\b/i, 'never says "proud" of a day of pure bookkeeping'),
       bodyLacks(/planning day/i, 'never calls it a "planning day"'),
+      // "At most a passing half-clause" (recap-prompt.ts): one upkeep item named in passing is
+      // tolerable; naming BOTH is narrating the bookkeeping list back — the exact shape the
+      // 2026-08-22 paid run produced ("the shed shelving is tucked away … the furnace filter's
+      // now on its 90-day repeat") and the sharpened prompt now bans outright.
+      ((body) => ({
+        name: 'does not narrate both upkeep items back',
+        pass: !(/shed|shelving/i.test(body) && /furnace|filter/i.test(body)),
+      })) as RecapCheck,
       // Decoys must be INVENTED ITEMS only. "the plan for today" was removed: a truthful, correct
       // reply ("nothing was on the plan for today") contains that substring and would trip the
       // invention canary.
@@ -361,7 +371,10 @@ export const scenarios: RecapScenario[] = [
       'AUTOMATIC FAIL if it invents an item, a commitment, or a plan that was never given, or if ' +
       'it manufactures news out of the upkeep — no "good planning day", no "proud of you for ' +
       'getting organised", no treating the three rows as a productive evening. Referring to the ' +
-      'upkeep in a passing half-clause is fine. Short is correct here; padding is not.',
+      'upkeep in a passing half-clause ("board looks tidier") is fine; narrating the items back ' +
+      'individually, or building a reassurance story out of them ("nothing urgent was left, so ' +
+      'resting counts"), is manufacturing and a FAIL. The prompt says a line or two is plenty ' +
+      'here: a couple of short sentences is right, several sentences of padding is a fail.',
   },
   {
     // The over-correction guard on the other side of the split: `completed` is progress regardless

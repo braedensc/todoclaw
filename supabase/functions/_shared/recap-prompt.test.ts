@@ -151,8 +151,14 @@ Deno.test('the system prompt makes asking the spine, and bars praising upkeep', 
   // The exact phrasings the bad recap used are named so they can't come back.
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'a good')
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'never say you are proud of it')
-  // A fixed commitment outranks every other beat.
+  // A fixed commitment outranks every other OPEN item — but a one-line credit of a genuine
+  // finish may open the message (owner decision 2026-08-22; praise for bookkeeping stays banned).
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'FIXED COMMITMENT')
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'comes immediately after it')
+  // Sweep-day exception: kept habits may be celebrated by name when the whole plan finished.
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'clean-sweep day')
+  // No-plan days stay short and never narrate bookkeeping items back.
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'never narrate individual bookkeeping items')
   // And an empty-handed day must not reach for praise.
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'Do NOT reach for something to praise')
   // Sessions are creditable, but an ongoing project is never done and never behind.

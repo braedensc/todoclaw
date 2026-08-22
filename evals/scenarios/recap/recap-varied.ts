@@ -115,10 +115,17 @@ export const scenarios: RecapScenario[] = [
       habitsKept: ['Morning stretch', 'Read 20 minutes', 'No phone at dinner'],
     },
     checks: [recapSignoff(), recapMaxWords(120), recapNoHeaders(), recapMentionsNone(DECOYS)],
+    // Owner decision 2026-08-22: on a clean-sweep day, naming every finish AND every kept habit
+    // is sanctioned celebration (the prompt carries an explicit sweep-day exception to the
+    // one-flourish rule). Brevity is the 120-word cap, which recapMaxWords enforces
+    // deterministically — the rubric must not re-litigate it on vibes.
     rubric:
-      'The whole plan got cleared — the recap should make a genuine deal of it and name a real ' +
-      'item or two, but a big day must NOT bloat the length: still one short paragraph. It should ' +
-      'not enumerate all six items or all three habits like a report.',
+      'The whole plan got cleared — the recap should make a genuine deal of it 🎉 and credit real ' +
+      'items by name; on a clean-sweep day like this, naming all the finishes and the kept habits ' +
+      'is welcome celebration, not report-writing. FAIL only if: it invents an item, its tone is ' +
+      'flat or perfunctory about a genuinely big day, it reads as a labeled status report ' +
+      '(headers, list structure) rather than a friendly text, or it manufactures follow-up work ' +
+      'that was never given. Length is checked deterministically; do not fail on length.',
   },
   {
     // The OVERLOAD shape: five open inside a 120-word budget, so the deterministic bar is a
@@ -165,8 +172,11 @@ export const scenarios: RecapScenario[] = [
     rubric:
       'Nothing finished, five things open, and the ONLY logged activity is three tasks being ' +
       'CREATED — deciding to do things, not doing them. REQUIRED: the recap names real open items ' +
-      '(two or three of them, asked about together — not a roll-call of all five) and asks how ' +
-      'they went. Automatic FAIL if it treats the three captures as progress ("good planning day", ' +
+      'and asks how they went — covering all five by name in warm, grouped questions is ideal ' +
+      '(the prompt says cover them, and sets no cap); naming a few and sweeping in the rest is ' +
+      'also fine. Automatic FAIL if it asks about none or only one, if it reads as a numbered ' +
+      'status report rather than friendly questions, or if it treats the three captures as ' +
+      'progress ("good planning day", ' +
       '"proud of you", "at least you got them on the list" as the headline), or if it never asks ' +
       'anything. Kindness is necessary but NOT sufficient: "tomorrow is fine" framing is right, a ' +
       'warm question-free pep talk is still a fail. No guilt, no scolding, no invented wins.',
@@ -242,10 +252,11 @@ export const scenarios: RecapScenario[] = [
     rubric:
       'One thing was finished (the conference talk proposal) and two things are coming up (tax ' +
       'filing tomorrow, a landlord call in two days). REQUIRED: the proposal is credited warmly by ' +
-      'name. A heads-up about one of the upcoming items is OPTIONAL trim — welcome, but a recap ' +
-      'that skips it entirely is still correct. If one does appear it must be faithful (right ' +
-      'item, right timing, nothing invented about it) and read as a friendly nudge, not a nag or a ' +
-      'checklist dump; naming both plus their dates as a to-do list is a FAIL.',
+      'name. A heads-up about the upcoming items is OPTIONAL trim — the prompt allows 1–2, so ' +
+      'mentioning one, both, or neither is correct. Whatever appears must be faithful (right ' +
+      'items, right timing, nothing invented) and read as a friendly nudge woven into the prose. ' +
+      'FAIL only if a heads-up is unfaithful, guilt-tripping, or formatted as an actual list ' +
+      '(bullets/numbering) — two items with their timing in warm sentences is NOT a fail.',
   },
   {
     // Same optional-beat correction as recv-upcoming-headsup: recap-prompt.ts:45 makes the
