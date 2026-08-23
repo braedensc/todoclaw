@@ -13,6 +13,10 @@ import { dayOffsetISO, DEFAULT_TZ } from './fixture-dates.ts'
 import type { DbSnapshot, DbTaskRow, EvalEnvLike, SeedIds, SeedSpec } from './db-types.ts'
 
 export type Sql = ReturnType<typeof postgres>
+// postgres.js types its json() helper against its own JSONValue; our specs use plain
+// Record<string, unknown> / unknown shapes, so one contained cast lives here.
+type PgJson = Parameters<Sql['json']>[0]
+const asJson = (v: unknown) => v as PgJson
 
 export function connectDb(dbUrl: string): Sql {
   return postgres(dbUrl, {
@@ -146,6 +150,11 @@ export async function wipeUser(sql: Sql, userId: string): Promise<void> {
 
 // ---------- seeding ----------
 
+// JSONB PARAMS: always tx.json(value), never ${JSON.stringify(value)}::jsonb — postgres.js
+// serializes an already-stringified param into a DOUBLE-ENCODED jsonb *string* (jsonb_typeof =
+// 'string'), which poisons every reader: PostgREST hands capabilities a JS string, so recurring
+// chores read as one-offs, config.assistant vanishes, habit steps disappear. Latent since #323;
+// exposed by the first full live chat run (2026-08-22, 10 of 15 failures traced here).
 export async function seedScenario(sql: Sql, userId: string, spec: SeedSpec): Promise<SeedIds> {
   const tz = spec.timezone ?? DEFAULT_TZ
   const ids: SeedIds = { tasks: {}, habits: {} }
@@ -164,7 +173,7 @@ export async function seedScenario(sql: Sql, userId: string, spec: SeedSpec): Pr
     if (spec.weather) config.location = spec.weather.location
     await tx`
       insert into user_schedule (user_id, timezone, config)
-      values (${userId}, ${tz}, ${JSON.stringify(config)}::jsonb)
+      values (${userId}, ${tz}, ${tx.json(asJson(config))})
       on conflict (user_id) do update set timezone = excluded.timezone, config = excluded.config`
 
     for (const [i, t] of (spec.tasks ?? []).entries()) {
@@ -173,7 +182,7 @@ export async function seedScenario(sql: Sql, userId: string, spec: SeedSpec): Pr
                            size, start_date, completed_at)
         values (${userId}, ${t.text}, ${t.x ?? null}, ${t.y ?? null}, ${t.due ?? null},
                 ${t.dueTime ?? null}, ${t.staged ?? false}, 'oneoff',
-                ${t.recurring ? JSON.stringify(t.recurring) : null}::jsonb, ${t.ongoing ?? false},
+                ${t.recurring ? tx.json(asJson(t.recurring)) : null}, ${t.ongoing ?? false},
                 ${t.size ?? null}, ${t.startDate ?? null}, ${t.completedAt ?? null})
         returning id`
       const id = rows[0].id as string
@@ -194,7 +203,7 @@ export async function seedScenario(sql: Sql, userId: string, spec: SeedSpec): Pr
       const rows = await tx`
         insert into habits (user_id, text, active, subtasks)
         values (${userId}, ${h.text}, ${h.active ?? true},
-                ${JSON.stringify(h.subtasks ?? [])}::jsonb)
+                ${tx.json(asJson(h.subtasks ?? []))})
         returning id`
       const id = rows[0].id as string
       ids.habits[h.key ?? `habit${i}`] = id
@@ -204,8 +213,8 @@ export async function seedScenario(sql: Sql, userId: string, spec: SeedSpec): Pr
     if (Object.keys(done).length || Object.keys(habitDone).length) {
       await tx`
         insert into daily_state (user_id, date, done, habit_done, subtask_done)
-        values (${userId}, ${today}, ${JSON.stringify(done)}::jsonb,
-                ${JSON.stringify(habitDone)}::jsonb, '{}'::jsonb)
+        values (${userId}, ${today}, ${tx.json(asJson(done))},
+                ${tx.json(asJson(habitDone))}, '{}'::jsonb)
         on conflict (user_id, date) do update
           set done = excluded.done, habit_done = excluded.habit_done`
     }
@@ -223,7 +232,7 @@ export async function seedScenario(sql: Sql, userId: string, spec: SeedSpec): Pr
     if (spec.weather) {
       await tx`
         insert into weather_cache (location, data)
-        values (${spec.weather.location}, ${JSON.stringify(spec.weather.data)}::jsonb)
+        values (${spec.weather.location}, ${tx.json(asJson(spec.weather.data))})
         on conflict (location) do update set data = excluded.data, fetched_at = now()`
     }
   })

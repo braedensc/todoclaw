@@ -330,7 +330,13 @@ export const scenarios: ChatScenario[] = [
     title: 'One message, three separate creates',
     tags: ['crud', 'create', 'multi-action'],
     seed: () => ({}),
-    turns: [{ say: 'Add milk, eggs, and a dentist call as three separate tasks.' }],
+    turns: [
+      { say: 'Add milk, eggs, and a dentist call as three separate tasks.' },
+      // The model may legitimately ask ONE quick placement/date question about the ambiguous
+      // dentist call (the owner-decided create contract) — answer it so all three exist by the
+      // end. Supersession-safe: a plain say clears any pending state.
+      { say: 'No due date on the dentist call — just put it on the board.' },
+    ],
     checks: [
       dbTaskCreated((row) => /milk/i.test(row.text), 'milk task created'),
       dbTaskCreated((row) => /egg/i.test(row.text), 'eggs task created'),

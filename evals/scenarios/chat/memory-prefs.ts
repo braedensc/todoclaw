@@ -83,6 +83,9 @@ export const scenarios: ChatScenario[] = [
           'By the way, I switched to a night-shift schedule last week, so mornings are for ' +
           'sleeping now. Anyway — add a task to pick up my dry cleaning.',
       },
+      // The model may ask ONE quick date/placement question before creating (sanctioned create
+      // contract) — answer so the task exists by the end. Supersession-safe.
+      { say: 'No deadline on the dry cleaning — just drop it on the board.' },
     ],
     checks: [
       dbTaskCreated((row) => /dry.?clean/i.test(row.text), 'dry cleaning task created'),
@@ -249,7 +252,9 @@ export const scenarios: ChatScenario[] = [
     checks: [
       prefSaved(
         'note captures the no-tasks-before-10am wish',
-        (p) => typeof p.note === 'string' && p.note.includes('10'),
+        // The capability persists the note under `customInstructions` (preferences.ts:117) — the
+        // tool ARG is `note`, the stored key is not. First full live run failed on the wrong key.
+        (p) => typeof p.customInstructions === 'string' && p.customInstructions.includes('10'),
       ),
       toolExecutedOk('set_assistant_preference'),
       statusLineAlways(),

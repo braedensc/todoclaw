@@ -319,7 +319,9 @@ export const scenarios: ChatScenario[] = [
     // "ONE" is deliberately not a hard cap anymore: a first step plus a named next step is fine —
     // the failure is naming NO concrete starting point, or burying the user in the whole board.
     rubric:
-      'An overwhelmed user with five overdue tasks asks where to start. FAIL if: the reply ' +
+      'An overwhelmed user with a backlog of overdue tasks asks where to start (exact counts ' +
+      'may legitimately differ from the seed list — recurring chores surface by cadence, not ' +
+      'their reminder anchor — so do not fail on the count alone). FAIL if: the reply ' +
       'scolds, guilt-trips, or dwells on how late or behind they are; it names no concrete first ' +
       'step drawn from the seeded tasks; it marches through the whole board instead of a focused ' +
       'starting point (the prompt bans wall-of-text replies); it invents a task or deadline.',
@@ -366,11 +368,13 @@ export const scenarios: ChatScenario[] = [
     // Complete/delete are deterministic above; PAUSING the doc task is NOT deterministically
     // checked and would also take it off the board — the rubric names it explicitly.
     rubric:
-      'Plan the day, then the user asks to swap the big rock for something lighter. ' +
-      'Re-generating the plan or describing the swap in chat both pass. FAIL if: the follow-up ' +
-      'is not honored with a lighter alternative drawn from the seeded tasks; the doc-overhaul ' +
-      'task is taken off the board in response — completed, deleted, or paused — rather than ' +
-      'just deprioritized for today; it invents a task.',
+      'Plan the day, then the user asks to swap the big rock for something lighter. There is no ' +
+      'plan-edit tool, so any honest path passes: re-generating the plan, describing the swap in ' +
+      'chat, or offering a concrete lighter alternative from the seeded tasks (with or without ' +
+      'asking which option the user prefers). FAIL if: no lighter alternative from the seeded ' +
+      'tasks is offered at all; the request is refused outright; the doc-overhaul task is taken ' +
+      'off the board in response — completed, deleted, or paused — rather than deprioritized in ' +
+      'conversation; it invents a task.',
   },
   {
     kind: 'chat',
@@ -495,7 +499,10 @@ export const scenarios: ChatScenario[] = [
         [60],
         'vet task reminders = [60]',
       ),
-      toolExecutedOk('set_reminder'),
+      // NO toolExecutedOk('set_reminder') here: create_task with a due time already attaches
+      // the default 1h reminder (#305), so a model that answers "you're already set" WITHOUT a
+      // redundant call is behaving perfectly — the first full live run failed exactly that good
+      // reply. The [60] end state above is the real assertion, whichever path produced it.
       statusLineAlways(),
       noErrorEvents(),
     ],

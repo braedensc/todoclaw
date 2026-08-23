@@ -14,7 +14,14 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { MODEL, MAX_TOKENS } from '../../supabase/functions/_shared/anthropic.ts'
 import { evalAnthropicKey } from './env.ts'
-import type { ChatTrace, Judgment, PlanResult, PlanScenario, RecapScenario } from './types.ts'
+import type {
+  ChatTrace,
+  Judgment,
+  PlanResult,
+  PlanScenario,
+  RecapScenario,
+  SeedSpec,
+} from './types.ts'
 
 export { MODEL as PROD_MODEL }
 
@@ -118,6 +125,41 @@ export async function judge(
 }
 
 // ---------- render helpers (what the judge sees) ----------
+
+/** Ground-truth seed summary for CHAT judging. Without this the judge cannot distinguish
+ * "invented" from "unverifiable" — the first full live run failed a correct triage reply as
+ * "fabricated details" purely because the judge had no fixture to compare against (the plan
+ * judge always had one; chat did not). Rendered from the same SeedSpec the scenario seeded. */
+export function renderSeedForJudge(spec: SeedSpec): string {
+  const tasks = (spec.tasks ?? []).map((t) => {
+    const bits = [
+      `- "${t.text}"`,
+      t.due ? `due=${t.due}${t.dueTime ? ` ${t.dueTime}` : ''}` : null,
+      t.recurring
+        ? `recurring(every ${t.recurring.frequencyDays}d, lastDone=${t.recurring.lastDoneAt ?? 'never'})`
+        : null,
+      t.ongoing ? 'ONGOING' : null,
+      t.staged ? 'STAGED' : null,
+      t.startDate ? `starts=${t.startDate}` : null,
+      t.doneToday ? 'done-today' : null,
+    ].filter(Boolean)
+    return bits.join(' ')
+  })
+  const habits = (spec.habits ?? []).map(
+    (h) => `- ${h.text}${h.active === false ? ' (inactive)' : ''}`,
+  )
+  return [
+    'SEEDED BOARD (ground truth at conversation start — tool results in the transcript may have',
+    'added or changed items since; a recurring chore surfaces by its cadence, and its due date is',
+    'only a reminder anchor, never a deadline):',
+    tasks.length ? tasks.join('\n') : '(no tasks)',
+    habits.length ? `HABITS:\n${habits.join('\n')}` : '',
+    spec.memories?.length ? `SAVED MEMORIES: ${spec.memories.join(' | ')}` : '',
+    spec.scheduleConfig ? `SCHEDULE CONFIG: ${JSON.stringify(spec.scheduleConfig)}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
 
 /** User-visible rendering of a chat: user turns, assistant bodies (status stripped), shown tool
  * lines, confirm gates and their resolutions — the conversation as the user experienced it. */
