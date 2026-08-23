@@ -17,45 +17,61 @@ function r(name: string, pass: boolean, detail?: string): CheckResult {
   return { name, pass, ...(detail ? { detail } : {}) }
 }
 
-function allToolUses(t: ChatTrace) {
-  return t.turns.flatMap((turn) => turn.toolUses)
-}
 function allToolResults(t: ChatTrace) {
   return t.turns.flatMap((turn) => turn.toolResults)
 }
 
+/** Every tool call the live wire lets us OBSERVE. The ai-chat SSE protocol never streams
+ * tool_use blocks (the `message` event fires only for the final, tool-free assistant message),
+ * so on a real run tool activity is visible ONLY as tool-result events (executed) and
+ * tool-pending-confirmation events (proposed, awaiting the gate). `turn.toolUses` is unioned in
+ * for forward-compat and for driver unit fixtures, but is ALWAYS empty on the live path — a
+ * check must never rely on it alone (that bug shipped in #323 and made toolCalled unsatisfiable
+ * and toolNotCalled vacuous on every live run until the first ongo- shakedown exposed it). */
+function allToolActivity(t: ChatTrace): { name: string; text: string }[] {
+  return [
+    ...allToolResults(t).map((res) => ({ name: res.name, text: res.display ?? res.summary })),
+    ...t.turns.flatMap((turn) =>
+      turn.pending ? [{ name: turn.pending.name, text: turn.pending.summary }] : [],
+    ),
+    ...t.turns.flatMap((turn) =>
+      turn.toolUses.map((u) => ({ name: u.name, text: JSON.stringify(u.input ?? {}) })),
+    ),
+  ]
+}
+
 // ---------- chat: tool behavior ----------
 
-export function toolCalled(
-  name: string,
-  opts?: { where?: (input: Record<string, unknown>) => boolean; label?: string },
-): ChatCheck {
+/** The tool was called — executed (tool-result) or proposed (pending confirm). `display` narrows
+ * to calls whose user-visible result/summary text matches, the live-wire replacement for input
+ * predicates (inputs never stream; the display carries the task text and outcome). */
+export function toolCalled(name: string, opts?: { display?: RegExp; label?: string }): ChatCheck {
   return (t) => {
-    const hits = allToolUses(t).filter((u) => u.name === name)
-    const matched = opts?.where
-      ? hits.some((u) => opts.where!((u.input ?? {}) as Record<string, unknown>))
-      : hits.length > 0
+    const hits = allToolActivity(t).filter((a) => a.name === name)
+    const matched = opts?.display ? hits.some((a) => opts.display!.test(a.text)) : hits.length > 0
     return r(
       opts?.label ?? `tool ${name} called`,
       matched,
       matched
         ? undefined
-        : `tool_use names seen: ${
-            allToolUses(t)
-              .map((u) => u.name)
-              .join(', ') || 'none'
-          }`,
+        : hits.length
+          ? `${name} seen, but no display matched ${opts?.display}: ${hits
+              .map((a) => a.text.slice(0, 80))
+              .join(' | ')}`
+          : `tool activity seen: ${
+              [...new Set(allToolActivity(t).map((a) => a.name))].join(', ') || 'none'
+            }`,
     )
   }
 }
 
 export function toolNotCalled(name: string): ChatCheck {
   return (t) => {
-    const hits = allToolUses(t).filter((u) => u.name === name)
+    const hits = allToolActivity(t).filter((a) => a.name === name)
     return r(
       `tool ${name} NOT called`,
       hits.length === 0,
-      hits.length ? `called ${hits.length}×` : undefined,
+      hits.length ? `seen ${hits.length}× (${hits[0].text.slice(0, 80)})` : undefined,
     )
   }
 }

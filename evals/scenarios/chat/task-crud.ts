@@ -41,12 +41,17 @@ const GARDEN_START = dayOffsetISO(6)
  */
 function toolCalledAny(names: string[], label: string): ChatCheck {
   return (t) => {
-    const seen = t.turns.flatMap((turn) => turn.toolUses).map((u) => u.name)
+    // Live protocol streams no tool_use blocks — observe results + pending (see lib/checks.ts).
+    const seen = [
+      ...t.turns.flatMap((turn) => turn.toolResults.map((r) => r.name)),
+      ...t.turns.flatMap((turn) => (turn.pending ? [turn.pending.name] : [])),
+      ...t.turns.flatMap((turn) => turn.toolUses.map((u) => u.name)),
+    ]
     const pass = names.some((n) => seen.includes(n))
     return {
       name: label,
       pass,
-      ...(pass ? {} : { detail: `tool_use names seen: ${seen.join(', ') || 'none'}` }),
+      ...(pass ? {} : { detail: `tool activity seen: ${seen.join(', ') || 'none'}` }),
     }
   }
 }
@@ -325,7 +330,13 @@ export const scenarios: ChatScenario[] = [
     title: 'One message, three separate creates',
     tags: ['crud', 'create', 'multi-action'],
     seed: () => ({}),
-    turns: [{ say: 'Add milk, eggs, and a dentist call as three separate tasks.' }],
+    turns: [
+      { say: 'Add milk, eggs, and a dentist call as three separate tasks.' },
+      // The model may legitimately ask ONE quick placement/date question about the ambiguous
+      // dentist call (the owner-decided create contract) — answer it so all three exist by the
+      // end. Supersession-safe: a plain say clears any pending state.
+      { say: 'No due date on the dentist call — just put it on the board.' },
+    ],
     checks: [
       dbTaskCreated((row) => /milk/i.test(row.text), 'milk task created'),
       dbTaskCreated((row) => /egg/i.test(row.text), 'eggs task created'),

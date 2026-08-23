@@ -11,6 +11,7 @@ import {
   noVisibleLeak,
   statusLineAlways,
   toolCalled,
+  toolNotCalled,
   toolNotExecuted,
 } from './checks.ts'
 import { detPass, overallPass } from './report.ts'
@@ -31,6 +32,7 @@ const emptyDb: DbSnapshot = {
   dailyDone: {},
   dailyHabitDone: {},
   historyTexts: [],
+  assistantPrefs: {},
 }
 
 function ev(obj: Record<string, unknown>): string {
@@ -118,6 +120,33 @@ Deno.test('check combinators: toolCalled / toolNotExecuted / confirmRequested', 
   assert(one(confirmRequested('complete_task')(t, emptyDb)).pass)
   assert(one(toolNotExecuted('complete_task')(t, emptyDb)).pass) // pending ≠ executed
   assert(one(statusLineAlways()(t, emptyDb)).pass)
+})
+
+// REGRESSION (first live ongo- shakedown, 2026-08-22): the real ai-chat SSE protocol never streams
+// tool_use blocks — the `message` event fires only for the final, tool-free assistant message — so
+// a live trace carries tool activity ONLY as tool-result / tool-pending-confirmation events. The
+// original toolCalled read `turn.toolUses` alone, which made it unsatisfiable on every live run
+// (and toolNotCalled vacuously green). This fixture is shaped exactly like the live wire.
+Deno.test('check combinators observe tool activity from RESULTS on a live-shaped trace', () => {
+  const live = foldTurn({ say: 'I worked on the novel today' }, [
+    { type: 'text-delta', text: 'Logged!\n[[status: Session logged]]' },
+    {
+      type: 'tool-result',
+      tool_use_id: 't1',
+      name: 'log_work',
+      ok: true,
+      summary: 'Logged a work session on "Write the novel" for today.',
+      display: 'Logged a work session on "Write the novel" for today.',
+    },
+    { type: 'done', stop_reason: 'end_turn' },
+  ])
+  const t = traceWith([live])
+  assertEquals(live.toolUses.length, 0) // the live wire really carries none
+  assert(one(toolCalled('log_work')(t, emptyDb)).pass)
+  assert(one(toolCalled('log_work', { display: /write the novel/i })(t, emptyDb)).pass)
+  assert(!one(toolCalled('log_work', { display: /cleared today/i })(t, emptyDb)).pass)
+  assert(!one(toolNotCalled('log_work')(t, emptyDb)).pass) // a result means it WAS called
+  assert(one(toolNotCalled('complete_task')(t, emptyDb)).pass)
 })
 
 Deno.test('noVisibleLeak: hidden displays are ignored, uuids in shown text are caught', () => {

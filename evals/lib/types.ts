@@ -157,6 +157,9 @@ export interface DbSnapshot {
   dailyDone: Record<string, boolean>
   dailyHabitDone: Record<string, boolean>
   historyTexts: string[]
+  /** user_schedule.config.assistant — tone/verbosity/note/memoryEnabled. Tool INPUTS never stream
+   * over the live SSE protocol, so preference writes are asserted here, at the end state. */
+  assistantPrefs: Record<string, unknown>
 }
 
 // ---------- checks + judging ----------

@@ -24,7 +24,13 @@ import {
   type Sql,
 } from './db.ts'
 import { resolveEvalEnv } from './env.ts'
-import { judge, renderChatForJudge, renderPlanForJudge, renderRecapForJudge } from './judge.ts'
+import {
+  judge,
+  renderChatForJudge,
+  renderPlanForJudge,
+  renderRecapForJudge,
+  renderSeedForJudge,
+} from './judge.ts'
 import type {
   ChatScenario,
   CheckResult,
@@ -190,7 +196,8 @@ async function runChat(
     const email = `eval-${sc.id.toLowerCase().replace(/[^a-z0-9-]/g, '-')}@todoclaw.local`
     const userId = await ensureUser(ctx.env, ctx.sql, email, EVAL_PASSWORD)
     await wipeUser(ctx.sql, userId)
-    const ids = await seedScenario(ctx.sql, userId, sc.seed())
+    const spec = sc.seed()
+    const ids = await seedScenario(ctx.sql, userId, spec)
     const token = await signIn(ctx.env, email, EVAL_PASSWORD)
     const trace = await driveChat(
       { apiUrl: ctx.env.apiUrl, anonKey: ctx.env.anonKey, token },
@@ -198,11 +205,16 @@ async function runChat(
     )
     const db = await snapshotUser(ctx.sql, userId, ids)
     const deterministic = (sc.checks ?? []).flatMap((check) => flat(check(trace, db)))
+    // The judge gets the seed as ground truth (renderSeedForJudge) so faithfulness verdicts are
+    // evidence-based, not guesses; the human-facing artifact stays the plain transcript.
     const judgeResult = await maybeJudge(
       opts,
       sc.title,
       sc.rubric,
-      renderChatForJudge(trace),
+      `${renderSeedForJudge(spec)}
+
+CONVERSATION:
+${renderChatForJudge(trace)}`,
       usage,
     )
     return {

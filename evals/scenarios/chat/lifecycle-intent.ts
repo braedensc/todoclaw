@@ -187,7 +187,13 @@ export const scenarios: ChatScenario[] = [
       confirmRequested('complete_task'),
       toolNotExecuted('complete_task'),
       dbTaskNotCompleted('taxes'),
-      bodyAt(1, /(won'?t|not|keep|left|stay)/i, 'decline acknowledged in reply'),
+      // "leave it as is" is a perfectly good acknowledgment — the first full live run failed it
+      // for missing this list. Keep the needle wide: any keep-ish verb counts.
+      bodyAt(
+        1,
+        /(won'?t|not|keep|kept|left|leav|stay|as[- ]?is|still open|unchanged)/i,
+        'decline acknowledged in reply',
+      ),
       noErrorEvents(),
     ],
     rubric:
