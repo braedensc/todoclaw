@@ -98,8 +98,17 @@ Deno.test('a commitment with no "when" still renders its label', () => {
   assert(!p.includes('Therapy —')) // no trailing separator when `when` is absent
 })
 
-Deno.test('system prompt drops running and covers recurring commitments generically', () => {
-  assert(!SYSTEM_PROMPT.toLowerCase().includes('running'))
+Deno.test('system prompt carries no personal training copy, and stays generic', () => {
+  // This guards a REAL past leak: before #86 the prompt hardcoded the owner's marathon training
+  // (a `schedule.running` field, "the user is marathon training", "never schedule running").
+  // #86 genericized it to recurring commitments and left a tripwire so that copy could not
+  // return — but the tripwire banned the WORD "running", not the CONCEPT. That misfired: the
+  // planner reads task lines that literally say "3 days running" (worked.ts), the chat prompt is
+  // free to echo that vocabulary, and this file's own line 379 documented sanctioned copy the
+  // ban made unshippable. Now it matches the personal concept instead, so ordinary English is
+  // free and the actual regression is still caught.
+  assert(!/marathon|training plan|long run\b|weekly mileage|race pace/i.test(SYSTEM_PROMPT))
+  assert(!/schedule\.running|running\?:/i.test(SYSTEM_PROMPT))
   assert(SYSTEM_PROMPT.includes('recurring commitments'))
 })
 
@@ -367,20 +376,19 @@ Deno.test('SYSTEM_PROMPT paces ongoing projects on raw facts, with no verdict an
   // The rhythm is read out of the facts, never turned into a cadence…
   assertStringIncludes(SYSTEM_PROMPT, 'do NOT turn them into a fixed every-N-days cadence')
   assertStringIncludes(SYSTEM_PROMPT, 'worked yesterday — normally leave it today')
-  assertStringIncludes(SYSTEM_PROMPT, 'three or more days in a row — let it rest')
+  assertStringIncludes(SYSTEM_PROMPT, 'three or more days running — let it rest')
   assertStringIncludes(SYSTEM_PROMPT, 'four or more days ago — fully fresh')
   assertStringIncludes(SYSTEM_PROMPT, 'no sessions logged yet — no signal at all')
   assertStringIncludes(SYSTEM_PROMPT, 'never push it just to fill an empty slot')
-  // …and a long gap is never framed as neglect.
-  assertStringIncludes(SYSTEM_PROMPT, 'NEVER name the gap to')
-  assertStringIncludes(SYSTEM_PROMPT, 'never imply neglect')
-  // Streaks are reasoning input, never user-visible verdict prose (owner doctrine: no
-  // mechanical cadence). Owner decision 2026-08-24: celebrating a real run of sessions IS
-  // allowed ("three days running — nice"); only the GAP is banned from user copy, and that ban
-  // is now stated twice — in ONGOING PROJECTS and again in the write-time copy rules, because
-  // the first live plan run leaked "It's been sitting for a while" into a nudge's `why`.
-  assertStringIncludes(SYSTEM_PROMPT, 'THE GAP WORKS THE OTHER WAY')
-  assertStringIncludes(SYSTEM_PROMPT, 'HOW LONG it has been since an ongoing')
+  // OWNER DECISION 2026-08-24 — accuracy beats comfort. Naming the gap and celebrating a real run
+  // are BOTH allowed; the old total bans ("NEVER name the gap", "never read a streak back") are
+  // retired, because they suppressed true, useful facts about the user's own board. The surviving
+  // floor is narrow: describe the WORK, never pass judgement on the PERSON.
+  assertStringIncludes(SYSTEM_PROMPT, 'SAY THE TRUE THING')
+  assertStringIncludes(SYSTEM_PROMPT, 'you may say plainly how long it has been')
+  assertStringIncludes(SYSTEM_PROMPT, 'a verdict on the PERSON')
+  assertStringIncludes(SYSTEM_PROMPT, 'including when the honest thing is unflattering')
+  assert(!SYSTEM_PROMPT.includes('NEVER name the gap to'))
   assert(!SYSTEM_PROMPT.includes('never read a streak back'))
   // Worked today is stated as off-the-table, matching the id-less block.
   assertStringIncludes(SYSTEM_PROMPT, 'ALREADY LOGGED TODAY is not on the table at all')

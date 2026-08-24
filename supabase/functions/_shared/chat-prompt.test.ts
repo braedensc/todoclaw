@@ -236,12 +236,16 @@ Deno.test('persona steers "I worked on X" to log_work, never to complete_task', 
   assertStringIncludes(SYSTEM_PREFIX, 'ENDS the project for good')
 })
 
-Deno.test('persona reads a gap between sessions as ordinary, never as neglect', () => {
-  // The tone rule is load-bearing: people drop a project for weeks and come back, and a scolding
-  // "you haven't touched this in 19 days" is the failure mode this whole feature must not create.
+Deno.test('persona states a session gap plainly, and judges the work not the person', () => {
+  // OWNER DECISION 2026-08-24 — accuracy beats comfort. The gap is the user's own data and saying
+  // it ("the novel has been quiet for a month") is USEFUL, asked for or not; the earlier rule
+  // banned the framing so hard it discouraged the fact. What survives is the narrow floor: never
+  // turn it into a verdict about THEM. Kept: no invented cadence, no scorecard.
   assertStringIncludes(SYSTEM_PREFIX, 'Sessions are FACTS, never a scorecard')
-  assertStringIncludes(SYSTEM_PREFIX, 'NEVER frame a')
-  assertStringIncludes(SYSTEM_PREFIX, 'normal, healthy use of an ongoing project')
+  assertStringIncludes(SYSTEM_PREFIX, 'say it straight when it is useful')
+  assertStringIncludes(SYSTEM_PREFIX, 'they are allowed to hear it')
+  assertStringIncludes(SYSTEM_PREFIX, 'never turn it into a judgement about THEM')
+  assertStringIncludes(SYSTEM_PREFIX, 'normal, healthy use of one')
   assertStringIncludes(SYSTEM_PREFIX, 'Do not invent a cadence')
 })
 
