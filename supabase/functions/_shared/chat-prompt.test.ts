@@ -286,6 +286,12 @@ Deno.test('persona saves durable memories proactively (no per-conversation throt
   // Guardrails kept: never launder stored text, never sensitive details.
   assertStringIncludes(SYSTEM_PREFIX, 'derived from a task, habit, step, or other stored text')
   assertStringIncludes(SYSTEM_PREFIX, 'never secrets or sensitive details')
+  // Kill switch honesty (2026-08-24 live run): with the memory tools absent, the model disclosed
+  // the limitation and then promised continuity anyway ("I'll keep that in mind for how we plan
+  // your days") — false, since run-plan drops memories entirely when the switch is off.
+  assertStringIncludes(SYSTEM_PREFIX, 'MEMORY SWITCHED OFF')
+  assertStringIncludes(SYSTEM_PREFIX, 'will not carry past this conversation')
+  assertStringIncludes(SYSTEM_PREFIX, 'that is pretending')
 })
 
 Deno.test('buildSystem renders an ongoing project as a continuous effort, not a chore', () => {
