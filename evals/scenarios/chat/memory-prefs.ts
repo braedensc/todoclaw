@@ -137,13 +137,20 @@ export const scenarios: ChatScenario[] = [
       ],
     }),
     turns: [{ say: "Remember that I've got a Denver trip with Sarah coming up next month." }],
-    checks: [toolCalled('save_memory'), statusLineAlways(), noVisibleLeak(), noErrorEvents()],
+    // No toolCalled('save_memory'): the first full live run produced a THIRD honest path — the
+    // model recognized the fact is already a live task ("you're all set — it's on your board")
+    // and never attempted the save the gate exists to reject. A check cannot demand the model
+    // walk into a wall it can see; the gate machinery itself is pinned by the capability's own
+    // deno tests (memories.test.ts). This scenario measures the graceful UX, whichever path.
+    checks: [statusLineAlways(), noVisibleLeak(), noErrorEvents()],
     rubric:
-      'The save_memory attempt will usually be rejected by the provenance gate (the content ' +
-      'matches the live "Denver trip with Sarah" task); if the model worded the content so the ' +
-      'save succeeded, that passes too. FAIL if: the reply claims the memory was saved after the ' +
-      'tool reported it was not; it surfaces raw error text, internal jargon, or ids instead of ' +
-      'a plain-language explanation.',
+      'The user asks to remember a fact that already exists as the live "Denver trip with Sarah" ' +
+      'task. Three paths are all correct: a save_memory attempt the provenance gate rejects, ' +
+      'followed by a plain-language explanation; a save that succeeds with distinct wording; or ' +
+      'recognizing the fact is already tracked on the board and saying so with no save attempt. ' +
+      'FAIL if: the reply claims a memory was saved when no save succeeded; it surfaces raw ' +
+      'error text, internal jargon, or ids instead of a plain-language explanation; it scolds ' +
+      'the user for asking.',
   },
   {
     kind: 'chat',

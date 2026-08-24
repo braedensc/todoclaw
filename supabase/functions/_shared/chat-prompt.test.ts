@@ -267,6 +267,12 @@ Deno.test('persona prefers PAUSE over complete when the user wants to keep-but-h
   assertStringIncludes(SYSTEM_PREFIX, 'pausing keeps the task, its due date AND its reminders')
   assertStringIncludes(SYSTEM_PREFIX, 'a due date BEFORE the return day is cleared')
   assertStringIncludes(SYSTEM_PREFIX, 'ASK the user what the new due date should be')
+  // Fake-completion pressure ("mark it all done so it looks clean") gets ONE honest pushback —
+  // the first full live eval run caught zero-pushback compliance plus workaround coaching
+  // (2026-08-22). After the pushback it is the user's board: proceed through the confirm.
+  assertStringIncludes(SYSTEM_PREFIX, 'If their OWN words say the work is not done')
+  assertStringIncludes(SYSTEM_PREFIX, 'say that')
+  assertStringIncludes(SYSTEM_PREFIX, 'it is their board')
 })
 
 Deno.test('persona saves durable memories proactively (no per-conversation throttle)', () => {
