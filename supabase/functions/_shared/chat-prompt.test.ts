@@ -136,8 +136,14 @@ Deno.test(
   () => {
     assertStringIncludes(SYSTEM_PREFIX, 'APP GUIDE')
     assertStringIncludes(SYSTEM_PREFIX, 'Never invent a feature')
-    // The biggest historical blind spots: mobile (no grid), reminders defaults, recovery, habits.
-    assertStringIncludes(SYSTEM_PREFIX, 'Phones have NO grid')
+    // The biggest historical blind spots: mobile, reminder defaults, recovery, habits.
+    // The mobile fact ROTTED: this pinned "Phones have NO grid" for a month after the touch grid
+    // shipped (#332-#339), and SCOPE tells BabyClaw to answer "the app does not do it" from this
+    // guide — so it confidently denied a shipped feature to the users who had it. Pin the entry
+    // points now, so the same rot fails loudly instead of misinforming.
+    assertStringIncludes(SYSTEM_PREFIX, 'phones DO have the full drag-and-drop grid')
+    assertStringIncludes(SYSTEM_PREFIX, 'More → "Grid view"')
+    assert(!SYSTEM_PREFIX.includes('Phones have NO grid'))
     assertStringIncludes(SYSTEM_PREFIX, 'Move to quadrant')
     assertStringIncludes(SYSTEM_PREFIX, 'default reminder')
     assertStringIncludes(SYSTEM_PREFIX, 'NO trash')

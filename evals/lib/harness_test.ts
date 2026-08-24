@@ -14,8 +14,8 @@ import {
   toolNotCalled,
   toolNotExecuted,
 } from './checks.ts'
-import { detPass, overallPass } from './report.ts'
-import type { ChatTrace, DbSnapshot, PlanScenario, ScenarioResult } from './types.ts'
+import { detPass, diffLines, overallPass } from './report.ts'
+import type { ChatTrace, DbSnapshot, PlanScenario, RunReport, ScenarioResult } from './types.ts'
 import type { PlanResult } from '../../supabase/functions/_shared/plan-prompt.ts'
 
 // checks may return one result or a list; every combinator used here returns one
@@ -270,4 +270,37 @@ Deno.test('noFarDatedOverDue catches exactly the reported failure', () => {
   )
   // Nothing far-dated taken → fine even with the deadline unplanned (deadlinesCovered owns that).
   assertEquals(one(noFarDatedOverDue(['d1'], ['f1'])(planOf(), scOf())).pass, true)
+})
+
+// REGRESSION (audit, 2026-08-24): the baseline diff summed the four judge axes, so a candidate
+// model that got WORSE at picking the right task but warmer in tone (correctness 5→1, tone 1→5)
+// summed to zero and printed no line at all — on the very report the Haiku switch is decided from.
+Deno.test('baseline diff surfaces a correctness drop that tone gains cancel out', () => {
+  const judged = (scores: Record<string, number>): ScenarioResult => ({
+    id: 'x',
+    kind: 'chat',
+    tags: [],
+    title: 'x',
+    deterministic: [{ name: 'a', pass: true }],
+    judge: { verdict: 'pass', scores, reasoning: 'r' },
+    durationMs: 1,
+    usage: { input: 0, output: 0 },
+  })
+  const wrap = (res: ScenarioResult): RunReport => ({
+    startedAt: '2026-08-24T00:00:00.000Z',
+    gitRef: 'test',
+    model: 'test',
+    judgeModel: 'test',
+    results: [res],
+  })
+  const { lines, qualityDrops } = diffLines(
+    wrap(judged({ correctness: 5, faithfulness: 5, tone: 1, brevity: 3 })),
+    wrap(judged({ correctness: 1, faithfulness: 5, tone: 5, brevity: 3 })),
+    'baseline.json',
+  )
+  const text = lines.join('\n')
+  // Both verdicts still PASS and the axes sum to zero — the old code printed nothing here.
+  assert(text.includes('correctness -4'), text)
+  assert(text.includes('QUALITY'), text)
+  assertEquals(qualityDrops, 1)
 })

@@ -86,17 +86,17 @@ export async function saveReport(report: RunReport, path?: string): Promise<stri
   return target
 }
 
-export async function compareToBaseline(baselinePath: string, current: RunReport): Promise<void> {
-  let baseline: RunReport
-  try {
-    baseline = JSON.parse(await Deno.readTextFile(baselinePath)) as RunReport
-  } catch (e) {
-    console.error(`could not read baseline ${baselinePath}: ${e}`)
-    return
-  }
+/** Pure core of the baseline diff: report-in, lines-out, no I/O — so the cancellation regression
+ * below can be unit-tested without granting the test task write access. */
+export function diffLines(
+  baseline: RunReport,
+  current: RunReport,
+  baselinePath: string,
+): { lines: string[]; regressions: number; qualityDrops: number } {
   const byId = new Map(baseline.results.map((res) => [res.id, res]))
   const lines: string[] = ['', `── vs baseline ${baselinePath} (${baseline.gitRef}) ──`]
   let regressions = 0
+  let qualityDrops = 0
   for (const res of current.results) {
     const base = byId.get(res.id)
     if (!base) {
@@ -109,11 +109,27 @@ export async function compareToBaseline(baselinePath: string, current: RunReport
       lines.push(`  ${now ? '↑ FIXED' : '↓ REGRESSED'} ${res.id}`)
       if (!now) regressions++
     } else if (res.judge && base.judge) {
-      const delta = Object.entries(res.judge.scores)
-        .map(([k, v]) => v - (base.judge!.scores[k] ?? v))
-        .reduce((a, b) => a + b, 0)
-      if (delta !== 0)
-        lines.push(`  ${delta > 0 ? '↑' : '↓'} ${res.id} judge Σ${delta > 0 ? '+' : ''}${delta}`)
+      // PER-AXIS, never summed. A summed delta cancels: correctness 5→1 with tone 1→5 is Σ0, so
+      // the old code printed NOTHING for a model that started picking the wrong task but writing
+      // more warmly — on the very report the model-switch gate is decided from. Correctness and
+      // faithfulness are the "did it do the right thing" axes; a drop in either is flagged on its
+      // own merits however the other axes moved.
+      const deltas = (['correctness', 'faithfulness', 'tone', 'brevity'] as const)
+        .map(
+          (k) =>
+            [k, res.judge!.scores[k] - (base.judge!.scores[k] ?? res.judge!.scores[k])] as const,
+        )
+        .filter(([, d]) => d !== 0)
+      if (deltas.length) {
+        const material = deltas.filter(
+          ([k, d]) => d < 0 && (k === 'correctness' || k === 'faithfulness'),
+        )
+        const rendered = deltas.map(([k, d]) => `${k} ${d > 0 ? '+' : ''}${d}`).join(', ')
+        const net = deltas.reduce((a, [, d]) => a + d, 0)
+        const mark = material.length ? '⚠ QUALITY' : net > 0 ? '↑' : '↓'
+        lines.push(`  ${mark} ${res.id} judge: ${rendered}`)
+        if (material.length) qualityDrops++
+      }
     }
   }
   for (const base of baseline.results) {
@@ -121,5 +137,20 @@ export async function compareToBaseline(baselinePath: string, current: RunReport
   }
   if (lines.length === 2) lines.push('  (no changes)')
   lines.push(regressions ? `  ${regressions} regression(s)` : '  no regressions')
-  console.log(lines.join('\n'))
+  // Surfaced separately from verdict regressions: these still PASSED, but got worse at the thing
+  // that matters. On a model-switch run this is the line to read before flipping anything.
+  if (qualityDrops)
+    lines.push(`  ${qualityDrops} correctness/faithfulness score drop(s) — review before switching`)
+  return { lines, regressions, qualityDrops }
+}
+
+export async function compareToBaseline(baselinePath: string, current: RunReport): Promise<void> {
+  let baseline: RunReport
+  try {
+    baseline = JSON.parse(await Deno.readTextFile(baselinePath)) as RunReport
+  } catch (e) {
+    console.error(`could not read baseline ${baselinePath}: ${e}`)
+    return
+  }
+  console.log(diffLines(baseline, current, baselinePath).lines.join('\n'))
 }

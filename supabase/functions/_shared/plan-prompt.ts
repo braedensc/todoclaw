@@ -155,7 +155,8 @@ export interface PlanResult {
   availableTime: string
   // Today's fixed times, earliest first. Always derived server-side; [] when nothing is timed today.
   anchors: PlanAnchor[]
-  // Recurring chores due today, derived like anchors — never model-chosen, never capped away.
+  // Recurring chores due today, derived like anchors — never model-chosen. CAPPED at MAX_CHORES
+  // (most overdue first); the prompt tells the model to name any overflow in prose.
   chores: PlanChore[]
   bigRock: Rock | null
   smallRocks: Rock[]
@@ -317,8 +318,10 @@ export const SYSTEM_PROMPT = [
   "   user's real availability. Treat any listed recurring commitments as time already on the",
   '   calendar — plan around them, and never propose a commitment itself as a task.',
   '   A task shown with a specific time TODAY (e.g. "due today at 3:00 PM") is a FIXED ANCHOR: it',
-  '   happens at that time, whether or not you mention it. The app lists every one of them for the',
-  '   user itself, in their own "fixed times today" strip — so do NOT emit an anchor as a bigRock or',
+  "   happens at that time, whether or not you mention it. The app shows these in the user's own",
+  '   "fixed times today" strip, but that strip is CAPPED at the first six by clock time — if the',
+  '   task list has a timed item today that is NOT in the FIXED TIMES block above, the card shows it',
+  '   nowhere, so name that one in your prose. Otherwise do NOT emit an anchor as a bigRock or',
   '   a smallRock (it would just show twice, and it is not a rock: the user is not choosing to do',
   '   it). Your job is to plan AROUND them: never give a rock a slot that collides with an anchor,',
   '   never schedule a long block over one, and size the day honestly against the time they eat.',
@@ -326,8 +329,10 @@ export const SYSTEM_PROMPT = [
   '   not re-list the times — the strip already does that, and a headline that recites them reads',
   '   like a duplicate.',
   '   A RECURRING CHORE listed as overdue, never done, or due today works the same way: the cadence',
-  '   the user set already decided it happens today, so the app lists every one of them in its own',
-  '   "chores due today" strip. Do NOT emit one as a bigRock or a smallRock — it would show twice,',
+  '   the user set already decided it happens today, so the app shows them in its own',
+  '   "chores due today" strip — capped at five, most overdue first; anything past that cap appears',
+  '   nowhere on the card, so say so in your prose if it matters.',
+  '   Do NOT emit one as a bigRock or a smallRock — it would show twice,',
   '   and it is not a choice the model makes. Count their (usually small) cost against the day, and',
   '   mention them naturally only where it shapes the plan; a chore due LATER (due tomorrow, in Nd)',
   '   is not in the strip and may be a rock like anything else.',
