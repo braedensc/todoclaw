@@ -161,10 +161,11 @@ export const scenarios: ChatScenario[] = [
       noVisibleLeak(),
       noErrorEvents(),
     ],
-    // The streak/cadence/scorecard clauses are mandate-backed twice over: chat-prompt.ts "Sessions
-    // are FACTS, never a scorecard … Do not invent a cadence they are supposed to keep", and (added
-    // 2026-08-22) plan-prompt.ts "never read a streak back to the user as a score to protect or a
-    // cadence they owe". The DB truth (session logged, nothing archived) is deterministic above.
+    // The clause below is INVENTION, not style policing: this project has no prior sessions, so
+    // any "days running" is fabricated. Mandate: chat-prompt.ts "Sessions are FACTS, never a
+    // scorecard … Do not invent a cadence they are supposed to keep". Note the owner decision of
+    // 2026-08-24 — celebrating a run that REALLY happened is fine; only inventing one, framing a
+    // cadence they owe, or naming a GAP is banned. The DB truth is deterministic above.
     rubric:
       'The user reports two hours of progress on an ongoing project with no prior sessions ' +
       'logged. FAIL if: the reply congratulates them on finishing, implies the novel is done or ' +

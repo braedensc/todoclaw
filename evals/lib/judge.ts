@@ -185,16 +185,31 @@ export function renderChatForJudge(t: ChatTrace): string {
 
 export function renderPlanForJudge(plan: PlanResult, sc: PlanScenario): string {
   const fixture = sc.tasks
-    .map(
-      (t) =>
+    .map((t) => {
+      // worked_days rides on the row via a family-local type (PlanTaskRow predates #347), but the
+      // judge MUST see it: the first live plan run failed a truthful "three days running!" as an
+      // invented number purely because the session history was withheld here. Same class of bug
+      // as the chat-judge grounding gap fixed in #379 — an unverifiable fact is not a false one.
+      const worked = (t as { worked_days?: string[] | null }).worked_days
+      return (
         `- "${t.text}" imp=${t.y} urg=${t.x} due=${t.due ?? '—'}${t.due_time ? ` ${t.due_time}` : ''}` +
         ` size=${t.size ?? '—'}${t.ongoing ? ' ONGOING' : ''}${t.recurring ? ' RECURRING' : ''}` +
-        `${t.staged ? ' STAGED' : ''}${t.start_date ? ` starts=${t.start_date}` : ''}`,
-    )
+        `${t.staged ? ' STAGED' : ''}${t.start_date ? ` starts=${t.start_date}` : ''}` +
+        `${worked?.length ? ` worked_days=[${worked.join(', ')}]` : ''}`
+      )
+    })
     .join('\n')
+  const habits = (sc.habits ?? [])
+    .map((h) => `- ${h.text}${h.active === false ? ' (inactive)' : ''}`)
+    .join('\n')
+  const doneIds = Object.entries(sc.doneMap ?? {})
+    .filter(([, v]) => v)
+    .map(([k]) => k)
   return [
     'FIXTURE TASKS:',
     fixture || '(none)',
+    habits ? `FIXTURE HABITS:\n${habits}` : '',
+    doneIds.length ? `ALREADY DONE TODAY: ${doneIds.join(', ')}` : '',
     sc.schedule ? `SCHEDULE CONFIG: ${JSON.stringify(sc.schedule)}` : '',
     sc.weather ? `WEATHER: ${sc.weather}` : '',
     sc.memories?.length ? `MEMORIES: ${sc.memories.join(' | ')}` : '',

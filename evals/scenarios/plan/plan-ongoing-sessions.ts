@@ -221,10 +221,13 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'The only task is an ongoing novel with a session already logged today; the no-rocks rest ' +
-      'day and its exclusion are machine-checked. FAIL if: the prose asks for or suggests a ' +
-      'second session on the novel today; work not on the board is invented or assigned; the ' +
-      'user is pressured to do more today.',
+      'The only task is an ongoing novel with a session already logged today, three days running ' +
+      '(worked_days is in the fixture above); one active habit, Morning stretch. The no-rocks ' +
+      'rest day and the exclusion are machine-checked. Naming the run warmly ("three days ' +
+      'running") and nodding at the seeded habit are both grounded and fine. FAIL if: the prose ' +
+      'asks for or suggests a second session on the novel today; work not on the board is ' +
+      'invented or assigned; the user is pressured to do more today, or told they owe the ' +
+      'project a daily cadence.',
   },
   {
     kind: 'plan',
@@ -326,15 +329,15 @@ export const scenarios: PlanScenario[] = [
       deadlinesCovered(['wy3']),
       rocksResolve(),
     ],
-    // The streak-prose conditions are mandate-backed as of 2026-08-22: plan-prompt.ts's ONGOING
-    // PROJECTS block now says "never read a streak back to the user as a score to protect or a
-    // cadence they owe" — the rubric cites that shipped line, not authorial taste.
+    // Owner decision 2026-08-24: celebrating a real run of sessions is FINE, so the old
+    // "reads the streak back as a score" clause is gone. What survives is mandate-backed —
+    // plan-prompt.ts still bans framing a cadence the user OWES, and scolding is universal.
     rubric:
       'The novel (XL, ongoing) was worked yesterday and 3 days running; its big-rock exclusion, ' +
       'sizes, and deadline coverage are machine-checked. FAIL if: the user is scolded or ' +
       'guilt-tripped about resting the project or about the day’s load; the prose implies the ' +
-      'user owes the project a daily cadence, or reads the streak back as a score to protect; a ' +
-      'task or deadline is invented.',
+      'user OWES the project a daily cadence, or treats a run of sessions as something they must ' +
+      'not break (warmly noting the run itself is fine); a task or deadline is invented.',
   },
   {
     kind: 'plan',

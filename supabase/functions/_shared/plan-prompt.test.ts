@@ -375,8 +375,13 @@ Deno.test('SYSTEM_PROMPT paces ongoing projects on raw facts, with no verdict an
   assertStringIncludes(SYSTEM_PROMPT, 'NEVER name the gap to')
   assertStringIncludes(SYSTEM_PROMPT, 'never imply neglect')
   // Streaks are reasoning input, never user-visible verdict prose (owner doctrine: no
-  // mechanical cadence — extended to streak read-backs 2026-08-22).
-  assertStringIncludes(SYSTEM_PROMPT, 'never read a streak back')
+  // mechanical cadence). Owner decision 2026-08-24: celebrating a real run of sessions IS
+  // allowed ("three days running — nice"); only the GAP is banned from user copy, and that ban
+  // is now stated twice — in ONGOING PROJECTS and again in the write-time copy rules, because
+  // the first live plan run leaked "It's been sitting for a while" into a nudge's `why`.
+  assertStringIncludes(SYSTEM_PROMPT, 'THE GAP WORKS THE OTHER WAY')
+  assertStringIncludes(SYSTEM_PROMPT, 'HOW LONG it has been since an ongoing')
+  assert(!SYSTEM_PROMPT.includes('never read a streak back'))
   // Worked today is stated as off-the-table, matching the id-less block.
   assertStringIncludes(SYSTEM_PROMPT, 'ALREADY LOGGED TODAY is not on the table at all')
   // Still no verdict vocabulary anywhere the model reads.
