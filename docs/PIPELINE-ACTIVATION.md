@@ -57,12 +57,20 @@ activation trips the scope fence as well; that second signal is expected.
 > kept byte-identical to upstream on purpose (so `/sync-kit` can tell a real drift
 > from a reformat), so the stale pointer is left in the file rather than patched out.
 >
-> One consequence of activating a file: `.prettierignore` exempts
-> `templates/workflows/` but **not** `.github/workflows/`, so a workflow becomes
-> Prettier-gated the moment it moves. Every template is Prettier-clean today, so
-> nothing had to be reformatted — but if a future re-sync brings one that is not,
-> activating it forces a reformat and that file stops being byte-identical to
-> upstream. Fix it upstream in the kit rather than reformatting on the way in.
+> **Activation must not change a file's formatting ownership.** `.prettierignore`
+> exempts `templates/workflows/`, so for a while activation quietly moved a
+> workflow *into* Prettier's scope — and a reformatted file can no longer be
+> compared byte-for-byte against upstream, which is exactly how `/sync-kit` tells
+> a real drift from a cosmetic one. That every template happens to be
+> Prettier-clean today is luck, not a property; the first re-sync of a workflow
+> that is not clean would have had it reformatted on the way in.
+>
+> Fixed by extending `.prettierignore` with `.github/workflows/pipeline-*.yml`
+> (TOD-108), scoped to the vendored files only — the rest of `.github/workflows/`
+> is todoclaw's own and stays under Prettier. **Every future activation extends
+> that ignore list in the same PR**, so the file's formatting owner is the same
+> before and after the `git mv`. If a vendored workflow really is misformatted,
+> fix it upstream in the kit rather than reformatting on the way in.
 
 ---
 
@@ -124,7 +132,7 @@ the alternative for `subscription` auth and is **not** needed unless that change
 | Workflow | Trigger | Secrets | Variables |
 |---|---|---|---|
 | `pipeline-safe-outputs.yml` | `workflow_call` (never standalone) | `LINEAR_API_KEY` | — |
-| `pipeline-failure-alert.yml` | `workflow_run` | none | — |
+| `pipeline-failure-alert.yml` | `workflow_run` (watches `CI`, `DB Backup`) | none | — |
 | `pipeline-review.yml` | `pull_request`, manual | `ANTHROPIC_API_KEY`, `LINEAR_API_KEY` | `PIPELINE_REVIEW_MODEL` (opt) |
 | `pipeline-dispatch.yml` | cron `*/15`, manual, `repository_dispatch` | `LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, **push credential** | `PIPELINE_APP_ID`, `PIPELINE_MODEL` (opt), `PIPELINE_DISPATCH_ENABLED` (kill switch) |
 | `pipeline-bounce.yml` | `workflow_run`, manual | `LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, **push credential** | `PIPELINE_APP_ID`, `PIPELINE_MODEL` (opt) |
@@ -184,16 +192,30 @@ git mv templates/workflows/pipeline-failure-alert.yml .github/workflows/pipeline
 
 No secrets at all. Turn it on early so a later activation that fails is visible.
 
-> ⚠️ **It ships watching `'Deploy (prod)'`, which `deploy-failure-alert.yml`
-> already watches.** Both are active, both open-or-comment on an issue, and their
-> titles differ (`🚨 Production deploy is failing` vs
-> `🚨 Deploy (prod) is failing on main`), so a failed prod deploy now opens **two**
-> issues and sends two notifications. Nothing is lost — it is duplicate noise, and
-> it only shows up when a deploy actually fails. Resolve it by editing the
-> `workflows:` watch list (the file marks it `EDIT ME`) to name workflows nothing
-> else covers — `'CI'` and `'DB Backup'` are the uncovered ones — or by deleting
-> the older `deploy-failure-alert.yml`, whichever you prefer. Left as-is
-> deliberately rather than decided unilaterally during activation.
+**Watch list: `'CI'` and `'DB Backup'`** — corrected in TOD-108. It *shipped*
+watching `'Deploy (prod)'`, which todoclaw's own `deploy-failure-alert.yml`
+already watched. Both open-or-comment on an issue keyed by an exact title match,
+and their titles differ (`🚨 Production deploy is failing` vs
+`🚨 Deploy (prod) is failing on main`), so they could not dedupe against each
+other: one failed deploy meant two issues and two notifications.
+
+**Prod deploys are deliberately excluded here.** `deploy-failure-alert.yml` was
+purpose-built for them — its issue body names the likely causes and points at the
+*Apply migrations to prod* step — so it keeps that job, and this workflow covers
+what nothing else did:
+
+| Watched | Why it needs an alert |
+|---|---|
+| `CI` (`ci.yml`) | Runs on push to `main`. A post-merge CI failure also stops `deploy.yml`, which triggers on CI completing — so nothing downstream fires and nothing else says so. |
+| `DB Backup` (`backup.yml`) | Daily cron, no other consumer. A silently failing backup is only discovered when it is needed. |
+
+The `head_branch == 'main'` guard keeps PR runs of `CI` out of it — a red feature
+branch is the author's normal feedback loop, not an outage. Scheduled runs report
+`head_branch` as the default branch, so `DB Backup` passes the same guard.
+
+> Adding a watched workflow later means checking it against the table in
+> *What is active right now* first: two alert workflows on one target is not a
+> conflict GitHub reports, it is just duplicate mail.
 
 **3. Review — the first one that spends money.**
 
