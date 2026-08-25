@@ -16,7 +16,7 @@ import {
 } from '../supabase/functions/_shared/guardrails-constants.ts'
 import { mockAnthropic } from './lib/mock.ts'
 import { runScenarios } from './lib/runner.ts'
-import { compareToBaseline, printSummary, saveReport } from './lib/report.ts'
+import { baselineNameFor, compareToBaseline, printSummary, saveReport } from './lib/report.ts'
 import type { RunReport, Scenario } from './lib/types.ts'
 
 function flag(name: string): boolean {
@@ -146,11 +146,22 @@ const report: RunReport = {
 
 const { failed } = printSummary(report)
 
-const savedTo = await saveReport(
+// --save-baseline [path]: defaults to a name carrying the surfaces + model, so a plan baseline can
+// never overwrite a chat one (that happened, and the chat sweep is the expensive one). The
+// timestamped run file is written either way.
+const saved = await saveReport(
   report,
-  flag('save-baseline') ? 'results/baseline.json' : undefined,
+  flag('save-baseline') ? (opt('save-baseline') ?? baselineNameFor(report)) : undefined,
 )
-console.log(`report: evals/${savedTo}`)
+console.log(`report: evals/${saved.runPath}`)
+if (saved.baselinePath) {
+  console.log(`baseline: evals/${saved.baselinePath}`)
+  console.log(
+    `  compare a candidate with:  npm run eval -- ${[...new Set(report.results.map((r) => r.kind))]
+      .map((k) => `--kind ${k}`)
+      .join(' ')} --model <candidate> --baseline ${saved.baselinePath}`,
+  )
+}
 
 const baseline = opt('baseline')
 if (baseline) await compareToBaseline(baseline, report)

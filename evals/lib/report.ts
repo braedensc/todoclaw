@@ -79,11 +79,28 @@ export function printSummary(report: RunReport): { failed: number; expectedFail:
   return { failed, expectedFail }
 }
 
-export async function saveReport(report: RunReport, path?: string): Promise<string> {
-  const target = path ?? `results/run-${report.startedAt.replace(/[:.]/g, '-')}.json`
+/** A baseline filename that cannot collide across surfaces or models: `--save-baseline` used to
+ * write one fixed `results/baseline.json`, so saving a plan baseline silently destroyed the chat
+ * baseline captured minutes earlier (and a chat sweep is the expensive one). Kinds + model in the
+ * name make that impossible, and the timestamped run file is now ALWAYS written too, so no run is
+ * ever save-only. */
+export function baselineNameFor(report: RunReport): string {
+  const kinds = [...new Set(report.results.map((r) => r.kind))].sort().join('-') || 'empty'
+  const model = report.model.replace(/[^a-z0-9.-]+/gi, '-')
+  return `results/baseline-${kinds}-${model}.json`
+}
+
+export async function saveReport(
+  report: RunReport,
+  baselinePath?: string,
+): Promise<{ runPath: string; baselinePath?: string }> {
   await Deno.mkdir('results', { recursive: true }).catch(() => {})
-  await Deno.writeTextFile(target, JSON.stringify(report, null, 2))
-  return target
+  const runPath = `results/run-${report.startedAt.replace(/[:.]/g, '-')}.json`
+  const body = JSON.stringify(report, null, 2)
+  // The run file is written unconditionally — losing a paid run to a flag is not acceptable.
+  await Deno.writeTextFile(runPath, body)
+  if (baselinePath) await Deno.writeTextFile(baselinePath, body)
+  return { runPath, ...(baselinePath ? { baselinePath } : {}) }
 }
 
 /** Pure core of the baseline diff: report-in, lines-out, no I/O — so the cancellation regression
@@ -94,7 +111,25 @@ export function diffLines(
   baselinePath: string,
 ): { lines: string[]; regressions: number; qualityDrops: number } {
   const byId = new Map(baseline.results.map((res) => [res.id, res]))
-  const lines: string[] = ['', `── vs baseline ${baselinePath} (${baseline.gitRef}) ──`]
+  // Comparing a chat baseline against a plan run is meaningless — every id is "new" and the
+  // report reads as though nothing regressed. Say so loudly rather than printing a clean diff.
+  const kindsOf = (r: RunReport) => [...new Set(r.results.map((x) => x.kind))].sort().join('+')
+  if (kindsOf(baseline) !== kindsOf(current)) {
+    console.warn(
+      `  ⚠️  baseline covers ${kindsOf(baseline)} but this run is ${kindsOf(current)} — ` +
+        'these are not comparable; the diff below is meaningless.',
+    )
+  }
+  if (baseline.model === current.model) {
+    console.warn(
+      `  ⚠️  baseline and this run used the SAME model (${current.model}) — ` +
+        'a model-switch gate needs the baseline captured on the prod model.',
+    )
+  }
+  const lines: string[] = [
+    '',
+    `── vs baseline ${baselinePath} (${baseline.gitRef}, ${baseline.model}) → this run (${current.model}) ──`,
+  ]
   let regressions = 0
   let qualityDrops = 0
   for (const res of current.results) {

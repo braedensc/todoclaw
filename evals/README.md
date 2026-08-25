@@ -101,14 +101,22 @@ npm run eval:check
 npm run eval -- --filter ongo- --no-judge
 
 # 2. Baseline on the PROD model
-npm run eval -- --kind chat --save-baseline        # → results/baseline.json
+npm run eval -- --kind chat --save-baseline
+#   → results/baseline-chat-claude-sonnet-5.json  (name carries surface + model)
 
 # 3. Candidate sweep
-npm run eval -- --kind chat --model claude-haiku-4-5 --baseline results/baseline.json
+npm run eval -- --kind chat --model claude-haiku-4-5 \
+  --baseline results/baseline-chat-claude-sonnet-5.json
 
 # 4. Targeted repeats — ONLY on what flaked or regressed
 npm run eval -- --filter <scenario-id> --model claude-haiku-4-5 --repeat 3
 ```
+
+`--save-baseline` names the file after the surfaces + model in it, so a plan baseline can never
+overwrite a chat one (that happened once, and the chat sweep is the expensive one). The timestamped
+run file is written too, always — no run is ever save-only. Pass `--save-baseline <path>` to choose
+the name yourself. The diff warns if the baseline covers different surfaces than the run, or if both
+used the same model.
 
 **Reading the diff.** `↓ REGRESSED` is a verdict flip and is disqualifying. `⚠ QUALITY` marks a
 scenario that still passed but dropped on **correctness or faithfulness** — the two axes that mean
