@@ -29,12 +29,14 @@ name: Pipeline failure alert
 on:
   workflow_run:
     # Watch list — EDIT ME. Each entry must match a watched workflow's top-level
-    # `name:` exactly. Ships watching the kit's deploy template; uncomment or
-    # add any post-merge workflow whose failure should page you (one per line).
+    # `name:` exactly. Narrowed for todoclaw to the post-merge workflows nothing
+    # else covers. `'Deploy (prod)'` is deliberately ABSENT: this repo's own
+    # `deploy-failure-alert.yml` was purpose-built for it and already watches it,
+    # and the two title their issues differently, so the exact-title dedupe below
+    # cannot collapse them (docs/PIPELINE-ACTIVATION.md).
     workflows:
-      - 'Deploy (prod)'
-      # - 'DB Backup'
-      # - 'CI'
+      - 'CI'
+      - 'DB Backup'
     types: [completed]
 
 permissions:

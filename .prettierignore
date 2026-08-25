@@ -16,6 +16,18 @@ schemas/*.json
 delivery.example.json
 templates/workflows/
 
+# ...and the same files once activated. Activation is a `git mv` across the
+# boundary above, so without this line a workflow silently changes formatting
+# owner the moment it turns on. Today every template happens to be
+# Prettier-clean, so nothing was reformatted — that is luck, not a property: a
+# future /sync-kit bringing across a workflow that is NOT clean would get it
+# reformatted on the way in, and a reformatted file can no longer be compared
+# byte-for-byte against upstream, which is exactly how /sync-kit tells a real
+# drift from a cosmetic one. Deliberately scoped to the vendored `pipeline-*`
+# files — the rest of `.github/workflows/` is todoclaw's own and stays under
+# Prettier.
+.github/workflows/pipeline-*.yml
+
 # Sibling git worktrees checked out inside the main checkout (docs/COLLABORATION.md).
 # Prettier already skips these via its default .gitignore honouring — this entry makes the
 # exclusion explicit and independent of that default, so `format:check` can never start
