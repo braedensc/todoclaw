@@ -125,9 +125,15 @@ Grant the App or PAT nothing beyond the two permissions above — in particular 
 
 Secrets and variables both live under **Settings → Secrets and variables → Actions**.
 
-todoclaw's `delivery.json` sets `auth.scheduled` and `auth.review` to `api-key`, so
-the model credential here is **`ANTHROPIC_API_KEY`**. `CLAUDE_CODE_OAUTH_TOKEN` is
-the alternative for `subscription` auth and is **not** needed unless that changes.
+todoclaw's `delivery.json` sets `auth.review` to `api-key`, so the model credential
+for every workflow in the table below is **`ANTHROPIC_API_KEY`** — they all run in
+GitHub Actions, where no interactive credential exists.
+
+`auth.scheduled` is **`subscription`**, because the unattended lane is no longer a
+workflow: `dispatch.backend` is `local-daemon`, and a daemon starts its sessions
+under `CLAUDE_CODE_OAUTH_TOKEN` on the operator's own machine. That field only
+*describes* which credential a lane uses — it configures nothing — so the secret
+lives wherever the daemon runs, not in this repository.
 
 | Workflow | Trigger | Secrets | Variables |
 |---|---|---|---|
@@ -227,15 +233,27 @@ Runs on `pull_request`, so it exercises the safe-outputs path on real PRs withou
 anything having to dispatch a session first. Needs `ANTHROPIC_API_KEY` and
 `LINEAR_API_KEY`.
 
-**4. Dispatch — the queue starts moving here.**
+**4. Dispatch — superseded while `dispatch.backend` is `local-daemon`.**
 
 ```bash
 git mv templates/workflows/pipeline-dispatch.yml .github/workflows/pipeline-dispatch.yml
 ```
 
-Do not activate this before **Step 0** is done. Set `PIPELINE_DISPATCH_ENABLED` to
-`"false"` first if you want it merged but paused, then flip it when ready. Watch
-`budgets.dailyUsd` (currently `50.0`) and `budgets.wipLimit` (`3`).
+**Do not run this step as things stand.** This file *is* the `github-actions`
+dispatcher, and contract §9 binds each backend to its own state store, so the
+workflow asserts `dispatch.backend == "github-actions"` before it loads state and
+exits 1 otherwise. `delivery.json` now says `local-daemon` — Cyrus dispatches from
+the operator's machine — so activating this buys a red run on every cron tick and
+no queue movement. It stays staged until the backend says `github-actions` again.
+
+Whichever dispatcher is driving, watch `budgets.dailyUsd` (currently `50.0`) and
+`budgets.wipLimit` (`3`) — and note that a single `effort:L` run is now capped at
+`maxUsd` `45.0`, which is most of that daily figure.
+
+If the backend does go back to `github-actions`: do not activate before **Step 0**
+is done, set `dispatch.statePath` back to `null` (the workflow refuses a configured
+store it would silently ignore), and set `PIPELINE_DISPATCH_ENABLED` to `"false"`
+first if you want it merged but paused.
 
 Both label-reading loops import `scripts/pipeline_labels.py`, and the step exits
 with an error if that import fails rather than resolving labels its own way — so
