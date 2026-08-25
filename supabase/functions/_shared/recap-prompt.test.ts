@@ -115,7 +115,8 @@ Deno.test('a pure-bookkeeping day is asked about, never congratulated', () => {
   })
   // Board upkeep is quarantined in its own block, explicitly labelled as not-an-achievement...
   assertStringIncludes(p, 'BOOKKEEPING')
-  assertStringIncludes(p, 'never celebrate as achievement')
+  assertStringIncludes(p, 'never celebrate it as achievement')
+  assertStringIncludes(p, 'You may NAME what they did')
   assert(!p.includes('ALSO FINISHED TODAY')) // nothing real was finished
   // ...and the prompt says outright what to do instead of finding a silver lining.
   assertStringIncludes(p, 'Nothing was actually finished today')
@@ -123,11 +124,12 @@ Deno.test('a pure-bookkeeping day is asked about, never congratulated', () => {
   assertStringIncludes(p, 'STILL OPEN FROM THEIR PLAN')
 })
 
-// A NOTHING day (no finishes, no sessions, no open items) withholds the upkeep DETAIL by
-// construction: two paid eval runs both narrated the items back despite an explicit ban, so the
-// model now learns THAT tidying happened but not WHAT. Days with real content keep the itemized
-// block (pinned by the tests above).
-Deno.test('buildRecapUserPrompt: nothing-day upkeep is aggregated, never itemized', () => {
+// OWNER DECISION 2026-08-24 — REVERSED. An earlier fix withheld the upkeep items on a nothing-day
+// (aggregate count only) after two paid runs narrated them back. But #346's actual bug was upkeep
+// dressed as ACHIEVEMENT ("good little planning day — proud of you"), not upkeep being named: a
+// user who spent the evening reorganising got a content-free "board looks tidier" and the model
+// could not tell them what it saw. Name the fact, ban the verdict — brevity is the word cap's job.
+Deno.test('buildRecapUserPrompt: upkeep is itemized even on a nothing-day', () => {
   const p = buildRecapUserPrompt({
     dayName: 'Saturday',
     name: null,
@@ -141,16 +143,13 @@ Deno.test('buildRecapUserPrompt: nothing-day upkeep is aggregated, never itemize
     habitsKept: [],
   })
   assertStringIncludes(p, 'BOOKKEEPING')
-  assertStringIncludes(p, '2 small bits of board tidying')
-  assertStringIncludes(p, 'do not list or describe them')
-  // The item texts themselves must be absent — narration is impossible, not discouraged.
-  assert(!p.includes('shed shelving'))
-  assert(!p.includes('furnace filter'))
-  // Owner decision 2026-08-22: a nothing-day is an ULTRA-BRIEF sign-off — one or two short lines,
-  // no question. The ask-about-open-items instruction must NOT fire (there is nothing open).
-  assertStringIncludes(p, 'ONE or TWO short lines')
-  assertStringIncludes(p, 'no question')
-  assert(!p.includes('question about the open items'))
+  // The model can see WHAT they did...
+  assertStringIncludes(p, 'shed shelving')
+  assertStringIncludes(p, 'furnace filter')
+  // ...and is still barred from treating any of it as an achievement.
+  assertStringIncludes(p, 'never celebrate it as achievement')
+  assertStringIncludes(p, 'never call it a good planning day')
+  assert(!p.includes('do not list or describe them'))
 })
 
 // A session on an ongoing project is real work, but it is NOT a finish — the model must be able to

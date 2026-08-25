@@ -110,6 +110,9 @@ Deno.test('system prompt carries no personal training copy, and stays generic', 
   assert(!/marathon|training plan|long run\b|weekly mileage|race pace/i.test(SYSTEM_PROMPT))
   assert(!/schedule\.running|running\?:/i.test(SYSTEM_PROMPT))
   assert(SYSTEM_PROMPT.includes('recurring commitments'))
+  // Branding (#280): camel-C everywhere. The chat-prompt pin guarded only its own file, so this
+  // prompt shipped "You are todoclaw" — the guard missed the live violation it existed to catch.
+  assert(!SYSTEM_PROMPT.includes('todoclaw'))
 })
 
 Deno.test('system prompt distinguishes a fixed appointment from a due-by deadline', () => {
@@ -376,7 +379,11 @@ Deno.test('SYSTEM_PROMPT paces ongoing projects on raw facts, with no verdict an
   // The rhythm is read out of the facts, never turned into a cadence…
   assertStringIncludes(SYSTEM_PROMPT, 'do NOT turn them into a fixed every-N-days cadence')
   assertStringIncludes(SYSTEM_PROMPT, 'worked yesterday — normally leave it today')
-  assertStringIncludes(SYSTEM_PROMPT, 'three or more days running — let it rest')
+  // Owner decision 2026-08-24: the "three or more days running — let it rest" rung is DELETED.
+  // It benched a project the user was mid-push on, and sat directly under "do NOT turn them into a
+  // fixed every-N-days cadence" — the exact thing it was.
+  assertStringIncludes(SYSTEM_PROMPT, 'they are mid-push; that is their call, not yours')
+  assert(!SYSTEM_PROMPT.includes('let it rest'))
   assertStringIncludes(SYSTEM_PROMPT, 'four or more days ago — fully fresh')
   assertStringIncludes(SYSTEM_PROMPT, 'no sessions logged yet — no signal at all')
   assertStringIncludes(SYSTEM_PROMPT, 'never push it just to fill an empty slot')
@@ -393,8 +400,10 @@ Deno.test('SYSTEM_PROMPT paces ongoing projects on raw facts, with no verdict an
   // Worked today is stated as off-the-table, matching the id-less block.
   assertStringIncludes(SYSTEM_PROMPT, 'ALREADY LOGGED TODAY is not on the table at all')
   // Still no verdict vocabulary anywhere the model reads.
+  // Word-BOUNDED: a bare substring ban here fires on "interesting" and "harvesting", which is the
+  // same blunt-guard bug as the retired 'running' pin. Ban the verdict word, not the letters.
   for (const verdict of ['resting', 'cooling', 'due for a session']) {
-    assert(!SYSTEM_PROMPT.toLowerCase().includes(verdict), `no verdict word: ${verdict}`)
+    assert(!new RegExp(`\\b${verdict}\\b`, 'i').test(SYSTEM_PROMPT), `no verdict word: ${verdict}`)
   }
   // The numbered rules stay 1..7 — this is prose inside an existing section, not a rule 8.
   for (const n of [1, 2, 3, 4, 5, 6, 7]) assert(SYSTEM_PROMPT.includes(`\n${n}. `))

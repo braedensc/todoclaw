@@ -1129,9 +1129,10 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'delete_task',
     description:
-      'Delete a task. There is NO trash surface in the app — the only recovery is restoring a ' +
-      'Settings → Backups snapshot that still contains it, so never call deletion easily ' +
-      'reversible. Destructive — the user is asked to confirm before it runs.',
+      'Delete a task. It disappears from the app for good — there is NO trash surface, and the only ' +
+      'way back is restoring a Settings → Backups snapshot that still contains it. Say that, not ' +
+      'that it is erased: the row is soft-deleted and retained, so never promise a user that ' +
+      'deleting scrubs anything. Destructive — the user is asked to confirm before it runs.',
     destructive: true,
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {

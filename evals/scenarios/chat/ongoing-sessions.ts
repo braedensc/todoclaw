@@ -156,7 +156,14 @@ export const scenarios: ChatScenario[] = [
       noHistoryMatching(/novel/i),
       // Invention canary: one session is not a run. workedPhrase only says "N days running" at
       // streak >= 2, and this project has no prior sessions at all.
-      bodyLacks(0, /days running|streak|on a roll/i, 'no invented streak on a first session'),
+      // Narrowed to the FABRICATION shape. "You were on a roll" is about the single two-hour
+      // sitting the user just described — true, warm, and invented by nobody; the bare words were
+      // banned as collateral. A multi-day count is the only thing this project cannot have.
+      bodyLacks(
+        0,
+        /\b\d+\s+days?\s+(running|in a row|straight)\b/i,
+        'no invented multi-day run on a first session',
+      ),
       statusLineAlways(),
       noVisibleLeak(),
       noErrorEvents(),
