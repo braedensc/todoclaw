@@ -92,6 +92,19 @@ activation trips the scope fence as well; that second signal is expected.
 >
 > A future activation of a file that does *not* match `pipeline-*` — or any
 > vendored file arriving under a different name — does still need its own entry.
+>
+> **One deliberate divergence from upstream, pending a port: `pipeline-review.yml`
+> (TOD-110).** Its trigger is `[opened, synchronize]` plus a gate step in
+> `snapshot`, where the kit's copy is `[opened]` only, and its `concurrency` is
+> `cancel-in-progress: false` where the kit's is `true`. That is a **fix, not
+> drift** — `opened` alone leaves a PR that opens `CONFLICTING` unreviewable
+> forever (step 3 below has the mechanism). `/sync-kit` will report this one file
+> as diverged; that report is correct and expected. The resolution is to port the
+> change upstream, **not** to revert it here: a companion kit ticket carries the
+> port, and until it merges an "upstream-newer" verdict on this file means a hand
+> merge that keeps the gate. This is the only file todoclaw intentionally holds
+> apart from the kit — every other vendored workflow is still byte-identical, and
+> a diff on any of them is real drift.
 
 ---
 
@@ -254,17 +267,54 @@ Runs on `pull_request`, so it exercises the safe-outputs path on real PRs withou
 anything having to dispatch a session first. Needs `ANTHROPIC_API_KEY` and
 `LINEAR_API_KEY`.
 
-**Trigger: `pull_request: [opened]` only — never `synchronize`.** A later push to
-an open PR does *not* re-review it, by design: bounce pushes commits, so
-re-reviewing on every push would multiply review spend by the number of fix
-pushes. A deliberate re-read is the `workflow_dispatch` input (`pr_number`), and
-costs a full review.
+**Trigger: `pull_request: [opened, synchronize]`, gated — one review per PR, but
+not one *chance* at it (TOD-110).** A push to an open PR still does not re-review
+it: the cheap `snapshot` job drops every `synchronize` before anything costs
+money unless the PR has no review yet. Bounce pushes commits, so re-reviewing on
+each one would multiply review spend by the number of fix pushes; the ceiling
+stays one model run per PR. A deliberate re-read is still the `workflow_dispatch`
+input (`pr_number`), which skips the gate and costs a full review.
 
-**Cost shape.** At most one model run per PR *opened*: `--max-turns 30` on
+**Why `synchronize` is listened for at all: `opened` alone had a hole with no
+floor.** GitHub creates **no `pull_request` workflow runs for a PR it cannot
+merge** — the run is not queued and retried, it simply never exists (the same
+effect behind "a DIRTY PR spawns no required-CI run", which
+`pr-conflict-monitor.yml` exists to surface). A PR that was `CONFLICTING` the
+moment it opened therefore spent its single `opened` event on a run that never
+happened, and resolving the conflict fires `synchronize` — which the workflow
+ignored. That PR was then unreviewable forever: no error, no skipped job, nothing
+in the checks list. TOD-109 hit exactly this — #405 merged mid-session, #406
+opened DIRTY at 20:09 and produced zero `pull_request` runs; the push that merged
+`main` in at 20:14 produced one, and `Pipeline review` never ran. Merging `main`
+in *before* opening a PR is still the right habit, but a PR that opens conflicted
+now recovers on the next push instead of needing a `workflow_dispatch`.
+
+**How "already reviewed" is decided, and why a skipped run does not count.** The
+gate looks for the review job's own findings artifact,
+`pipeline-review-findings-<PR>` — PR-scoped, one exact-match API call, the same
+idiom the pin lookup already uses. It deliberately does *not* read a workflow
+run's `pull_requests` field, which is empty far more often than its name suggests
+and is empty in this repository today. And a run that *skipped* — no credential,
+no pin yet — does not consume the chance: it spent nothing, and counting it as a
+review would silently re-arm the trap above. The artifact draws that line for
+free, because its upload step is `if: always()` inside the review job: present
+whenever the reviewer got its turn (including when the model errored, which did
+spend), absent when the review job never ran. Its 30-day retention is the one
+seam — a PR pushed more than a month after its review can earn a second one. If
+the artifact read itself fails, the gate **fails open with a warning**: not
+knowing must never be the reason a PR silently goes unreviewed, and being wrong
+in that direction costs exactly one bounded review.
+
+`concurrency` is `cancel-in-progress: false` for the same budget reason: a push
+landing mid-review would otherwise cancel a half-spent review and start a whole
+new one, so a burst of pushes would multiply spend by exactly the factor the gate
+forbids. The later run queues, then finds the finished artifact and exits cheap.
+
+**Cost shape.** At most one model run per PR: `--max-turns 30` on
 `claude-sonnet-5` (override with the `PIPELINE_REVIEW_MODEL` variable), a
 25-minute job timeout, under a closed `--allowedTools Read,Grep,Glob,Write`
 allowlist — no Bash, and no tool that reaches the network. So the ceiling is one
-bounded session per opened PR, not per push.
+bounded session per PR, not per push.
 
 It cannot block a merge, and it cannot approve. The model step is
 `continue-on-error`, so a failed review is a warning rather than a red check. The

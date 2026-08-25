@@ -7,12 +7,23 @@ name: Pipeline review
 #
 # ── THREE RULES, and each one is load-bearing ────────────────────────────────
 #
-# 1. `opened` ONLY — never `synchronize`.
-#    A bounce pushes commits. On `synchronize` every bounce would re-trigger a
-#    full review, so review spend multiplies with the number of fix pushes —
-#    exactly the loop the bounce budget exists to bound. Re-review after a fix
-#    is the BOUNCE workflow's job, once, deliberately. Need a fresh read on a
-#    PR that has moved? Use the workflow_dispatch input below.
+# 1. ONE review per PR — but not ONE CHANCE at it.
+#    A bounce pushes commits. Reviewing on every `synchronize` would multiply
+#    review spend by the number of fix pushes — exactly the loop the bounce
+#    budget exists to bound. Re-review after a fix is the BOUNCE workflow's
+#    job, once, deliberately.
+#    So `synchronize` IS listened for, and is thrown away in the first cheap
+#    job unless no review has been produced for this PR yet. That second half
+#    is not a nicety. GitHub creates NO `pull_request` runs at all for a PR it
+#    cannot merge, so a PR that is CONFLICTING the moment it opens spends its
+#    single `opened` event on a run that never exists — and resolving the
+#    conflict fires `synchronize`. Listening for `opened` alone therefore left
+#    such a PR unreviewable forever, with no error, no skipped job and nothing
+#    in the checks list. Observed here: #406 opened DIRTY at 20:09 and produced
+#    zero `pull_request` runs; the push that merged `main` in at 20:14 produced
+#    one. `Pipeline review` never ran.
+#    Need a fresh read on a PR that HAS been reviewed? Use the workflow_dispatch
+#    input below — deliberate, costs a review, and deliberately skips the gate.
 #
 # 2. COMMENT-ONLY — it must never approve, and must NEVER be a required check.
 #    Approval is prevented structurally, not by asking nicely:
@@ -40,10 +51,13 @@ name: Pipeline review
 # ══════════════════════════════════════════════════════════════════════════════
 
 on:
-  # `opened` only. See rule 1 — adding `synchronize` here multiplies review cost
-  # by the number of bounce pushes.
+  # `synchronize` is NOT a re-review trigger. It is here only so a PR that
+  # opened CONFLICTING — for which GitHub creates no run at all — still gets its
+  # one review once the conflict is resolved. The `chance` step in `snapshot`
+  # drops it before anything costs money whenever the review is not still owed.
+  # See rule 1.
   pull_request:
-    types: [opened]
+    types: [opened, synchronize]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -55,10 +69,14 @@ permissions:
   contents: read
 
 concurrency:
-  # One review per PR. A re-review requested while one is running supersedes it —
-  # nothing has been published yet, so cancelling is free.
+  # One review per PR, and deliberately NOT cancel-in-progress. A push landing
+  # mid-review would otherwise cancel a half-spent review and start a fresh one,
+  # so a burst of pushes would multiply spend by exactly the factor rule 1
+  # forbids. Queued instead, the later run waits, then finds the finished
+  # review's findings artifact and exits in the cheap job. The queue cannot
+  # grow: GitHub keeps at most one pending run per group and cancels the rest.
   group: pipeline-review-${{ github.event.pull_request.number || inputs.pr_number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # ════════════════════════════════════════════════════════════════════════════
@@ -104,12 +122,78 @@ jobs:
           fi
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
+      # ── Is this PR's one review still owed? ──────────────────────────────
+      # The entire cost argument for rule 1 lives in this step, and the step is
+      # HERE — in the cheap snapshot job, before any artifact download and long
+      # before the model job — precisely so an already-reviewed PR costs one
+      # short ubuntu job per push and nothing else.
+      #
+      # `opened` and `workflow_dispatch` never consult it: `opened` cannot have
+      # a prior review by construction, and a dispatch is a human deliberately
+      # buying a second read.
+      #
+      # TWO CALLS ARE MADE HERE ON PURPOSE, stated rather than left implicit.
+      #
+      # 1. IDENTITY is the review job's own findings artifact,
+      #    `pipeline-review-findings-<PR>` — PR-scoped, one exact-match API
+      #    call, and the same idiom the pin lookup below already uses. NOT a
+      #    workflow run's `pull_requests` field, which is empty far more often
+      #    than its name suggests and is empty in this repository today (run
+      #    32894185938 is a same-repo `pull_request` run reporting
+      #    `"pull_requests": []`). Head branch would have worked — `?branch=`
+      #    matched that same run exactly — but it answers "did a RUN happen",
+      #    not "did a REVIEW happen", so it would need a second call per
+      #    candidate run plus a job-name string to tell those two apart.
+      #
+      # 2. A SKIPPED RUN DOES NOT COUNT. A run that exited green because no
+      #    credential was configured, or because the dispatcher's pin was not
+      #    written yet, consumed a chance and produced nothing — and silently
+      #    re-arming the exact trap this gate exists to close is far worse than
+      #    the one cheap job a push costs. What is rationed is model SPEND, and
+      #    a skipped run spends nothing. The artifact gives that distinction for
+      #    free: its upload step is `if: always()` inside the review job, so it
+      #    exists whenever the reviewer got its turn — including when the model
+      #    itself errored, which DID spend — and does not exist when the review
+      #    job never ran at all. The one seam is its 30-day retention: a PR
+      #    pushed more than a month after its review can earn a second one.
+      - name: Is this PR's one review still owed?
+        id: chance
+        if: steps.pre.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTION: ${{ github.event.action }}
+          PR: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if [ "${ACTION:-}" != "synchronize" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          n=$(gh api "repos/$REPO/actions/artifacts?name=pipeline-review-findings-$PR&per_page=100" \
+                --jq '[.artifacts[] | select(.expired == false)] | length') || n=""
+          # `gh api` prints the API's error BODY to stdout on a failure, so an
+          # unguarded `-gt` would compare a JSON blob against 0. Anything that is
+          # not a plain count means we do not know, and not knowing FAILS OPEN,
+          # loudly: a PR nobody can review is the failure this gate exists to
+          # end, and being wrong here costs exactly one bounded review.
+          case "${n:-}" in
+            '' | *[!0-9]*)
+              echo "::warning::Could not read the review artifacts for #$PR, so whether it has been reviewed is unknown. Proceeding — an unreviewable PR is worse than one extra review."
+              echo "proceed=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+          if [ "$n" -gt 0 ]; then
+            echo "::notice::#$PR has already been reviewed. Not re-reviewing on push (rule 1) — workflow_dispatch is the deliberate re-read."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "::notice::#$PR has no review yet, so this push is its one review. A PR that opens CONFLICTING never gets an 'opened' run."
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
       # A review that cannot reach the ticket still runs and still comments on
       # the PR — it just has nowhere to put its §4 block. Said out loud here
       # rather than discovered as a red job three jobs later.
       - name: Does this review have a channel to the ticket?
         id: tele
-        if: steps.pre.outputs.configured == 'true'
+        if: steps.chance.outputs.proceed == 'true'
         env:
           LINEAR: ${{ secrets.LINEAR_API_KEY }}
         run: |
@@ -123,7 +207,7 @@ jobs:
 
       - name: Resolve the PR
         id: pr
-        if: steps.pre.outputs.configured == 'true'
+        if: steps.chance.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -148,7 +232,7 @@ jobs:
       # a snapshot we cannot trust.
       - name: Find the dispatcher's pin for this branch
         id: pin
-        if: steps.pre.outputs.configured == 'true'
+        if: steps.chance.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
