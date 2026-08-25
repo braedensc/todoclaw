@@ -63,18 +63,44 @@ async function maybeJudge(
   usage: { input: number; output: number; cacheWrite: number; cacheRead: number },
 ): Promise<ScenarioResult['judge']> {
   if (!rubric || !opts.judgeClient) return undefined
-  const { judgment, usage: ju } = await judge(
-    opts.judgeClient,
-    opts.judgeModel,
-    title,
-    rubric,
-    rendered,
+  const { judgment, usage: ju } = await withRetry('judge', () =>
+    judge(opts.judgeClient!, opts.judgeModel, title, rubric, rendered),
   )
   usage.input += ju.input
   usage.output += ju.output
   usage.cacheWrite += ju.cacheWrite
   usage.cacheRead += ju.cacheRead
   return judgment
+}
+
+/** Transient upstream failures (502/503/529, overload, rate limit) are NOT scenario results — a
+ * paid run should not lose a scenario, or print what looks like a product regression, because the
+ * API hiccuped. Observed live: a 502 surfaced as "The planner did not return a plan." with 0
+ * tokens and no artifact, indistinguishable from a real emit failure. Retries are spaced and few;
+ * anything non-transient rethrows immediately so real errors stay loud.
+ */
+const TRANSIENT =
+  /\b(429|500|502|503|504|529)\b|overloaded|rate.?limit|timeout|ECONNRESET|fetch failed/i
+
+async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 3): Promise<T> {
+  let last: unknown
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      last = e
+      const status = (e as { status?: number })?.status
+      const transient =
+        (status != null && status >= 500) || status === 429 || TRANSIENT.test(String(e))
+      if (!transient || i === tries - 1) throw e
+      const waitMs = 1500 * (i + 1)
+      console.warn(
+        `  ↻ ${label}: transient upstream error, retrying in ${waitMs}ms — ${String(e).slice(0, 90)}`,
+      )
+      await new Promise((r) => setTimeout(r, waitMs))
+    }
+  }
+  throw last
 }
 
 async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResult> {
@@ -99,13 +125,15 @@ async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResu
     )
     // Evals pin the DEFAULT plan model — a local stack whose owner flipped the knob must not
     // silently re-baseline the suite (prepareStack also resets the app_config columns).
-    const { plan, usage: gu } = await generatePlan(
-      opts.anthropic,
-      req,
-      sc.schedule ?? null,
-      sc.weather ?? null,
-      sc.memories ?? [],
-      DEFAULT_PLAN_MODEL,
+    const { plan, usage: gu } = await withRetry(`plan:${sc.id}`, () =>
+      generatePlan(
+        opts.anthropic,
+        req,
+        sc.schedule ?? null,
+        sc.weather ?? null,
+        sc.memories ?? [],
+        DEFAULT_PLAN_MODEL,
+      ),
     )
     usage.input += gu.input
     usage.output += gu.output
@@ -116,7 +144,7 @@ async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResu
       : (sc.checks ?? []).flatMap((check) => flat(check(plan, sc)))
     const judgeResult = opts.mock
       ? undefined
-      : await maybeJudge(opts, sc.title, sc.rubric, renderPlanForJudge(plan, sc), usage)
+      : await maybeJudge(opts, sc.title, sc.rubric, renderPlanForJudge(plan, sc, req), usage)
     return {
       ...base,
       deterministic,
@@ -147,7 +175,9 @@ async function runRecap(sc: RecapScenario, opts: RunOptions): Promise<ScenarioRe
     usage,
   }
   try {
-    const { body, usage: gu } = await generateRecap(opts.anthropic, sc.request, DEFAULT_PLAN_MODEL)
+    const { body, usage: gu } = await withRetry(`recap:${sc.id}`, () =>
+      generateRecap(opts.anthropic, sc.request, DEFAULT_PLAN_MODEL),
+    )
     usage.input += gu.input
     usage.output += gu.output
     usage.cacheWrite += gu.cacheWrite
