@@ -621,6 +621,8 @@ Deno.test('generate_plan uses the injected service, else degrades gracefully', a
               { task: 'Timing belt', time: '2:00 PM', duration: '~half-day', taskId: 'car' },
             ],
             chores: [{ task: 'Laundry', status: 'due today', taskId: 'laundry' }],
+            dueToday: [{ task: 'Pick up the cake', status: 'due today', taskId: 'cake' }],
+            overflow: { anchors: 0, chores: 0, dueToday: 0 },
             bigRock: {
               task: 'Draft the deck',
               why: 'w',
@@ -643,6 +645,10 @@ Deno.test('generate_plan uses the injected service, else degrades gracefully', a
   // The tool result spells the card out — with only a headline the model narrated the rest from
   // imagination, then insisted a dropped item was still on the card.
   assert(ok.content.includes('2:00 PM Timing belt'))
+  // Both other strips too: the narration promises the plan is COMPLETE, so a strip missing from it
+  // is the model answering a follow-up from imagination again.
+  assert(ok.content.includes('Chores due today: Laundry.'))
+  assert(ok.content.includes('Also due today: Pick up the cake (due today).'))
   assert(ok.content.includes('Big rock: Draft the deck.'))
   assert(ok.content.includes('Then: Reply to Sam.'))
   assert(ok.content.includes('That is the whole plan'))

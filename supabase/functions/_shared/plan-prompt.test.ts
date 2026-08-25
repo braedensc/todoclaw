@@ -8,8 +8,11 @@ import {
   buildUserPrompt,
   deriveAnchors,
   deriveChores,
+  deriveDueToday,
+  deriveStripOverflow,
   MAX_ANCHORS,
   MAX_CHORES,
+  MAX_DUE_TODAY,
   resolvePlanTaskIds,
   parseEmittedPlan,
   type EmittedNudge,
@@ -1147,4 +1150,196 @@ Deno.test('a chore due LATER is still allowed to be a rock', () => {
 Deno.test('the prompt tells the model the due-chore strip exists and is not its to fill', () => {
   assertStringIncludes(SYSTEM_PROMPT, 'chores due today')
   assertStringIncludes(SYSTEM_PROMPT, 'Do NOT emit one as a bigRock or a smallRock')
+})
+
+// ---- the due-now strip (deriveDueToday) --------------------------------------------------------
+// The bug this closes: a board of five tasks all due TODAY produced a plan naming three of them —
+// one big rock, two quick wins, which is exactly what rule 4 asks for — and the other two appeared
+// NOWHERE on the card. The rock caps are right; the card just had no way to say "these are also due
+// today". Unlike anchors and chores this strip does NOT take work off the model's plate: a task it
+// scheduled shows both as its rock and in the strip, on purpose.
+
+const dueReq = (
+  tasks: {
+    id?: string
+    text: string
+    dueInDays: number | null
+    dueTime?: string
+    workedToday?: boolean
+  }[],
+): PlanRequest => ({
+  ...base,
+  tasks: tasks.map((t) => ({
+    importance: 50,
+    urgency: 50,
+    due: t.dueInDays == null ? null : '2026-06-24',
+    ...t,
+  })),
+  recurringDue: [],
+})
+
+Deno.test('deriveDueToday: overdue and due-today grid tasks, most overdue first', () => {
+  const strip = deriveDueToday(
+    dueReq([
+      { id: 'a', text: 'Due today', dueInDays: 0 },
+      { id: 'b', text: 'Overdue 5d', dueInDays: -5 },
+      { id: 'c', text: 'Overdue 1d', dueInDays: -1 },
+      { id: 'd', text: 'Due tomorrow', dueInDays: 1 }, // not due NOW
+      { id: 'e', text: 'Undated', dueInDays: null },
+    ]),
+  )
+  assertEquals(
+    strip.map((t) => t.task),
+    ['Overdue 5d', 'Overdue 1d', 'Due today'],
+  )
+  // The chores strip's vocabulary, so the two strips don't state the same fact two ways.
+  assertEquals(
+    strip.map((t) => t.status),
+    ['overdue 5d', 'overdue 1d', 'due today'],
+  )
+  assertEquals(strip[0].taskId, 'b')
+})
+
+Deno.test('deriveDueToday: leaves out what the fixed-times strip already shows', () => {
+  const strip = deriveDueToday(
+    dueReq([
+      { id: 'timed', text: 'Demo at 3', dueInDays: 0, dueTime: '15:00' },
+      { id: 'flex', text: 'Release notes', dueInDays: 0 },
+    ]),
+  )
+  // The anchor carries its clock time, which is strictly more than this strip could say.
+  assertEquals(
+    strip.map((t) => t.task),
+    ['Release notes'],
+  )
+})
+
+Deno.test(
+  'deriveDueToday: an OVERDUE timed task is not an anchor, so the strip still catches it',
+  () => {
+    // deriveAnchors is due-TODAY-only, so a timed task that slipped past its day belongs to no strip
+    // at all under a naive "has a time → skip it" rule — the exact silent-omission bug, reintroduced.
+    const req = dueReq([{ id: 'late', text: 'Missed call', dueInDays: -2, dueTime: '09:00' }])
+    assertEquals(deriveAnchors(req), [])
+    assertEquals(
+      deriveDueToday(req).map((t) => t.task),
+      ['Missed call'],
+    )
+  },
+)
+
+Deno.test(
+  'deriveDueToday: a timed item past the anchors cap lands here rather than nowhere',
+  () => {
+    const many = Array.from({ length: MAX_ANCHORS + 2 }, (_, i) => ({
+      id: `m${i}`,
+      text: `Meeting ${i}`,
+      dueInDays: 0,
+      dueTime: `0${i}:00`,
+    }))
+    const req = dueReq(many)
+    assertEquals(deriveAnchors(req).length, MAX_ANCHORS)
+    // The two the fixed-times strip couldn't fit are still due today, so they show here.
+    assertEquals(
+      deriveDueToday(req).map((t) => t.task),
+      [`Meeting ${MAX_ANCHORS}`, `Meeting ${MAX_ANCHORS + 1}`],
+    )
+  },
+)
+
+Deno.test('deriveDueToday: a project already worked today is not listed as owing anything', () => {
+  const strip = deriveDueToday(
+    dueReq([
+      { id: 'p', text: 'Write the novel', dueInDays: 0, workedToday: true },
+      { id: 'q', text: 'Pay the bill', dueInDays: 0 },
+    ]),
+  )
+  assertEquals(
+    strip.map((t) => t.task),
+    ['Pay the bill'],
+  )
+})
+
+Deno.test('deriveDueToday: caps a long backlog, keeping the MOST overdue', () => {
+  const many = Array.from({ length: MAX_DUE_TODAY + 3 }, (_, i) => ({
+    id: `t${i}`,
+    text: `Task ${i}`,
+    dueInDays: -i, // Task 0 is due today, the last is the most overdue
+  }))
+  const strip = deriveDueToday(dueReq(many))
+  assertEquals(strip.length, MAX_DUE_TODAY)
+  assertEquals(strip[0].task, `Task ${MAX_DUE_TODAY + 2}`)
+  assertEquals(strip.at(-1)?.task, 'Task 3') // the three least overdue are the ones dropped
+})
+
+Deno.test('every due-now task reaches the card even when the rocks cap out', () => {
+  // The reported failure, end to end: five due today, the model names three, and the card used to
+  // show only those three.
+  const req = dueReq([
+    { id: 'c1', text: 'File the visa application', dueInDays: 0 },
+    { id: 'c2', text: 'Reply to the landlord', dueInDays: 0 },
+    { id: 'c3', text: 'Prep the call notes', dueInDays: 0 },
+    { id: 'c4', text: 'Pick up the cake', dueInDays: 0 },
+    { id: 'c5', text: "Review Dana's draft", dueInDays: 0 },
+  ])
+  const plan = resolved(
+    emitted(emittedRock('File the visa application', 'T0'), [
+      emittedRock('Reply to the landlord', 'T1'),
+    ]),
+    req,
+  )
+  const onCard = new Set([
+    plan.bigRock?.taskId,
+    ...plan.smallRocks.map((r) => r.taskId),
+    ...plan.dueToday.map((d) => d.taskId),
+  ])
+  for (const id of ['c1', 'c2', 'c3', 'c4', 'c5'])
+    assert(onCard.has(id), `${id} missing from the card`)
+})
+
+Deno.test('the due-now strip does NOT take the task away from the rocks', () => {
+  // The one place this strip parts ways with anchors and chores. A due-today task is exactly what
+  // rules 1/3/4 ask the model to choose among, so dropping its rock (the way isAnchored/isChore do)
+  // would leave a deadline day with no focus at all — the strip is coverage, not a claim on a slot.
+  const req = dueReq([{ id: 'c1', text: 'File the visa application', dueInDays: 0 }])
+  const plan = resolved(emitted(emittedRock('File the visa application', 'T0'), []), req)
+  assertEquals(plan.bigRock?.taskId, 'c1')
+  assertEquals(
+    plan.dueToday.map((d) => d.taskId),
+    ['c1'],
+  )
+})
+
+Deno.test('deriveStripOverflow counts what each cap left off, and zero when nothing is cut', () => {
+  const anchors = Array.from({ length: MAX_ANCHORS + 2 }, (_, i) => ({
+    id: `m${i}`,
+    text: `Meeting ${i}`,
+    dueInDays: 0,
+    dueTime: `0${i}:00`,
+  }))
+  // The 2 timed items the anchors strip cut still land in the due-now strip, so nothing overflows
+  // there; the chores strip is untouched.
+  assertEquals(deriveStripOverflow(dueReq(anchors)), { anchors: 2, chores: 0, dueToday: 0 })
+
+  const flood = Array.from({ length: MAX_DUE_TODAY + 3 }, (_, i) => ({
+    id: `t${i}`,
+    text: `Task ${i}`,
+    dueInDays: 0,
+  }))
+  assertEquals(deriveStripOverflow(dueReq(flood)).dueToday, 3)
+  assertEquals(deriveStripOverflow(dueReq([{ id: 'x', text: 'One', dueInDays: 0 }])).dueToday, 0)
+})
+
+Deno.test('a resolved plan always carries the strip fields, even with nothing due', () => {
+  // The card reads plan.dueToday / plan.overflow unconditionally; an absent field would be a
+  // deploy-skew crash rather than an empty strip.
+  const plan = resolved(emitted(null, []), dueReq([{ id: 'x', text: 'Someday', dueInDays: null }]))
+  assertEquals(plan.dueToday, [])
+  assertEquals(plan.overflow, { anchors: 0, chores: 0, dueToday: 0 })
+})
+
+Deno.test('the prompt tells the model the due-now strip exists and bans a recited count', () => {
+  assertStringIncludes(SYSTEM_PROMPT, 'NOTHING DUE NOW CAN GO MISSING')
+  assertStringIncludes(SYSTEM_PROMPT, 'do not')
+  assertStringIncludes(SYSTEM_PROMPT, 'state a COUNT of them')
 })

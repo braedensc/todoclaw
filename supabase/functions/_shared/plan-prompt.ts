@@ -34,6 +34,11 @@ export const MAX_ANCHORS = 6
 // backlog of overdue chores turning the card into a wall of laundry.
 export const MAX_CHORES = 5
 
+// How many overdue / due-today GRID TASKS the card lists in its own strip before it stops. Sized
+// like the two above: enough that a genuinely crunchy day fits, small enough that a neglected board
+// doesn't turn the card into a backlog dump.
+export const MAX_DUE_TODAY = 6
+
 // ---- Client payload (validated at the function boundary) -------------------------------------
 // The frontend builds this from its existing hooks + lib (taskScore / recurringStatus / daysUntil),
 // so the on-grid filtering and scoring stay in one place (src/lib). importance/urgency are 0–100.
@@ -103,6 +108,8 @@ export const PlanRequestSchema = z.object({
     .default([]),
 })
 export type PlanRequest = z.infer<typeof PlanRequestSchema>
+// One grid task as it arrives on the wire — the row the three strip selectors filter and sort.
+type PlanTaskRow = PlanRequest['tasks'][number]
 
 // ---- Output shape (the emit_plan tool input) -------------------------------------------------
 export const WHEN_VALUES = ['morning', 'lunch', 'afternoon', 'evening'] as const
@@ -150,6 +157,30 @@ export interface PlanChore {
   status: string // the cadence label, e.g. 'due today' / 'overdue 3d'
   taskId: string | null
 }
+// A GRID TASK that is due now — overdue or due today. Derived deterministically (deriveDueToday),
+// never emitted by the model.
+//
+// This strip is NOT the same bargain as anchors and chores. Those two take work off the table: they
+// are not choices the planner makes, so a rock for one is dropped. A task due today is the exact
+// opposite — it is precisely what rules 1/3/4 ask the model to choose among — so the rocks are left
+// alone here and a task the planner scheduled appears BOTH as its rock and in this strip. The strip
+// is a COVERAGE guarantee, not a schedule: the reported failure was a board of five due-today tasks
+// where the card showed three and the other two appeared nowhere, which no rock cap can fix (rule 4
+// caps quick wins at two on purpose).
+export interface PlanDueToday {
+  task: string
+  status: string // 'due today' / 'overdue 5d' — the chores strip's vocabulary, for the same reason
+  taskId: string | null
+}
+// How many items each capped strip had to leave off (0 when nothing was truncated). Without this
+// the card just stopped at the cap and said nothing, so a seventh fixed time was indistinguishable
+// from a sixth — the prompt tells the model to name overflow in prose, and this is the card's own
+// half of that promise.
+export interface PlanStripOverflow {
+  anchors: number
+  chores: number
+  dueToday: number
+}
 export interface PlanResult {
   headline: string
   availableTime: string
@@ -158,6 +189,12 @@ export interface PlanResult {
   // Recurring chores due today, derived like anchors — never model-chosen. CAPPED at MAX_CHORES
   // (most overdue first); the prompt tells the model to name any overflow in prose.
   chores: PlanChore[]
+  // Every grid task due now (overdue / due today), derived — never model-chosen. CAPPED at
+  // MAX_DUE_TODAY, most overdue first. Unlike the two strips above this one does not remove
+  // anything from the rocks; see PlanDueToday.
+  dueToday: PlanDueToday[]
+  // Per-strip truncation counts for the three capped strips above.
+  overflow: PlanStripOverflow
   bigRock: Rock | null
   smallRocks: Rock[]
   habitNote: string
@@ -172,7 +209,7 @@ export type EmittedRock = Omit<Rock, 'taskId'> & { ref?: string | null }
 export type EmittedNudge = Omit<Nudge, 'taskId'> & { ref?: string | null }
 export type EmittedPlan = Omit<
   PlanResult,
-  'anchors' | 'chores' | 'bigRock' | 'smallRocks' | 'nudge'
+  'anchors' | 'chores' | 'dueToday' | 'overflow' | 'bigRock' | 'smallRocks' | 'nudge'
 > & {
   bigRock: EmittedRock | null
   smallRocks: EmittedRock[]
@@ -339,6 +376,17 @@ export const SYSTEM_PROMPT = [
   '   and it is not a choice the model makes. Count their (usually small) cost against the day, and',
   '   mention them naturally only where it shapes the plan; a chore due LATER (due tomorrow, in Nd)',
   '   is not in the strip and may be a rock like anything else.',
+  '   NOTHING DUE NOW CAN GO MISSING. The card also lists every grid task that is overdue or due',
+  '   today in a third strip of its own — most overdue first, capped at six. This one is DIFFERENT',
+  '   from the two above: it takes nothing off your plate. Keep choosing rocks from that work',
+  '   exactly as rules 1, 3 and 4 say; a task you schedule simply appears in both places, which is',
+  '   correct. What it changes is your PROSE. You never have to list the due-today items to keep',
+  '   them safe — the strip is already showing all of them — so do not enumerate them, and do not',
+  '   state a COUNT of them ("four things are due today"). The user is looking at the real list',
+  '   while they read you; a number you write can only ever contradict it. Say what the day is',
+  '   LIKE instead — that more is due than fits, and where to start ("more lands today than one',
+  '   day holds — the visa form is the one that matters"). The one exception is overflow: if more',
+  '   than six are due now, the ones past the cap appear nowhere, so name those in your prose.',
   '   Anything else the user can slot whenever it fits.',
   '6. HABITS: acknowledge the active habits encouragingly in habitNote (they always appear).',
   '7. USER PREFERENCES & SAVED MEMORY: the message may include a "USER PLANNING PREFERENCES" block',
@@ -621,9 +669,7 @@ function scrubRefTokens(text: string, req: PlanRequest): string {
  * tasks filled smallRocks). Mirrors dispatch.ts timedTodayLines, which does the same for the push.
  */
 export function deriveAnchors(req: PlanRequest): PlanAnchor[] {
-  return req.tasks
-    .filter((t) => t.dueInDays === 0 && !!t.dueTime)
-    .sort((a, b) => (a.dueTime! < b.dueTime! ? -1 : a.dueTime! > b.dueTime! ? 1 : 0))
+  return anchorCandidates(req)
     .slice(0, MAX_ANCHORS)
     .map((t) => ({
       task: t.text,
@@ -631,6 +677,16 @@ export function deriveAnchors(req: PlanRequest): PlanAnchor[] {
       duration: t.size ? SIZE_HINTS[t.size] : null,
       taskId: t.id ?? null,
     }))
+}
+
+// The timed-today tasks in strip order, BEFORE the cap. Split out from deriveAnchors so two other
+// readers can share the selection without re-deriving it: deriveStripOverflow needs the pre-cap
+// length, and deriveDueToday excludes exactly the tasks the fixed-times strip actually SHOWS — so a
+// timed item past MAX_ANCHORS falls into the due-now strip instead of off the card entirely.
+function anchorCandidates(req: PlanRequest): PlanTaskRow[] {
+  return req.tasks
+    .filter((t) => t.dueInDays === 0 && !!t.dueTime)
+    .sort((a, b) => (a.dueTime! < b.dueTime! ? -1 : a.dueTime! > b.dueTime! ? 1 : 0))
 }
 
 // Does this rock point at the same task as an anchor? By taskId when both carry one, else by exact
@@ -687,12 +743,73 @@ function isDueNow(chore: { status: string; daysLeft?: number | null }): boolean 
  * overdue — request order (task creation order) would have dropped an arbitrary chore.
  */
 export function deriveChores(req: PlanRequest): PlanChore[] {
+  return choreCandidates(req)
+    .slice(0, MAX_CHORES)
+    .map((c) => ({ task: c.text, status: c.status, taskId: c.id ?? null }))
+}
+
+// The due chores in strip order, BEFORE the cap — split out for deriveStripOverflow, exactly like
+// anchorCandidates. `.slice()` keeps the sort off `req.recurringDue` itself.
+function choreCandidates(req: PlanRequest) {
   return req.recurringDue
     .filter(isDueNow)
     .slice()
     .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0))
-    .slice(0, MAX_CHORES)
-    .map((c) => ({ task: c.text, status: c.status, taskId: c.id ?? null }))
+}
+
+/**
+ * Every grid task that is DUE NOW — overdue or due today — most overdue first, capped.
+ *
+ * The third strip, and the one that works differently: it does NOT take work off the model's plate.
+ * See PlanDueToday for why. In short, the card's promise is that nothing due today can go missing,
+ * and the rocks stay whatever the planner decided — a scheduled task simply shows in both places.
+ *
+ * Two exclusions, both so a task appears exactly once:
+ *   • anything the FIXED TIMES strip is actually showing (anchorCandidates, cap included) — that
+ *     strip already lists it, with its clock time, which is strictly more information;
+ *   • an ongoing project with a session already logged today. The day's work on it is done, so
+ *     listing it under a deadline heading would read as an unmet obligation — the same structural
+ *     rule taskLines and isWorkedToday apply everywhere else.
+ * Recurring chores can't reach this list at all: they arrive in `req.recurringDue`, a different
+ * array, and have their own strip.
+ *
+ * Sorted before the cap, so an overflowing board drops the LEAST overdue rather than an arbitrary
+ * task in creation order — same reasoning as deriveChores.
+ */
+export function deriveDueToday(req: PlanRequest): PlanDueToday[] {
+  return dueTodayCandidates(req)
+    .slice(0, MAX_DUE_TODAY)
+    .map((t) => ({ task: t.text, status: dueNowLabel(t.dueInDays!), taskId: t.id ?? null }))
+}
+
+function dueTodayCandidates(req: PlanRequest): PlanTaskRow[] {
+  const onAnchorStrip = new Set(anchorCandidates(req).slice(0, MAX_ANCHORS))
+  return req.tasks
+    .filter(
+      (t) => t.dueInDays != null && t.dueInDays <= 0 && !t.workedToday && !onAnchorStrip.has(t),
+    )
+    .sort((a, b) => a.dueInDays! - b.dueInDays!)
+}
+
+// The strip's own label for how late a task is. Deliberately the CHORES strip's vocabulary rather
+// than taskLines' model-facing "due 5d ago": the two strips sit next to each other on the card, and
+// one saying "overdue 5d" beside the other saying "due 5d ago" reads as two different facts.
+function dueNowLabel(dueInDays: number): string {
+  return dueInDays < 0 ? `overdue ${Math.abs(dueInDays)}d` : 'due today'
+}
+
+/**
+ * How many items each capped strip left off. The card renders these as a "+N more" line, so a strip
+ * that stops at its cap says so instead of just ending — the user's half of the same promise the
+ * prompt makes the model (name the overflow in prose).
+ */
+export function deriveStripOverflow(req: PlanRequest): PlanStripOverflow {
+  const beyond = (total: number, cap: number) => Math.max(0, total - cap)
+  return {
+    anchors: beyond(anchorCandidates(req).length, MAX_ANCHORS),
+    chores: beyond(choreCandidates(req).length, MAX_CHORES),
+    dueToday: beyond(dueTodayCandidates(req).length, MAX_DUE_TODAY),
+  }
 }
 
 // Does this rock point at the same chore the strip already lists? Same two-step as isAnchored.
@@ -721,6 +838,10 @@ export function resolvePlanTaskIds(plan: unknown, req: PlanRequest): PlanResult 
   if (!emitted) return null
   const anchors = deriveAnchors(req)
   const chores = deriveChores(req)
+  // Stamped like the two above, but NOT fed to `listed` below: a due-now task stays available to
+  // the rocks. See PlanDueToday for why this strip is a coverage guarantee rather than a claim on
+  // the slot.
+  const dueToday = deriveDueToday(req)
   // Resolve the `ref` FIRST (it is consumed and stripped), then scrub any T#/R# tokens the model
   // leaked into prose. De-tokenized task text also matches isAnchored/isChore better, never worse.
   const scrub = (text: string) => scrubRefTokens(text, req)
@@ -744,6 +865,8 @@ export function resolvePlanTaskIds(plan: unknown, req: PlanRequest): PlanResult 
     habitNote: scrub(emitted.habitNote),
     anchors,
     chores,
+    dueToday,
+    overflow: deriveStripOverflow(req),
     bigRock: bigRock && !listed(bigRock) ? bigRock : null,
     smallRocks: smallRocks.filter((r) => !listed(r)),
     nudge: nudge && !isWorkedToday(nudge, req) ? nudge : null,

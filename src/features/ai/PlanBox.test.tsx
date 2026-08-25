@@ -549,6 +549,141 @@ describe('PlanBox', () => {
     })
   })
 
+  // Due today (plan.dueToday) — the regression this section exists for: five tasks all due today
+  // produced a plan naming three (one focus, two quick wins — exactly what the rock caps ask for)
+  // and the other two appeared NOWHERE on the card. Derived from the board like the two strips
+  // above, but with one deliberate difference: it does NOT displace a rock, because a task due
+  // today is precisely what the planner is supposed to be choosing among.
+  describe('due today', () => {
+    const DUE: DayPlan = {
+      ...PLAN,
+      dueToday: [
+        { task: 'File the visa application', status: 'due today', taskId: 'visa' },
+        { task: 'Renew the registration', status: 'overdue 5d', taskId: 'reg' },
+      ],
+    }
+
+    it('lists everything due now alongside the rocks', () => {
+      render(
+        <PlanBox
+          plan={DUE}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Due today')).toBeInTheDocument()
+      expect(screen.getByText('File the visa application')).toBeInTheDocument()
+      // An overdue task says how late it is rather than passing for one due today.
+      expect(screen.getByText('Renew the registration')).toBeInTheDocument()
+      expect(screen.getByText('overdue 5d')).toBeInTheDocument()
+      expect(screen.getByText('File taxes')).toBeInTheDocument()
+    })
+
+    it('shows the strip even when the plan has no rocks at all', () => {
+      render(
+        <PlanBox
+          plan={{ ...DUE, bigRock: null, smallRocks: [] }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('File the visa application')).toBeInTheDocument()
+    })
+
+    it('strikes a due task through once it is done', () => {
+      render(
+        <PlanBox
+          plan={DUE}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+          rockDone={(r) => r.taskId === 'visa'}
+        />,
+      )
+      expect(screen.getByText('File the visa application').className).toContain('line-through')
+      expect(screen.getByText('Renew the registration').className).not.toContain('line-through')
+    })
+
+    it('renders no section for a plan without it (or a legacy plan missing the field)', () => {
+      render(
+        <PlanBox
+          plan={PLAN}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText('Due today')).not.toBeInTheDocument()
+    })
+  })
+
+  // Strip overflow (plan.overflow) — each strip is capped so a neglected board can't turn the card
+  // into a backlog dump, but it used to just stop at the cap silently: a seventh fixed time looked
+  // exactly like a sixth. The prompt asks the model to name overflow in its prose; this is the
+  // card's own half of that promise.
+  describe('strip overflow', () => {
+    const OVERFLOWING: DayPlan = {
+      ...PLAN,
+      anchors: [{ task: 'Call with Sam', time: '9:30 AM', duration: null, taskId: 'sam' }],
+      chores: [{ task: 'Laundry', status: 'due today', taskId: 'laundry' }],
+      dueToday: [{ task: 'File the visa application', status: 'due today', taskId: 'visa' }],
+      overflow: { anchors: 2, chores: 1, dueToday: 3 },
+    }
+
+    it('says how many each capped strip left off', () => {
+      render(
+        <PlanBox
+          plan={OVERFLOWING}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('+2 more on your board')).toBeInTheDocument()
+      expect(screen.getByText('+1 more on your board')).toBeInTheDocument()
+      expect(screen.getByText('+3 more on your board')).toBeInTheDocument()
+    })
+
+    it('stays silent when nothing was truncated, and on a legacy plan with no counts', () => {
+      const { rerender } = render(
+        <PlanBox
+          plan={{ ...OVERFLOWING, overflow: { anchors: 0, chores: 0, dueToday: 0 } }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.queryByText(/more on your board/)).not.toBeInTheDocument()
+      // A plan persisted before the counts existed: the strips still render, minus the extra line.
+      rerender(
+        <PlanBox
+          plan={{ ...OVERFLOWING, overflow: null }}
+          paused={false}
+          isPending={false}
+          isError={false}
+          onRetry={noop}
+          onDismiss={noop}
+        />,
+      )
+      expect(screen.getByText('Laundry')).toBeInTheDocument()
+      expect(screen.queryByText(/more on your board/)).not.toBeInTheDocument()
+    })
+  })
+
   // Checking items off ON the card (itemCheck). The card is a live surface, not a read-out: every
   // rock, fixed time and due chore carries a real checkbox wired to the same write the board's ✓
   // makes. Without the prop — the DemoScene's canned plan — the card stays exactly as it was, with

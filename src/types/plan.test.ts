@@ -86,3 +86,44 @@ describe('DayPlanSchema anchors', () => {
     expect(parsed.headline).toBe('Steady.')
   })
 })
+
+// The due-now strip + the strips' overflow counts. Same read-boundary contract as anchors above:
+// a plan persisted before either field must keep parsing, a stored value must survive the parse
+// (zod strips unknown keys — a schema that forgot the field would drop the strip on every reload),
+// and a malformed value must degrade to nothing rather than nuking the card.
+describe('DayPlanSchema dueToday + overflow', () => {
+  const due = { task: 'File the visa application', status: 'due today', taskId: 'visa' }
+
+  it('a legacy plan without either field still parses', () => {
+    expect(DayPlanSchema.parse(base).dueToday ?? null).toBeNull()
+    expect(DayPlanSchema.parse(base).overflow ?? null).toBeNull()
+  })
+
+  it('a stored strip and its counts round-trip the parse', () => {
+    const parsed = DayPlanSchema.parse({
+      ...base,
+      dueToday: [due],
+      overflow: { anchors: 0, chores: 1, dueToday: 2 },
+    })
+    expect(parsed.dueToday).toEqual([due])
+    expect(parsed.overflow).toEqual({ anchors: 0, chores: 1, dueToday: 2 })
+  })
+
+  it('malformed values degrade to null, not a dead plan card', () => {
+    const parsed = DayPlanSchema.parse({ ...base, dueToday: 'five things', overflow: 7 })
+    expect(parsed.dueToday ?? null).toBeNull()
+    expect(parsed.overflow ?? null).toBeNull()
+    expect(parsed.headline).toBe('Steady.')
+  })
+
+  it('one malformed count degrades on its own without taking the strip with it', () => {
+    const parsed = DayPlanSchema.parse({
+      ...base,
+      dueToday: [due],
+      overflow: { anchors: 'lots', chores: 0, dueToday: 2 },
+    })
+    expect(parsed.dueToday).toEqual([due])
+    expect(parsed.overflow?.anchors ?? null).toBeNull()
+    expect(parsed.overflow?.dueToday).toBe(2)
+  })
+})
