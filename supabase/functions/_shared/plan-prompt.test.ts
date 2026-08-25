@@ -1343,3 +1343,16 @@ Deno.test('the prompt tells the model the due-now strip exists and bans a recite
   assertStringIncludes(SYSTEM_PROMPT, 'do not')
   assertStringIncludes(SYSTEM_PROMPT, 'state a COUNT of them')
 })
+
+// Measured, not theorised: the first draft of the block above talked only about crowded days, and
+// pplan-staged-excluded — a board with ONE placed task, due tomorrow — went from 4/4 scheduling it
+// to 1/4, the model calling a relaxed day and demoting it to an optional nudge instead. Teaching
+// the planner that due-now work is what matters taught it that everything else does not. The scope
+// line took it back to 8/10. Keep this guard whenever that block is reworded.
+Deno.test('the due-now block cannot be read as "nothing due today means a light day"', () => {
+  assertStringIncludes(SYSTEM_PROMPT, 'NONE OF THIS MAKES AN EMPTY STRIP A LIGHT DAY')
+  // The two halves that actually did the work: other dated/undated work still competes, and an
+  // empty strip is never on its own a reason to stand the day down.
+  assertStringIncludes(SYSTEM_PROMPT, 'competes for the big rock on its own importance')
+  assertStringIncludes(SYSTEM_PROMPT, 'nothing WORTH doing, not a board with nothing due')
+})
