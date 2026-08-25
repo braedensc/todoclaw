@@ -209,6 +209,7 @@ EGRESS_ALLOW_SUFFIXES = (
     "anthropic.com",  # api.anthropic.com
     "supabase.co",
     "supabase.com",
+    "linear.app",  # api.linear.app — the delivery pipeline's GraphQL endpoint
 )
 NET_TOOL_RE = re.compile(r"(?<![\w./-])(?:curl|wget|scp|sftp|ncat|netcat|nc)(?![\w-])")
 

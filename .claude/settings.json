@@ -48,6 +48,11 @@
             "type": "command",
             "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/session-start-provision-env.sh",
             "timeout": 60
+          },
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/session-start.py",
+            "timeout": 10
           }
         ]
       }
