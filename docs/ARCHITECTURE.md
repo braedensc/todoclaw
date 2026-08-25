@@ -66,3 +66,4 @@ supersede it with a new ADR and flip the old one's Status.
 | [ADR 2026-07-22](adr/2026-07-22-capability-keyed-insets-width-keyed-shell.md) | 2026-07-22 | Safe-area insets + touch ergonomics key on capability (`env()` / `pointer: coarse`); locked shell stays width-keyed |
 | [ADR 2026-07-23](adr/2026-07-23-phones-stay-mobile-in-landscape.md) | 2026-07-23 | Phones stay in the mobile layout in both orientations (the gate gains a coarse+short landscape leg; iPads unaffected) |
 | [ADR 2026-07-29](adr/2026-07-29-recurring-next-due-on.md) | 2026-07-29 | Scheduling one occurrence of a recurring chore: an explicit one-shot `recurring.nextDueOn` (replaces cadence phasing) |
+| [ADR 2026-08-25](adr/2026-08-25-pipeline-guard-enforcement.md) | 2026-08-25 | The six pipeline guards move into the PreToolUse hook and enforcement turns on; optional by the `delivery.json` discriminator, fail-closed on a broken config or a lapsed pin |

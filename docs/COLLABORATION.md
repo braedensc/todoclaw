@@ -291,6 +291,15 @@ mirroring the security model in `CLAUDE.md`:
    - Blocks `gh pr merge` outright, including `--auto` — **merging is Braeden's
      action only.** Claude opens a PR and stops there. (`--disable-auto` is
      exempted, since it only undoes an auto-merge, never causes one.)
+   - Blocks a session from invoking `scripts/pipeline_dispatch_local.py`, which
+     writes the dispatcher **pin**. Binding a session is a human's action: a
+     session that can place its own pin can retarget itself at another ticket or
+     widen its own scope fence. Reading the script and `--selftest` stay allowed.
+   - **Pipeline guards (since 2026-08-25)** — six guards from
+     `docs/PIPELINE-CONTRACT.md`, active **only** because this repo has a
+     `delivery.json`: `pin-binding`, `ticket-branch`, `scope-fence`,
+     `lifecycle-label`, `self-approval`, `telemetry-required`. See
+     "What changes now that the pipeline guards are live" below.
 2. **Claude Code Stop hook** (`.claude/hooks/stop-pr-check.py`) — runs whenever
    Claude tries to end a turn, and blocks (with a reminder) when:
    - the current branch has pushed commits ahead of `main` with **no PR** at
@@ -313,6 +322,41 @@ fix it first — that's the system doing its job, not an error. Merging itself s
 entirely yours: the PreToolUse hook only intercepts Claude's own tool calls, so it
 blocks Claude from running `gh pr merge`, but never blocks you from merging via the
 CLI or the GitHub UI.
+
+### What changes now that the pipeline guards are live
+
+`delivery.json` landed in #392, which by the contract's single discriminator made
+this project **pipeline-configured** — but the hook contained none of the six
+guards, so the config claimed an enforcement that did not exist. The first real
+run (TOD-90) refused correctly *only* because `/work` checks the pin as part of
+its own protocol: a well-behaved skill, not a binding guard. Any session that
+skipped `/work` was unbound. That gap is now closed, and enforcement is on.
+
+**For a human working here by hand, nothing changes.** No pin is present in an
+ad-hoc session, and every guard that *withholds* something fails open for an
+unpinned session. Ordinary edits, `npm test`, `git commit`, `gh pr create` and
+even editing a CI workflow all behave exactly as before. This was verified
+against this repo's real `delivery.json` before the change landed.
+
+**Two things change for everyone, pinned or not:**
+
+- **Moving a ticket into `ready` is blocked.** Approving work is a human action
+  and there is no in-session path to it — not even with `epic/*` provenance,
+  which auto-approves only *out of session*. Ask for approval in a comment.
+- **`delivery.json` must stay valid.** It is present, so it is a promise: if it
+  becomes unparseable or its `version` is unrecognized, mutating tool calls fail
+  closed until it is fixed. Editing `delivery.json` itself always stays allowed,
+  so the repo can never be taken hostage by its own config.
+
+**For a dispatched (pinned) session,** the branch must carry the ticket ID, writes
+to `autonomy.riskPaths` are refused, the session cannot set its own `agent:*`
+labels or rewrite its own acceptance criteria, and it writes only to its own
+ticket. An **expired** pin in ticket mode fails closed — a lapsed binding is
+broken, not absent, or waiting would be an escape.
+
+**If a pipeline guard blocks you and you think it is wrong,** read the reason: it
+names the contract section and the fix. Do not work around it. The one guard that
+is only half-enforced is `telemetry-required` — see `.claude/hooks/README.md`.
 
 ---
 
