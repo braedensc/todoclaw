@@ -8,20 +8,29 @@ is moved.
 
 | Active in `.github/workflows/` | Still staged in `templates/workflows/` |
 |---|---|
-| `pipeline-safe-outputs.yml` (TOD-106) | `pipeline-review.yml` |
-| `pipeline-failure-alert.yml` (TOD-106) | `pipeline-dispatch.yml` |
-| | `pipeline-bounce.yml` |
-| | `pipeline-telemetry.yml` |
+| `pipeline-safe-outputs.yml` (TOD-106) | `pipeline-dispatch.yml` |
+| `pipeline-failure-alert.yml` (TOD-106) | `pipeline-bounce.yml` |
+| `pipeline-review.yml` (TOD-109) | `pipeline-telemetry.yml` |
 | | `pipeline-auto-approve.yml` |
 | | `pipeline-auto-merge.yml` |
 
-**Activating safe-outputs did not start anything moving.** It is `workflow_call`
-only — it runs when another workflow calls it and never on its own, and nothing
-calls it yet. Until a caller is activated it is a resolvable path and nothing more.
-The first activation with visible behaviour is `pipeline-review.yml` (step 3); a
-ticket that moves through the board on its own additionally needs
-`pipeline-dispatch.yml` (step 4). Expect nothing from steps 1 and 2 on their own —
-that inertness is exactly why they were the safe pair to turn on first.
+**Steps 1 and 2 did not start anything moving.** `pipeline-safe-outputs.yml` is
+`workflow_call` only — it runs when another workflow calls it and never on its
+own. Until a caller is activated it is a resolvable path and nothing more; that
+inertness is exactly why it and the failure alert were the safe pair to turn on
+first.
+
+**`pipeline-review.yml` (TOD-109) is the first activation with visible
+behaviour** — and the first that spends money. It is also the first *caller* of
+safe-outputs, so step 1 stops being theoretical here.
+
+**`pipeline-dispatch.yml` is deliberately held, not merely next in line.** It *is*
+the `github-actions` dispatcher, and `dispatch.backend` is now `local-daemon` —
+Cyrus dispatches from the operator's machine. Activating it would put a second
+dispatcher on the same queue; it would also just fail, since the workflow asserts
+the backend before loading state (step 4 below has the mechanism). Do not work
+through the step order below as if step 4 were simply next. Bounce, telemetry,
+auto-approve and auto-merge remain staged on their own merits.
 
 ## The activation boundary — reviewed, not forbidden
 
@@ -67,10 +76,22 @@ activation trips the scope fence as well; that second signal is expected.
 >
 > Fixed by extending `.prettierignore` with `.github/workflows/pipeline-*.yml`
 > (TOD-108), scoped to the vendored files only — the rest of `.github/workflows/`
-> is todoclaw's own and stays under Prettier. **Every future activation extends
-> that ignore list in the same PR**, so the file's formatting owner is the same
-> before and after the `git mv`. If a vendored workflow really is misformatted,
-> fix it upstream in the kit rather than reformatting on the way in.
+> is todoclaw's own and stays under Prettier. **Every future activation must leave
+> the file's formatting owner unchanged across the `git mv`**, and confirm it in
+> the same PR. If a vendored workflow really is misformatted, fix it upstream in
+> the kit rather than reformatting on the way in.
+>
+> Because that entry is a **glob**, a workflow named `pipeline-*.yml` is already
+> covered and needs no new line — TOD-109 activated `pipeline-review.yml` without
+> touching `.prettierignore`. Check rather than assume, since a passing
+> `npm run format` proves nothing on a file that was already clean:
+>
+> ```bash
+> npx prettier --file-info .github/workflows/<file>   # want: "ignored": true
+> ```
+>
+> A future activation of a file that does *not* match `pipeline-*` — or any
+> vendored file arriving under a different name — does still need its own entry.
 
 ---
 
@@ -223,7 +244,7 @@ branch is the author's normal feedback loop, not an outage. Scheduled runs repor
 > *What is active right now* first: two alert workflows on one target is not a
 > conflict GitHub reports, it is just duplicate mail.
 
-**3. Review — the first one that spends money.**
+**3. Review — the first one that spends money.** ✅ **Active** (TOD-109)
 
 ```bash
 git mv templates/workflows/pipeline-review.yml .github/workflows/pipeline-review.yml
@@ -232,6 +253,34 @@ git mv templates/workflows/pipeline-review.yml .github/workflows/pipeline-review
 Runs on `pull_request`, so it exercises the safe-outputs path on real PRs without
 anything having to dispatch a session first. Needs `ANTHROPIC_API_KEY` and
 `LINEAR_API_KEY`.
+
+**Trigger: `pull_request: [opened]` only — never `synchronize`.** A later push to
+an open PR does *not* re-review it, by design: bounce pushes commits, so
+re-reviewing on every push would multiply review spend by the number of fix
+pushes. A deliberate re-read is the `workflow_dispatch` input (`pr_number`), and
+costs a full review.
+
+**Cost shape.** At most one model run per PR *opened*: `--max-turns 30` on
+`claude-sonnet-5` (override with the `PIPELINE_REVIEW_MODEL` variable), a
+25-minute job timeout, under a closed `--allowedTools Read,Grep,Glob,Write`
+allowlist — no Bash, and no tool that reaches the network. So the ceiling is one
+bounded session per opened PR, not per push.
+
+It cannot block a merge, and it cannot approve. The model step is
+`continue-on-error`, so a failed review is a warning rather than a red check. The
+job that runs the model holds `pull-requests: read`; the only job with
+`pull-requests: write` is the separate `publish` job, which runs `github-script`
+and no model. Approval is therefore structurally unreachable rather than merely
+discouraged — keep it off the required-checks list.
+
+**It reviews far fewer PRs than "every PR opened" suggests.** The snapshot job
+declines unless it finds a dispatcher-written pin artifact (`pipeline-pin-TOD-n`)
+whose `branch` equals the PR head ref. A hand-written branch has no pin, so the
+run is a green no-op that logs a warning — no model runs and nothing is spent.
+Since `pipeline-dispatch.yml` is held (above), **nothing currently writes pins**,
+so in practice every PR takes that decline path today. It also skips with a
+notice when `delivery.json` is absent or no Claude credential is set, and gets no
+secrets on fork PRs.
 
 **4. Dispatch — superseded while `dispatch.backend` is `local-daemon`.**
 
