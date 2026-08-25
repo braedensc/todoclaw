@@ -626,25 +626,41 @@ def main():
         ("cat .env.example allowed", bash("cat .env.example"), ALLOW, HOOK),
         ("process.env allowed (property access, not a path)",
          bash("node -e 'console.log(process.env.HOME)'"), ALLOW, HOOK),
-        # KNOWN FALSE POSITIVES, pinned so a fix flips them deliberately rather than
-        # drifting. SENSITIVE_PATH_RE's comment claims "the lookbehind/lookahead keep
-        # property access (process.env, obj.key) from tripping the .env / .key file
-        # patterns" — true for `process.env`, NOT true for `.key`/`credentials`:
-        #   * `[\w./-]*\.key(?!\w)` matches the tail of ANY dotted expression, so
-        #     `obj.key` and `jq '.data.key'` read as a *.key FILE;
-        #   * `credentials` is matched as a bare word with no path separator required,
-        #     so `npm test -- -t credentials` and `grep -rn credentials src/` block too.
-        # The intent is right and the fix is known (the kit's regex requires the token
-        # to be path-shaped, and a separator before `credentials`), but changing guard
-        # behavior is out of scope for the PR that introduced this battery.
+        # REMAINING KNOWN FALSE POSITIVE, pinned so a fix flips it deliberately rather
+        # than drifting: `[\w./-]*\.key(?!\w)` matches the tail of ANY dotted
+        # expression, so `obj.key` and `jq '.data.key'` read as a *.key FILE. The fix
+        # is known (make the token path-shaped, as the kit does) but is its own
+        # change — see the `credentials` arm below for the same bug already fixed.
         ("obj.key blocked (KNOWN FALSE POSITIVE — guard's comment says otherwise)",
          bash("node -e 'console.log(obj.key)'"), BLOCK, HOOK),
         ("jq '.data.key' blocked (KNOWN FALSE POSITIVE — a jq filter, not a file)",
          bash("jq -r '.data.key' out.json"), BLOCK, HOOK),
-        ("bare word 'credentials' blocked (KNOWN FALSE POSITIVE — not a path)",
-         bash("npm test -- -t credentials"), BLOCK, HOOK),
-        ("src/lib/credentials.test.ts blocked (KNOWN FALSE POSITIVE — a source file)",
-         bash("git add src/lib/credentials.test.ts"), BLOCK, HOOK),
+
+        # `credentials` USED to be the same bug — a bare word matched anywhere in a
+        # command, so writing prose about it, testing a file named after it, or
+        # grepping for it all blocked. (It blocked a real session twice.) The arm now
+        # requires a PATH SEPARATOR, which is the thing that actually distinguishes
+        # `~/.aws/credentials` from a test name. Both halves are pinned here: the
+        # narrowing is only safe because the file-tool twin below still catches the
+        # bare basename, so do not "simplify" either one without the other.
+        ("bare word 'credentials' allowed (a test name, not a path)",
+         bash("npm test -- -t credentials"), ALLOW, HOOK),
+        ("src/lib/credentials.test.ts allowed (a source file)",
+         bash("git add src/lib/credentials.test.ts"), ALLOW, HOOK),
+        ("grep -rn credentials allowed (searching for the WORD)",
+         bash("grep -rn credentials src/"), ALLOW, HOOK),
+        ("the word 'credentials' in prose allowed",
+         bash("echo 'never commit a credentials file'"), ALLOW, HOOK),
+        # ...and the real file, in every path shape, still blocked (the `~/.aws`
+        # spelling is already pinned above, with the other secret-path reads).
+        ("absolute .aws/credentials still blocked",
+         bash("cat /home/user/.aws/credentials"), BLOCK, HOOK),
+        ("./.aws/credentials still blocked",
+         bash("cat ./.aws/credentials"), BLOCK, HOOK),
+        ("../.aws/credentials still blocked",
+         bash("cat ../.aws/credentials"), BLOCK, HOOK),
+        ("gcloud credentials.json still blocked",
+         bash("cat ~/.config/gcloud/credentials.json"), BLOCK, HOOK),
 
         # ══ the remaining Bash guards (already present; pinned, not added) ════
         ("rm -rf blocked", bash("rm -rf node_modules"), BLOCK, HOOK),
@@ -710,14 +726,27 @@ def main():
         ("Read deploy.key blocked", read("deploy.key"), BLOCK, HOOK),
         ("Read cert.pem blocked", read("/x/cert.pem"), BLOCK, HOOK),
         ("Read .env.example allowed", read("/x/.env.example"), ALLOW, HOOK),
-        # KNOWN GAP, pinned so it flips deliberately rather than drifting: the Read
-        # arm matches only ^.env* and *.pem/*.key by BASENAME, so id_rsa and
-        # credentials — both covered on the Bash side by SENSITIVE_PATH_RE — are not
-        # blocked for the Read tool. Widening it is a guard change, out of scope here.
-        ("Read id_rsa allowed (KNOWN GAP — Bash arm covers the shell path)",
-         read("/home/user/.ssh/id_rsa"), ALLOW, HOOK),
-        ("Read aws credentials allowed (KNOWN GAP — same)",
-         read("/home/user/.aws/credentials"), ALLOW, HOOK),
+        # The file-tool twin of the Bash secret-path arm (SENSITIVE_BASENAME_RE).
+        # This was a real GAP: the Read arm matched only ^.env* and *.pem/*.key, so a
+        # session could open an SSH key or a cloud-credentials file outright. It is
+        # also what makes narrowing the Bash `credentials` arm safe — a file tool
+        # hands us an actual PATH, so a bare basename match is unambiguous there in a
+        # way it never was inside a shell command.
+        ("Read id_rsa blocked", read("/home/user/.ssh/id_rsa"), BLOCK, HOOK),
+        ("Read aws credentials blocked",
+         read("/home/user/.aws/credentials"), BLOCK, HOOK),
+        ("Write aws credentials blocked",
+         write("/home/user/.aws/credentials", "[default]"), BLOCK, HOOK),
+        ("Edit id_rsa blocked", edit("/home/user/.ssh/id_rsa", "x"), BLOCK, HOOK),
+        ("Read an ordinary source file allowed",
+         read("/repo/src/lib/dates.ts"), ALLOW, HOOK),
+        # RESIDUAL FALSE POSITIVE of the basename twin, pinned rather than left to
+        # surprise someone: a source file NAMED after the concept trips it, because a
+        # basename match cannot tell `credentials` from `credentials.test.ts`. The
+        # Bash arm deliberately allows that same file (see above), so the split is
+        # only in the file tools. Narrow this if it ever actually bites.
+        ("Read credentials.test.ts blocked (RESIDUAL FP — basename match)",
+         read("/repo/src/lib/credentials.test.ts"), BLOCK, HOOK),
         ("Write .env blocked", write("/x/.env", "X=1"), BLOCK, HOOK),
         ("Edit .env blocked", edit("/x/.env", "X=2"), BLOCK, HOOK),
         ("Write .env.example allowed",
