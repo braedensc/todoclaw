@@ -14,7 +14,7 @@ import {
   toolNotCalled,
   toolNotExecuted,
 } from './checks.ts'
-import { detPass, diffLines, overallPass } from './report.ts'
+import { baselineNameFor, detPass, diffLines, overallPass } from './report.ts'
 import type { ChatTrace, DbSnapshot, PlanScenario, RunReport, ScenarioResult } from './types.ts'
 import type { PlanResult } from '../../supabase/functions/_shared/plan-prompt.ts'
 
@@ -303,4 +303,67 @@ Deno.test('baseline diff surfaces a correctness drop that tone gains cancel out'
   assert(text.includes('correctness -4'), text)
   assert(text.includes('QUALITY'), text)
   assertEquals(qualityDrops, 1)
+})
+
+// REGRESSION (2026-08-25): `--save-baseline` wrote ONE fixed results/baseline.json, so saving a
+// plan baseline destroyed the 63-scenario chat baseline captured minutes earlier — and because
+// saveReport wrote EITHER the run file OR the baseline, the lost run had no other copy. The name
+// now carries surfaces + model, which makes that collision impossible.
+Deno.test('baseline filenames cannot collide across surfaces or models', () => {
+  const mk = (kind: 'chat' | 'plan', model: string): RunReport => ({
+    startedAt: '2026-08-25T00:00:00.000Z',
+    gitRef: 'x',
+    model,
+    judgeModel: 'claude-sonnet-5',
+    results: [
+      {
+        id: 'a',
+        kind,
+        tags: [],
+        title: 'a',
+        deterministic: [],
+        durationMs: 1,
+        usage: { input: 0, output: 0 },
+      },
+    ],
+  })
+  const chatSonnet = baselineNameFor(mk('chat', 'claude-sonnet-5'))
+  const planSonnet = baselineNameFor(mk('plan', 'claude-sonnet-5'))
+  const chatHaiku = baselineNameFor(mk('chat', 'claude-haiku-4-5'))
+  assert(chatSonnet !== planSonnet, 'surfaces must not collide')
+  assert(chatSonnet !== chatHaiku, 'models must not collide')
+  assertEquals(chatSonnet, 'results/baseline-chat-claude-sonnet-5.json')
+})
+
+// A chat baseline vs a plan run reads as "all new, no regressions" — silently meaningless.
+Deno.test('diff warns when baseline and run cover different surfaces', () => {
+  const one = (kind: 'chat' | 'plan', model: string): RunReport => ({
+    startedAt: '2026-08-25T00:00:00.000Z',
+    gitRef: 'x',
+    model,
+    judgeModel: 'claude-sonnet-5',
+    results: [
+      {
+        id: kind + '-1',
+        kind,
+        tags: [],
+        title: 't',
+        deterministic: [{ name: 'c', pass: true }],
+        durationMs: 1,
+        usage: { input: 0, output: 0 },
+      },
+    ],
+  })
+  const warnings: string[] = []
+  const realWarn = console.warn
+  console.warn = (...a: unknown[]) => void warnings.push(a.join(' '))
+  try {
+    diffLines(one('chat', 'claude-sonnet-5'), one('plan', 'claude-haiku-4-5'), 'b.json')
+  } finally {
+    console.warn = realWarn
+  }
+  assert(
+    warnings.some((w) => w.includes('not comparable')),
+    warnings.join('|'),
+  )
 })
