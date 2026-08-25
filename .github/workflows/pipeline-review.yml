@@ -653,6 +653,22 @@ jobs:
     name: Post the review's telemetry to the ticket
     needs: [snapshot, telemetry]
     if: always() && needs.telemetry.outputs.ready == 'true'
+    # A called workflow's permissions are CAPPED by the calling job's, and this
+    # job would otherwise inherit the tight workflow-level `contents: read` —
+    # which means `actions: none`. `pipeline-safe-outputs.yml` asks for
+    # `actions: read` (it downloads the requests artifact), so the call was
+    # rejected before any job started: `Error calling workflow … The workflow is
+    # requesting 'actions: read', but is only allowed 'actions: none'.` That is a
+    # STARTUP failure — the whole workflow never loads, `if:` is never consulted,
+    # and nothing appears in the PR's checks list at all. It went unnoticed
+    # because this workflow had never actually run (TOD-110). Granted here on the
+    # one job that needs it rather than at workflow level, so the reviewing jobs
+    # keep the narrower default. The other two callers of safe-outputs already
+    # carry `actions: read`; this file's tighter top-level block is why only it
+    # was affected.
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/pipeline-safe-outputs.yml
     with:
       artifact_name: pipeline-review-telemetry-${{ needs.snapshot.outputs.pr_number }}

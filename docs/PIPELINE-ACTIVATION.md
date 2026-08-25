@@ -94,17 +94,22 @@ activation trips the scope fence as well; that second signal is expected.
 > vendored file arriving under a different name — does still need its own entry.
 >
 > **One deliberate divergence from upstream, pending a port: `pipeline-review.yml`
-> (TOD-110).** Its trigger is `[opened, synchronize]` plus a gate step in
-> `snapshot`, where the kit's copy is `[opened]` only, and its `concurrency` is
-> `cancel-in-progress: false` where the kit's is `true`. That is a **fix, not
-> drift** — `opened` alone leaves a PR that opens `CONFLICTING` unreviewable
-> forever (step 3 below has the mechanism). `/sync-kit` will report this one file
-> as diverged; that report is correct and expected. The resolution is to port the
-> change upstream, **not** to revert it here: a companion kit ticket carries the
-> port, and until it merges an "upstream-newer" verdict on this file means a hand
-> merge that keeps the gate. This is the only file todoclaw intentionally holds
-> apart from the kit — every other vendored workflow is still byte-identical, and
-> a diff on any of them is real drift.
+> (TOD-110).** Two changes, both fixes rather than drift:
+>
+> 1. the trigger is `[opened, synchronize]` plus a gate step in `snapshot`, where
+>    the kit's copy is `[opened]` only, and `concurrency` is
+>    `cancel-in-progress: false` where the kit's is `true` — `opened` alone
+>    leaves a PR that opens `CONFLICTING` unreviewable forever (step 3 below);
+> 2. the `report` job carries its own `permissions: {contents: read, actions:
+>    read}`, which the kit's copy does not.
+>
+> `/sync-kit` will report this one file as diverged; that report is correct and
+> expected. The resolution is to port both upstream, **not** to revert them here:
+> a companion kit ticket carries the port, and until it merges an
+> "upstream-newer" verdict on this file means a hand merge that keeps them. This
+> is the only file todoclaw intentionally holds apart from the kit — every other
+> vendored workflow is still byte-identical, and a diff on any of them is real
+> drift.
 
 ---
 
@@ -257,7 +262,8 @@ branch is the author's normal feedback loop, not an outage. Scheduled runs repor
 > *What is active right now* first: two alert workflows on one target is not a
 > conflict GitHub reports, it is just duplicate mail.
 
-**3. Review — the first one that spends money.** ✅ **Active** (TOD-109)
+**3. Review — the first one that spends money.** ✅ **Active** (TOD-109), and
+**able to start since TOD-110**.
 
 ```bash
 git mv templates/workflows/pipeline-review.yml .github/workflows/pipeline-review.yml
@@ -315,6 +321,34 @@ forbids. The later run queues, then finds the finished artifact and exits cheap.
 25-minute job timeout, under a closed `--allowedTools Read,Grep,Glob,Write`
 allowlist — no Bash, and no tool that reaches the network. So the ceiling is one
 bounded session per PR, not per push.
+
+**It could not start at all until TOD-110, and nothing said so.** The `report`
+job calls `pipeline-safe-outputs.yml`, and a called workflow's permissions are
+**capped by the calling job's**. With no job-level block, `report` inherited this
+workflow's deliberately tight top-level `contents: read` — which means
+`actions: none` — while the callee asks for `actions: read`. GitHub rejected the
+call *before loading the workflow*:
+
+```
+Error calling workflow '….github/workflows/pipeline-safe-outputs.yml@<sha>'.
+The workflow is requesting 'actions: read', but is only allowed 'actions: none'.
+```
+
+A **startup failure** produces no jobs, no annotations on the API, and **no entry
+in the PR's checks list** — the same species of silent invisibility as the
+`CONFLICTING` hole above, from an unrelated cause. It survived activation because
+`Pipeline review` had never actually run: TOD-109's own PR opened `CONFLICTING`,
+so the workflow had zero runs and nothing had ever tried to load it. Fixed by
+granting `permissions: {contents: read, actions: read}` on the `report` job
+alone, so the reviewing jobs keep the narrower default. `pipeline-bounce.yml` and
+`pipeline-dispatch.yml` call the same reusable workflow and already carry
+`actions: read` at workflow level; this file's tighter top-level block is why
+only it was affected.
+
+> **Any future caller of a reusable workflow needs the callee's permissions on
+> the calling job.** The failure mode is invisible by construction, so check it
+> the moment a `uses: ./.github/workflows/…` job is added, rather than waiting
+> for a run that produces no evidence.
 
 It cannot block a merge, and it cannot approve. The model step is
 `continue-on-error`, so a failed review is a warning rather than a red check. The
