@@ -420,18 +420,40 @@ def _owning_worktree(path: str, roots):
 # bat/open/more) so `xxd`, `od`, `strings`, `grep`, `awk`, `base64`,
 # `node -e 'readFileSync(".env.local")'`, and `source .env.local && echo $VAR` all
 # sailed through. Match the sensitive PATH regardless of the leading command. The
-# lookbehind/lookahead keep property access (process.env, obj.key) from tripping the
-# .env / .key file patterns; .env.example is deliberately exempt.
+# lookbehind/lookahead keep `process.env` from tripping the .env arm; .env.example is
+# deliberately exempt.
+#
+# 2026-08-25 — the `credentials` arm was a BARE WORD, so it fired on the word
+# anywhere in a command: `npm test -- -t credentials`, `git add
+# src/credentials.test.ts`, and even `grep -rn credentials src/` were blocked. None
+# of those is a secret read, and a guard that cries wolf on prose is one people learn
+# to route around. It now requires a path separator — which is what actually
+# distinguishes `~/.aws/credentials` from a test name — and the basename twin below
+# keeps the genuinely-bare case (a file tool's `file_path`) covered, so narrowing
+# here closes a false positive without opening a hole.
+#
+# STILL KNOWN-WRONG, deliberately out of scope here and pinned by the battery: the
+# `.key` arm matches the tail of ANY dotted expression, so `obj.key` and the jq
+# filter `'.data.key'` read as a *.key FILE. Same class of bug, separate fix.
 SENSITIVE_PATH_RE = re.compile(
     r"""
       (?<!\w)\.env(?!\.example)(?!\w)      # .env / .env.local … (not .env.example, not process.env)
     | (?<!\w)[\w./-]*\.pem(?!\w)           # *.pem
     | (?<!\w)[\w./-]*\.key(?!\w)           # *.key
     | (?<!\w)id_rsa(?!\w)                  # ssh private key
-    | (?<!\w)credentials(?!\w)             # aws/gcp credentials files
+      # aws/gcp credentials FILES — a path separator is required, so `git add
+      # src/credentials.test.ts` and `npm test -- -t credentials` stay allowed.
+    | (?<!\w)(?:~|\.{1,2})?/(?:[\w.~-]+/)*credentials(?:\.\w+)?(?=[\s'"]|$)
     """,
     re.VERBOSE | re.IGNORECASE,
 )
+# Read/Edit/Write-tool twin of the Bash arms above (basename match). The Bash arm
+# scans a whole COMMAND, where a bare word is ambiguous — `credentials` there is far
+# more often a test name or a source file than a path. A file tool hands us an actual
+# PATH, so its basename is unambiguous and a bare match is exactly right: it is what
+# still catches `~/.aws/credentials` after the Bash arm stopped matching bare words,
+# and it closes the Read/Write gap that let a session open `id_rsa` outright.
+SENSITIVE_BASENAME_RE = re.compile(r"(?<!\w)(?:id_rsa|credentials)(?!\w)", re.IGNORECASE)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1410,6 +1432,11 @@ def _dispatch(data):
             )
         if re.search(r"\.(pem|key)$", basename):
             block(f"Reading {basename} is blocked — private key files are off-limits.")
+        if SENSITIVE_BASENAME_RE.search(basename):
+            block(
+                f"Reading {basename} is blocked — SSH keys and cloud credential "
+                "files are off-limits. Reference secrets by env-var name only."
+            )
 
     # ── Edit / Write ────────────────────────────────────────────────────────────
     if tool in ("Edit", "Write"):
@@ -1421,6 +1448,12 @@ def _dispatch(data):
             block(
                 f"Writing to {basename} is blocked. "
                 "Only .env.example (with placeholder values) is committed."
+            )
+        # Block writing SSH-key / cloud-credential files
+        if SENSITIVE_BASENAME_RE.search(basename):
+            block(
+                f"Writing {basename} is blocked — SSH keys and cloud credential "
+                "files are human-managed; Claude never creates or edits them."
             )
 
         # Block embedding secret values in any file content
