@@ -47,6 +47,9 @@ export interface RunOptions {
   mock: boolean
   repeat: number
   concurrency: number
+  /** The model UNDER TEST (chat via app_config, plan/recap passed directly). The judge stays on
+   * its own model — comparing two runs only works if the judge is held fixed. */
+  model: string
 }
 
 const EVAL_PASSWORD = 'eval-scenario-pw-2026'
@@ -132,7 +135,7 @@ async function runPlan(sc: PlanScenario, opts: RunOptions): Promise<ScenarioResu
         sc.schedule ?? null,
         sc.weather ?? null,
         sc.memories ?? [],
-        DEFAULT_PLAN_MODEL,
+        opts.model,
       ),
     )
     usage.input += gu.input
@@ -176,7 +179,7 @@ async function runRecap(sc: RecapScenario, opts: RunOptions): Promise<ScenarioRe
   }
   try {
     const { body, usage: gu } = await withRetry(`recap:${sc.id}`, () =>
-      generateRecap(opts.anthropic, sc.request, DEFAULT_PLAN_MODEL),
+      generateRecap(opts.anthropic, sc.request, opts.model),
     )
     usage.input += gu.input
     usage.output += gu.output
@@ -333,7 +336,7 @@ export async function runScenarios(
       await assertFunctionsServing(env.apiUrl)
       const sql = connectDb(env.dbUrl)
       try {
-        await prepareStack(sql)
+        await prepareStack(sql, opts.model)
         for (const sc of chats) {
           console.log(`  · chat/${sc.id}`)
           results.push(await runChat(sc, opts, { sql, env }))

@@ -10,6 +10,10 @@
 import type Anthropic from 'npm:@anthropic-ai/sdk@0.105.0'
 import { ALL_SCENARIOS } from './scenarios/index.ts'
 import { evalClient, PROD_MODEL } from './lib/judge.ts'
+import {
+  ALLOWED_CHAT_MODELS,
+  ALLOWED_PLAN_MODELS,
+} from '../supabase/functions/_shared/guardrails-constants.ts'
 import { mockAnthropic } from './lib/mock.ts'
 import { runScenarios } from './lib/runner.ts'
 import { compareToBaseline, printSummary, saveReport } from './lib/report.ts'
@@ -65,6 +69,28 @@ function filterScenarios(all: Scenario[]): Scenario[] {
 
 const selected = filterScenarios(ALL_SCENARIOS)
 
+// --model <id>: the model UNDER TEST. Chat scenarios get it via app_config (prepareStack pins it
+// per run); plan/recap get it passed straight to the builders. The JUDGE deliberately does NOT
+// follow it — a candidate grading itself makes two runs incomparable (README "Model-switch gate").
+// Validated HERE, above the --list early exit, so the free dry run the README tells you to do
+// first is where a typo gets caught rather than after you have spent on a sweep.
+const model = opt('model') ?? PROD_MODEL
+{
+  const allowed = [
+    ...new Set([...ALLOWED_CHAT_MODELS, ...ALLOWED_PLAN_MODELS]),
+  ] as readonly string[]
+  if (!flag('mock') && !allowed.includes(model)) {
+    console.error(`unknown --model "${model}". Allowed: ${allowed.join(', ')}`)
+    Deno.exit(2)
+  }
+  if (model !== PROD_MODEL) {
+    console.log(
+      `⚠️  CANDIDATE MODEL: ${model} (prod is ${PROD_MODEL}) — the judge stays on the prod model.\n` +
+        '   Compare against a baseline captured on the prod model, and read the ⚠ QUALITY lines.',
+    )
+  }
+}
+
 if (flag('list')) {
   for (const kind of ['chat', 'plan', 'recap'] as const) {
     const group = selected.filter((sc) => sc.kind === kind)
@@ -97,9 +123,7 @@ const judgeClient = noJudge ? null : (anthropic as Anthropic)
 console.log(
   `running ${selected.length} scenario(s)` +
     (repeat > 1 ? ` ×${repeat}` : '') +
-    (mock
-      ? ' [MOCK — no API calls]'
-      : ` [model ${PROD_MODEL}, judge ${noJudge ? 'off' : judgeModel}]`),
+    (mock ? ' [MOCK — no API calls]' : ` [model ${model}, judge ${noJudge ? 'off' : judgeModel}]`),
 )
 
 const results = await runScenarios(selected, {
@@ -109,12 +133,13 @@ const results = await runScenarios(selected, {
   mock,
   repeat,
   concurrency,
+  model,
 })
 
 const report: RunReport = {
   startedAt: new Date().toISOString(),
   gitRef: await gitRef(),
-  model: mock ? 'mock' : PROD_MODEL,
+  model: mock ? 'mock' : model,
   judgeModel: noJudge ? null : judgeModel,
   results,
 }
