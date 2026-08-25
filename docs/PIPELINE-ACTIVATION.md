@@ -149,6 +149,10 @@ Do not activate this before **Step 0** is done. Set `PIPELINE_DISPATCH_ENABLED` 
 `"false"` first if you want it merged but paused, then flip it when ready. Watch
 `budgets.dailyUsd` (currently `50.0`) and `budgets.wipLimit` (`3`).
 
+Both label-reading loops import `scripts/pipeline_labels.py`, and the step exits
+with an error if that import fails rather than resolving labels its own way — so
+keep the two files in step with each other when you re-sync either from the kit.
+
 **5. Bounce — closes the loop on a red PR.**
 
 ```bash
@@ -183,15 +187,15 @@ earlier stages have a track record. `autonomy.autoApproveProvenance` is currentl
 
 ---
 
-## Known follow-up
+## Resolved follow-up
 
-`templates/workflows/pipeline-dispatch.yml` was ported from the kit at
-`a75aa64` while the kit's fix for a **fail-open label read** was still an open PR
-(kit #45, *"make label reads detect their own drift, and fix label scope"*). In the
-version staged here, `keys.discard(None)` silently drops a label whose ID no longer
-resolves — so a ticket a human parked with `agent:needs-human` or `agent:blocked`
-can be dispatched anyway. **Re-sync this file from the kit before activating it at
-step 4.** It is inert until then, so this is a follow-up rather than a blocker.
+The dispatch workflow was originally staged from the kit at `a75aa64`, before the
+kit's fix for a **fail-open label read** had merged: `keys.discard(None)` silently
+dropped a label whose ID no longer resolved, so a ticket a human had parked with
+`agent:needs-human` or `agent:blocked` could be dispatched anyway. That was a
+re-sync-before-step-4 blocker.
 
-That fix also introduces `scripts/pipeline_labels.py` and touches
-`scripts/pipeline_dispatch_local.py`, neither of which is covered by this port.
+It is now re-synced from kit `415ac16` (#45), together with the
+`scripts/pipeline_labels.py` resolver it shares with tier-0 local dispatch. Both
+loops refuse to trust an unresolvable label instead of discarding it, and contain
+the failure to the one ticket. **No pre-activation re-sync is outstanding.**
