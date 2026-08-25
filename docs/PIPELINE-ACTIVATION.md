@@ -24,12 +24,13 @@ first.
 behaviour** — and the first that spends money. It is also the first *caller* of
 safe-outputs, so step 1 stops being theoretical here.
 
-**`pipeline-dispatch.yml` is deliberately held, not merely next in line.** Cyrus
-is the chosen dispatcher; that workflow is a competing GitHub Actions dispatcher,
-and running both would likely double-dispatch a ticket. Do not activate it as a
-matter of course by following the step order below — step 4 is blocked pending
-that decision. Bounce, telemetry, auto-approve and auto-merge remain staged on
-their own merits.
+**`pipeline-dispatch.yml` is deliberately held, not merely next in line.** It *is*
+the `github-actions` dispatcher, and `dispatch.backend` is now `local-daemon` —
+Cyrus dispatches from the operator's machine. Activating it would put a second
+dispatcher on the same queue; it would also just fail, since the workflow asserts
+the backend before loading state (step 4 below has the mechanism). Do not work
+through the step order below as if step 4 were simply next. Bounce, telemetry,
+auto-approve and auto-merge remain staged on their own merits.
 
 ## The activation boundary — reviewed, not forbidden
 
@@ -145,9 +146,15 @@ Grant the App or PAT nothing beyond the two permissions above — in particular 
 
 Secrets and variables both live under **Settings → Secrets and variables → Actions**.
 
-todoclaw's `delivery.json` sets `auth.scheduled` and `auth.review` to `api-key`, so
-the model credential here is **`ANTHROPIC_API_KEY`**. `CLAUDE_CODE_OAUTH_TOKEN` is
-the alternative for `subscription` auth and is **not** needed unless that changes.
+todoclaw's `delivery.json` sets `auth.review` to `api-key`, so the model credential
+for every workflow in the table below is **`ANTHROPIC_API_KEY`** — they all run in
+GitHub Actions, where no interactive credential exists.
+
+`auth.scheduled` is **`subscription`**, because the unattended lane is no longer a
+workflow: `dispatch.backend` is `local-daemon`, and a daemon starts its sessions
+under `CLAUDE_CODE_OAUTH_TOKEN` on the operator's own machine. That field only
+*describes* which credential a lane uses — it configures nothing — so the secret
+lives wherever the daemon runs, not in this repository.
 
 | Workflow | Trigger | Secrets | Variables |
 |---|---|---|---|
@@ -275,17 +282,27 @@ so in practice every PR takes that decline path today. It also skips with a
 notice when `delivery.json` is absent or no Claude credential is set, and gets no
 secrets on fork PRs.
 
-**4. Dispatch — the queue starts moving here.** ⛔ **Held** — see *What is active
-right now*: Cyrus is the dispatcher, and activating this too would likely
-double-dispatch a ticket.
+**4. Dispatch — superseded while `dispatch.backend` is `local-daemon`.**
 
 ```bash
 git mv templates/workflows/pipeline-dispatch.yml .github/workflows/pipeline-dispatch.yml
 ```
 
-Do not activate this before **Step 0** is done. Set `PIPELINE_DISPATCH_ENABLED` to
-`"false"` first if you want it merged but paused, then flip it when ready. Watch
-`budgets.dailyUsd` (currently `50.0`) and `budgets.wipLimit` (`3`).
+**Do not run this step as things stand.** This file *is* the `github-actions`
+dispatcher, and contract §9 binds each backend to its own state store, so the
+workflow asserts `dispatch.backend == "github-actions"` before it loads state and
+exits 1 otherwise. `delivery.json` now says `local-daemon` — Cyrus dispatches from
+the operator's machine — so activating this buys a red run on every cron tick and
+no queue movement. It stays staged until the backend says `github-actions` again.
+
+Whichever dispatcher is driving, watch `budgets.dailyUsd` (currently `50.0`) and
+`budgets.wipLimit` (`3`) — and note that a single `effort:L` run is now capped at
+`maxUsd` `45.0`, which is most of that daily figure.
+
+If the backend does go back to `github-actions`: do not activate before **Step 0**
+is done, set `dispatch.statePath` back to `null` (the workflow refuses a configured
+store it would silently ignore), and set `PIPELINE_DISPATCH_ENABLED` to `"false"`
+first if you want it merged but paused.
 
 Both label-reading loops import `scripts/pipeline_labels.py`, and the step exits
 with an error if that import fails rather than resolving labels its own way — so
