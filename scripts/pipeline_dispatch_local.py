@@ -323,9 +323,9 @@ def fetch_ticket(ticket_id, team_key, number, args):
 
     api_key = os.environ.get(args.api_key_env, "").strip()
     if not api_key:
-        die(f"${args.api_key_env} is unset, and no --ticket-file was given. "
-            f"Export the key (never pass it as a flag) or dispatch offline "
-            f"with --ticket-file.")
+        die("API key environment variable is unset, and no --ticket-file was given. "
+            "Export the key (never pass it as a flag) or dispatch offline "
+            "with --ticket-file.")
     nodes = graphql(ISSUE_QUERY, {"team": team_key, "number": float(number)},
                     api_key)["issues"]["nodes"]
     if not nodes:
