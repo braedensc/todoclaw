@@ -20,6 +20,8 @@
     "test:hooks": "python3 .claude/hooks/test_hooks.py",
     "test:schemas": "python3 scripts/check_schemas.py --selftest",
     "test:delivery": "python3 scripts/check_delivery_config.py --selftest",
+    "test:dor": "python3 scripts/check_ticket_dor.py --selftest",
+    "test:local-dispatch": "python3 scripts/pipeline_dispatch_local.py --selftest",
     "device-lab": "playwright test --config playwright.device-lab.config.ts",
     "seed:demo": "tsx scripts/demo-seed/import.ts",
     "eval": "cd evals && deno task eval --",
