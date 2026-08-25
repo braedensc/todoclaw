@@ -43,12 +43,14 @@ assembled values must never appear literally in this file — the hook itself (a
 secretlint, and CI's secret scan) scan file contents, and a literal here would
 block edits to this very file.
 """
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
 # The hook under test. The override exists because pre-tool-use.py is SELF-PROTECTED:
@@ -219,6 +221,142 @@ def make_worktree_sandbox():
     return root, hook_copy, sibling
 
 
+# ── pipeline sandboxes (docs/PIPELINE-CONTRACT.md) ───────────────────────────
+# The pipeline guards are INERT unless `delivery.json` exists at the repo root, so
+# every pipeline case needs a sandbox that has one — committed on `main`, because the
+# hook reads config VALUES from the default branch, never from the working-tree copy
+# the session can edit. The dispatcher PIN is written OUTSIDE the worktree at
+# <pinsRoot>/<sha256(realpath(root))[:16]>.json, exactly where the hook looks: a
+# binding the session could rewrite is not a binding.
+PL_READY = "11111111-1111-4111-8111-111111111111"
+PL_RAW = "22222222-2222-4222-8222-222222222222"
+PL_LABEL = "33333333-3333-4333-8333-333333333333"
+# Dispatcher-owned lifecycle labels (§6) — matched by ID as well as by canonical
+# key, so the battery needs both halves resolved.
+PL_QUEUED = "44444444-4444-4444-8444-444444444444"
+PL_NEEDS_HUMAN = "55555555-5555-4555-8555-555555555555"
+PL_BRANCH = "feat/tod-123-token-refresh"
+
+
+def mcp(tool, server="linear", **payload):
+    """An MCP tool call. The hook is deliberately SERVER-NAME AGNOSTIC (Claude Code
+    names MCP servers however the user wired them — often an opaque id), so cases
+    exercise both a readable server name and an opaque one."""
+    return {"tool_name": f"mcp__{server}__{tool}", "tool_input": payload}
+
+
+def _pl_write(root, rel, content):
+    p = os.path.join(root, rel)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w") as f:
+        f.write(content)
+
+
+def _pl_merge(base, over):
+    for k, v in (over or {}).items():
+        base[k] = ({**base[k], **v}
+                   if isinstance(v, dict) and isinstance(base.get(k), dict) else v)
+    return base
+
+
+def _pl_cfg(pins_dir, **over):
+    """A contract-shaped delivery.json with RESOLVED ids — guards compare IDs, never
+    display names, and an unresolved bootstrap placeholder must never match."""
+    return _pl_merge({
+        "version": 1,
+        "linear": {
+            "teamKey": "TOD", "workspace": "battery",
+            "stateIds": {"raw": PL_RAW, "ready": PL_READY, "working": "w-id",
+                         "review": "v-id", "done": "d-id"},
+            "labels": {"ids": {"track:backend": PL_LABEL, "effort:M": "e-id",
+                               "agent:queued": PL_QUEUED,
+                               "agent:needs-human": PL_NEEDS_HUMAN},
+                       "required": []},
+        },
+        "github": {"owner": "braedensc", "repo": "todoclaw", "defaultBranch": "main"},
+        "branch": {"types": ["feat", "fix", "chore", "refactor", "docs"],
+                   "requireTicketId": True},
+        "stack": {"kind": "node-ts", "securityNotes": [], "graderPaths": []},
+        "commands": {"lint": None, "typecheck": None, "test": None,
+                     "e2e": None, "preview": None},
+        "budgets": {"perEffort": {"M": {"maxTurns": 60, "maxUsd": 6.0,
+                                        "maxMinutes": 45}},
+                    "maxTurns": 150, "wipLimit": 3, "maxBounces": 2,
+                    "totalAttempts": 3, "dailyUsd": 50.0,
+                    "reviewSeverityThreshold": "medium"},
+        "auth": {"devSessions": "subscription", "scheduled": "api-key",
+                 "review": "api-key"},
+        "autonomy": {"autoApproveProvenance": ["epic"], "autoMergeMaxLines": 0,
+                     "riskPaths": [".claude/hooks/**", ".claude/settings*.json",
+                                   ".github/workflows/**", ".husky/**",
+                                   "delivery.json"]},
+        "dispatch": {"backend": "github-actions", "labelTrigger": "agent:queued",
+                     "pauseOnCapacity": True, "pinsRoot": pins_dir},
+        "monitoring": {"provider": "none", "stormPerHour": 6},
+    }, over)
+
+
+def _pl_pin(root, **over):
+    exp = datetime.now(timezone.utc) + timedelta(hours=2)
+    return _pl_merge({
+        "pin_version": 1, "dispatch_id": "d_battery", "session_mode": "ticket",
+        "worktree": root, "branch": PL_BRANCH, "base_branch": "main",
+        "auth_mode": "api-key",
+        "budget": {"maxTurns": 60, "maxUsd": 6.0, "maxMinutes": 45,
+                   "attempt": 1, "of": 3},
+        "ticket": {"id": "TOD-123", "team_key": "TOD",
+                   "url": "https://example.invalid/TOD-123", "state_id": PL_RAW,
+                   "effort": "M", "track": "track:backend",
+                   "provenance": "epic/TOD-100", "title": "Refresh tokens",
+                   "acceptance_criteria": ["tokens refresh before expiry"],
+                   "out_of_scope": [], "snapshot_at": "2026-08-24T15:04:05Z"},
+        "subject": None, "pinned_at": "2026-08-24T15:04:05Z",
+        "pinned_by": "dispatcher:battery",
+        "expires_at": exp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }, over)
+
+
+def make_pipeline_sandbox(branch=PL_BRANCH, pin="default", cfg_over=None,
+                          cfg_raw=None, pin_raw=None, worktree_cfg_raw=None,
+                          pins_in_repo=None):
+    """Throwaway repo with the pipeline CONFIGURED. Returns (root, hook_copy, pins).
+
+    `cfg_raw`/`pin_raw` write the file verbatim (the malformed cases).
+    `worktree_cfg_raw` overwrites the WORKING-TREE copy after branching — the
+    adversarial case: an agent editing `delivery.json` inside its own worktree must
+    not be able to move a guard, because values come from the committed copy on the
+    default branch. `pins_in_repo` is a repo-relative path that becomes
+    `dispatch.pinsRoot`, pointing the pin INSIDE the worktree — the payload a
+    poisoned config would want most, since a pins directory the session can write is
+    a pin the session can forge. `pin=None` means no pin at all (a human's ad-hoc
+    session in a configured repo)."""
+    root = os.path.realpath(tempfile.mkdtemp(prefix="hook-battery-pl-"))
+    pins = os.path.realpath(tempfile.mkdtemp(prefix="hook-battery-pins-"))
+    hooks = os.path.join(root, ".claude", "hooks")
+    os.makedirs(hooks)
+    hook_copy = os.path.join(hooks, "pre-tool-use.py")
+    shutil.copy(HOOK, hook_copy)
+    _git(root, "init", "-q", "-b", "main")
+    cfg_pins = pins if pins_in_repo is None else os.path.join(root, pins_in_repo)
+    _pl_write(root, "delivery.json", cfg_raw if cfg_raw is not None
+              else json.dumps(_pl_cfg(cfg_pins, **(cfg_over or {})), indent=2))
+    _pl_write(root, "src/app.ts", "export const x = 1\n")
+    _pl_write(root, ".github/workflows/ci.yml", "name: CI\n")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=battery", "-c", "user.email=battery@test.invalid",
+         "commit", "-q", "-m", "seed")
+    _git(root, "checkout", "-q", "-b", branch)
+    if worktree_cfg_raw is not None:
+        _pl_write(root, "delivery.json", worktree_cfg_raw)
+    if pin is not None:
+        key = hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
+        body = pin_raw if pin_raw is not None else json.dumps(
+            _pl_pin(root, **(pin if isinstance(pin, dict) else {})), indent=2)
+        with open(os.path.join(pins, key + ".json"), "w") as f:
+            f.write(body)
+    return root, hook_copy, pins
+
+
 def main():
     if not os.path.exists(HOOK):
         print(f"FATAL: hook not found at {HOOK}")
@@ -235,6 +373,50 @@ def main():
     open_root, open_hook, open_env = make_pr_sandbox(
         "echo '{\"state\":\"OPEN\",\"number\":7}'")
     gherr_root, gherr_hook, gherr_env = make_pr_sandbox("exit 1")
+
+    # ── pipeline sandboxes (see make_pipeline_sandbox) ────────────────────────
+    pl_root, pl_hook, pl_pins = make_pipeline_sandbox()
+    pl_nopin_root, pl_nopin, _ = make_pipeline_sandbox(pin=None)
+    pl_broken_root, pl_broken, _ = make_pipeline_sandbox(cfg_raw="{ not json")
+    pl_badver_root, pl_badver, _ = make_pipeline_sandbox(
+        cfg_raw=json.dumps({"version": 99}))
+    pl_badpin_root, pl_badpin, _ = make_pipeline_sandbox(pin_raw="not json")
+    pl_oldpin_root, pl_oldpin, _ = make_pipeline_sandbox(pin={"pin_version": 99})
+    pl_mism_root, pl_mism, _ = make_pipeline_sandbox(
+        pin={"worktree": "/nowhere/else"})
+    pl_exp_root, pl_exp, _ = make_pipeline_sandbox(
+        pin={"expires_at": "2020-01-01T00:00:00Z"})
+    pl_expplan_root, pl_expplan, _ = make_pipeline_sandbox(
+        branch="feat/some-planning", pin={"expires_at": "2020-01-01T00:00:00Z",
+                                          "session_mode": "planning", "ticket": None})
+    pl_pinsin_root, pl_pinsin, _ = make_pipeline_sandbox(pins_in_repo=".pipeline/pins")
+    pl_pinsbad_root, pl_pinsbad, _ = make_pipeline_sandbox(
+        cfg_over={"dispatch": {"pinsRoot": 42}})
+    # Unresolvable label IDs — the lifecycle-label guard's error path: canonical-key
+    # matching must still fire when the ID map is blank.
+    pl_nolbl_root, pl_nolbl, _ = make_pipeline_sandbox(
+        cfg_over={"linear": {"labels": {"ids": {}, "required": []}}})
+    pl_noid_root, pl_noid, _ = make_pipeline_sandbox(pin={"ticket": None})
+    pl_plan_root, pl_plan, _ = make_pipeline_sandbox(
+        branch="feat/some-planning",
+        pin={"session_mode": "planning", "ticket": None})
+    pl_maint_root, pl_maint, _ = make_pipeline_sandbox(
+        branch="chore/some-maintenance",
+        pin={"session_mode": "maintenance", "ticket": None})
+    pl_wrongbr_root, pl_wrongbr, _ = make_pipeline_sandbox(
+        branch="feat/tod-999-other-work")
+    pl_nobr_root, pl_nobr, _ = make_pipeline_sandbox(branch="feat/token-refresh")
+    pl_noreq_root, pl_noreq, _ = make_pipeline_sandbox(
+        branch="feat/token-refresh", cfg_over={"branch": {"requireTicketId": False}})
+    pl_noauto_root, pl_noauto, _ = make_pipeline_sandbox(
+        cfg_over={"autonomy": {"autoApproveProvenance": []}})
+    pl_mon_root, pl_mon, _ = make_pipeline_sandbox(
+        pin={"ticket": {"provenance": "monitor"}})
+    # The adversarial config case: the WORKING-TREE copy is disarmed (blank state
+    # ids, empty riskPaths), but values come from the committed copy on main.
+    pl_disarm_root, pl_disarm, _ = make_pipeline_sandbox(
+        worktree_cfg_raw=json.dumps({"version": 1, "linear": {"stateIds": {}},
+                                     "autonomy": {"riskPaths": []}}))
 
     # (name, payload, expect_block, hook_path[, env[, cwd]])
     cases = [
@@ -573,6 +755,293 @@ def main():
          ALLOW, HOOK),
         ("missing tool_input allowed (no guard applies)",
          {"tool_name": "Bash"}, ALLOW, HOOK),
+
+        # ══ GUARD 9: self-edit false positives (fixed 2026-08-25) ════════════
+        # A guard must match OPERATIONS, not mentions. These three shapes were
+        # blocked and should not have been; the two after them prove the fix did
+        # not open the door it was closing.
+        ("self-edit: `sed -n` on a hook file is a READ, not a rewrite",
+         bash(f"sed -n '1,70p' {os.path.join(feat_root, '.claude/hooks/pre-tool-use.py')}"),
+         ALLOW, feat_hook),
+        ("self-edit: ANOTHER checkout's hooks are not ours (scratch clone)",
+         bash("sed -i 's/a/b/' /tmp/other-repo/.claude/hooks/pre-tool-use.py"),
+         ALLOW, feat_hook),
+        ("self-edit: reading another checkout's settings.json allowed",
+         bash("cat /tmp/other-repo/.claude/settings.json"), ALLOW, feat_hook),
+        ("self-edit: `sed -i` on OUR hook still blocked",
+         bash("sed -i 's/a/b/' .claude/hooks/pre-tool-use.py"), BLOCK, feat_hook),
+        ("self-edit: a RELATIVE traversal path stays protected (no cwd escape)",
+         bash("sed -i 's/a/b/' ../../.claude/hooks/pre-tool-use.py"), BLOCK, feat_hook),
+        ("self-edit: absolute path INSIDE this project still blocked",
+         bash(f"echo x > {os.path.join(feat_root, '.claude/hooks/pre-tool-use.py')}"),
+         BLOCK, feat_hook),
+
+        # ══ GUARD 10: prose is not an operation (_strip_prose coverage) ══════
+        # A PR body quoting a dotenv filename blocked a legitimate `gh pr create`;
+        # the stripper existed but ran at ONE site. It now runs at four.
+        ("prose: a PR body quoting .env.local does not trip the secret guard",
+         bash("gh pr create --title \"fix\" --body \"documents the .env.local setup\""),
+         ALLOW, feat_hook),
+        ("prose: a commit message quoting .env.local is inert",
+         bash("git commit -m \"note: .env.local is gitignored\""), ALLOW, feat_hook),
+        ("prose: a REAL .env.local read is still blocked",
+         bash("cat .env.local"), BLOCK, feat_hook),
+        ("prose: a body mentioning `git commit` does not re-enter the branch guard",
+         bash("gh pr create --body \"run git commit after this\""), ALLOW, main_hook),
+
+        # ══ GUARD 11: local-dispatch — a session may not write its own pin ═══
+        ("local-dispatch: invoking the pin writer blocked",
+         bash("python3 scripts/pipeline_dispatch_local.py TOD-90"), BLOCK, feat_hook),
+        ("local-dispatch: --release blocked too",
+         bash("python3 scripts/pipeline_dispatch_local.py --release"), BLOCK, feat_hook),
+        ("local-dispatch: a scrubbed-env invocation is still blocked (hook, not env)",
+         bash("env -u CLAUDECODE python3 scripts/pipeline_dispatch_local.py TOD-90"),
+         BLOCK, feat_hook),
+        ("local-dispatch: --selftest allowed (writes only temp dirs; CI runs it)",
+         bash("python3 scripts/pipeline_dispatch_local.py --selftest"),
+         ALLOW, feat_hook),
+        ("local-dispatch: reading the script allowed",
+         bash("cat scripts/pipeline_dispatch_local.py"), ALLOW, feat_hook),
+        # A whole-command read-verb test was defeated by a PIPE: the trailing
+        # `| head` made the invocation look like a read. Found against the live
+        # guard, not by the cases above — every one of them lacked a pipe.
+        ("local-dispatch: a trailing pipe does not disarm the guard",
+         bash("python3 scripts/pipeline_dispatch_local.py TOD-90 2>&1 | head -3"),
+         BLOCK, feat_hook),
+        ("local-dispatch: `| cat` does not disarm the guard either",
+         bash("python3 scripts/pipeline_dispatch_local.py TOD-90 | cat"),
+         BLOCK, feat_hook),
+        ("local-dispatch: chained after a read is still an invocation",
+         bash("cat README.md && python3 scripts/pipeline_dispatch_local.py TOD-90"),
+         BLOCK, feat_hook),
+        ("local-dispatch: piping the SCRIPT into a reader is still a read",
+         bash("cat scripts/pipeline_dispatch_local.py | grep def"),
+         ALLOW, feat_hook),
+        ("local-dispatch: --selftest piped to tail still allowed",
+         bash("python3 scripts/pipeline_dispatch_local.py --selftest | tail -2"),
+         ALLOW, feat_hook),
+
+        # ══ PIPELINE GUARDS (docs/PIPELINE-CONTRACT.md) ══════════════════════
+        # ── OPTIONALITY: *off* is not *broken*. A project with no delivery.json
+        #    must be untouched by all six. This is the regression gate for every
+        #    repo that never opts in — the failure that would brick them.
+        ("pipeline off: tracker issue write allowed (no delivery.json)",
+         mcp("save_issue", id="TOD-123"), ALLOW, feat_hook),
+        ("pipeline off: a `ready`-state payload is inert",
+         mcp("save_issue", id="TOD-123", stateId=PL_READY), ALLOW, feat_hook),
+        ("pipeline off: editing a CI workflow allowed",
+         edit(os.path.join(feat_root, ".github/workflows/ci.yml"), "x"),
+         ALLOW, feat_hook),
+        ("pipeline off: sed -i on a CI workflow allowed",
+         bash(f"sed -i 's/a/b/' {os.path.join(feat_root, '.github/workflows/ci.yml')}"),
+         ALLOW, feat_hook),
+        ("pipeline off: a lifecycle label is inert",
+         mcp("save_issue", id="TOD-123", labels=["agent:needs-human"]),
+         ALLOW, feat_hook),
+        ("pipeline off: an ordinary Bash call is untouched",
+         bash("npm test"), ALLOW, feat_hook),
+
+        # ── GUARD A: pin-binding ─────────────────────────────────────────────
+        ("pin-binding: a valid pin lets ordinary work through",
+         edit(os.path.join(pl_root, "src/app.ts"), "x"), ALLOW, pl_hook),
+        ("pin-binding: malformed pin blocked (hard stop, not a warning)",
+         edit(os.path.join(pl_badpin_root, "src/app.ts"), "x"), BLOCK, pl_badpin),
+        ("pin-binding: unknown pin_version blocked (a reader refuses, never guesses)",
+         edit(os.path.join(pl_oldpin_root, "src/app.ts"), "x"), BLOCK, pl_oldpin),
+        ("pin-binding: a pin written for a DIFFERENT worktree blocked",
+         edit(os.path.join(pl_mism_root, "src/app.ts"), "x"), BLOCK, pl_mism),
+        ("pin-binding: NO pin does not brick a human's ad-hoc session",
+         edit(os.path.join(pl_nopin_root, "src/app.ts"), "x"), ALLOW, pl_nopin),
+        # An EXPIRED pin is BROKEN, not absent. An absence means nothing ever bound
+        # this session; an expiry means a binding WAS issued for this worktree and
+        # lapsed, so what it bound can no longer be verified. Reading that as
+        # "unpinned" would switch the other guards off — and would make WAITING an
+        # escape, which is the fail-direction doctrine exactly inverted.
+        ("pin-binding: EXPIRED pin in ticket mode blocks an ordinary edit",
+         edit(os.path.join(pl_exp_root, "src/app.ts"), "x"), BLOCK, pl_exp),
+        ("pin-binding: EXPIRED pin blocks a Bash mutation",
+         bash("npm test"), BLOCK, pl_exp),
+        ("pin-binding: EXPIRED pin — Read stays allowed (diagnosis)",
+         read(os.path.join(pl_exp_root, "delivery.json")), ALLOW, pl_exp),
+        ("pin-binding: expired PLANNING pin does not brick (§2 scopes BROKEN to ticket)",
+         edit(os.path.join(pl_expplan_root, "src/app.ts"), "x"), ALLOW, pl_expplan),
+        ("pin-binding: expired planning pin still withholds a risk path (a lapse grants nothing)",
+         edit(os.path.join(pl_expplan_root, ".github/workflows/ci.yml"), "x"),
+         BLOCK, pl_expplan),
+        # Error paths: a broken config fails closed, but never takes the repo hostage.
+        ("broken config: a mutating Bash call is blocked",
+         bash("npm test"), BLOCK, pl_broken),
+        ("broken config: editing ordinary source is blocked",
+         edit(os.path.join(pl_broken_root, "src/app.ts"), "x"), BLOCK, pl_broken),
+        ("broken config: editing delivery.json stays ALLOWED (no hostage)",
+         write(os.path.join(pl_broken_root, "delivery.json"), "{}"), ALLOW, pl_broken),
+        ("broken config: Read stays allowed (diagnosis)",
+         read(os.path.join(pl_broken_root, "delivery.json")), ALLOW, pl_broken),
+        ("broken config: unrecognized version blocked (refuse, never guess)",
+         edit(os.path.join(pl_badver_root, "src/app.ts"), "x"), BLOCK, pl_badver),
+        ("pinsRoot inside the worktree is BROKEN (a forgeable pin is not a pin)",
+         edit(os.path.join(pl_pinsin_root, "src/app.ts"), "x"), BLOCK, pl_pinsin),
+        ("pinsRoot inside the worktree: editing delivery.json stays allowed",
+         write(os.path.join(pl_pinsin_root, "delivery.json"), "{}"), ALLOW, pl_pinsin),
+        ("pinsRoot of the wrong TYPE is BROKEN, not silently defaulted",
+         edit(os.path.join(pl_pinsbad_root, "src/app.ts"), "x"), BLOCK, pl_pinsbad),
+
+        # ── GUARD B: ticket-branch ───────────────────────────────────────────
+        ("ticket-branch: matching lower-cased branch allowed",
+         edit(os.path.join(pl_root, "src/app.ts"), "x"), ALLOW, pl_hook),
+        ("ticket-branch: a DIFFERENT ticket in the branch blocked",
+         edit(os.path.join(pl_wrongbr_root, "src/app.ts"), "x"), BLOCK, pl_wrongbr),
+        ("ticket-branch: no ticket segment blocked when requireTicketId is on",
+         edit(os.path.join(pl_nobr_root, "src/app.ts"), "x"), BLOCK, pl_nobr),
+        ("ticket-branch: git commit on a mismatched branch blocked",
+         bash("git commit -F /tmp/msg.txt"), BLOCK, pl_wrongbr),
+        ("ticket-branch: requireTicketId off → a plain slug is fine",
+         edit(os.path.join(pl_noreq_root, "src/app.ts"), "x"), ALLOW, pl_noreq),
+
+        # ── GUARD C: scope-fence (risk / grader paths) ───────────────────────
+        ("scope-fence: Edit a CI workflow blocked in a pinned session",
+         edit(os.path.join(pl_root, ".github/workflows/ci.yml"), "x"), BLOCK, pl_hook),
+        ("scope-fence: Write delivery.json blocked in a pinned session",
+         write(os.path.join(pl_root, "delivery.json"), "{}"), BLOCK, pl_hook),
+        ("scope-fence: Edit test_hooks.py blocked (.claude/hooks/** risk glob)",
+         edit(os.path.join(pl_root, ".claude/hooks/test_hooks.py"), "x"),
+         BLOCK, pl_hook),
+        ("scope-fence: Edit ordinary source allowed",
+         edit(os.path.join(pl_root, "src/app.ts"), "x"), ALLOW, pl_hook),
+        ("scope-fence: Bash redirect into a workflow blocked",
+         bash(f"echo x > {os.path.join(pl_root, '.github/workflows/ci.yml')}"),
+         BLOCK, pl_hook),
+        ("scope-fence: sed -i delivery.json blocked",
+         bash("sed -i 's/a/b/' delivery.json"), BLOCK, pl_hook),
+        ("scope-fence: cat a workflow allowed (a read is not a mutation)",
+         bash(f"cat {os.path.join(pl_root, '.github/workflows/ci.yml')}"),
+         ALLOW, pl_hook),
+        ("scope-fence: git add a workflow allowed (staging, not mutating)",
+         bash(f"git add {os.path.join(pl_root, '.github/workflows/ci.yml')}"),
+         ALLOW, pl_hook),
+        ("scope-fence: UNPINNED session may edit a workflow (withholding → fails open)",
+         edit(os.path.join(pl_nopin_root, ".github/workflows/ci.yml"), "x"),
+         ALLOW, pl_nopin),
+        ("scope-fence: a disarmed WORKING-TREE delivery.json cannot widen the fence",
+         edit(os.path.join(pl_disarm_root, ".github/workflows/ci.yml"), "x"),
+         BLOCK, pl_disarm),
+
+        # ── GUARD D: lifecycle-label (§6) ────────────────────────────────────
+        ("lifecycle-label: setting agent:needs-human by canonical key blocked",
+         mcp("save_issue", id="TOD-123", labels=["agent:needs-human"]),
+         BLOCK, pl_hook),
+        ("lifecycle-label: setting it by configured label ID blocked",
+         mcp("save_issue", id="TOD-123", labelIds=[PL_NEEDS_HUMAN]), BLOCK, pl_hook),
+        ("lifecycle-label: REMOVING a lifecycle label blocked too (add == remove)",
+         mcp("save_issue", id="TOD-123", removeLabels=["agent:blocked"]),
+         BLOCK, pl_hook),
+        ("lifecycle-label: a planning session may not queue its own next dispatch",
+         mcp("create_issue", teamId="TOD", labels=["agent:queued"]), BLOCK, pl_plan),
+        ("lifecycle-label: an ordinary label on the pinned ticket allowed",
+         mcp("save_issue", id="TOD-123", labels=["needs-design"]), ALLOW, pl_hook),
+        ("lifecycle-label: a non-lifecycle configured ID (track:*) allowed",
+         mcp("save_issue", id="TOD-123", labelIds=[PL_LABEL]), ALLOW, pl_hook),
+        ("lifecycle-label: ASKING for one in a comment allowed (prose, not a value)",
+         mcp("save_comment", issueId="TOD-123",
+             body="blocked on an API key — please apply agent:blocked"),
+         ALLOW, pl_hook),
+        ("lifecycle-label: UNPINNED session unaffected (withholding → fails open)",
+         mcp("save_issue", id="TOD-123", labels=["agent:needs-human"]),
+         ALLOW, pl_nopin),
+        # Error path: the ID map resolves nothing, so ID matching cannot fire. Key
+        # matching must still block — a guard whose config went blank fails CLOSED.
+        ("lifecycle-label: unresolvable label IDs still block by canonical key",
+         mcp("save_issue", id="TOD-123", labels=["agent:blocked"]), BLOCK, pl_nolbl),
+        ("lifecycle-label: an EXPIRED planning pin still blocks (a lapse grants nothing)",
+         mcp("save_issue", id="TOD-777", labels=["agent:queued"]), BLOCK, pl_expplan),
+
+        # ── GUARD E: self-approval ───────────────────────────────────────────
+        # There is NO in-session allow-path and no config value that opens one. The
+        # first case is the regression gate: the BEST-case session (pinned, epic
+        # provenance, complete ACs, targeting its OWN ticket) is still refused, so an
+        # allow-path cannot come back unnoticed.
+        ("self-approval: the BEST-case session is still blocked",
+         mcp("save_issue", id="TOD-123", stateId=PL_READY), BLOCK, pl_hook),
+        ("self-approval: monitor-provenance ticket blocked",
+         mcp("save_issue", id="TOD-123", stateId=PL_READY), BLOCK, pl_mon),
+        ("self-approval: no pin blocks — a GRANTING check fails CLOSED",
+         mcp("save_issue", id="TOD-123", stateId=PL_READY), BLOCK, pl_nopin),
+        ("self-approval: EXPIRED pin blocks — a GRANTING check fails CLOSED",
+         mcp("save_issue", id="TOD-123", stateId=PL_READY), BLOCK, pl_exp),
+        # Paired with the pl_hook case above (whose config lists "epic"): together
+        # they prove the hook does not read autoApproveProvenance in EITHER direction.
+        ("self-approval: autoApproveProvenance is not an in-session permission",
+         mcp("save_issue", id="TOD-123", stateId=PL_READY), BLOCK, pl_noauto),
+        ("self-approval: matched by state ID from an OPAQUE MCP server name too",
+         mcp("save_issue", server="ee511e16-940a-42fe-8cbd-7397bd7a5f79",
+             id="TOD-123", stateId=PL_READY), BLOCK, pl_hook),
+        ("self-approval: a disarmed WORKING-TREE delivery.json cannot move the guard",
+         mcp("save_issue", id="TOD-123", stateId=PL_READY), BLOCK, pl_disarm),
+        ("self-approval: a `ready` state ID nested in a LIST is still an approval",
+         mcp("save_issue", id="TOD-123", stateIds=[PL_READY]), BLOCK, pl_hook),
+        ("self-approval: a `raw` state change allowed — only `ready` is an approval",
+         mcp("save_issue", id="TOD-123", stateId=PL_RAW), ALLOW, pl_hook),
+
+        # ── own-ticket scoping + AC integrity (the ticket-mode decision table) ─
+        ("own-ticket: issue write on the pinned ticket allowed",
+         mcp("update_issue_status", id="TOD-123", stateId=PL_RAW), ALLOW, pl_hook),
+        ("own-ticket: issue write on ANOTHER ticket blocked",
+         mcp("save_issue", id="TOD-456", stateId=PL_RAW), BLOCK, pl_hook),
+        ("own-ticket: create_issue blocked in ticket mode",
+         mcp("create_issue", title="unrelated bug", teamId="TOD"), BLOCK, pl_hook),
+        ("own-ticket: an upsert with no target is a CREATE — blocked",
+         mcp("save_issue", title="unrelated bug"), BLOCK, pl_hook),
+        ("own-ticket: issue write with an UNRESOLVABLE target blocked (fails closed)",
+         mcp("update_issue", id="9c1e-opaque-uuid", stateId=PL_RAW), BLOCK, pl_hook),
+        ("own-ticket: a foreign ticket ID nested in a LIST is still foreign",
+         mcp("save_comment", issueId="TOD-123", mentionedIssues=["TOD-456"],
+             body="see also"), BLOCK, pl_hook),
+        ("own-ticket: ticket mode with NO pinned id blocks EVERY tracker write",
+         mcp("save_comment", issueId="TOD-123", body="hi"), BLOCK, pl_noid),
+        ("own-ticket: a tracker READ is never blocked",
+         mcp("list_issues", teamId="TOD"), ALLOW, pl_hook),
+        ("own-ticket: a non-tracker MCP tool is untouched (prose ticket mention)",
+         mcp("create_pull_request", server="github", title="fixes TOD-777 leak"),
+         ALLOW, pl_hook),
+        ("own-ticket: an UNKNOWN MCP verb carrying a configured label ID is a write",
+         mcp("mutate_thing", labelId=PL_LABEL, issueId="TOD-456"), BLOCK, pl_hook),
+        ("planning mode: create_issue allowed (team-scoped)",
+         mcp("create_issue", title="child of the epic", teamId="TOD"),
+         ALLOW, pl_plan),
+        ("planning mode: writing a FOREIGN team's ticket blocked",
+         mcp("save_issue", id="OTH-9", stateId=PL_RAW), BLOCK, pl_plan),
+        ("maintenance mode: writing another in-team ticket allowed (team-scoped)",
+         mcp("save_issue", id="TOD-777", stateId=PL_RAW), ALLOW, pl_maint),
+        ("no pin: tracker write allowed — a WITHHOLDING check fails OPEN",
+         mcp("save_issue", id="TOD-456", stateId=PL_RAW), ALLOW, pl_nopin),
+        ("AC integrity: editing the pinned ticket's description blocked",
+         mcp("save_issue", id="TOD-123", description="new scope"), BLOCK, pl_hook),
+        ("AC integrity: editing the pinned ticket's title blocked",
+         mcp("update_issue", id="TOD-123", title="different work"), BLOCK, pl_hook),
+        ("AC integrity: a status-only change on the pinned ticket allowed",
+         mcp("update_issue_status", id="TOD-123", stateId=PL_RAW), ALLOW, pl_hook),
+
+        # ── GUARD F: telemetry-required (the half a PreToolUse hook can hold) ─
+        # The COUNTING half — "exactly one telemetry block per terminal run" — is
+        # §8's safe-outputs validator, which runs OUT of session and is NOT ported to
+        # this repo yet (there is no requests-file emitter here). What a PreToolUse
+        # hook can guarantee is that the reporting CHANNEL stays open: a terminal run
+        # posts its telemetry as a ticket comment, and a guard that blocked comments
+        # would make emitting one impossible. These pin that the channel is not
+        # closed by the guards above, and that it cannot be redirected elsewhere.
+        ("telemetry: a comment on the pinned ticket is never blocked",
+         mcp("save_comment", issueId="TOD-123", body="telemetry"), ALLOW, pl_hook),
+        ("telemetry: a comment with an UNRESOLVABLE target stays allowed",
+         mcp("save_comment", issueId="9c1e-opaque-uuid", body="telemetry"),
+         ALLOW, pl_hook),
+        ("telemetry: a long markdown body is not mistaken for a mutation",
+         mcp("save_comment", issueId="TOD-123",
+             body='```json\n{"schema": "pipeline-telemetry/1"}\n```'),
+         ALLOW, pl_hook),
+        ("telemetry: reporting to ANOTHER ticket is still blocked",
+         mcp("save_comment", issueId="TOD-456", body="telemetry"), BLOCK, pl_hook),
+        ("telemetry: an EXPIRED ticket-mode pin blocks the write (report, then stop)",
+         mcp("save_comment", issueId="TOD-123", body="telemetry"), BLOCK, pl_exp),
     ]
 
     failures = 0
