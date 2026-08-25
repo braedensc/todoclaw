@@ -413,7 +413,15 @@ jobs:
       # story for `templates/workflows/`, and its second half (referenced scripts
       # must exist) is what would have caught `pipeline-auto-merge.yml` arriving
       # without `scripts/check_auto_merge.py`.
-      - name: Staged workflow templates parse, and their scripts exist
+      #
+      # ACTIVATED pipeline workflows are checked here too (TOD-106). GitHub parses
+      # a live workflow, but it does not check that the scripts one imports still
+      # exist — and `pipeline-safe-outputs.yml` is `workflow_call` only, so GitHub
+      # never runs it standalone at all. Without this, activating it would have
+      # silently dropped the check that `scripts/telemetry_block.py` is still
+      # there, and the first symptom would be a real session's writes being
+      # rejected long after the rename that caused it.
+      - name: Pipeline workflows parse, and their scripts exist
         run: |
           python3 -m pip install --quiet pyyaml
           python3 - <<'EOF'
@@ -423,6 +431,7 @@ jobs:
           staged = sorted(pathlib.Path("templates/workflows").glob("*.yml"))
           if not staged:
               sys.exit("no staged workflow templates found — did the directory move?")
+          staged += sorted(pathlib.Path(".github/workflows").glob("pipeline-*.yml"))
 
           for f in staged:
               text = f.read_text(encoding="utf-8")
@@ -436,23 +445,72 @@ jobs:
                       bad.append("%s references %s, which does not exist" % (f, ref))
 
           if bad:
-              print("::error::staged workflow templates are broken:")
+              print("::error::pipeline workflows are broken:")
               print("\n".join("  - " + b for b in bad))
               sys.exit(1)
-          print("%d staged workflow template(s) parse, and every referenced script exists" % len(staged))
+          print("%d pipeline workflow(s), staged and active, parse — and every referenced script exists" % len(staged))
           EOF
 
       # Activation needs repo secrets and is a human action
-      # (docs/PIPELINE-ACTIVATION.md). Nothing under `templates/workflows/` may be
-      # copied into `.github/workflows/` by an agent, so this asserts the staging
-      # boundary still holds rather than trusting that it does.
-      - name: No pipeline workflow is active
+      # (docs/PIPELINE-ACTIVATION.md). This step used to assert that NOTHING under
+      # `templates/workflows/` had been copied into `.github/workflows/` at all —
+      # a hard boundary, because the secrets did not exist yet and a half-wired
+      # active workflow is worse than an inert one: it fires, fails, and buries
+      # the reason in a log nobody is reading.
+      #
+      # That condition no longer holds — the GitHub App, PIPELINE_APP_ID,
+      # PIPELINE_APP_KEY and ANTHROPIC_API_KEY now exist — so as of TOD-106 the
+      # boundary is REVIEWED rather than HARD, and this step asserts a different
+      # thing: every active pipeline workflow is named on the allowlist below.
+      #
+      # Be clear about what that does and does not buy. It does NOT prevent an
+      # agent activating a workflow; nothing in CI can, since the same agent that
+      # runs `git mv` can add the line. What it buys is that activation cannot be
+      # QUIET: it has to show up as an explicit added line in a diff, sitting next
+      # to the `git mv`, where the human reviewing the PR sees it. The real gate is
+      # still a human reading and merging. The list is also the standing record of
+      # what is intentionally live, which is why it is checked in both directions —
+      # an entry naming a workflow that is not active is a stale record, not a
+      # harmless leftover.
+      #
+      # `.github/workflows/**` is in `autonomy.riskPaths`, so a change here also
+      # trips the scope fence. That is the intended second signal, not a bug.
+      - name: Every active pipeline workflow is on the allowlist
         run: |
-          ACTIVE=$(git ls-files '.github/workflows/pipeline-*.yml' || true)
-          if [ -n "$ACTIVE" ]; then
-            echo "::error::pipeline workflows are active in .github/workflows/:"
-            echo "$ACTIVE"
-            echo "Activation is a human step — see docs/PIPELINE-ACTIVATION.md"
+          set -euo pipefail
+
+          # One line per DELIBERATELY ACTIVATED workflow. Adding a line here IS
+          # the activation — it is meant to be reviewed alongside the `git mv`.
+          ALLOWED='
+          pipeline-safe-outputs.yml
+          pipeline-failure-alert.yml
+          '
+
+          fail=0
+
+          # Direction 1 — nothing is live that the list does not name.
+          for f in $(git ls-files '.github/workflows/pipeline-*.yml'); do
+            if ! printf '%s\n' $ALLOWED | grep -qxF "${f##*/}"; then
+              echo "::error::$f is active but is not on this step's allowlist."
+              fail=1
+            fi
+          done
+
+          # Direction 2 — the list names nothing that is not live, so it stays an
+          # accurate record instead of drifting into a wishlist.
+          for base in $ALLOWED; do
+            if [ ! -f ".github/workflows/$base" ]; then
+              echo "::error::the allowlist names $base, but it is not active in .github/workflows/."
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Activation is a reviewed step, not a forbidden one — see docs/PIPELINE-ACTIVATION.md."
+            echo "Moving a pipeline workflow into .github/workflows/ means adding its filename to the"
+            echo "allowlist in this step, in the same PR, so a reviewer sees the activation in the diff."
             exit 1
           fi
-          echo "no pipeline workflow is active — staging boundary holds"
+
+          echo "active pipeline workflows match the allowlist exactly:"
+          git ls-files '.github/workflows/pipeline-*.yml'

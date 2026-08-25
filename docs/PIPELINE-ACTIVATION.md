@@ -1,20 +1,68 @@
 # Pipeline activation — the human checklist
 
 Everything in `templates/workflows/` is **inert**. GitHub only runs a workflow that
-lives in `.github/workflows/`, so a file staged here does nothing at all until a
-human moves it. That is deliberate: every one of these needs repository secrets
-that an agent cannot create, and a half-wired active workflow is worse than an
-inert one — it fires, fails, and buries the reason in a log nobody is reading.
+lives in `.github/workflows/`, so a file staged here does nothing at all until it
+is moved.
 
-**Activation is a human action.** An agent may port, validate and document these
-files; it may not `git mv` one into `.github/workflows/`. CI asserts that
-(`Pipeline contract validators (static)` → *No pipeline workflow is active*).
+## What is active right now
+
+| Active in `.github/workflows/` | Still staged in `templates/workflows/` |
+|---|---|
+| `pipeline-safe-outputs.yml` (TOD-106) | `pipeline-review.yml` |
+| `pipeline-failure-alert.yml` (TOD-106) | `pipeline-dispatch.yml` |
+| | `pipeline-bounce.yml` |
+| | `pipeline-telemetry.yml` |
+| | `pipeline-auto-approve.yml` |
+| | `pipeline-auto-merge.yml` |
+
+**Activating safe-outputs did not start anything moving.** It is `workflow_call`
+only — it runs when another workflow calls it and never on its own, and nothing
+calls it yet. Until a caller is activated it is a resolvable path and nothing more.
+The first activation with visible behaviour is `pipeline-review.yml` (step 3); a
+ticket that moves through the board on its own additionally needs
+`pipeline-dispatch.yml` (step 4). Expect nothing from steps 1 and 2 on their own —
+that inertness is exactly why they were the safe pair to turn on first.
+
+## The activation boundary — reviewed, not forbidden
+
+The rule here used to be *an agent may not `git mv` one of these into
+`.github/workflows/`*, enforced by a CI step that failed if **any** pipeline
+workflow was active. The reason was that the repository secrets did not exist
+yet, and a half-wired active workflow is worse than an inert one — it fires,
+fails, and buries the reason in a log nobody is reading.
+
+The GitHub App, `PIPELINE_APP_ID`, `PIPELINE_APP_KEY` and `ANTHROPIC_API_KEY` now
+exist, so that condition is gone and the rule is relaxed (TOD-106):
+
+> **An agent may prepare an activation. A human reviews and merges it.**
+
+The gate that always mattered — a person reading the diff and pressing merge — is
+unchanged. What replaced the blanket refusal is an **allowlist**, in
+`Pipeline contract validators (static)` → *Every active pipeline workflow is on the
+allowlist*. Activating a workflow means two things in the same PR: the `git mv`,
+**and** its filename added to that list.
+
+Be clear about what the allowlist does. It does **not** stop an agent activating
+something — nothing in CI can, since whatever runs `git mv` can also add the line.
+What it guarantees is that activation cannot be *quiet*: it always surfaces as an
+explicit added line in a diff, next to the move, where a reviewer sees it. The
+list is also the standing record of what is intentionally live, so it is checked
+both ways — naming a workflow that is not active fails too, rather than lingering
+as a stale entry. `.github/workflows/**` is in `autonomy.riskPaths`, so an
+activation trips the scope fence as well; that second signal is expected.
 
 > **Where the reference text lives.** Several of these workflows print
 > `see docs/AUTONOMY.md` in their warnings. That document is part of the kit and
 > was **not** ported here — this file is todoclaw's equivalent. The workflows are
 > kept byte-identical to upstream on purpose (so `/sync-kit` can tell a real drift
 > from a reformat), so the stale pointer is left in the file rather than patched out.
+>
+> One consequence of activating a file: `.prettierignore` exempts
+> `templates/workflows/` but **not** `.github/workflows/`, so a workflow becomes
+> Prettier-gated the moment it moves. Every template is Prettier-clean today, so
+> nothing had to be reformatted — but if a future re-sync brings one that is not,
+> activating it forces a reformat and that file stops being byte-identical to
+> upstream. Fix it upstream in the kit rather than reformatting on the way in.
 
 ---
 
@@ -104,9 +152,11 @@ to exercise one before then.
 ## Recommended activation order
 
 Activate one at a time and let it run once before moving on. Each command is the
-`git mv` that turns the file on; commit it on a branch and open a PR as usual.
+`git mv` that turns the file on; commit it on a branch and open a PR as usual —
+**and add the filename to the CI allowlist in the same PR**, or the
+*Every active pipeline workflow is on the allowlist* step fails.
 
-**1. Safe outputs — first, always.**
+**1. Safe outputs — first, always.** ✅ **Active** (TOD-106)
 
 ```bash
 git mv templates/workflows/pipeline-safe-outputs.yml .github/workflows/pipeline-safe-outputs.yml
@@ -121,13 +171,29 @@ validates them against the dispatcher-pinned ticket ID before executing any. Tha
 split is what makes "the agent cannot move its own ticket" structural instead of a
 prompt instruction. Needs `LINEAR_API_KEY`.
 
-**2. Failure alert — free, and it is how you find out the rest broke.**
+Because it is `workflow_call` only, **activating it on its own changes no
+observable behaviour** — see *What is active right now* above. If `LINEAR_API_KEY`
+is not set yet, nothing breaks in the meantime; the key is only read once a caller
+exists. Confirm it is set before activating step 3 or 4.
+
+**2. Failure alert — free, and it is how you find out the rest broke.** ✅ **Active** (TOD-106)
 
 ```bash
 git mv templates/workflows/pipeline-failure-alert.yml .github/workflows/pipeline-failure-alert.yml
 ```
 
 No secrets at all. Turn it on early so a later activation that fails is visible.
+
+> ⚠️ **It ships watching `'Deploy (prod)'`, which `deploy-failure-alert.yml`
+> already watches.** Both are active, both open-or-comment on an issue, and their
+> titles differ (`🚨 Production deploy is failing` vs
+> `🚨 Deploy (prod) is failing on main`), so a failed prod deploy now opens **two**
+> issues and sends two notifications. Nothing is lost — it is duplicate noise, and
+> it only shows up when a deploy actually fails. Resolve it by editing the
+> `workflows:` watch list (the file marks it `EDIT ME`) to name workflows nothing
+> else covers — `'CI'` and `'DB Backup'` are the uncovered ones — or by deleting
+> the older `deploy-failure-alert.yml`, whichever you prefer. Left as-is
+> deliberately rather than decided unilaterally during activation.
 
 **3. Review — the first one that spends money.**
 
