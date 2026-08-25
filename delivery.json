@@ -1,0 +1,141 @@
+{
+  "version": 1,
+
+  "linear": {
+    "teamKey": "TOD",
+    "workspace": "braedenclaw",
+    "stateIds": {
+      "raw": "5987e951-3666-43c2-a83a-bf0b72072232",
+      "ready": "b3ff5e2f-3b73-4f40-94d9-9f2c5123290b",
+      "working": "42316d42-14b5-4282-87c3-6bcd49ae43e2",
+      "review": "8dcb9cf0-19a6-4285-af19-e3422b3b29cf",
+      "done": "5c52a99f-64c5-4088-81b8-ecd47f5f6c17"
+    },
+    "labels": {
+      "ids": {
+        "track:backend": "41ef8746-ec2c-4ead-9188-c95a76df617c",
+        "track:frontend": "912d937f-eee0-4fe7-a58a-10364451c4a2",
+        "track:infra": "f65f8fce-cd3a-4595-ab5a-30227570dec2",
+        "track:legal": "dc950844-92ff-42bf-ba84-ddfc87852a95",
+        "track:meta": "62869716-303b-4a69-9f20-6f5d774141aa",
+        "effort:S": "9fb8586b-8efb-43f1-bfc8-271617d5aabc",
+        "effort:M": "90923e93-2fb6-45e6-9bb0-24f41d571679",
+        "effort:L": "0c585502-e3cd-43bb-a732-0dccda877943",
+        "agent:queued": "727c4730-4db3-4298-829f-04efdd602cb2",
+        "agent:working": "d2cc9504-f98e-4531-a8d2-fc68defe5e6a",
+        "agent:blocked": "c833b60f-ecda-4510-a1e2-2db40cc79043",
+        "agent:needs-human": "bef5f6fc-a51d-4235-b343-8f2d1f0bb523",
+        "blocked:capacity": "fec1964f-7a13-4f75-8529-22f91f77cb55",
+        "provenance:epic": "f6a99f2d-ce4e-483b-bb91-48fc711c89b3",
+        "provenance:monitor": "59d7df00-e831-4b9e-a69c-30f8ed8bc0ba",
+        "provenance:review": "48937a7d-b8aa-4520-a6a4-d9ea445b2d3a",
+        "provenance:retro-proposal": "37fbb8b7-11f0-4d50-953d-42a02992c948",
+        "provenance:human": "016783b9-4dca-4a89-8beb-b002140ce79d",
+        "hooks-change": "69de9a6c-56d0-4b28-8589-2b434e6696a2",
+        "meta": ""
+      },
+      "required": [
+        "effort:S",
+        "effort:M",
+        "effort:L",
+        "agent:queued",
+        "agent:working",
+        "agent:blocked",
+        "agent:needs-human",
+        "blocked:capacity",
+        "provenance:epic",
+        "provenance:human",
+        "hooks-change"
+      ]
+    }
+  },
+
+  "github": {
+    "owner": "braedensc",
+    "repo": "todoclaw",
+    "defaultBranch": "main"
+  },
+
+  "branch": {
+    "types": ["feat", "fix", "chore", "refactor", "docs"],
+    "requireTicketId": true
+  },
+
+  "stack": {
+    "kind": "node-ts",
+    "securityNotes": [
+      "All AI calls run server-side in Supabase Edge Functions (Deno runtime); the Anthropic key is never in the frontend bundle.",
+      "The Supabase service role key is server-only and must never appear in a frontend file or client bundle. service_role has no table DML — writes go through SECURITY DEFINER RPCs.",
+      "RLS on every table (user_id = auth.uid()). No raw SQL — Supabase query builder only. Zod validates every boundary.",
+      "RLS is a who check, not a how much check: every user-writable table needs a per-user row cap trigger and a size CHECK on unbounded text/jsonb columns.",
+      "A SECURITY DEFINER function granted to authenticated must scope its writes to auth.uid() — it bypasses the RLS of the tables it writes.",
+      "The entire planner must work without AI; AI is additive, never required."
+    ],
+    "graderPaths": [
+      "supabase/migrations/**",
+      "supabase/functions/**",
+      "src/lib/**",
+      "scripts/check-*.mjs",
+      "evals/**",
+      ".claude/hooks/**"
+    ]
+  },
+
+  "commands": {
+    "lint": "npm run lint",
+    "typecheck": "npm run typecheck",
+    "test": "npm test",
+    "e2e": "npm run test:e2e",
+    "preview": "npm run dev"
+  },
+
+  "budgets": {
+    "perEffort": {
+      "S": { "maxTurns": 25, "maxUsd": 2.0, "maxMinutes": 20 },
+      "M": { "maxTurns": 60, "maxUsd": 6.0, "maxMinutes": 45 },
+      "L": { "maxTurns": 120, "maxUsd": 15.0, "maxMinutes": 90 }
+    },
+    "maxTurns": 150,
+    "wipLimit": 3,
+    "maxBounces": 2,
+    "fixIterations": 3,
+    "totalAttempts": 3,
+    "dailyUsd": 50.0,
+    "reviewSeverityThreshold": "medium"
+  },
+
+  "auth": {
+    "devSessions": "subscription",
+    "scheduled": "api-key",
+    "review": "api-key"
+  },
+
+  "autonomy": {
+    "autoApproveProvenance": ["epic"],
+    "autoMergeMaxLines": 0,
+    "autoMergeMethod": "squash",
+    "riskPaths": [
+      ".claude/hooks/**",
+      ".claude/settings*.json",
+      ".claude/skills/**",
+      ".github/workflows/**",
+      ".husky/**",
+      "delivery.json",
+      "**/*.pem",
+      "**/*.key"
+    ]
+  },
+
+  "dispatch": {
+    "backend": "github-actions",
+    "labelTrigger": "agent:queued",
+    "pauseOnCapacity": true,
+    "pinsRoot": "~/.claude/pipeline/pins",
+    "statePath": null
+  },
+
+  "monitoring": {
+    "provider": "github-actions",
+    "stormPerHour": 6
+  }
+}
