@@ -338,3 +338,29 @@ jobs:
           node-version: 22
       - name: Assert every pre-tool-use guard still blocks (and still allows)
         run: npm run test:hooks
+
+  # Pipeline contract validators — docs/PIPELINE-CONTRACT.md and schemas/ are two
+  # renderings of ONE truth, and prose that agents read cannot enforce itself. These
+  # were vendored from claude-project-kit (#390/#392) but nothing ran them here, so
+  # the contract's own "CI fails if these disagree" claim was unbacked in this repo.
+  # Two validators, each run twice: `--selftest` proves the validator still has teeth
+  # against its own fixtures, then the bare run judges THIS repo's real files —
+  # schemas ⇄ contract parity, and delivery.json against contract §7. python3 only
+  # (no deps, no DB, no network); node is set up solely to run the npm scripts, which
+  # are the same entry points humans use locally.
+  pipeline-contract:
+    name: Pipeline contract validators (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Schema ⇄ contract parity selftest
+        run: npm run test:schemas
+      - name: Validate this repo's JSON documents against schemas/
+        run: npm run check:schemas
+      - name: delivery.json validator selftest (contract §7)
+        run: npm run test:delivery
+      - name: delivery.json validity (this repo has one since #392)
+        run: npm run check:delivery
