@@ -84,33 +84,46 @@ model's minimum cacheable length.
 
 ## Model-switch gate
 
-**No production model flip without a before/after eval run** (Braeden's gate, 2026-08-20). For a
-chat-only switch — e.g. flipping `chat_model` from Sonnet to Haiku — the protocol is:
+**No production model flip without a before/after eval run** (Braeden's gate, 2026-08-20).
 
-1. **Shakedown** — run ONE family through the filter to flush harness rot before spending on a
-   sweep: `npm run eval:check`, then `npm run eval -- --filter ongo- --no-judge`. Fix anything
-   stale (dead expectFailUntil tags, drifted checks) first.
-2. **Baseline on main** — the full chat suite on the current prod model (Sonnet):
-   `npm run eval -- --kind chat --save-baseline`.
-3. **Candidate sweep** — point the LOCAL stack's `app_config.chat_model` at the candidate (Haiku)
-   via the local admin panel / `set_config`, then
-   `npm run eval -- --kind chat --baseline results/baseline.json`.
-4. **Targeted repeats** — `--filter <scenario id> --repeat 3` ONLY on scenarios that flaked or
-   regressed; never blanket-repeat the whole suite.
-5. **Flip** — only if the deterministic checks hold and the judge deltas are acceptable. The
-   sensitive families are injection resistance (`safe-`), the destructive confirm gates, and the
-   8-step personas (`pers-`). The flip itself is an admin-panel config change, not a deploy.
+Use `--model <id>` — do NOT hand-edit `app_config` and then run: `prepareStack` pins the model
+columns at the start of every run, so a hand-set value is overwritten and the sweep silently
+measures the PROD model while the report claims the candidate. `--model` is the only correct way,
+and it drives both paths (chat via `app_config`, plan/recap passed straight to the builders).
+It is validated against the app's own allowlists during `--list`, so a typo costs nothing.
 
-Rules that keep the comparison honest:
+The judge deliberately does NOT follow `--model`: a candidate grading itself makes the two runs
+incomparable. Leave `--judge-model` alone.
 
-- **Plan/recap families are excluded** from a chat-only switch — that's what `--kind chat` does.
-  A `plan_model` switch would mirror the same protocol with `--kind plan`.
-- **The judge stays on the strong model** in BOTH runs — never point `--judge-model` at the
-  candidate, or the two runs' scores aren't comparable.
-- **Run scenario batches back-to-back**: the cached prefixes carry a 5-minute TTL, so a pause
-  longer than that between batches re-bills the full prefix at the 1.25× write rate.
-- Before trusting cache savings in the sweep budget, check `npm run eval:prefixes` — a prefix
-  below the candidate model's floor (Haiku's is 4096 tokens) gets no caching at all.
+```sh
+# 1. Shakedown — flush harness rot before spending (free-ish, one family, no judge)
+npm run eval:check
+npm run eval -- --filter ongo- --no-judge
+
+# 2. Baseline on the PROD model
+npm run eval -- --kind chat --save-baseline        # → results/baseline.json
+
+# 3. Candidate sweep
+npm run eval -- --kind chat --model claude-haiku-4-5 --baseline results/baseline.json
+
+# 4. Targeted repeats — ONLY on what flaked or regressed
+npm run eval -- --filter <scenario-id> --model claude-haiku-4-5 --repeat 3
+```
+
+**Reading the diff.** `↓ REGRESSED` is a verdict flip and is disqualifying. `⚠ QUALITY` marks a
+scenario that still passed but dropped on **correctness or faithfulness** — the two axes that mean
+"did the right thing". Those are per-axis on purpose: an earlier summed delta cancelled a
+correctness collapse against a tone gain and printed nothing at all. The tail line counts them.
+
+**Sensitive families** — read these scenarios' diffs individually before flipping: injection
+resistance (`safe-`), the destructive confirm gates, and the 8-step personas (`pers-`).
+
+- A `plan_model` switch mirrors the same protocol with `--kind plan` (and `--kind recap`, which
+  rides the plan knob).
+- **Run batches back-to-back**: cached prefixes carry a 5-minute TTL, so a longer pause re-bills
+  the full prefix at the 1.25× write rate.
+- Check `npm run eval:prefixes` first — a prefix below the candidate's floor (Haiku's is 4096
+  tokens) gets no caching at all, which changes the cost maths.
 
 ## Layout
 

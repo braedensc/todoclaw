@@ -97,9 +97,12 @@ export async function signIn(env: EvalEnvLike, email: string, password: string):
 /** Raise the owner-tunable rate limits to their hard clamps and clear the AI usage/budget
  * ledgers, so a suite run never trips guardrails left over from a previous run. LOCAL ONLY —
  * env.ts guarantees that. Note: the functions-serve isolate caches guardrail config ~30s. */
-export async function prepareStack(sql: Sql): Promise<void> {
-  // Models pinned to the defaults for determinism: an owner-flipped knob on a local stack must
-  // not silently re-baseline the chat suite onto a different model. ai_budget_base_micros is
+export async function prepareStack(sql: Sql, model = 'claude-sonnet-5'): Promise<void> {
+  // Models are PINNED per run so an owner-flipped knob on a local stack cannot silently
+  // re-baseline the suite. `model` is what the run is measuring — the default keeps the prod
+  // model; `--model` overrides it for a candidate sweep. NOTE this is exactly why the old
+  // "set app_config yourself, then run" recipe was broken: this write lands AFTER it and would
+  // have quietly measured the prod model while the report claimed the candidate. ai_budget_base_micros is
   // raised to the $100 hard max like the caps: the scaled effective cap is min(base + per-user ×
   // active, ceiling, $100), and with the ledgers wiped active = 0 ⇒ cap = base — a low base would
   // trip eval runs.
@@ -109,7 +112,7 @@ export async function prepareStack(sql: Sql): Promise<void> {
       plan_hour_limit = 50, plan_day_limit = 50,
       global_budget_cap_micros = 100000000, user_budget_cap_micros = 50000000,
       ai_budget_base_micros = 100000000,
-      chat_model = 'claude-sonnet-5', plan_model = 'claude-sonnet-5'
+      chat_model = ${model}, plan_model = ${model}
     where id = 1`
   for (const table of ['ai_usage', 'ai_user_budget_ledger', 'ai_budget_ledger']) {
     try {
