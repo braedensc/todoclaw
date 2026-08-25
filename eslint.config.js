@@ -13,6 +13,14 @@ export default tseslint.config(
   // supabase/functions and evals are Deno (different runtime + globals + npm:/URL imports); they
   // are checked with Deno's own toolchain (deno check / deno test), not the frontend ESLint.
   // Prettier still formats them (one repo formatter).
+  //
+  // `.claude/worktrees/` holds sibling git worktrees checked out INSIDE the main checkout
+  // (docs/COLLABORATION.md). Each is a full second copy of this repo, so without this entry
+  // `eslint .` lints every other branch's tree as if it were this one — and, worse, the extra
+  // tsconfig.json/package.json roots make typescript-eslint's tsconfigRootDir inference
+  // ambiguous, which turns EVERY file in the repo (this checkout's own src/ included) into a
+  // fatal parse error. That is not noise: it means the lint gate reports zero real findings.
+  // The trailing slash prunes the directory instead of enumerating and filtering it.
   {
     ignores: [
       'dist',
@@ -21,6 +29,7 @@ export default tseslint.config(
       'test-results',
       'supabase/functions',
       'evals',
+      '.claude/worktrees/',
     ],
   },
   {
@@ -29,6 +38,12 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       globals: globals.browser,
+      // Pin the parser's root explicitly. The ignore above is what clears today's tree, but
+      // typescript-eslint infers tsconfigRootDir from whatever candidate roots it finds on disk,
+      // so ANY second checkout inside this one re-opens the same fatal-parse failure. Pinning it
+      // makes the gate depend on the repo, not on what happens to be sitting in the working dir.
+      // https://tseslint.com/parser-tsconfigrootdir
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
     },
     plugins: {
       'react-hooks': reactHooks,

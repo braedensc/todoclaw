@@ -78,6 +78,16 @@ Why worktrees beat just `git checkout` switching: switching branches mutates the
 give each session its own folder. (Claude Code can also create/enter worktrees
 for you — ask it to "work on X in a new worktree.")
 
+**Where they land:** the `git worktree add` lines above put them *beside* the repo
+(`../todoclaw-grid`); Claude Code's own worktree tool puts them *inside* it, under
+`.claude/worktrees/<name>/`. Both work, but the nested ones are a second full copy
+of the repo sitting in the tree that `npm run lint` walks — so `eslint.config.js`
+ignores `.claude/worktrees/` (and `.prettierignore` matches it). Without that the
+extra `tsconfig.json` roots make typescript-eslint's `tsconfigRootDir` inference
+ambiguous and *every* file in the repo becomes a fatal parse error, which reads as
+thousands of lint failures that have nothing to do with your change. If you add a
+tool that walks the repo tree, exclude that directory in it too.
+
 **Caveat:** `node_modules/` and `.env.local` are per-folder (both gitignored),
 even though every worktree shares the *same* local Supabase stack — one
 `project_id` (`supabase/config.toml`), one Docker stack, one Postgres DB. Each
