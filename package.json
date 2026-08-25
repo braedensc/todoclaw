@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:golden": "playwright test --config playwright.golden.config.ts",
+    "test:hooks": "python3 .claude/hooks/test_hooks.py",
     "device-lab": "playwright test --config playwright.device-lab.config.ts",
     "seed:demo": "tsx scripts/demo-seed/import.ts",
     "eval": "cd evals && deno task eval --",
