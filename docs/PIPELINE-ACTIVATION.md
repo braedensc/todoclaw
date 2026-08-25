@@ -1,0 +1,197 @@
+# Pipeline activation — the human checklist
+
+Everything in `templates/workflows/` is **inert**. GitHub only runs a workflow that
+lives in `.github/workflows/`, so a file staged here does nothing at all until a
+human moves it. That is deliberate: every one of these needs repository secrets
+that an agent cannot create, and a half-wired active workflow is worse than an
+inert one — it fires, fails, and buries the reason in a log nobody is reading.
+
+**Activation is a human action.** An agent may port, validate and document these
+files; it may not `git mv` one into `.github/workflows/`. CI asserts that
+(`Pipeline contract validators (static)` → *No pipeline workflow is active*).
+
+> **Where the reference text lives.** Several of these workflows print
+> `see docs/AUTONOMY.md` in their warnings. That document is part of the kit and
+> was **not** ported here — this file is todoclaw's equivalent. The workflows are
+> kept byte-identical to upstream on purpose (so `/sync-kit` can tell a real drift
+> from a reformat), so the stale pointer is left in the file rather than patched out.
+
+---
+
+## Step 0 — the push credential, before anything else
+
+**This is not optional and it is not a tier.** Set it up first, or the pipeline
+will run sessions that produce pull requests nothing ever looks at.
+
+GitHub deliberately **does not create workflow runs from events triggered by
+`GITHUB_TOKEN`**. A session that pushes its branch and opens its PR with the
+default token fires no `pull_request` event and no `push` event. So
+`pipeline-review.yml` never runs, **CI never runs**, and because
+`pipeline-bounce.yml` and `pipeline-auto-merge.yml` trigger on `workflow_run`,
+they never fire either. The entire review → bounce → merge half of the pipeline
+is silently dead, and the only symptom is that PRs appear and nothing ever
+happens to them.
+
+The dispatcher and the bounce workflow therefore push under a **different
+identity**, and both refuse to start (green, with a warning) until one exists.
+
+**Option A — a GitHub App (preferred).**
+
+1. Settings → Developer settings → GitHub Apps → **New GitHub App**. Name it
+   something like `todoclaw-pipeline`. Uncheck *Webhook → Active*.
+2. Repository permissions — grant exactly these two and nothing else:
+   - **Contents: Read and write** (push the ticket branch)
+   - **Pull requests: Read and write** (open the PR)
+3. **Install it on `braedensc/todoclaw` only.**
+4. Generate a private key. It downloads as a `.pem`.
+5. Repo → Settings → Secrets and variables → Actions:
+   - Variable `PIPELINE_APP_ID` = the App's ID
+   - Secret `PIPELINE_APP_KEY` = the entire contents of the `.pem`, newlines included
+
+The App is its own identity: its events trigger workflows, it can be uninstalled
+in one click, and its blast radius is two permissions on one repository.
+
+**Option B — a fine-grained PAT (fallback).** Scoped to **this repository only**,
+with *Contents: Read and write* and *Pull requests: Read and write*, stored as the
+secret `PIPELINE_PAT`. The dispatcher logs a warning when it uses this path, and
+the reason is worth repeating: a PAT carries **your** identity, so every pipeline
+commit is attributed to you. A classic (non-fine-grained) PAT with `repo` scope
+grants write access to every repository you can reach — do not use one here.
+
+**What it does not buy the agent.** Nothing here lets a session merge. `gh pr merge`
+is hook-blocked in every form, and the platform-side gate is branch protection.
+Grant the App or PAT nothing beyond the two permissions above — in particular not
+*Administration* or *Workflows* — and branch protection stays outside its reach.
+
+---
+
+## What each workflow needs
+
+Secrets and variables both live under **Settings → Secrets and variables → Actions**.
+
+todoclaw's `delivery.json` sets `auth.scheduled` and `auth.review` to `api-key`, so
+the model credential here is **`ANTHROPIC_API_KEY`**. `CLAUDE_CODE_OAUTH_TOKEN` is
+the alternative for `subscription` auth and is **not** needed unless that changes.
+
+| Workflow | Trigger | Secrets | Variables |
+|---|---|---|---|
+| `pipeline-safe-outputs.yml` | `workflow_call` (never standalone) | `LINEAR_API_KEY` | — |
+| `pipeline-failure-alert.yml` | `workflow_run` | none | — |
+| `pipeline-review.yml` | `pull_request`, manual | `ANTHROPIC_API_KEY`, `LINEAR_API_KEY` | `PIPELINE_REVIEW_MODEL` (opt) |
+| `pipeline-dispatch.yml` | cron `*/15`, manual, `repository_dispatch` | `LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, **push credential** | `PIPELINE_APP_ID`, `PIPELINE_MODEL` (opt), `PIPELINE_DISPATCH_ENABLED` (kill switch) |
+| `pipeline-bounce.yml` | `workflow_run`, manual | `LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, **push credential** | `PIPELINE_APP_ID`, `PIPELINE_MODEL` (opt) |
+| `pipeline-telemetry.yml` | cron `40 */6`, manual | `LINEAR_API_KEY`, `PIPELINE_TELEMETRY_DSN` | — |
+| `pipeline-auto-approve.yml` | cron `17 * * * *`, manual | `LINEAR_API_KEY` | `PIPELINE_AUTO_APPROVE_ENABLED` must be exactly `"true"` |
+| `pipeline-auto-merge.yml` | `workflow_run`, `pull_request`, manual | `LINEAR_API_KEY` | `PIPELINE_AUTO_MERGE_ENABLED` must be exactly `"true"` |
+
+Two config facts about **this** repo, both of which mean "activating the file is
+not the same as switching the behaviour on":
+
+- **`autonomy.autoMergeMaxLines` is `0`**, which `check_auto_merge.py` reads as
+  *auto-merge is switched off* — no PR qualifies at any size. Activating
+  `pipeline-auto-merge.yml` changes nothing until that number is raised
+  deliberately.
+- **`delivery.json` has no `telemetry` block**, so `pipeline-telemetry.yml` exits 0
+  doing nothing even once activated and given a DSN. Add the block first, or the
+  workflow is decoration.
+
+Scheduled workflows only run from the **default branch**, so a cron takes effect
+once merged to `main`, not on the activating branch. Use *Actions → Run workflow*
+to exercise one before then.
+
+---
+
+## Recommended activation order
+
+Activate one at a time and let it run once before moving on. Each command is the
+`git mv` that turns the file on; commit it on a branch and open a PR as usual.
+
+**1. Safe outputs — first, always.**
+
+```bash
+git mv templates/workflows/pipeline-safe-outputs.yml .github/workflows/pipeline-safe-outputs.yml
+```
+
+This is the piece that actually moves tickets, and it is a **reusable**
+(`workflow_call`) workflow that dispatch, review and bounce all reference as
+`./.github/workflows/pipeline-safe-outputs.yml`. If it is not present at that path,
+those three fail to resolve their called workflow. It also holds the Linear key so
+the agent job never does: sessions emit *write-requests* to a file, and this job
+validates them against the dispatcher-pinned ticket ID before executing any. That
+split is what makes "the agent cannot move its own ticket" structural instead of a
+prompt instruction. Needs `LINEAR_API_KEY`.
+
+**2. Failure alert — free, and it is how you find out the rest broke.**
+
+```bash
+git mv templates/workflows/pipeline-failure-alert.yml .github/workflows/pipeline-failure-alert.yml
+```
+
+No secrets at all. Turn it on early so a later activation that fails is visible.
+
+**3. Review — the first one that spends money.**
+
+```bash
+git mv templates/workflows/pipeline-review.yml .github/workflows/pipeline-review.yml
+```
+
+Runs on `pull_request`, so it exercises the safe-outputs path on real PRs without
+anything having to dispatch a session first. Needs `ANTHROPIC_API_KEY` and
+`LINEAR_API_KEY`.
+
+**4. Dispatch — the queue starts moving here.**
+
+```bash
+git mv templates/workflows/pipeline-dispatch.yml .github/workflows/pipeline-dispatch.yml
+```
+
+Do not activate this before **Step 0** is done. Set `PIPELINE_DISPATCH_ENABLED` to
+`"false"` first if you want it merged but paused, then flip it when ready. Watch
+`budgets.dailyUsd` (currently `50.0`) and `budgets.wipLimit` (`3`).
+
+**5. Bounce — closes the loop on a red PR.**
+
+```bash
+git mv templates/workflows/pipeline-bounce.yml .github/workflows/pipeline-bounce.yml
+```
+
+Triggers on `workflow_run`, so it is inert in practice until dispatch is pushing
+under the Step 0 identity.
+
+**6. Telemetry — after there is something to collect.**
+
+```bash
+git mv templates/workflows/pipeline-telemetry.yml .github/workflows/pipeline-telemetry.yml
+```
+
+Add a `telemetry` block to `delivery.json` and provision the Postgres DSN under the
+name that block declares (`PIPELINE_TELEMETRY_DSN` as shipped) — otherwise this is
+a no-op. Telemetry is **reporting, not authority**: nothing read out of these tables
+may gate a budget, an approval or a merge.
+
+**7. Auto-approve, then 8. auto-merge — last, and only deliberately.**
+
+```bash
+git mv templates/workflows/pipeline-auto-approve.yml .github/workflows/pipeline-auto-approve.yml
+git mv templates/workflows/pipeline-auto-merge.yml .github/workflows/pipeline-auto-merge.yml
+```
+
+Both are additionally gated by a variable that must read exactly `"true"`, so
+activating the file leaves them reporting-only. Leave them that way until the
+earlier stages have a track record. `autonomy.autoApproveProvenance` is currently
+`["epic"]`, and auto-merge is off by config as noted above.
+
+---
+
+## Known follow-up
+
+`templates/workflows/pipeline-dispatch.yml` was ported from the kit at
+`a75aa64` while the kit's fix for a **fail-open label read** was still an open PR
+(kit #45, *"make label reads detect their own drift, and fix label scope"*). In the
+version staged here, `keys.discard(None)` silently drops a label whose ID no longer
+resolves — so a ticket a human parked with `agent:needs-human` or `agent:blocked`
+can be dispatched anyway. **Re-sync this file from the kit before activating it at
+step 4.** It is inert until then, so this is a follow-up rather than a blocker.
+
+That fix also introduces `scripts/pipeline_labels.py` and touches
+`scripts/pipeline_dispatch_local.py`, neither of which is covered by this port.
