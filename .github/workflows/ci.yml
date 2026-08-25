@@ -371,10 +371,88 @@ jobs:
       # which it parses the canonical section list out of.
       - name: Definition-of-Ready gate selftest
         run: npm run test:dor
-      # NOT wired here: `npm run test:local-dispatch`. Six of its 56 cases are a
-      # drift check asserting that three renderings of `sha256(realpath(root))[:16]`
-      # still agree — this script, a pin-aware `.claude/hooks/pre-tool-use.py`, and
-      # `templates/workflows/pipeline-dispatch.yml`. This repo has neither of those
-      # two counterparties (no CI dispatcher; the hook predates the pin
-      # architecture), so the step would fail on absent files rather than on real
-      # drift. Run it locally, and turn it on here once the pin-aware hook lands.
+      # Wired as of TOD-100. Six of its 56 cases are a drift check asserting that
+      # three renderings of `sha256(realpath(root))[:16]` still agree — this
+      # script, the pin-aware `.claude/hooks/pre-tool-use.py` (#397) and
+      # `templates/workflows/pipeline-dispatch.yml` (ported here). Both
+      # counterparties now exist, so a failure here is real drift rather than an
+      # absent file — which is what this step was always meant to catch.
+      - name: Local dispatcher selftest (contract §2, §3)
+        run: npm run test:local-dispatch
+
+      # The autonomy gates and the telemetry pipeline, ported alongside the
+      # CI-side workflows that call them. Every one is INERT in this repo —
+      # nothing under `templates/workflows/` runs, and there is no telemetry
+      # store — so these selftests are the only thing holding them to the
+      # contract. Without these steps the ported scripts would rot unnoticed.
+      - name: Auto-approval gate selftest (contract §5, §11)
+        run: npm run test:auto-approve
+
+      - name: Auto-merge tier selftest (contract §11)
+        run: npm run test:auto-merge
+
+      - name: Telemetry scrape selftest (contract §4, §10)
+        run: npm run test:telemetry-scrape
+
+      - name: Telemetry block selftest (contract §4, §8)
+        run: npm run test:telemetry-block
+
+      - name: Lifecycle observer selftest (contract §4, §10)
+        run: npm run test:telemetry-lifecycle
+
+      - name: Dashboard selftest (self-contained page, one summary object)
+        run: npm run test:telemetry-dashboard
+
+      - name: Weekly-review limits selftest (no self-raised budgets or graders)
+        run: npm run test:weekly-review
+
+      # The staged workflows are inert, which means nothing else ever parses
+      # them: a YAML syntax error, or a reference to a script that was renamed
+      # away, would sit undetected until someone runs `git mv` to activate one —
+      # the worst possible moment to find out. This step is the whole anti-rot
+      # story for `templates/workflows/`, and its second half (referenced scripts
+      # must exist) is what would have caught `pipeline-auto-merge.yml` arriving
+      # without `scripts/check_auto_merge.py`.
+      - name: Staged workflow templates parse, and their scripts exist
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'EOF'
+          import pathlib, re, sys, yaml
+
+          bad = []
+          staged = sorted(pathlib.Path("templates/workflows").glob("*.yml"))
+          if not staged:
+              sys.exit("no staged workflow templates found — did the directory move?")
+
+          for f in staged:
+              text = f.read_text(encoding="utf-8")
+              try:
+                  yaml.safe_load(text)
+              except Exception as e:
+                  bad.append("%s: unparseable YAML: %s" % (f, e))
+                  continue
+              for ref in sorted(set(re.findall(r"scripts/[A-Za-z0-9_.-]+\.py", text))):
+                  if not pathlib.Path(ref).is_file():
+                      bad.append("%s references %s, which does not exist" % (f, ref))
+
+          if bad:
+              print("::error::staged workflow templates are broken:")
+              print("\n".join("  - " + b for b in bad))
+              sys.exit(1)
+          print("%d staged workflow template(s) parse, and every referenced script exists" % len(staged))
+          EOF
+
+      # Activation needs repo secrets and is a human action
+      # (docs/PIPELINE-ACTIVATION.md). Nothing under `templates/workflows/` may be
+      # copied into `.github/workflows/` by an agent, so this asserts the staging
+      # boundary still holds rather than trusting that it does.
+      - name: No pipeline workflow is active
+        run: |
+          ACTIVE=$(git ls-files '.github/workflows/pipeline-*.yml' || true)
+          if [ -n "$ACTIVE" ]; then
+            echo "::error::pipeline workflows are active in .github/workflows/:"
+            echo "$ACTIVE"
+            echo "Activation is a human step — see docs/PIPELINE-ACTIVATION.md"
+            exit 1
+          fi
+          echo "no pipeline workflow is active — staging boundary holds"

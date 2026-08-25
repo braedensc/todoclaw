@@ -14,6 +14,7 @@ supabase/.temp
 # real drift from a reformat; they are machine-consumed, never hand-edited here.
 schemas/*.json
 delivery.example.json
+templates/workflows/
 
 # Sibling git worktrees checked out inside the main checkout (docs/COLLABORATION.md).
 # Prettier already skips these via its default .gitignore honouring — this entry makes the
