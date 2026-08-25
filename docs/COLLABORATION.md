@@ -34,6 +34,10 @@ lives 3 hours merges cleanly; one that lives 3 days collides.
 | `refactor` | no behavior change | `refactor/scoring-lib` |
 | `docs` | docs only | `docs/collaboration` |
 
+When the work has a Linear ticket, put its id in the branch —
+`<type>/tod-nn-<short-desc>`, e.g. `feat/tod-12-admin-knobs`. See
+[Task tracking](#task-tracking--who-works-on-what) for why that id earns its place.
+
 ---
 
 ## Starting new work (the routine)
@@ -147,18 +151,55 @@ on ADR numbering and twice on doc-tail merges before these rules existed:
 ## Task tracking — who works on what
 
 Claude doesn't need a tracker; **humans do**, to claim a unit of work so two
-people don't grab the same task. Scale the tool to the team:
+sessions don't grab the same task. This project uses **Linear**
+(`linear.app/todoclaw`, team `TOD`), reachable from a session over its MCP server —
+so Claude reads the ticket itself rather than being told what it says.
 
-| Scale | Tool |
-|---|---|
-| 2–3 people (this project) | **GitHub Issues + a Project board.** Free, next to the code; Claude can read/close issues via `gh` CLI. Start here. |
-| Small team wanting polish | **Linear** (has an MCP server — Claude reads a ticket, implements, updates status). |
-| Enterprise | **Jira / Azure DevOps**, usually via MCP for ticket context. |
+The board *is* the roadmap: one project per phase, plus the cross-cutting Admin
+control plane and Launch-readiness epics and a standing **Maintenance & polish**
+queue. Sizing lives in Linear's native `estimate` field (2/3/4 = S/M/L) and the
+work track in a `track:*` label.
 
-**Claiming convention (GitHub Issues):** assign the issue to yourself and move it
-to *In Progress* on the board **before** branching. Branch name references the
-issue: `feat/142-grid-drag`. The agentic loop becomes: "Claude, implement #142" →
-it reads the issue, branches, builds, opens the PR, you review.
+**Status is the claim.** With one maintainer there's no assignee ceremony — moving
+a ticket out of `Backlog` is what claims it:
+
+| Status | Meaning | Who sets it |
+|---|---|---|
+| `Backlog` | Exists, not scheduled | the default |
+| `Todo` | Claimed — this is next | Braeden |
+| `In Progress` | A branch or draft PR exists | GitHub integration † |
+| `In Review` | PR open, Braeden's court | GitHub integration † |
+| `Done` | Merged | GitHub integration † |
+
+† Once Linear's GitHub integration is connected (workspace Settings → Integrations),
+those three transitions fire off branch and PR events and nobody sets them by hand —
+git becomes the thing that writes board state, which is the only version of this that
+doesn't drift. Until then they are manual, and the board is only as current as the
+last person who remembered.
+
+**Claiming convention:** move the ticket to *Todo*, then start a session with
+"implement TOD-nn". The session reads the ticket over MCP, branches
+`<type>/tod-nn-<short-desc>` (e.g. `feat/tod-12-admin-knobs`), builds, and opens the
+PR; you review and merge. That branch form is doing two jobs at once — it satisfies
+the PreToolUse branch-name guard *and* is what Linear's GitHub integration
+autolinks on, which is what moves the ticket's status without anyone touching the
+board.
+
+**CI-green is deliberately not a board state.** The Stop hook blocks ending a turn
+on a red PR and branch protection blocks merging one, so "merged" already implies
+"green" — modelling it in Linear too would only add a second thing to keep in sync.
+
+Two things worth knowing when a session reads a ticket:
+
+- A description that opens with a **Source note (board audit 2026-08-22)** block has
+  been checked against `main`; one without it has not.
+- Cited line numbers drift as the code moves. Trust file and symbol names over line
+  numbers, and trust the repo over the ticket — a ticket is a plan, not a spec.
+
+**Maintenance work is a queue, not a changelog.** File a ticket only for something
+you found and consciously deferred; a bug you fix in the same session needs no
+ticket, because git history already records it. Don't backfill tickets for merged
+work.
 
 ---
 
