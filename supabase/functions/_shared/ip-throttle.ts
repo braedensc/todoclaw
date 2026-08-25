@@ -4,7 +4,7 @@
 // which means an unauthenticated request reaches function code before auth. This is defense-in-depth
 // on top of the platform's edge DDoS protection: check a per-IP budget BEFORE auth so a flood from one
 // IP is turned away cheaply. Keyed on a spoof-resistant IP (client-ip.ts) and a per-function `bucket`;
-// the counting/recording is the edge_ip_throttle DEFINER RPC (20260722020000).
+// the counting/recording is the edge_ip_throttle DEFINER RPC (20260722162000_edge_ip_throttle.sql).
 //
 // FAILS OPEN: a throttle-bookkeeping hiccup — or the RPC not being deployed yet — returns "allowed"
 // rather than breaking a legitimate request. Availability of the real feature outranks this guard.
