@@ -22,6 +22,7 @@ import type {
   RecapScenario,
   SeedSpec,
 } from './types.ts'
+import type { PlanRequest } from '../../supabase/functions/_shared/plan-prompt.ts'
 
 export { MODEL as PROD_MODEL }
 
@@ -188,22 +189,38 @@ export function renderChatForJudge(t: ChatTrace): string {
   return lines.join('\n')
 }
 
-export function renderPlanForJudge(plan: PlanResult, sc: PlanScenario): string {
-  const fixture = sc.tasks
-    .map((t) => {
-      // worked_days rides on the row via a family-local type (PlanTaskRow predates #347), but the
-      // judge MUST see it: the first live plan run failed a truthful "three days running!" as an
-      // invented number purely because the session history was withheld here. Same class of bug
-      // as the chat-judge grounding gap fixed in #379 — an unverifiable fact is not a false one.
-      const worked = (t as { worked_days?: string[] | null }).worked_days
-      return (
-        `- "${t.text}" imp=${t.y} urg=${t.x} due=${t.due ?? '—'}${t.due_time ? ` ${t.due_time}` : ''}` +
-        ` size=${t.size ?? '—'}${t.ongoing ? ' ONGOING' : ''}${t.recurring ? ' RECURRING' : ''}` +
-        `${t.staged ? ' STAGED' : ''}${t.start_date ? ` starts=${t.start_date}` : ''}` +
-        `${worked?.length ? ` worked_days=[${worked.join(', ')}]` : ''}`
-      )
-    })
-    .join('\n')
+/** What the PLAN judge sees. Rendered from the built PlanRequest — the EXACT input the model got —
+ * not from the raw scenario fixture. Rendering the fixture instead caused a whole class of false
+ * "invention" verdicts: the judge saw `due=2026-09-15` with no idea the pinned today WAS
+ * 2026-09-15, so it failed a correct "due today" as a fabricated date, and it never saw the
+ * ongoing session phrase ("no sessions logged yet") the model was quoting. If the model can read
+ * it, the judge must be able to check it. */
+export function renderPlanForJudge(plan: PlanResult, sc: PlanScenario, req: PlanRequest): string {
+  const tasks = req.tasks.map((t) => {
+    const due =
+      t.dueInDays == null
+        ? 'no due date'
+        : t.dueInDays === 0
+          ? `DUE TODAY${t.dueTime ? ` at ${t.dueTime}` : ''}`
+          : t.dueInDays < 0
+            ? `OVERDUE by ${-t.dueInDays}d`
+            : `due in ${t.dueInDays}d`
+    const bits = [
+      `- [${t.id ?? '—'}] "${t.text}"`,
+      `imp=${t.importance} urg=${t.urgency}`,
+      due,
+      `size=${t.size ?? '—'}`,
+      t.ongoing ? 'ONGOING' : null,
+      // The session phrase the model is shown verbatim, incl. "no sessions logged yet".
+      t.ongoing ? `sessions: ${t.worked ?? 'no sessions logged yet'}` : null,
+      t.workedToday ? 'WORKED TODAY (not schedulable)' : null,
+    ].filter(Boolean)
+    return bits.join(' ')
+  })
+  const chores = req.recurringDue.map((c) => `- "${c.text}" (${c.status})`)
+  const upcoming = req.upcoming.map(
+    (u) => `- "${u.text}" starts in ${u.startsInDays}d${u.due ? `, due ${u.due}` : ''}`,
+  )
   const habits = (sc.habits ?? [])
     .map((h) => `- ${h.text}${h.active === false ? ' (inactive)' : ''}`)
     .join('\n')
@@ -211,13 +228,17 @@ export function renderPlanForJudge(plan: PlanResult, sc: PlanScenario): string {
     .filter(([, v]) => v)
     .map(([k]) => k)
   return [
-    'FIXTURE TASKS:',
-    fixture || '(none)',
-    habits ? `FIXTURE HABITS:\n${habits}` : '',
+    `TODAY IS ${req.today} (${req.dayOfWeek}) — every date below is relative to this.`,
+    '',
+    'TASKS THE MODEL WAS GIVEN:',
+    tasks.join('\n') || '(none)',
+    chores.length ? `RECURRING CHORES DUE:\n${chores.join('\n')}` : '',
+    upcoming.length ? `COMING UP (mention-only, never scheduled):\n${upcoming.join('\n')}` : '',
+    habits ? `ACTIVE HABITS:\n${habits}` : '',
     doneIds.length ? `ALREADY DONE TODAY: ${doneIds.join(', ')}` : '',
     sc.schedule ? `SCHEDULE CONFIG: ${JSON.stringify(sc.schedule)}` : '',
     sc.weather ? `WEATHER: ${sc.weather}` : '',
-    sc.memories?.length ? `MEMORIES: ${sc.memories.join(' | ')}` : '',
+    sc.memories?.length ? `SAVED MEMORIES: ${sc.memories.join(' | ')}` : '',
     '',
     'EMITTED PLAN:',
     JSON.stringify(plan, null, 2),
