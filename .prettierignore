@@ -14,3 +14,9 @@ supabase/.temp
 # real drift from a reformat; they are machine-consumed, never hand-edited here.
 schemas/*.json
 delivery.example.json
+
+# Sibling git worktrees checked out inside the main checkout (docs/COLLABORATION.md).
+# Prettier already skips these via its default .gitignore honouring — this entry makes the
+# exclusion explicit and independent of that default, so `format:check` can never start
+# reformatting another branch's tree.
+.claude/worktrees/
