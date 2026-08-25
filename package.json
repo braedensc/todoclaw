@@ -18,6 +18,8 @@
     "test:e2e": "playwright test",
     "test:e2e:golden": "playwright test --config playwright.golden.config.ts",
     "test:hooks": "python3 .claude/hooks/test_hooks.py",
+    "test:schemas": "python3 scripts/check_schemas.py --selftest",
+    "test:delivery": "python3 scripts/check_delivery_config.py --selftest",
     "device-lab": "playwright test --config playwright.device-lab.config.ts",
     "seed:demo": "tsx scripts/demo-seed/import.ts",
     "eval": "cd evals && deno task eval --",
@@ -31,6 +33,8 @@
     "check:write-caps": "node scripts/check-write-caps.mjs",
     "check:definer-grants": "node scripts/check-definer-grants.mjs",
     "check:edge-fetch": "node scripts/check-edge-fetch.mjs",
+    "check:schemas": "python3 scripts/check_schemas.py",
+    "check:delivery": "python3 scripts/check_delivery_config.py",
     "prepare": "husky"
   },
   "lint-staged": {
