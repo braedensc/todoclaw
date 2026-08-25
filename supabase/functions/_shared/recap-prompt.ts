@@ -38,9 +38,9 @@ export const RECAP_SYSTEM_PROMPT = [
   '   ("did the curb pickup and the containers get sorted?"). A FIXED COMMITMENT that was on today',
   '   (an appointment, a booking) is the FIRST thing you ASK about — before any other open item. A',
   '   one-line credit of something genuinely finished may open the message, but the commitment',
-  '   question comes immediately after it, never buried further down. Never guilt-trip: "not today"',
-  '   and "I rested" are perfectly good',
-  '   answers and you should make that plain.',
+  '   question comes immediately after it, never buried further down. "Not today" and "I rested" are',
+  '   perfectly good answers and you should make that plain — asking is not pressure, and noting that',
+  '   something slipped again is honest, but never make it a verdict on THEM.',
   '2. Credit what they GENUINELY FINISHED — by name, warmly. If they cleared the whole plan, make a',
   '   bit of a deal of it 🎉. If they finished nothing, say nothing about achievement: go straight to',
   '   the question and keep it kind. Do NOT reach for something to praise.',
@@ -125,23 +125,17 @@ export function buildRecapUserPrompt(req: RecapRequest): string {
       'NOT finished and are never behind)',
     sessions.map((a) => describeActivity(a)),
   )
-  // On a NOTHING day (no finishes, no sessions, no open items) the itemized upkeep list is pure
-  // temptation: the first two paid eval runs both produced a recap narrating the items back
-  // ("shed shelving tucked into Someday, furnace filter set to repeat") despite an explicit ban —
-  // prompt iteration lost twice, so the detail is now withheld by construction. The model learns
-  // THAT tidying happened (so "board looks tidier" stays available) but not WHAT, which makes
-  // narration impossible rather than discouraged. Days with real content keep the itemized block:
-  // there the details are context the model uses correctly, and the open items absorb its focus.
-  const nothingDay = !req.done.length && !req.open.length && !progress.length && !sessions.length
+  // OWNER DECISION 2026-08-24: the model gets the upkeep items on EVERY day, including a nothing-day.
+  // An earlier fix withheld them here (aggregate count only) after two paid runs narrated them back
+  // — but #346's actual bug was upkeep dressed as ACHIEVEMENT ("good little planning day — proud of
+  // you"), not upkeep being named. Blindfolding the model meant someone who spent an evening
+  // genuinely reorganising got a content-free "board looks tidier" and could not be told what the
+  // app saw. Same correction as the gap rule: name the fact, ban the verdict. Brevity is enforced
+  // by the word cap, not by starving the prompt.
   const bookkeeping = block(
-    'BOOKKEEPING (board upkeep — planning to do things, NOT doing them; never celebrate as ' +
-      'achievement, never call it a good planning day)',
-    nothingDay && upkeep.length
-      ? [
-          `${upkeep.length} small ${upkeep.length === 1 ? 'bit' : 'bits'} of board tidying — ` +
-            'do not list or describe them; at most a passing "board looks tidier".',
-        ]
-      : upkeep.map((a) => describeActivity(a)),
+    'BOOKKEEPING (board upkeep — planning to do things, NOT doing them. You may NAME what they did ' +
+      'in plain terms; never celebrate it as achievement, and never call it a good planning day)',
+    upkeep.map((a) => describeActivity(a)),
   )
   const habits = block('HABITS THEY KEPT TODAY', req.habitsKept)
   const upcoming = block('COMING UP (heads-up material)', req.upcoming)

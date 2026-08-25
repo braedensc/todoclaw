@@ -135,36 +135,29 @@ function bigRockIsNot(id: string, label: string): PlanCheck {
  * Every way a plan can NAME THE GAP since an ongoing project's last session — the thing
  * plan-prompt.ts forbids outright ("NEVER name the gap to the user and never imply neglect").
  *
- * Split into named parts because the interesting failure is NOT the obvious scold. The model is
- * handed the gap as a raw fact on the task line ("last worked 41 days ago"), so the likeliest leak
- * by far is it echoing that fact back verbatim — "you last worked on this 41 days ago", "six weeks
- * without progress", "it has been 41 days since your last session". A canary built only from guilt
- * VOCABULARY ("neglect", "fallen behind") misses every one of those, because they are not rude —
- * they are just the gap, said plainly, which is exactly what the prompt bans.
+ * OWNER DECISION 2026-08-24 — this canary was INVERTED. It used to ban the gap itself: "last
+ * worked", "six weeks without progress", any elapsed duration. The owner's ruling is that the gap
+ * is the user's own data and saying it plainly is USEFUL, not shaming ("don't baby the user; what
+ * matters is accurate info"). A pointed nudge is fine too. The only floor is a verdict on the
+ * PERSON rather than a fact about the work — so that is all this catches now.
  *
- * So the set covers three shapes: guilt words, second-person "you haven't…" constructions, and any
- * restatement of an ELAPSED DURATION ("41 days ago", "a month since", "for weeks"). Deliberately
- * absent: "pick back up", "chip away", "get back to" — the prompt itself uses that framing, and a
- * correct plan may say it.
+ * Kept deliberately NARROW and high-signal: every pattern below is unambiguously about the user's
+ * character, so it cannot fire on an honest sentence. If a cheap model ever starts moralising, this
+ * is what notices; ordinary bluntness passes straight through.
  */
-const GAP_SHAMING = new RegExp(
+const CHARACTER_JUDGEMENT = new RegExp(
   [
-    /neglect/,
-    /fallen behind|behind on/,
-    /haven['’]?t (touched|worked|looked|opened|gotten|been)/,
-    /hasn['’]?t (been|seen|had|moved)/,
-    /been (a while|weeks|months|sitting|idle|untouched|dormant|parked|quiet)/,
-    /since (you|your) last/,
-    /last worked/,
-    // an elapsed duration in words or digits: "41 days ago", "a month since", "six weeks without"
-    /\b(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|several|a few|a couple of) (day|week|month)s? (ago|since|without)/,
-    /for (weeks|months)\b/,
-    /catch(?:ing)?[ -]?up/,
-    /dust(?:ing|ed)?[ -]?off|gathering dust/,
-    /back ?burner/,
-    /letting .{0,24}(slip|slide|lapse)/,
-    /long (overdue|pause|break|gap|hiatus)|overdue for/,
-    /sat idle|went quiet|without progress|abandoned/,
+    // sweeping "you always/never <negative verb>" generalisations about the person
+    /you (always|never|constantly) [^.!?]{0,30}(abandon|drop|forget|ignore|neglect|put off|leave|fail|slip|quit)/,
+    /you keep (abandoning|dropping|ignoring|neglecting|putting off|forgetting|quitting)/,
+    // direct character labels
+    /you'?re (lazy|flaky|unreliable|undisciplined|hopeless|terrible|bad) (at|with)?/,
+    /(bad|terrible|hopeless|no good) at (follow|sticking|finishing|keeping|committing)/,
+    /lack of (discipline|follow.?through|commitment|willpower|effort)/,
+    // moralising / reproach aimed at the person
+    /shame on you|you should be ashamed|what'?s wrong with you/,
+    /if you (actually|really) (cared|wanted|tried)/,
+    /you have (only|just) yourself to blame/,
   ]
     .map((part) => part.source)
     .join('|'),
@@ -221,10 +214,13 @@ export const scenarios: PlanScenario[] = [
       rocksResolve(),
     ],
     rubric:
-      'The only task is an ongoing novel with a session already logged today; the no-rocks rest ' +
-      'day and its exclusion are machine-checked. FAIL if: the prose asks for or suggests a ' +
-      'second session on the novel today; work not on the board is invented or assigned; the ' +
-      'user is pressured to do more today.',
+      'The only task is an ongoing novel with a session already logged today, three days running ' +
+      '(worked_days is in the fixture above); one active habit, Morning stretch. The no-rocks ' +
+      'rest day and the exclusion are machine-checked. Naming the run warmly ("three days ' +
+      'running") and nodding at the seeded habit are both grounded and fine. FAIL if: the prose ' +
+      'asks for or suggests a second session on the novel today; work not on the board is ' +
+      'invented or assigned; the user is pressured to do more today, or told they owe the ' +
+      'project a daily cadence.',
   },
   {
     kind: 'plan',
@@ -326,24 +322,27 @@ export const scenarios: PlanScenario[] = [
       deadlinesCovered(['wy3']),
       rocksResolve(),
     ],
-    // The streak-prose conditions are mandate-backed as of 2026-08-22: plan-prompt.ts's ONGOING
-    // PROJECTS block now says "never read a streak back to the user as a score to protect or a
-    // cadence they owe" — the rubric cites that shipped line, not authorial taste.
+    // Owner decision 2026-08-24: celebrating a real run of sessions is FINE, so the old
+    // "reads the streak back as a score" clause is gone. What survives is mandate-backed —
+    // plan-prompt.ts still bans framing a cadence the user OWES, and scolding is universal.
     rubric:
       'The novel (XL, ongoing) was worked yesterday and 3 days running; its big-rock exclusion, ' +
       'sizes, and deadline coverage are machine-checked. FAIL if: the user is scolded or ' +
       'guilt-tripped about resting the project or about the day’s load; the prose implies the ' +
-      'user owes the project a daily cadence, or reads the streak back as a score to protect; a ' +
-      'task or deadline is invented.',
+      'user OWES the project a daily cadence, or treats a run of sessions as something they must ' +
+      'not break (warmly noting the run itself is fine); a task or deadline is invented.',
   },
   {
     kind: 'plan',
     id: 'pong-long-gap-picked-back-up-no-guilt',
-    title: 'A months-old project may earn the day — and the plan never names the gap',
+    title:
+      'A months-old project may earn the day — the gap may be named, the user may not be judged',
     tags: ['plan', 'ongoing', 'pacing', 'tone'],
     persona: 'user returning to a project they parked in the summer',
-    // 41 days is "weeks or months ago": fully fresh, judged on its own merits, and the prompt is
-    // explicit that the gap is NEVER named to the user.
+    // 41 days is "weeks or months ago": fully fresh and judged on its own merits. OWNER DECISION
+    // 2026-08-24: naming the gap is ALLOWED and useful ("last worked 41 days ago", "this one has
+    // gone quiet"), and a pointed nudge is fine — only a verdict on the person is barred. This
+    // scenario used to fail exactly the honest phrasing the owner wants.
     //
     // A worked-today-skip regression has to surface through the decoy, so the decoy is not a
     // near-twin of the atlas: 'Write the novel' (worked today) outranks it on BOTH axes
@@ -375,17 +374,16 @@ export const scenarios: PlanScenario[] = [
       planHeadline(),
       neverPlanned(['lg2'], ['Write the novel'], 'the project worked today is never scheduled'),
       // The gap-shaming canary, across headline / availableTime / every `why` / habitNote / nudge.
-      // Includes plain restatements of the elapsed time, not just guilt words — see GAP_SHAMING.
-      planLacks(GAP_SHAMING, 'no gap-shaming or catch-up framing anywhere in the plan'),
+      // Only person-verdicts now — saying "last worked 41 days ago" is allowed and useful.
+      planLacks(CHARACTER_JUDGEMENT, 'no verdict on the user as a person'),
       rocksResolve(),
     ],
     rubric:
       'The atlas was last worked 41 days ago (fully fresh, a fine pick on its merits); the novel ' +
-      'already has a session logged today; exclusions plus a regex canary for common gap ' +
-      'phrasings are machine-checked. FAIL if: any user-visible text names or alludes to how ' +
-      'long it has been since the atlas was last worked, or implies neglect, catching up, or ' +
-      'guilt — however gently phrased, in ANY wording (the canary only catches literal shapes; ' +
-      'paraphrases are yours to catch); the prose schedules or requests work on the novel today; ' +
-      'a task is invented.',
+      'already has a session logged today. Saying how long the atlas has sat is ALLOWED and ' +
+      'useful — "last worked 41 days ago", "this one has gone quiet", "worth a session" all pass, ' +
+      'and a pointed nudge is fine. FAIL if: the text judges the USER rather than the work ("you ' +
+      'always abandon these", "bad at follow-through"), or grinds the same reproach through the ' +
+      'whole card; the prose schedules or requests work on the novel today; a task is invented.',
   },
 ]

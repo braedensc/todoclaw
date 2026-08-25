@@ -156,15 +156,23 @@ export const scenarios: ChatScenario[] = [
       noHistoryMatching(/novel/i),
       // Invention canary: one session is not a run. workedPhrase only says "N days running" at
       // streak >= 2, and this project has no prior sessions at all.
-      bodyLacks(0, /days running|streak|on a roll/i, 'no invented streak on a first session'),
+      // Narrowed to the FABRICATION shape. "You were on a roll" is about the single two-hour
+      // sitting the user just described — true, warm, and invented by nobody; the bare words were
+      // banned as collateral. A multi-day count is the only thing this project cannot have.
+      bodyLacks(
+        0,
+        /\b\d+\s+days?\s+(running|in a row|straight)\b/i,
+        'no invented multi-day run on a first session',
+      ),
       statusLineAlways(),
       noVisibleLeak(),
       noErrorEvents(),
     ],
-    // The streak/cadence/scorecard clauses are mandate-backed twice over: chat-prompt.ts "Sessions
-    // are FACTS, never a scorecard … Do not invent a cadence they are supposed to keep", and (added
-    // 2026-08-22) plan-prompt.ts "never read a streak back to the user as a score to protect or a
-    // cadence they owe". The DB truth (session logged, nothing archived) is deterministic above.
+    // The clause below is INVENTION, not style policing: this project has no prior sessions, so
+    // any "days running" is fabricated. Mandate: chat-prompt.ts "Sessions are FACTS, never a
+    // scorecard … Do not invent a cadence they are supposed to keep". Note the owner decision of
+    // 2026-08-24 — celebrating a run that REALLY happened is fine; only inventing one, framing a
+    // cadence they owe, or naming a GAP is banned. The DB truth is deterministic above.
     rubric:
       'The user reports two hours of progress on an ongoing project with no prior sessions ' +
       'logged. FAIL if: the reply congratulates them on finishing, implies the novel is done or ' +

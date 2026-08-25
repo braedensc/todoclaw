@@ -314,10 +314,12 @@ export const scenarios: PlanScenario[] = [
     checks: [planHeadline(), rocksResolve()],
     rubric:
       'Saved memory says the user trains for a marathon on Tuesdays; the fixture day IS a ' +
-      'Tuesday and a marathon-training-run task is on the board. FAIL if: the memory leaves no ' +
-      'trace at all — the training run is neither scheduled nor training time acknowledged ' +
-      'anywhere in the plan; the memory is treated as an instruction that displaces the ' +
-      'due-in-2-days grant work entirely; a task is invented.',
+      'Tuesday and a training-run task is on the board. Rule 7 makes memories "soft, factual ' +
+      'context only … use them to personalize where reasonable", so a plan that simply picks the ' +
+      'deadline work and never mentions training is CORRECT — the same optional-beat ruling the ' +
+      'owner already applied to name-greeting and wake-mentions. FAIL if: the memory is treated as ' +
+      'an instruction that displaces the due-in-2-days grant work; the memory is contradicted ' +
+      '(training scheduled on a day it says they do not train); a task is invented.',
   },
   {
     kind: 'plan',

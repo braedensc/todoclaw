@@ -36,11 +36,15 @@ const reminderPhrase = (minutes: number): string =>
 // Mirror the app's add forms: a task that GAINS a due time gets the user's default reminder
 // (Settings → Notifications; built-in 1 hour, or Off) applied automatically. Best-effort — the
 // task write already landed, so a reminder hiccup must not fail (and re-run) the whole tool; it
-// just goes unmentioned. Returns the applied offset, or null when the default is off / it failed.
+// just goes unmentioned. Returns the applied offset, 'past' when the default was dropped because
+// its fire time had already gone by, or null when the default is off / the write failed.
+// 'past' is distinguished on purpose: the APP GUIDE promises the user that a due time
+// "automatically gets the default reminder", so silently having none is the app telling them
+// something untrue. Off/failed stay quiet — neither contradicts a promise we made.
 async function applyDefaultReminder(
   ctx: CapabilityContext,
   taskId: string,
-): Promise<number | null> {
+): Promise<number | 'past' | null> {
   const def = await loadReminderDefault(ctx.client)
   if (def === null) return null
   const { data: fireAt, error } = await ctx.client.rpc('set_task_reminder', {
@@ -55,7 +59,7 @@ async function applyDefaultReminder(
   const now = ctx.now ?? new Date()
   if (typeof fireAt === 'string' && new Date(fireAt).getTime() <= now.getTime()) {
     await ctx.client.rpc('remove_task_reminder', { p_task_id: taskId, p_offset_minutes: def })
-    return null
+    return 'past'
   }
   return def
 }
@@ -66,6 +70,12 @@ const autoReminderNote = (minutes: number): string =>
   ` The user's default reminder (${reminderPhrase(minutes)}) was added automatically — use remove_reminder/set_reminder if they wanted a different lead time or none.`
 const autoReminderDisplay = (minutes: number): string =>
   ` Reminder ${reminderPhrase(minutes)} (your default).`
+// The default was skipped because its lead time already passed. Say so — the user has been told
+// a due time gets one automatically, so silence here reads as "covered" when it is not.
+const pastReminderNote = (): string =>
+  " The user's default reminder was NOT added: its lead time had already passed. Tell them, and offer a shorter lead time (set_reminder) if they still want one."
+const pastReminderDisplay = (): string =>
+  ' No default reminder — that lead time has already passed.'
 
 // A bare wall-clock calendar day ('YYYY-MM-DD') — the shape `due` and `start_date` store. Model
 // inputs are validated against this before they reach a `date` column so a malformed string gets a
@@ -341,10 +351,14 @@ export const taskCapabilities: Capability[] = [
           ? ' — staged, waiting to be placed'
           : ' on the grid'
       // The model keeps the id (to chain an edit/move next); the user just sees the plain result.
+      const autoNote =
+        auto === 'past' ? pastReminderNote() : auto === null ? '' : autoReminderNote(auto)
+      const autoShown =
+        auto === 'past' ? pastReminderDisplay() : auto === null ? '' : autoReminderDisplay(auto)
       return ok(
-        `Created "${i.text}"${where} (id ${data.id}).${auto === null ? '' : autoReminderNote(auto)}`,
-        auto === null ? ['tasks'] : ['tasks', 'reminders'],
-        `Created "${i.text}"${where}.${auto === null ? '' : autoReminderDisplay(auto)}`,
+        `Created "${i.text}"${where} (id ${data.id}).${autoNote}`,
+        typeof auto === 'number' ? ['tasks', 'reminders'] : ['tasks'],
+        `Created "${i.text}"${where}.${autoShown}`,
       )
     },
   }),
@@ -483,6 +497,13 @@ export const taskCapabilities: Capability[] = [
           .eq('task_id', i.task_id)
         if (!exErr && !(existing ?? []).length) {
           const auto = await applyDefaultReminder(ctx, i.task_id)
+          if (auto === 'past') {
+            return ok(
+              `${result.content}${pastReminderNote()}`,
+              ['tasks'],
+              `${result.content}${pastReminderDisplay()}`,
+            )
+          }
           if (auto !== null) {
             return ok(
               `${result.content}${autoReminderNote(auto)}`,
@@ -1108,9 +1129,10 @@ export const taskCapabilities: Capability[] = [
   defineCapability({
     name: 'delete_task',
     description:
-      'Delete a task. There is NO trash surface in the app — the only recovery is restoring a ' +
-      'Settings → Backups snapshot that still contains it, so never call deletion easily ' +
-      'reversible. Destructive — the user is asked to confirm before it runs.',
+      'Delete a task. It disappears from the app for good — there is NO trash surface, and the only ' +
+      'way back is restoring a Settings → Backups snapshot that still contains it. Say that, not ' +
+      'that it is erased: the row is soft-deleted and retained, so never promise a user that ' +
+      'deleting scrubs anything. Destructive — the user is asked to confirm before it runs.',
     destructive: true,
     schema: z.object({ task_id: uuid.describe('The task id (UUID).') }).strict(),
     async execute(ctx, i) {
