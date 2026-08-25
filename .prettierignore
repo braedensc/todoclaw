@@ -8,3 +8,9 @@ supabase/.temp
 .husky/_
 # Markdown is hand-formatted (docs, ADRs, READMEs); leave Prettier out of it.
 *.md
+
+# Vendored verbatim from claude-project-kit (docs/PIPELINE-CONTRACT.md is the
+# contract they render). Kept byte-identical to upstream so /sync-kit can tell a
+# real drift from a reformat; they are machine-consumed, never hand-edited here.
+schemas/*.json
+delivery.example.json

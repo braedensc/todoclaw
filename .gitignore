@@ -49,3 +49,4 @@ CLAUDE.local.md
 .claude/worktrees/
 .claude/.stop-pr-nag/
 .claude/hooks/__pycache__/
+scripts/__pycache__/

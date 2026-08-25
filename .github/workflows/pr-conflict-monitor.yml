@@ -1,0 +1,140 @@
+name: PR conflict monitor
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Standing merge-conflict monitor.
+#
+# The hole this closes: the Stop hook's DIRTY gate (.claude/hooks/stop-pr-check.py)
+# catches a conflicted PR only at turn-end, and only in the session that owns the
+# branch. A PR that goes CONFLICTING *after* that session ends — because main
+# moved under it — is invisible: GitHub cannot build the merge ref, so the
+# required checks never run, while side jobs can still report green. todoclaw has
+# been bitten by exactly this (a DIRTY PR spawns no required-CI run, so it looks
+# green). This monitor watches open PRs on a schedule and flags conflicts as they
+# appear.
+#
+# Mechanics: one GraphQL call lists open non-draft PRs with their computed
+# `mergeable` state. CONFLICTING -> add a `conflict` label + post ONE comment with
+# the rebase recipe, and assign the owner. Back to MERGEABLE -> remove the label,
+# so a NEW conflict later re-alerts. The label IS the dedupe key: one comment per
+# conflict episode, never a nag loop.
+#
+# This workflow never merges anything, and never pushes. It only labels, comments
+# and assigns.
+#
+# NOTE: scheduled workflows only run from the DEFAULT branch (main), so this does
+# not run on the PR that adds it — use workflow_dispatch to exercise it. No new
+# secrets or vars.
+# ══════════════════════════════════════════════════════════════════════════════
+
+on:
+  schedule:
+    - cron: '11,41 * * * *' # ~every 30 min, off the top of the hour to dodge Actions load
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # labels + comments on PRs go through the issues API
+  pull-requests: write
+
+jobs:
+  scan:
+    name: Scan open PRs for conflicts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Label + comment on conflicted PRs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const LABEL = 'conflict'
+
+            // Ensure the label exists (idempotent) — auto-managed, so a human never
+            // has to pre-create it for the first run to work.
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: LABEL, color: 'd93f0b',
+                description: 'Merge conflicts with main (auto-managed by pr-conflict-monitor)',
+              })
+            } catch (e) {
+              if (e.status !== 422) throw e // 422 = already exists; anything else is real
+            }
+
+            // One GraphQL call for everything. `mergeable` is computed LAZILY: GitHub
+            // starts the computation when someone asks. UNKNOWN therefore means "still
+            // computing" — treat it as skip-this-tick (the next run, ~30 min later,
+            // reads the settled answer). Never retry-loop on UNKNOWN.
+            const result = await github.graphql(`
+              query($owner: String!, $repo: String!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequests(states: OPEN, first: 100) {
+                    nodes {
+                      number
+                      isDraft
+                      mergeable
+                      headRefName
+                      labels(first: 100) { nodes { name } }
+                    }
+                  }
+                }
+              }`, { owner, repo })
+
+            for (const pr of result.repository.pullRequests.nodes) {
+              if (pr.isDraft) continue // drafts aren't mergeable anyway; don't nag WIP
+              const labels = pr.labels.nodes.map((l) => l.name)
+              const hasLabel = labels.includes(LABEL)
+
+              if (pr.mergeable === 'CONFLICTING' && !hasLabel) {
+                // New conflict episode: label (the dedupe key) + ONE comment.
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: pr.number, labels: [LABEL],
+                })
+                // The wording below is DELIBERATELY GENERIC about which checks are
+                // required, and must stay that way. Do NOT paste todoclaw's current
+                // required job names in here: the required contexts on `main` are
+                // branch-protection state, they change without anyone touching this
+                // file, and a hardcoded copy would go quietly wrong the next time they
+                // do — the same staleness bug this monitor exists to catch.
+                // Reading them at runtime is not the fix either: GET
+                // /repos/{owner}/{repo}/branches/main/protection needs repo ADMIN, and
+                // the default GITHUB_TOKEN this workflow runs with cannot be granted it
+                // (`permissions:` has no administration scope), so the call would 403
+                // every tick. "the required checks" is true regardless, and cannot rot.
+                const body = [
+                  `\`${pr.headRefName}\` has **merge conflicts** with \`main\` (mergeable = CONFLICTING).`,
+                  '',
+                  'While conflicted, GitHub cannot build the merge ref, so **the required checks never run** — and non-required jobs can still report green. Do not read that as a passing PR.',
+                  '',
+                  'Fix:',
+                  '',
+                  '```',
+                  'git fetch origin main && git rebase origin/main',
+                  '# resolve conflicts, then:',
+                  'git push --force-with-lease',
+                  `gh pr checks ${pr.number} --watch`,
+                  '```',
+                  '',
+                  // @mention so the notification reason is "mention" (delivered + emailed)
+                  // rather than "subscribed", which a solo owner can silently miss — the
+                  // same rationale as deploy-failure-alert.yml. The assignment below adds
+                  // a second notification reason and keeps the PR on the owner's list.
+                  `cc @${owner} — this PR cannot merge and its required checks are not running.`,
+                ].join('\n')
+                await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body })
+                try {
+                  await github.rest.issues.addAssignees({ owner, repo, issue_number: pr.number, assignees: [owner] })
+                } catch (e) {
+                  core.info(`could not assign @${owner} on #${pr.number}: ${e.message}`)
+                }
+                core.info(`#${pr.number}: CONFLICTING — labeled + commented`)
+              } else if (pr.mergeable === 'MERGEABLE' && hasLabel) {
+                // Conflict resolved: drop the label so a FUTURE conflict re-alerts.
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: pr.number, name: LABEL,
+                })
+                core.info(`#${pr.number}: mergeable again — label removed`)
+              } else if (pr.mergeable === 'UNKNOWN') {
+                core.info(`#${pr.number}: mergeability still computing — skipping this tick`)
+              }
+            }
