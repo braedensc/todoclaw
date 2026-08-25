@@ -177,6 +177,15 @@ Deno.test('the system prompt makes asking the spine, and bars praising upkeep', 
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'You are asking how the day WENT')
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'ASK ABOUT WHAT IS STILL OPEN')
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'BOOKKEEPING IS NOT ACHIEVEMENT')
+  // Owner decision 2026-08-25: the newer rule wins. #382 rewrote the BOOKKEEPING block header to
+  // "You may NAME what they did in plain terms" while this hard rule still capped upkeep at "a
+  // passing half-clause — usually it earns nothing at all". Naming three items in plain terms does
+  // not fit in a half-clause, and the baseline model was failed for following the newer line. The
+  // quantity cap is gone; every VERDICT ban (congratulate, lead with, stand in for the ask) stays.
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'You MAY name what they did in plain terms')
+  assert(!RECAP_SYSTEM_PROMPT.includes('passing half-clause'))
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'never lead with it')
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'not to applaud')
   // The exact phrasings the bad recap used are named so they can't come back.
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'a good')
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'never say you are proud of it')

@@ -23,6 +23,7 @@ import {
   wipeUser,
   type Sql,
 } from './db.ts'
+import { everyTurnAnswered } from './checks.ts'
 import { resolveEvalEnv } from './env.ts'
 import {
   judge,
@@ -237,7 +238,12 @@ async function runChat(
       sc.turns,
     )
     const db = await snapshotUser(ctx.sql, userId, ids)
-    const deterministic = (sc.checks ?? []).flatMap((check) => flat(check(trace, db)))
+    // everyTurnAnswered is UNIVERSAL, not opt-in: a turn that came back with nothing at all used
+    // to pass every gate and reach the judge as silence. A scenario author cannot be relied on
+    // to remember a check about the harness's own blind spot, so the runner adds it.
+    const deterministic = [everyTurnAnswered(), ...(sc.checks ?? [])].flatMap((check) =>
+      flat(check(trace, db)),
+    )
     // The judge gets the seed as ground truth (renderSeedForJudge) so faithfulness verdicts are
     // evidence-based, not guesses; the human-facing artifact stays the plain transcript.
     const judgeResult = await maybeJudge(

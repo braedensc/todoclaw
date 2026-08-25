@@ -20,6 +20,31 @@ describe('splitReply', () => {
     })
   })
 
+  // Regression (2026-08-25 Haiku eval): a reply ended `[[status: …]] 🐾` — the paw AFTER the
+  // closing brackets. The old `\]\]\s*$` anchor rejected the whole match, so the raw marker rendered
+  // in the chat bubble and the widget got no status at all. The prompt does mandate the paw go
+  // inside or before the marker; the parser is forgiving anyway, and the eval keeps the strict check.
+  it('tolerates a signature or punctuation trailing the closing brackets', () => {
+    expect(splitReply('Batched them.\n[[status: Three errands due tomorrow]] 🐾')).toEqual({
+      body: 'Batched them.',
+      status: 'Three errands due tomorrow',
+      needsInput: false,
+    })
+    expect(splitReply('Done.\n[[status: Saved it]]!').status).toBe('Saved it')
+    // The waiting marker still survives the trailing decoration.
+    expect(splitReply('When is it due?\n[[status: ? Need a due date]] 🐾')).toEqual({
+      body: 'When is it due?',
+      status: 'Need a due date',
+      needsInput: true,
+    })
+  })
+
+  // `]` is deliberately excluded from the trailing class — otherwise a stray third bracket would
+  // shift the capture. This is unchanged from the original regex, and pinned so it stays that way.
+  it('does not let a stray third bracket change the capture', () => {
+    expect(splitReply('Done.\n[[status: x]]]').status).toBe('x]')
+  })
+
   it('is forgiving about the status: prefix and casing', () => {
     expect(splitReply('Done!\n[[Added it]]').status).toBe('Added it')
     expect(splitReply('Done!\n[[STATUS: Added it]]').status).toBe('Added it')

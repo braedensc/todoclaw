@@ -354,12 +354,18 @@ export const scenarios: ChatScenario[] = [
         { key: 'plants', text: 'Water the plants', x: 0.3, y: 0.3, size: 'S' },
       ],
     }),
+    // Turn 1 said "Morning!" until 2026-08-25. Chat scenarios cannot pin the clock, and on an
+    // 11 PM run the baseline model correctly pushed back on the greeting instead of planning —
+    // the scripted follow-up then had nothing to swap. The greeting carried no signal; it is gone.
     turns: [
-      { say: 'Morning! Can you plan my day?' },
+      { say: 'Can you plan my day?' },
       { say: 'Hmm, that big rock feels like too much for today — swap it for something lighter.' },
     ],
     checks: [
-      toolExecutedOk('generate_plan'),
+      // NOT toolExecutedOk('generate_plan'): chat-prompt.ts tells the model to ASK rather than
+      // guess when something is genuinely unclear, so demanding the call punishes a compliant
+      // reply (#380's lesson). The rubric below owns the outcome — a lighter alternative, by any
+      // honest route — which is the thing this scenario actually exists to assert.
       toolNotExecuted('complete_task'),
       toolNotExecuted('delete_task'),
       statusLineAlways(),

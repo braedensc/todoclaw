@@ -10,7 +10,7 @@
 // exactly the behavior #346 removed: recv-rough-day licensed dressing up three CREATED rows on a
 // zero-completion day, and recv-noisy-activity made a "lots of board tidying" gist a REQUIRED
 // component. activity.ts:107-109 now splits the feed (only `completed` is progress) and
-// recap-prompt.ts:50-56 caps upkeep at "a passing half-clause — usually it earns nothing at all",
+// recap-prompt.ts's BOOKKEEPING rule lets upkeep be NAMED in plain terms but never celebrated,
 // while :35-41 makes naming and asking about the open items the spine. Those three now pin that.
 //
 // The five open=[] scenarios (recv-big-day / recv-upcoming-headsup / recv-unpause-headsup /
@@ -198,8 +198,8 @@ export const scenarios: RecapScenario[] = [
     rubric:
       'One real finish (the Redwood invoice), one open item (the workshop agenda), and three ' +
       'pause/resume rows. FAIL if: it never asks how the workshop agenda went; the invoice finish ' +
-      'goes uncredited; the pause/resume churn opens the message, earns more than a passing ' +
-      'half-clause, or is counted as something finished; a paused item is nagged about (pressure ' +
+      'goes uncredited; the pause/resume churn opens the message or is counted as something ' +
+      'finished; a paused item is nagged about (pressure ' +
       'over deliberately shelved work); anything not in the request appears.',
   },
   {
@@ -361,7 +361,7 @@ export const scenarios: RecapScenario[] = [
       'Fifteen logged actions but only two real completions; "Write the retro notes" is still ' +
       'open. FAIL if: it never asks how the retro notes are going; either completion (the ' +
       'sponsorship email, the birthday gift) goes uncredited; the thirteen tidying rows are ' +
-      'replayed line-by-line, open the message, earn more than a passing half-clause, or are ' +
+      'replayed line-by-line, open the message, or are ' +
       'counted as things done; anything beyond the given items appears.',
   },
   {

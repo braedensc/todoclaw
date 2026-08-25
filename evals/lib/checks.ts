@@ -109,16 +109,66 @@ export function noConfirmRequested(): ChatCheck {
 
 // ---------- chat: reply shape ----------
 
-/** Every assistant reply that streamed text carries a parseable [[status:]] line. */
+/** Every assistant reply that streamed text carries a parseable [[status:]] line — AND the marker
+ *  sits where the prompt says it does.
+ *
+ *  Two results on purpose. splitReply now tolerates a signature trailing the closing brackets, so a
+ *  reply ending `[[status: …]] 🐾` no longer leaks the raw marker into the bubble — but chat-prompt.ts
+ *  still mandates "Your optional 🐾 signature goes inside or before it", and that placement is the
+ *  only signal that a cheaper model is drifting on the reply contract. Making the parser forgiving
+ *  without keeping this check would have retired the gate along with the bug. */
 export function statusLineAlways(): ChatCheck {
   return (t) => {
-    const bad = t.turns.filter((turn) => turn.text.trim().length > 0 && turn.status === null)
+    const withText = t.turns.filter((turn) => turn.text.trim().length > 0)
+    const missing = withText.filter((turn) => turn.status === null)
+    // Marker present but something trails the `]]` — placement violation, not a parse failure.
+    const misplaced = withText.filter(
+      (turn) => turn.status !== null && !turn.text.trimEnd().endsWith(']]'),
+    )
+    return [
+      r(
+        'status line on every reply',
+        missing.length === 0,
+        missing.length
+          ? `${missing.length} repl${missing.length === 1 ? 'y' : 'ies'} missing [[status:]]`
+          : undefined,
+      ),
+      r(
+        'status marker is the last thing in the reply',
+        misplaced.length === 0,
+        misplaced.length
+          ? misplaced
+              .map((turn) => `trailing: ${JSON.stringify(turn.text.trimEnd().slice(-24))}`)
+              .join('; ')
+          : undefined,
+      ),
+    ]
+  }
+}
+
+/** Every scripted user turn got SOMETHING back — text, a tool result, or a confirmation prompt.
+ *
+ *  The harness had no detector for a content-free turn: statusLineAlways skips empty-text turns,
+ *  noErrorEvents only sees in-band `error` frames, and renderChatForJudge drops empty bodies — so a
+ *  turn that returned literally nothing passed every gate and reached the judge as "the assistant
+ *  said nothing", which it then failed on the rubric. That happened once in the 2026-08-25 baseline
+ *  (pers-plan-swap-followup turn 2, 47.4s against an 8.3s median) and read as a model regression.
+ *  A turn carrying an `error` counts as answered here — noErrorEvents already owns that case. */
+export function everyTurnAnswered(): ChatCheck {
+  return (t) => {
+    const empty = t.turns
+      .map((turn, i) => ({ turn, i }))
+      .filter(
+        ({ turn }) =>
+          turn.text.trim().length === 0 &&
+          turn.toolResults.length === 0 &&
+          !turn.pending &&
+          !turn.error,
+      )
     return r(
-      'status line on every reply',
-      bad.length === 0,
-      bad.length
-        ? `${bad.length} repl${bad.length === 1 ? 'y' : 'ies'} missing [[status:]]`
-        : undefined,
+      'every user turn got a reply',
+      empty.length === 0,
+      empty.length ? `no content at all on turn(s) ${empty.map((e) => e.i).join(', ')}` : undefined,
     )
   }
 }
