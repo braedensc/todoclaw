@@ -364,3 +364,17 @@ jobs:
         run: npm run test:delivery
       - name: delivery.json validity (this repo has one since #392)
         run: npm run check:delivery
+      # The Definition-of-Ready parser. `scripts/pipeline_dispatch_local.py` imports
+      # `pin_fields` from it rather than reading a description its own way, so this
+      # selftest is what keeps "the criteria on the pin are the criteria a human
+      # wrote" true (§3). It also pins the parser against docs/TICKET-TEMPLATE.md,
+      # which it parses the canonical section list out of.
+      - name: Definition-of-Ready gate selftest
+        run: npm run test:dor
+      # NOT wired here: `npm run test:local-dispatch`. Six of its 56 cases are a
+      # drift check asserting that three renderings of `sha256(realpath(root))[:16]`
+      # still agree — this script, a pin-aware `.claude/hooks/pre-tool-use.py`, and
+      # `templates/workflows/pipeline-dispatch.yml`. This repo has neither of those
+      # two counterparties (no CI dispatcher; the hook predates the pin
+      # architecture), so the step would fail on absent files rather than on real
+      # drift. Run it locally, and turn it on here once the pin-aware hook lands.

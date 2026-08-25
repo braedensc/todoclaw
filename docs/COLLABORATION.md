@@ -203,6 +203,71 @@ work.
 
 ---
 
+## Binding a session to a ticket — local dispatch
+
+The claiming convention above ("start a session with *implement TOD-nn*") still
+works and needs nothing set up. This section is the other path: the delivery
+pipeline's `/work` skill, which refuses to run on trust.
+
+Since #392 this repo has a committed `delivery.json`, so the pipeline counts as
+**configured**. Per `docs/PIPELINE-CONTRACT.md` §2 that makes a `ticket`-mode
+session with no **pin** the *Broken* state, and broken fails closed — `/work`
+stops before doing anything. The pin is the one piece of authority a session
+cannot write for itself: the dispatcher places it **outside every worktree**,
+before the session starts, and it carries the ticket's acceptance criteria and
+scope fence. Everything a session *can* write — the branch name, the PR body — is
+reporting, never authority.
+
+`scripts/pipeline_dispatch_local.py` is the human-run dispatcher (kit Tier 0). It
+writes exactly the pin the CI dispatcher would, so a local `/work` run is properly
+bound without standing up the whole GitHub Actions dispatch surface.
+
+```bash
+python3 scripts/pipeline_dispatch_local.py TOD-90     # bind this worktree
+python3 scripts/pipeline_dispatch_local.py --show     # what is bound here?
+python3 scripts/pipeline_dispatch_local.py --release  # tear the pin down
+```
+
+It reads the ticket from Linear using the key in `$LINEAR_API_KEY` (never passed
+as a flag), or offline from `--ticket-file <issue.json>`. `--dry-run` prints the
+pin without writing it. The pin expires in hours, so a stale binding stops
+mattering on its own; `--release` when the session ends regardless — **you are the
+dispatcher here**, so teardown is yours too.
+
+Three properties are load-bearing, and each one refuses rather than guesses:
+
+- **It is a human tool. An agent must never run it for itself.** A session that can
+  place its own binding can retarget itself at another ticket, widen its own scope
+  fence, or grant itself a budget nobody approved — the exact attack §3 exists to
+  prevent. It detects a Claude Code environment and refuses, with no override flag.
+  That check is *tamper-evident, not tamper-proof*: it names what it saw so a
+  bypass is visible.
+- **It will not invent acceptance criteria.** A missing or empty
+  `## Acceptance criteria` section exits non-zero and writes nothing. The criteria
+  are the grader for the run, and criteria written by the thing being graded are
+  not a definition of done — an empty list is a Definition-of-Ready failure for a
+  person to fix on the ticket. `python3 scripts/check_ticket_dor.py <ticket.json>`
+  reports what else is missing.
+- **It reads `delivery.json` from the committed copy on the default branch**, never
+  the working tree. `dispatch.pinsRoot` decides where "the only authority" is read
+  from, and a config a session can rewrite is a pin a session can plant.
+
+`scripts/check_ticket_dor.py` and `docs/TICKET-TEMPLATE.md` come with it: the
+dispatcher imports the gate's own parser instead of reading descriptions its own
+way, so the criteria that land on a pin are the ones a human actually wrote. All
+three files, like `schemas/` and `docs/PIPELINE-CONTRACT.md`, are vendored
+byte-identical from claude-project-kit — fix them upstream, then re-sync.
+
+> **Not yet wired into CI:** `npm run test:local-dispatch` (56 cases) passes 50 here
+> and fails 6, all in one drift check that asserts this script, a pin-aware
+> `.claude/hooks/pre-tool-use.py` and `templates/workflows/pipeline-dispatch.yml`
+> still derive the pin key identically. This repo has neither of those two
+> counterparties yet, so those cases fail on absent files, not on real drift. The
+> parser half (`npm run test:dor`, 45 cases) *is* in CI. Turn the dispatcher step on
+> once the pin-aware hook lands.
+
+---
+
 ## What's automatic (enforcement)
 
 This repo enforces the workflow at four layers so you don't have to remember it —
@@ -286,6 +351,10 @@ git worktree remove ../todoclaw-<task>
 
 # Keep up to date / resolve drift
 git fetch origin && git rebase origin/main
+
+# Bind this worktree to a ticket for /work, then tear it down (human-run)
+python3 scripts/pipeline_dispatch_local.py TOD-nn
+python3 scripts/pipeline_dispatch_local.py --release
 
 # Finish
 gh pr create --fill
