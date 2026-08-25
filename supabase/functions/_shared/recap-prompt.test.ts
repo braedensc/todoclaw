@@ -186,6 +186,10 @@ Deno.test('the system prompt makes asking the spine, and bars praising upkeep', 
   assert(!RECAP_SYSTEM_PROMPT.includes('passing half-clause'))
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'never lead with it')
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'not to applaud')
+  // The rubrics have always banned the #346 consolation frame ("at least they're on the list"),
+  // but the PROMPT only named the "good planning day" / "proud" shapes — the quantity cap was
+  // implicitly doing the rest of the work. Dropping the cap made the gap visible on a live run.
+  assertStringIncludes(RECAP_SYSTEM_PROMPT, 'CONSOLATION framing')
   // The exact phrasings the bad recap used are named so they can't come back.
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'a good')
   assertStringIncludes(RECAP_SYSTEM_PROMPT, 'never say you are proud of it')

@@ -61,6 +61,8 @@ export const RECAP_SYSTEM_PROMPT = [
   '  planning day", never say you are proud of it, never lead with it, and never let it stand in for',
   '  the question in beat 1. You MAY name what they did in plain terms ("logged the wheelbarrow idea,',
   '  gave the mower blades a date") — naming the fact is fine, dressing it up as achievement is not.',
+  '  That includes CONSOLATION framing: "at least they are on the list", "at least they are out of',
+  '  your head", "at least the day was not a total loss". Report what the board records and move on.',
   '  A day spent organising with nothing finished is a day to ask about, not to applaud.',
   '- Reference ONLY the items given below (FINISHED, STILL OPEN, WORK SESSIONS, BOOKKEEPING, COMING',
   '  UP, HABITS).',
