@@ -19,6 +19,15 @@ export function planNarration(plan: PlanResult): string {
   if (plan.anchors.length) {
     bits.push(`Fixed times today: ${plan.anchors.map((a) => `${a.time} ${a.task}`).join('; ')}.`)
   }
+  // The other two derived strips. They were missing here while the line below promised the plan was
+  // complete, so a follow-up about a due chore got answered from a guess — the very failure the
+  // "that is the whole plan" sentence was added to stop.
+  if (plan.chores.length) {
+    bits.push(`Chores due today: ${plan.chores.map((c) => c.task).join(', ')}.`)
+  }
+  if (plan.dueToday.length) {
+    bits.push(`Also due today: ${plan.dueToday.map((d) => `${d.task} (${d.status})`).join(', ')}.`)
+  }
   bits.push(plan.bigRock ? `Big rock: ${plan.bigRock.task}.` : 'No big rock (a light day).')
   if (plan.smallRocks.length) bits.push(`Then: ${plan.smallRocks.map((r) => r.task).join(', ')}.`)
   if (plan.nudge) bits.push(`Optional nudge: ${plan.nudge.task}.`)

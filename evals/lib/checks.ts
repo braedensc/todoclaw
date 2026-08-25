@@ -432,6 +432,11 @@ export function deadlinesCovered(dueIds: string[]): PlanCheck {
         ...plan.smallRocks.map((rock) => rock.taskId),
         ...(plan.anchors ?? []).map((a) => a.taskId),
         ...(plan.chores ?? []).map((c) => c.taskId),
+        // The due-now strip, which is why this is now mostly a check on the APP rather than on the
+        // model: deriveDueToday puts every overdue / due-today task on the card whatever the model
+        // picks, so what this catches is that guarantee breaking (a plan path that drops the strip,
+        // a task the derivation wrongly filters out), not a planner that got distracted.
+        ...(plan.dueToday ?? []).map((d) => d.taskId),
       ].filter(Boolean) as string[],
     )
     const missing = dueIds.filter((id) => !shown.has(id))
@@ -453,6 +458,14 @@ export function noFarDatedOverDue(dueIds: string[], farIds: string[]): PlanCheck
       .filter(Boolean)
       .map((rock) => rock!.taskId)
       .filter(Boolean) as string[]
+    // Anchors and chores count as covered because the prompt takes them OFF the rock list — the
+    // model is told not to emit one, so leaving one unscheduled is compliance, not neglect.
+    //
+    // plan.dueToday deliberately does NOT belong here, however tempting the symmetry: that strip
+    // lists every due-now task whatever the model does, so counting it would make `uncovered`
+    // always empty and this check unable to fail. This one is about SCHEDULING precedence (don't
+    // spend a slot on far-dated work while a deadline goes unplanned), not about visibility —
+    // deadlinesCovered owns visibility.
     const covered = new Set(
       [
         ...rockIds,

@@ -237,6 +237,8 @@ const planOf = (over: Partial<PlanResult> = {}): PlanResult => ({
   availableTime: '~4h',
   anchors: [],
   chores: [],
+  dueToday: [],
+  overflow: { anchors: 0, chores: 0, dueToday: 0 },
   bigRock: null,
   smallRocks: [],
   habitNote: '',
@@ -281,6 +283,28 @@ Deno.test('deadlinesCovered fails on an empty plan and passes once the task is s
     ).pass,
     true,
   )
+  // ...and so does the due-now strip, which is how a task the planner did not schedule still
+  // reaches the user. Without this arm the check would fail correct plans on a crunchy board.
+  assertEquals(
+    one(
+      deadlinesCovered(['t1'])(
+        planOf({ dueToday: [{ task: 'Visa form', status: 'due today', taskId: 't1' }] }),
+        scOf(),
+      ),
+    ).pass,
+    true,
+  )
+})
+
+Deno.test('noFarDatedOverDue does NOT count the due-now strip as covering a deadline', () => {
+  // The strip lists every due-now task whatever the model does, so counting it here would make
+  // `uncovered` permanently empty and this check unable to fail. It is about scheduling
+  // precedence, not visibility — see the comment on the check itself.
+  const plan = planOf({
+    bigRock: rock('far1'),
+    dueToday: [{ task: 'Visa form', status: 'due today', taskId: 'due1' }],
+  })
+  assertEquals(one(noFarDatedOverDue(['due1'], ['far1'])(plan, scOf())).pass, false)
 })
 
 Deno.test('noFarDatedOverDue catches exactly the reported failure', () => {

@@ -184,11 +184,21 @@ export const scenarios: PlanScenario[] = [
       smallRocksOnlySM(),
       smallRocksAtMost(2),
       rocksResolve(),
+      // The failure that motivated the due-today strip: the rock caps are RIGHT (one focus, one or
+      // two quick wins), so on this board the plan named three of the five and the other two were
+      // nowhere on the card at all. The strip is the card's answer, and this is the check on it —
+      // all five must reach the user, as a rock or in the strip.
+      deadlinesCovered(['c1', 'c2', 'c3', 'c4', 'c5']),
     ],
+    // Note the rubric no longer asks the model to say how MANY are due: the strip shows the real
+    // list beside the prose, and a recited count can only contradict what the user is looking at
+    // (a cheaper model said "four items due" on this exact board when five were). The prompt bans
+    // the count outright, so the judge would be scoring a behavior the prompt forbids.
     rubric:
-      'Five tasks are all due today; rock counts and sizes are machine-checked. FAIL if: the ' +
-      'prose promises or implies all five will get done today, or fails to acknowledge that more ' +
-      'is due than fits; the user is scolded or guilt-tripped; a task is invented.',
+      'Five tasks are all due today; rock counts, sizes and full deadline coverage are ' +
+      'machine-checked. FAIL if: the prose promises or implies all five will get done today, or ' +
+      'fails to acknowledge that more is due than fits; the user is scolded or guilt-tripped; a ' +
+      'task is invented.',
   },
   {
     kind: 'plan',

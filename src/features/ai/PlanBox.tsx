@@ -1,5 +1,12 @@
 import type { ReactNode } from 'react'
-import type { DayPlan, PlanAnchor, PlanChore, PlanNudge, PlanRock } from '../../types/plan'
+import type {
+  DayPlan,
+  PlanAnchor,
+  PlanChore,
+  PlanDueToday,
+  PlanNudge,
+  PlanRock,
+} from '../../types/plan'
 
 // Anything the card can strike off once its task is done — a rock or an anchor. Both carry the
 // (task, taskId) pair isPlanRockDone matches on.
@@ -203,6 +210,9 @@ function PlanContent({
   const done = (r: Strikeable) => rockDone?.(r) ?? false
   const anchors = plan.anchors ?? []
   const chores = plan.chores ?? []
+  const dueToday = plan.dueToday ?? []
+  // Every count is nullish on a plan stored before the strips counted their own overflow.
+  const more = (n: number | null | undefined) => n ?? 0
   return (
     <div className="flex flex-col">
       <p className="font-serif text-[19px] font-medium leading-snug text-ink">{plan.headline}</p>
@@ -214,16 +224,11 @@ function PlanContent({
           day everything else fits around. Derived from the board (never from the model), so a timed
           appointment always appears — it can't lose a rock slot to a couple of quick errands. */}
       {anchors.length > 0 && (
-        <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
-            Fixed times today
-          </div>
-          <ul className={`mt-1 flex flex-col ${itemCheck ? 'gap-[7px]' : 'gap-[3px]'}`}>
-            {anchors.map((a, i) => (
-              <AnchorRow key={i} anchor={a} done={done(a)} itemCheck={itemCheck} />
-            ))}
-          </ul>
-        </div>
+        <Strip title="Fixed times today" more={more(plan.overflow?.anchors)} itemCheck={itemCheck}>
+          {anchors.map((a, i) => (
+            <AnchorRow key={i} anchor={a} done={done(a)} itemCheck={itemCheck} />
+          ))}
+        </Strip>
       )}
 
       {/* Recurring chores the cadence says are due today. Like the fixed times above, these are
@@ -231,16 +236,25 @@ function PlanContent({
           today, so they can't be squeezed off the card by the rock caps. Struck through as they're
           completed, same as everything else here. */}
       {chores.length > 0 && (
-        <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
-            Chores due today
-          </div>
-          <ul className={`mt-1 flex flex-col ${itemCheck ? 'gap-[7px]' : 'gap-[3px]'}`}>
-            {chores.map((c, i) => (
-              <ChoreRow key={i} chore={c} done={done(c)} itemCheck={itemCheck} />
-            ))}
-          </ul>
-        </div>
+        <Strip title="Chores due today" more={more(plan.overflow?.chores)} itemCheck={itemCheck}>
+          {chores.map((c, i) => (
+            <StatusRow key={i} item={c} done={done(c)} itemCheck={itemCheck} />
+          ))}
+        </Strip>
+      )}
+
+      {/* Everything on the board that is overdue or due today. Derived like the two strips above,
+          but it does NOT take work away from the rocks: a task the planner picked shows here AND as
+          its rock, on purpose. The rock caps are deliberately tight (one focus, one or two quick
+          wins), so on a crunch day the planner's picks were the only due work the card named and
+          the rest simply vanished from it — this strip is the card's promise that nothing due today
+          goes missing, whatever the planner chose. */}
+      {dueToday.length > 0 && (
+        <Strip title="Due today" more={more(plan.overflow?.dueToday)} itemCheck={itemCheck}>
+          {dueToday.map((d, i) => (
+            <StatusRow key={i} item={d} done={done(d)} itemCheck={itemCheck} />
+          ))}
+        </Strip>
       )}
 
       {plan.bigRock && (
@@ -276,6 +290,39 @@ function PlanContent({
       {!plan.bigRock && plan.nudge && <NudgeBody nudge={plan.nudge} />}
 
       {plan.habitNote && <p className="mt-3 text-[13px] italic text-primary">↻ {plan.habitNote}</p>}
+    </div>
+  )
+}
+
+// One derived strip — a titled box above the rocks. All three (fixed times, chores, due today) are
+// the card stating what the day CONTAINS, independently of what the planner chose, so they share a
+// frame.
+//
+// `more` is how many the strip's cap left off. Each strip is capped so a neglected board can't turn
+// the card into a backlog dump, but until now it just stopped at the cap silently — a seventh fixed
+// time looked exactly like a sixth. The prompt asks the model to name overflow in its prose; this
+// line is the card's own half of that, and it says where the rest are rather than only that they
+// exist.
+function Strip({
+  title,
+  more,
+  itemCheck,
+  children,
+}: {
+  title: string
+  more: number
+  itemCheck?: ItemCheck
+  children: ReactNode
+}) {
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-light">
+        {title}
+      </div>
+      <ul className={`mt-1 flex flex-col ${itemCheck ? 'gap-[7px]' : 'gap-[3px]'}`}>
+        {children}
+        {more > 0 && <li className="text-[12px] italic text-muted">+{more} more on your board</li>}
+      </ul>
     </div>
   )
 }
@@ -322,14 +369,16 @@ function AnchorRow({
   )
 }
 
-// One due chore — "Laundry · due today". The cadence label rides along so an overdue chore reads as
-// overdue rather than looking like a fresh one.
-function ChoreRow({
-  chore,
+// One row of a label-carrying strip — "Laundry · due today", "File the visa application · overdue
+// 2d". Shared by the chores and due-today strips: both are a task name plus a status label, and
+// which fact the label states is the strip heading's job, not the row's. The label rides along so an
+// overdue item reads as overdue rather than looking like a fresh one.
+function StatusRow({
+  item,
   done,
   itemCheck,
 }: {
-  chore: PlanChore
+  item: PlanChore | PlanDueToday
   done: boolean
   itemCheck?: ItemCheck
 }) {
@@ -337,7 +386,7 @@ function ChoreRow({
     <li
       className={`flex items-start gap-2 text-[13.5px] leading-snug ${done ? 'text-muted opacity-75' : 'text-ink'}`}
     >
-      <PlanCheck item={chore} done={done} itemCheck={itemCheck} />
+      <PlanCheck item={item} done={done} itemCheck={itemCheck} />
       {done && itemCheck == null && (
         <>
           <span aria-hidden className="mr-1.5 text-primary">
@@ -347,8 +396,8 @@ function ChoreRow({
         </>
       )}
       <span className="min-w-0 flex-1">
-        <span className={done ? 'line-through' : undefined}>{chore.task}</span>
-        <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">{chore.status}</span>
+        <span className={done ? 'line-through' : undefined}>{item.task}</span>
+        <span className="ml-1.5 whitespace-nowrap text-[12px] text-muted">{item.status}</span>
       </span>
     </li>
   )
