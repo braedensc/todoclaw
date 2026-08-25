@@ -366,8 +366,9 @@ export const SYSTEM_PROMPT = [
   'last worked ("worked yesterday", "last worked 9 days ago", "no sessions logged yet"), and how many',
   'consecutive days it has been worked when that is more than one. Read the rhythm out of those facts;',
   'do NOT turn them into a fixed every-N-days cadence:',
-  '  • worked yesterday — normally leave it today. Pick it again only if the board is genuinely quiet',
-  '    or they are clearly mid-push on it.',
+  '  • worked yesterday — normally leave it today. Pick it again only if the board is genuinely quiet,',
+  '    or they are clearly mid-push on it AND nothing with a real deadline needs the day. Being',
+  '    mid-push wins the slot against undated work, never against a deadline.',
   '  • several days running — they are mid-push; that is their call, not yours. Judge it on its own',
   '    merits like anything else, and do not bench a project just because it keeps winning.',
   '  • four or more days ago — fully fresh. Judge it on its own merits, with no catch-up framing.',
@@ -471,7 +472,9 @@ function scheduleContext(dayOfWeek: string, schedule: ScheduleConfig | null): st
       : 'midday (~1–2h)'
     const afternoon = wd.workEnd ? `after ${wd.workEnd as string}` : '~5–7pm'
     const evening = wd.bedtime ? `until ~${wd.bedtime as string}` : '~7–10:30pm'
-    lines.push('Personal time slots:')
+    // NOT "slots": WRITE LIKE A PERSON bans that word in availableTime, which is the field that
+    // summarises this very block — the prompt was teaching the vocabulary it forbids.
+    lines.push('Personal time windows:')
     lines.push('  • morning — before work (very little task time)')
     lines.push(`  • lunch — ${lunch}, usable for an errand or quick task`)
     lines.push(`  • afternoon — ${afternoon} (the main productive window)`)
@@ -521,7 +524,10 @@ function taskLines(req: PlanRequest): string {
             ? `due ${Math.abs(t.dueInDays)}d ago`
             : t.dueInDays === 0
               ? 'due today'
-              : `due in ${t.dueInDays}d`
+              : // Parity with chat-prompt.ts: one data source should not get two phrasings.
+                t.dueInDays === 1
+                ? 'due tomorrow'
+                : `due in ${t.dueInDays}d`
       // A due time turns the phrase into a fixed anchor ("due today at 3:00 PM").
       const due =
         t.due != null && t.dueTime ? `${dayPart} at ${formatClockTime(t.dueTime)}` : dayPart
@@ -804,7 +810,11 @@ export function buildUserPrompt(
   memories: string[] = [],
 ): string {
   const sched = scheduleContext(req.dayOfWeek, schedule)
-  const blocks: string[] = [`Today is ${req.today}.`]
+  // dayOfWeek rides the request (plan-inputs.ts) but only ever reached the model THROUGH
+  // scheduleContext, which returns '' when the user has no saved schedule — so a schedule-less
+  // request asked for weekday-shaped prose with the weekday withheld, while renderPlanForJudge
+  // hands the judge "TODAY IS <date> (<day>)". Same grounding asymmetry #382 closed for the judge.
+  const blocks: string[] = [`Today is ${req.today} (${req.dayOfWeek}).`]
   if (sched) blocks.push(`=== SCHEDULE & AVAILABILITY ===\n${sched}`)
   // User-authored preferences, fenced and labeled as data. The SYSTEM_PROMPT (rule 7) is the
   // authority; this block is layered on top and can never replace the scaffold or output schema.

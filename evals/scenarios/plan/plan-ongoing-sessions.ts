@@ -281,16 +281,19 @@ export const scenarios: PlanScenario[] = [
       'Three days running and worked yesterday: the project rests, real deadlines take the day',
     tags: ['plan', 'ongoing', 'pacing', 'deadlines'],
     persona: 'mid-push writer with actual deadlines this week',
-    // "worked yesterday, 3 days running" is the strongest leave-it-alone signal in the prompt
-    // (plan-prompt.ts: "three or more days in a row — let it rest; something else has earned the
-    // day"). That rule is the ONLY thing this fixture may rely on, so the board is deliberately
+    // OWNER DECISION 2026-08-25: a project worked yesterday YIELDS the big-rock slot to real
+    // deadline work. The rung this comment used to cite ("three or more days in a row — let it
+    // rest") was DELETED by #382 and is NOT coming back — several days running is the user's call.
+    // What carries the fixture now is the worked-yesterday rung, whose escape hatch was tightened
+    // in the same decision: being mid-push wins the slot against undated work, never against a
+    // deadline. That rule is the ONLY thing this fixture may rely on, so the board is deliberately
     // stacked FOR the novel on every other axis: it dominates the grant proposal on BOTH
     // importance (90 vs 70) and urgency (72 vs 60), it is the biggest item (XL vs L), and the
     // ONGOING PROJECTS block tells the planner to PREFER making one the big rock when few deadlines
     // press. Strip the session facts and the novel is the obvious pick.
     //
-    // The board is still NOT quiet — the streak rule's escape hatch ("pick it again only if the
-    // board is genuinely quiet") must not be what carries the scenario: a real L deliverable is due
+    // The board is still NOT quiet — the "genuinely quiet" escape hatch must not be what carries
+    // the scenario either: a real L deliverable is due
     // in 3 days and an S is due today, so the pacing rule has somewhere honest to hand the day.
     // The S also clears the rule-1 deadline gate as a quick win, which is what keeps the big-rock
     // slot genuinely contested.

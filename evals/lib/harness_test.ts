@@ -7,6 +7,7 @@ import { foldTurn, SseAccumulator } from './chat-driver.ts'
 import {
   confirmRequested,
   deadlinesCovered,
+  everyTurnAnswered,
   noFarDatedOverDue,
   noVisibleLeak,
   statusLineAlways,
@@ -18,10 +19,13 @@ import { baselineNameFor, detPass, diffLines, overallPass } from './report.ts'
 import type { ChatTrace, DbSnapshot, PlanScenario, RunReport, ScenarioResult } from './types.ts'
 import type { PlanResult } from '../../supabase/functions/_shared/plan-prompt.ts'
 
-// checks may return one result or a list; every combinator used here returns one
+// checks may return one result or a list; `one` asserts the single-result shape, `all` normalises.
 function one(res: { pass: boolean } | { pass: boolean }[]): { pass: boolean } {
   if (Array.isArray(res)) throw new Error('expected a single CheckResult')
   return res
+}
+function all(res: { pass: boolean } | { pass: boolean }[]): { pass: boolean }[] {
+  return Array.isArray(res) ? res : [res]
 }
 
 const emptyDb: DbSnapshot = {
@@ -119,7 +123,34 @@ Deno.test('check combinators: toolCalled / toolNotExecuted / confirmRequested', 
   assert(one(toolCalled('complete_task')(t, emptyDb)).pass)
   assert(one(confirmRequested('complete_task')(t, emptyDb)).pass)
   assert(one(toolNotExecuted('complete_task')(t, emptyDb)).pass) // pending ≠ executed
-  assert(one(statusLineAlways()(t, emptyDb)).pass)
+  // statusLineAlways now returns TWO results: parseable marker + marker placement.
+  assert(all(statusLineAlways()(t, emptyDb)).every((c) => c.pass))
+})
+
+// 2026-08-25: splitReply tolerates a signature trailing the `]]`, so the raw marker no longer
+// leaks into the bubble — but chat-prompt.ts still mandates the paw go inside or before it, and
+// that placement is the only signal a cheaper model is drifting on the reply contract.
+Deno.test('statusLineAlways: parses a trailing signature but still flags the placement', () => {
+  const turn = foldTurn({ say: 'batch my errands' }, [
+    { type: 'text-delta', text: 'Three of them line up.\n[[status: Three errands tomorrow]] 🐾' },
+    { type: 'done', stop_reason: 'end_turn' },
+  ])
+  const results = all(statusLineAlways()(traceWith([turn]), emptyDb))
+  assertEquals(results[0]!.pass, true) // marker parsed — no leak into the bubble
+  assertEquals(results[1]!.pass, false) // …but it is not the last thing in the reply
+})
+
+// The harness had NO detector for a turn that came back with nothing at all: statusLineAlways
+// skips empty-text turns and noErrorEvents only sees in-band error frames, so it passed every gate
+// and reached the judge as silence. Seen once in the 2026-08-25 baseline (pers-plan-swap-followup).
+Deno.test('everyTurnAnswered: a content-free turn is caught, an errored one is left alone', () => {
+  const void_ = foldTurn({ say: 'swap the big rock' }, [{ type: 'done', stop_reason: 'end_turn' }])
+  assertEquals(one(everyTurnAnswered()(traceWith([void_]), emptyDb)).pass, false)
+  const errored = foldTurn({ say: 'swap the big rock' }, [
+    { type: 'error', code: 'upstream', message: 'boom' },
+  ])
+  // noErrorEvents owns that case — this check must not double-report it.
+  assertEquals(one(everyTurnAnswered()(traceWith([errored]), emptyDb)).pass, true)
 })
 
 // REGRESSION (first live ongo- shakedown, 2026-08-22): the real ai-chat SSE protocol never streams

@@ -15,7 +15,13 @@
 // status) — so the capture excludes NEWLINES, not `]`. The marker is always the reply's last line, so
 // barring newlines keeps the match to that trailing line (an earlier `[[…]]` in the body can't reach
 // the `]]$` across a newline), while `]` inside the status no longer defeats the strip.
-const COMPLETE = /\s*\[\[\s*(?:status:\s*)?([^\n]*?)\s*\]\]\s*$/i
+// Decoration is also tolerated AFTER the closing brackets. The prompt says the paw signature "goes
+// inside or before it", but a model that appends `[[status: …]] 🐾` would otherwise fail the match
+// entirely — leaking the raw marker into the bubble and leaving the widget with no status at all.
+// The class deliberately EXCLUDES `]`: allowing it would let `…]]]` shift the capture by a bracket.
+// (Mis-placement is still a real prompt violation — the eval keeps a strict check for it.)
+const COMPLETE =
+  /\s*\[\[\s*(?:status:\s*)?([^\n]*?)\s*\]\][\s"'“”‘’)*_.!…\p{Extended_Pictographic}]*$/iu
 
 // Trailing decoration that can follow the actual question mark — BabyClaw signs off with 🐾, and
 // quotes/brackets/!/… may trail a "…?" sentence. Stripped before the ends-with-? check.

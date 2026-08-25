@@ -156,7 +156,15 @@ export function choresExclude(ids: string[], label: string): PlanCheck {
 // that block exists. Schema field names are matched case-sensitively (camelCase is unmistakable);
 // "ref" needs a word boundary or it fires on refill/refund/refactor.
 const JARGON: Array<[string, RegExp]> = [
-  ['anchor', /\banchor(s|ed|ing)?\b/i],
+  // NOUN form only — the schema label ("as a fixed anchor at 2pm", the prompt's own worked example
+  // of the leak). The old /\banchor(s|ed|ing)?\b/ also banned the VERB and PARTICIPLE, which are
+  // ordinary English and are literally the "said properly" phrasing plan-prompt.ts:422-424 asks for:
+  // it failed "which anchors the afternoon" and "a deposition-anchored day" on the BASELINE model.
+  // Banning a word to stop a concept is the fossil #382 retired twice ('running', 'interesting').
+  [
+    'anchor',
+    /(?:\b(?:an?|the|as an?|your|my|its|their|one|two|three|fixed|main|only|first)\s+(?:fixed\s+)?anchors?\b)|(?:^\s*anchors?\b)|(?:\banchors?\s*:)/i,
+  ],
   ['big rock', /\bbig[-\s]rocks?\b/i],
   ['small rock', /\bsmall[-\s]rocks?\b/i],
   ['quick win', /\bquick[-\s]wins?\b/i],

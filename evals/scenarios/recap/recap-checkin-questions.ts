@@ -145,7 +145,7 @@ export const scenarios: RecapScenario[] = [
       recapSignoff(),
       recapMaxWords(120),
       recapNoHeaders(),
-      // The clause this scenario owns: upkeep may earn a passing half-clause, but never the lead.
+      // The clause this scenario owns: upkeep may be NAMED (2026-08-25 owner decision), never led with.
       mentionsBefore('asks about the open items before any board upkeep', /compost|fence|panels/i, [
         /wheelbarrow/i,
         /\bmower\b/i,
@@ -163,7 +163,7 @@ export const scenarios: RecapScenario[] = [
       'activity is board upkeep on three OTHER tasks. FAIL if: the message does not lead with the ' +
       'question about the open items (a brief hello first is fine — substantive content before ' +
       "the ask is not); the organising is congratulated or framed as the day's achievement in " +
-      'any wording; the upkeep earns more than one passing half-clause; the ask is not about the ' +
+      'any wording; the ask is not about the ' +
       'open items; it guilts, or nothing leaves "not today" as a perfectly fine answer.',
   },
   {
@@ -378,9 +378,8 @@ export const scenarios: RecapScenario[] = [
       'went" both fail; a purely rhetorical tag that expects no answer, like "quiet one today, ' +
       'huh?", does not); it names or describes any specific ' +
       'upkeep item (the shed shelving, the furnace filter — the model is never given these, so a ' +
-      'mention means invention or a reverted withholding mechanism); the tidying earns more than ' +
-      'a passing "board looks tidier" half-clause; the day is framed as an achievement in any ' +
-      'wording.',
+      'mention means invention or a reverted withholding mechanism); the day is framed as an ' +
+      'achievement in any wording.',
   },
   {
     // The over-correction guard on the other side of the split: `completed` is progress regardless

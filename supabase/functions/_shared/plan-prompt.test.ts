@@ -62,7 +62,16 @@ Deno.test('PlanRequestSchema accepts a valid payload and rejects a malformed one
 
 Deno.test('weekday prompt: slots + free-time + fixed commitments + habits + tasks', () => {
   const p = buildUserPrompt(base, schedule, null)
+  // The day-of-week rides the opening line, so it survives a null schedule (scheduleContext
+  // returns '' then, which withheld the weekday from every schedule-less request until 2026-08-25
+  // while renderPlanForJudge handed the JUDGE "TODAY IS <date> (<day>)").
+  assertStringIncludes(p, `Today is ${base.today} (${base.dayOfWeek}).`)
+  assertStringIncludes(buildUserPrompt(base, null, null), `(${base.dayOfWeek}).`)
   assert(p.includes('(weekday)'))
+  // "slots" is on the WRITE LIKE A PERSON ban list and availableTime summarises this very block —
+  // the prompt must not hand the model the vocabulary it forbids.
+  assert(p.includes('Personal time windows:'))
+  assert(!p.includes('Personal time slots'))
   assert(p.includes('Work hours: 9:30–17:00'))
   assert(p.includes('~4.5h'))
   // Commitments are injected as fixed, non-negotiable blocks the plan works around.
@@ -72,9 +81,11 @@ Deno.test('weekday prompt: slots + free-time + fixed commitments + habits + task
   assert(p.includes('School pickup — weekdays 3pm'))
   assert(p.includes('Stretch'))
   assert(p.includes('Water plants (due today)'))
-  // task line formatting: overdue, due-in-N, no-due, and a timed anchor ("due today at 10:30 AM")
+  // task line formatting: overdue, due-tomorrow, no-due, and a timed anchor ("due today at 10:30 AM")
   assert(p.includes('due 4d ago'))
-  assert(p.includes('due in 1d'))
+  // 2026-08-25: parity with chat-prompt.ts, which has always rendered dueInDays === 1 this way.
+  assert(p.includes('due tomorrow'))
+  assert(!p.includes('due in 1d'))
   assert(p.includes('no due date'))
   assert(p.includes('due today at 10:30 AM'))
 })
@@ -240,8 +251,8 @@ Deno.test('an ongoing task renders with the ongoing-project tag in its grid line
   // The ongoing flag appends ", ongoing project" to the line so the planner can pace it.
   assert(p.includes('Write the novel (importance 90, urgency 30, no due date, ongoing project)'))
   // A normal task carries no ongoing tag.
-  assert(p.includes('File taxes (importance 80, urgency 90, due in 1d)'))
-  assert(!p.includes('File taxes (importance 80, urgency 90, due in 1d, ongoing project)'))
+  assert(p.includes('File taxes (importance 80, urgency 90, due tomorrow)'))
+  assert(!p.includes('File taxes (importance 80, urgency 90, due tomorrow, ongoing project)'))
 })
 
 // ---- session recency on ONGOING projects -------------------------------------------------------
@@ -315,7 +326,7 @@ Deno.test('an ongoing task line carries its session history after the ongoing ta
   )
   assertStringIncludes(fresh, 'ongoing project, no sessions logged yet)')
   // A plain task carries no session text at all.
-  assertStringIncludes(p, '- [T2] File taxes (importance 80, urgency 90, due in 1d)')
+  assertStringIncludes(p, '- [T2] File taxes (importance 80, urgency 90, due tomorrow)')
 })
 
 Deno.test('a project worked TODAY leaves the schedulable list for an id-less mention block', () => {
@@ -379,6 +390,10 @@ Deno.test('SYSTEM_PROMPT paces ongoing projects on raw facts, with no verdict an
   // The rhythm is read out of the facts, never turned into a cadence…
   assertStringIncludes(SYSTEM_PROMPT, 'do NOT turn them into a fixed every-N-days cadence')
   assertStringIncludes(SYSTEM_PROMPT, 'worked yesterday — normally leave it today')
+  // Owner decision 2026-08-25: mid-push momentum wins the slot against undated work, never
+  // against a deadline. This tightens the ESCAPE HATCH only — the streak rung below stays deleted.
+  assertStringIncludes(SYSTEM_PROMPT, 'nothing with a real deadline needs the day')
+  assertStringIncludes(SYSTEM_PROMPT, 'never against a deadline')
   // Owner decision 2026-08-24: the "three or more days running — let it rest" rung is DELETED.
   // It benched a project the user was mid-push on, and sat directly under "do NOT turn them into a
   // fixed every-N-days cadence" — the exact thing it was.
