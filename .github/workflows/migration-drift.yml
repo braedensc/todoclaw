@@ -1,11 +1,20 @@
 name: Migration drift check
 
-# Daily read-only check that PROD has every migration the repo does. The 2026-07-09 incident sat
-# unnoticed because the deploy failed AFTER merge (PR CI was green) and prod silently fell 5
-# migrations behind. This is the standing monitor: it runs `db push --dry-run` (never writes) and
-# opens/updates a GitHub issue the moment prod is behind. Complements deploy-failure-alert.yml —
-# that catches the deploy erroring; this catches drift however it arises (a skipped migrate step, a
-# manual DB change, a deploy that never ran).
+# Daily read-only drift monitor, in BOTH directions. Neither job ever writes.
+#
+#   1. `drift`     — does PROD have every migration the repo does? (`db push --dry-run`)
+#                    The 2026-07-09 incident sat unnoticed because the deploy failed AFTER merge (PR
+#                    CI was green) and prod silently fell 5 migrations behind.
+#   2. `inventory` — does PROD carry anything the repo does NOT? (scripts/check-schema-drift.mjs)
+#                    Job 1 cannot answer this: it enumerates repo files and looks for them in prod,
+#                    so an object created straight on prod is in no migration file, nothing looks for
+#                    it, and the job stays green forever. That is how `public.rls_auto_enable()` and
+#                    its `ensure_rls` event trigger — a live RLS backstop — ran in prod for months
+#                    while the repo had no trace of them (found 2026-08-27, checked in by
+#                    20260827030000). A one-directional check is only half a drift monitor.
+#
+# Complements deploy-failure-alert.yml — that catches the deploy erroring; these catch drift however
+# it arises (a skipped migrate step, a manual DB change, a deploy that never ran).
 
 on:
   schedule:
@@ -84,6 +93,124 @@ jobs:
               // @mention + assign the owner so this reaches him even under a "Participating and
               // @mentions" watch (see deploy-failure-alert.yml for the rationale).
               `cc @${owner} — prod database is behind the repo.`,
+            ].join('\n')
+            const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
+            const existing = open.data.find((i) => i.title === title && !i.pull_request)
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body })
+              core.info(`Updated #${existing.number}`)
+            } else {
+              const created = await github.rest.issues.create({ owner, repo, title, body, assignees: [owner] })
+              core.info(`Opened #${created.data.number}`)
+            }
+
+  # ── Direction 2: does prod carry anything the repo does not? ──────────────────────────────────
+  # Builds the repo's schema from scratch in a local stack, then compares a normalized inventory of
+  # object identities (functions, event triggers, tables + RLS flag, policies) against production.
+  # Deliberately NOT `supabase db diff --linked`: measured 2026-08-27, that reported "No schema
+  # changes found" while prod carried two objects the repo lacked. See the script header.
+  inventory:
+    name: Check prod has nothing the repo lacks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preflight — is the DB URL configured?
+        id: pre
+        env:
+          SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::warning::BACKUP_DATABASE_URL not set — skipping inventory check."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.pre.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.pre.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.pre.outputs.configured == 'true'
+        run: npm ci
+
+      - uses: supabase/setup-cli@v2
+        if: steps.pre.outputs.configured == 'true'
+        with:
+          version: 2.107.0
+
+      - name: Start local Supabase (applies all migrations)
+        if: steps.pre.outputs.configured == 'true'
+        run: supabase start
+
+      # The script exits 1 on out-of-band objects. Capture that without failing the step, so the
+      # issue-opening step below can run. Only the object-identity lines ("  • …") are forwarded to
+      # the issue body — never raw output, which could otherwise carry a connection string.
+      - name: Compare prod's inventory against the repo build
+        id: inv
+        if: steps.pre.outputs.configured == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -uo pipefail
+          source <(supabase status -o env)
+          out=$(PROD_DB_URL="$SUPABASE_DB_URL" LOCAL_DB_URL="$DB_URL" \
+            node scripts/check-schema-drift.mjs 2>&1) && code=0 || code=$?
+          echo "$out"
+          if [ "$code" -ne 0 ]; then
+            # Anchor on the failure header: the script also prints a "  • " list for the OTHER
+            # bucket (objects prod is missing, owned by the job above). Ranging from the header to
+            # end-of-output keeps that context bucket out of this issue.
+            extra=$(printf '%s\n' "$out" \
+              | sed -n '/exist in PRODUCTION but in no migration/,$ s/^  • //p' | sort -u)
+            if [ -n "$extra" ]; then
+              echo "drift=true" >> "$GITHUB_OUTPUT"
+              {
+                echo "objects<<OBJECTS_EOF"
+                printf '%s\n' "$extra"
+                echo "OBJECTS_EOF"
+              } >> "$GITHUB_OUTPUT"
+            else
+              # Exited non-zero with no object list — a connection/inconclusive failure, not drift.
+              # Fail the job so it shows red in Actions rather than silently opening nothing.
+              exit "$code"
+            fi
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stop local Supabase
+        if: always() && steps.pre.outputs.configured == 'true'
+        run: supabase stop
+
+      - name: Open/update an out-of-band drift issue
+        if: steps.pre.outputs.configured == 'true' && steps.inv.outputs.drift == 'true'
+        uses: actions/github-script@v7
+        env:
+          OBJECTS: ${{ steps.inv.outputs.objects }}
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const title = '⚠️ Prod schema has objects that are in no migration'
+            const objects = (process.env.OBJECTS || '').trim().split('\n').filter(Boolean)
+            const body = [
+              `The daily inventory check found ${objects.length} object(s) in **production** that exist in no migration:`,
+              '',
+              ...objects.map((o) => `- \`${o}\``),
+              '',
+              'These were created out-of-band (dashboard SQL editor or a manual session), so a from-scratch',
+              'local build does not reproduce them — local and CI are not a faithful rebuild of production.',
+              '',
+              'Fix by either adding an idempotent migration that recreates each one (a no-op against prod — see',
+              '`supabase/migrations/20260827030000_rls_auto_enable_event_trigger.sql` for the pattern), or dropping',
+              'it from prod if it is dead.',
+              '',
+              `cc @${owner} — prod schema has drifted away from the repo.`,
             ].join('\n')
             const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
             const existing = open.data.find((i) => i.title === title && !i.pull_request)
