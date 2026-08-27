@@ -254,9 +254,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # PINNED, deliberately. `version: latest` meant the CLI — and with it the postgres image tag it
+      # pulls — moved under us with no change on our side: 17.6.1.165 changed the default ACL for
+      # functions in schema public and broke this job on every open PR at once (see migration
+      # 20260827020000). Pinned FORWARD, to the version carrying that new default, so the hardened
+      # behaviour stays under test; bumping this is a deliberate PR, not an ambient break.
+      # The skew against deploy.yml / migration-drift.yml (2.107.0) is intentional — those talk to
+      # the managed project, whose postgres image the CLI version does not decide. Do NOT "fix" the
+      # skew by downgrading this one: 2.107.0 ships 17.6.1.136, the PRE-change default ACL, and this
+      # job would go green by testing the wrong thing.
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.116.0
 
       - name: Start local Supabase (applies all migrations)
         run: supabase start
