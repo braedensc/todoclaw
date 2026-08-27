@@ -106,7 +106,7 @@
 
   "auth": {
     "devSessions": "subscription",
-    "scheduled": "subscription",
+    "scheduled": "api-key",
     "review": "api-key"
   },
 
