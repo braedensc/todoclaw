@@ -97,7 +97,7 @@ async function runAnonProbe(client, failures, warnings) {
     // Open: RLS OFF + anon select grant -> the row IS visible. Positive control: proves the probe
     // can read through PostgREST when nothing blocks it, so the empty secured read is meaningful.
     await client.query(`create table public.${OPEN} (id int primary key, secret text)`)
-    // Explicitly OFF: the `ensure_rls` event trigger (20260826120000) auto-enables RLS on every new
+    // Explicitly OFF: the `ensure_rls` event trigger (20260827030000) auto-enables RLS on every new
     // public table, which would silently turn this positive control into a second secured table and
     // make the probe vacuous. Stating it here keeps the control's intent explicit and correct
     // whether or not that backstop is installed.

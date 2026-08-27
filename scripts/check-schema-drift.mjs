@@ -8,7 +8,7 @@
 // migration file, so there is nothing for it to look for and the job stays green forever. That is
 // exactly how `public.rls_auto_enable()` + its `ensure_rls` event trigger — a live RLS backstop —
 // ran in prod for months while `grep -rn rls_auto_enable supabase/` returned nothing (found
-// 2026-08-27, checked in by 20260826120000). Prod had 71 postgres-owned public functions; a clean
+// 2026-08-27, checked in by 20260827030000). Prod had 71 postgres-owned public functions; a clean
 // build had 70. The consequence is worse than one stray function: it means local and CI are not a
 // faithful rebuild of production, so every guard that runs against a locally-built stack is judging
 // a database that is not the one users touch.
@@ -139,7 +139,7 @@ if (onlyProd.length) {
     '\nThese were created out-of-band (dashboard SQL editor or a manual session). A from-scratch\n' +
       'local rebuild does NOT reproduce them, so local and CI are not a faithful rebuild of\n' +
       'production. Either add a migration that recreates each one — idempotent, so it is a no-op\n' +
-      'against prod (see supabase/migrations/20260826120000_rls_auto_enable_event_trigger.sql) —\n' +
+      'against prod (see supabase/migrations/20260827030000_rls_auto_enable_event_trigger.sql) —\n' +
       'or drop it from prod if it is dead.',
   )
   process.exit(1)

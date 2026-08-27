@@ -11,7 +11,7 @@ name: Migration drift check
 #                    it, and the job stays green forever. That is how `public.rls_auto_enable()` and
 #                    its `ensure_rls` event trigger — a live RLS backstop — ran in prod for months
 #                    while the repo had no trace of them (found 2026-08-27, checked in by
-#                    20260826120000). A one-directional check is only half a drift monitor.
+#                    20260827030000). A one-directional check is only half a drift monitor.
 #
 # Complements deploy-failure-alert.yml — that catches the deploy erroring; these catch drift however
 # it arises (a skipped migrate step, a manual DB change, a deploy that never ran).
@@ -207,7 +207,7 @@ jobs:
               'local build does not reproduce them — local and CI are not a faithful rebuild of production.',
               '',
               'Fix by either adding an idempotent migration that recreates each one (a no-op against prod — see',
-              '`supabase/migrations/20260826120000_rls_auto_enable_event_trigger.sql` for the pattern), or dropping',
+              '`supabase/migrations/20260827030000_rls_auto_enable_event_trigger.sql` for the pattern), or dropping',
               'it from prod if it is dead.',
               '',
               `cc @${owner} — prod schema has drifted away from the repo.`,

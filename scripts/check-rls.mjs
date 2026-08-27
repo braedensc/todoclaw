@@ -33,7 +33,7 @@ function stripComments(sql) {
 // Then strip single-quoted string literals, so SQL *named inside a string* is not read as DDL. The
 // case that forced this: an event trigger's `when tag in ('CREATE TABLE', 'CREATE TABLE AS', …)`
 // lists command tags as literals, and `'CREATE TABLE AS'` matched CREATE_RE as a table literally
-// named `as` (20260826120000). `''` is Postgres's escape for a quote inside a literal, so it is
+// named `as` (20260827030000). `''` is Postgres's escape for a quote inside a literal, so it is
 // consumed as part of the run rather than ending it.
 //
 // ORDER MATTERS: comments are stripped FIRST. A comment containing a lone apostrophe ("the user's
