@@ -95,7 +95,10 @@ Errors (exit 1 — the ticket is not ready):
 - Acceptance criteria has at least one real checklist item
 - Title well-formed; no unfinished-draft residue — `TBD` and unfilled tokens anywhere,
   `TODO`/`FIXME`/`XXX` outside a code span (backtick one you mean literally), and no
-  section left as this file's verbatim `<Prose prompt…>`
+  section left as this file's verbatim `<Prose prompt…>`. Markup the tracker generates
+  for you is not residue: typing a bare `TOD-64` makes Linear store an
+  `<issue id="…" href="…">TOD-64</issue>` element and serve it back over the API, so
+  cite siblings however you like — the gate strips it before judging
 - Exactly one `effort:`, at least one `track:`, exactly one `provenance:`, and no
   `agent:*` / `blocked:capacity`
 - Every label resolves to a non-empty ID in `linear.labels.ids` (when `delivery.json` is present)
@@ -108,7 +111,9 @@ Warnings (exit 0 by default, errors under `--strict`):
 - No acceptance criterion contains an inline-code span (nothing mechanically checkable)
 - Pointers empty, or a pointer path does not exist in the working tree. Paths are
   repo-relative: an absolute path or one that `..`-escapes the root counts as missing,
-  because a pointer names a file in *this* tree
+  because a pointer names a file in *this* tree. A backticked span with no `/` counts as
+  a path only when it ends in a real file extension, so a dotted identifier in the prose
+  (`vi.mock`, `process.env`, `github.ref`) reads as code rather than a missing file
 
 The gate refuses outright (exit 2) if `delivery.json` declares a contract `version` it
 does not implement — contract §1: a reader that does not recognize the version refuses
