@@ -7,6 +7,10 @@
 //      anon/authenticated leaves RLS "on" yet the table world-open. The static check can't read
 //      policy bodies; this reads pg_policies.
 //   C. RLS on but zero policies — deny-all (safe, but usually a forgotten policy). Warning only.
+//   I. The client-role EXECUTE surface across the whole schema equals a reviewed list, and the
+//      default ACL promises nothing to client roles on FUTURE functions. This is the one that
+//      catches an upstream default changing under us — the 17.6.1.165 trap, where every migration's
+//      `revoke … from public` silently stopped fencing. See runClientExecuteSurfaceCheck.
 //   D. The anon path actually denies reads — an end-to-end probe through PostgREST with the public
 //      anon key against a self-contained secured/open control PAIR (no app tables touched): the
 //      secured table (RLS on, no policy) must return nothing, and the open table (no RLS) MUST
@@ -385,6 +389,128 @@ async function runInviteMintProbe(client, failures) {
   }
 }
 
+// I. The client-role EXECUTE surface in schema public is EXACTLY the reviewed list below — the
+// generalisation of E and H, which each pinned one function by hand.
+//
+// Why a whole-schema check and not more one-offs: every server-only RPC here is fenced with
+// `revoke all on function f(...) from public; grant execute to service_role;`. That idiom only
+// fences while the client roles hold EXECUTE *through* PUBLIC. supabase/postgres 17.6.1.165
+// changed the postgres default ACL for functions in `public` from `{postgres=X}` to
+// `{postgres=X, anon=X, authenticated=X, service_role=X}` — an EXPLICIT per-role grant, which
+// `revoke … from public` cannot remove. Overnight, on a stack built from the new image, 69 of 70
+// functions became anon/authenticated-callable, `*_for_user(uuid, …)` RPCs included. Nothing in
+// this repo changed; the default under it did. Migration 20260827020000 made the surface explicit
+// (revoke the default, blanket-revoke, re-grant by signature) and this check is what keeps it that
+// way: a drifting default, or a new migration that forgets its revoke, fails here by name.
+//
+// Keyed by function NAME (overloads share one entry, like DEFINER_GRANT_ALLOWLIST) — the roles are
+// the union across that name's overloads.
+export const CLIENT_CALLABLE_FUNCTIONS = {
+  // Called from the browser on the user's own JWT (src/**, `supabase.rpc(...)`).
+  set_task_done: ['authenticated'],
+  set_task_undone: ['authenticated'],
+  set_daily_flag: ['authenticated'],
+  log_task_work: ['authenticated'],
+  save_daily_plan: ['authenticated'],
+  set_task_reminder: ['authenticated'],
+  remove_task_reminder: ['authenticated'],
+  clear_task_reminder: ['authenticated'],
+  mark_message_read: ['authenticated'],
+  chat_list_previews: ['authenticated'],
+  chat_open_for_message: ['authenticated'],
+  create_backup: ['authenticated'],
+  restore_backup: ['authenticated'],
+  // Called by an edge function on the CALLER's forwarded JWT, so they execute as `authenticated`;
+  // each one's auth.uid() scoping verdict is recorded in scripts/check-definer-grants.mjs.
+  ai_usage_check_and_record: ['authenticated'],
+  ai_usage_record_tokens: ['authenticated'],
+  ai_budget_check: ['authenticated'],
+  ai_budget_add: ['authenticated'],
+  ai_user_budget_check: ['authenticated'],
+  ai_active_user_count: ['authenticated'],
+  app_config_get: ['authenticated'],
+  // Pre-auth IP throttle — anon too, because the functions it guards run verify_jwt=false (#311).
+  edge_ip_throttle: ['anon', 'authenticated'],
+}
+
+async function runClientExecuteSurfaceCheck(client, failures) {
+  const CLIENT_ROLES = ['anon', 'authenticated', 'public']
+  // Live EXECUTE holders per function name, across our own (non-extension) functions in public.
+  // acldefault() stands in for a NULL proacl so a function that never had an explicit grant is read
+  // as whatever the default ACL promises, not as "no grants".
+  const live = await client.query(
+    `select p.proname as name,
+            array_agg(distinct a.grantee::regrole::text) as roles
+       from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+       join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a on true
+      where n.nspname = 'public'
+        and a.privilege_type = 'EXECUTE'
+        and a.grantee::regrole::text = any($1::text[])
+        and not exists (
+          select 1 from pg_depend d
+           where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
+        )
+      group by 1 order by 1`,
+    [CLIENT_ROLES],
+  )
+  const liveByName = new Map(live.rows.map((r) => [r.name, [...new Set(r.roles)].sort()]))
+
+  for (const [name, roles] of liveByName) {
+    const allowed = CLIENT_CALLABLE_FUNCTIONS[name]
+    if (!allowed) {
+      failures.push(
+        `client execute surface: public.${name}() is callable by [${roles.join(', ')}] but is NOT a ` +
+          `reviewed client-callable function. Either it is server-only and the migration's ` +
+          `\`revoke … from public\` did not name the client roles (the 17.6.1.165 default-ACL trap — ` +
+          `see migration 20260827020000), or it is a new client RPC that needs an entry in ` +
+          `CLIENT_CALLABLE_FUNCTIONS.`,
+      )
+      continue
+    }
+    const extra = roles.filter((r) => !allowed.includes(r))
+    if (extra.length) {
+      failures.push(
+        `client execute surface: public.${name}() is callable by [${extra.join(', ')}] on top of its ` +
+          `reviewed [${allowed.join(', ')}]. Revoke the extra role(s) explicitly by name.`,
+      )
+    }
+  }
+  for (const [name, allowed] of Object.entries(CLIENT_CALLABLE_FUNCTIONS)) {
+    const roles = liveByName.get(name) ?? []
+    const missing = allowed.filter((r) => !roles.includes(r))
+    if (missing.length) {
+      failures.push(
+        `client execute surface: public.${name}() is NOT callable by [${missing.join(', ')}], which ` +
+          `CLIENT_CALLABLE_FUNCTIONS says it should be — that client path is broken (the shape of the ` +
+          `2026-07-13 mint outage). Restore the grant, or drop the entry if the RPC is gone.`,
+      )
+    }
+  }
+
+  // And the same invariant for FUTURE functions: the default ACL of the role that runs migrations
+  // must not promise EXECUTE to a client role, or the next migration mints the hole again.
+  const promised = await client.query(
+    `select a.grantee::regrole::text as grantee
+       from pg_default_acl d, aclexplode(d.defaclacl) a
+      where d.defaclrole = 'postgres'::regrole
+        and d.defaclnamespace = 'public'::regnamespace
+        and d.defaclobjtype = 'f'
+        and a.privilege_type = 'EXECUTE'
+        and a.grantee::regrole::text = any($1::text[])
+      order by 1`,
+    [CLIENT_ROLES],
+  )
+  for (const p of promised.rows) {
+    failures.push(
+      `client execute surface: the postgres default ACL still promises EXECUTE to "${p.grantee}" on ` +
+        `FUTURE functions in schema public — every function the next migration creates would be born ` +
+        `client-callable, and \`revoke … from public\` would not remove it (migration 20260827020000 ` +
+        `revokes the default).`,
+    )
+  }
+}
+
 async function main() {
   if (!DB_URL) {
     console.error(
@@ -463,6 +589,10 @@ async function main() {
 
     // H. Invite minting: direct writes + RPC denied to client roles, RPC works for service_role.
     await runInviteMintProbe(client, failures)
+
+    // I. The whole client-role EXECUTE surface in public equals the reviewed list (generalises E+H),
+    // and the default ACL does not promise EXECUTE on future functions.
+    await runClientExecuteSurfaceCheck(client, failures)
   } finally {
     await client.end()
   }
