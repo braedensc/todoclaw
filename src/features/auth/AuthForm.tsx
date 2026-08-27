@@ -8,21 +8,57 @@ import { supabase } from '../../lib/supabase'
 // (ADR-0030, see RedeemInviteForm, reached via AuthGate). AI features run on the owner's key for
 // every signed-in (trusted) user — see ADR-0015. Auth hardening (email confirmation, password
 // policy, leaked-password protection) is configured in the cloud Supabase dashboard.
+//
+// Recovery (TOD-87) is the one path out of here that does not need the owner: "Forgot password?"
+// mails a reset link, which lands back on UpdatePasswordForm via lib/recovery-landing.
+
+// Deliberately the same answer whether or not the address has an account — a reset form that
+// says "no such user" is an account-existence oracle for anyone who wants to enumerate.
+const RESET_SENT =
+  'If an account exists for that address, a reset link is on its way. Check your email.'
+
 export function AuthForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
+    setNotice(null)
 
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) setError(error.message)
     setBusy(false)
+  }
+
+  async function handleForgotPassword() {
+    setError(null)
+    setNotice(null)
+    if (!email.trim()) {
+      setError('Enter your email address first, then tap “Forgot password?”.')
+      return
+    }
+
+    setBusy(true)
+    // redirectTo has to be on the Supabase redirect allow-list, or Auth silently falls back to
+    // site_url and mails a link pointing somewhere the app isn't — see supabase/config.toml.
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    })
+    setBusy(false)
+
+    // GoTrue answers 200 for an unknown address precisely so this cannot enumerate, so an error
+    // here is something else worth showing (rate limit, malformed address) — never "no such user".
+    if (resetErr) {
+      setError(resetErr.message)
+      return
+    }
+    setNotice(RESET_SENT)
   }
 
   return (
@@ -46,6 +82,8 @@ export function AuthForm() {
       <input
         type="password"
         required
+        // Deliberately 6, not the 8 that new passwords require: this field accepts an EXISTING
+        // password, and raising it would lock out any account created before the policy did.
         minLength={6}
         placeholder="Password"
         autoComplete="current-password"
@@ -56,6 +94,7 @@ export function AuthForm() {
       />
 
       {error && <p className="text-sm text-accent">{error}</p>}
+      {notice && <p className="text-sm text-muted">{notice}</p>}
 
       <button
         type="submit"
@@ -63,6 +102,15 @@ export function AuthForm() {
         className="rounded-[10px] bg-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
       >
         {busy ? '…' : 'Sign in'}
+      </button>
+
+      <button
+        type="button"
+        onClick={handleForgotPassword}
+        disabled={busy}
+        className="text-center text-xs text-muted hover:text-ink disabled:opacity-50"
+      >
+        Forgot password?
       </button>
 
       <p className="text-center text-xs text-muted">Invite-only — contact the owner for access.</p>

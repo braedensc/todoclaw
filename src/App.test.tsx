@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from './App'
 
@@ -23,8 +23,22 @@ vi.mock('./hooks/use-is-mobile', () => ({
   useIsMobile: () => mockIsMobile(),
 }))
 vi.mock('./lib/supabase', () => ({
-  supabase: { auth: { signOut: vi.fn(), getSession: vi.fn(), onAuthStateChange: vi.fn() } },
+  supabase: {
+    auth: {
+      signOut: vi.fn(),
+      getSession: vi.fn(),
+      onAuthStateChange: vi.fn(),
+      updateUser: vi.fn(),
+      resetPasswordForEmail: vi.fn(),
+    },
+  },
 }))
+// A password-recovery link is captured once at module load (lib/recovery-landing reads the hash
+// before auth-js clears it), so tests mutate this shared object rather than the URL.
+const { recoveryLandingMock } = vi.hoisted(() => ({
+  recoveryLandingMock: { kind: 'none' } as { kind: 'none' | 'recovery' | 'dead-link' },
+}))
+vi.mock('./lib/recovery-landing', () => ({ recoveryLanding: recoveryLandingMock }))
 vi.mock('./features/tasks/use-tasks', () => ({
   useAddTask: () => ({ mutate: vi.fn(), isPending: false }),
   // GridView (the default tab) reads/mutates tasks; stub them so the shell renders.
@@ -135,6 +149,45 @@ vi.mock('./features/habits/use-habits', () => ({
 }))
 
 describe('App shell', () => {
+  // Recovery pre-empts the shell (TOD-87). The link arrives ALREADY signed in — auth-js swaps its
+  // fragment for a real session before React mounts — so a gate that checks only `session` drops
+  // the user into the app with their old password still valid, which is the bug this pins.
+  describe('password recovery landing', () => {
+    afterEach(() => {
+      recoveryLandingMock.kind = 'none'
+    })
+
+    it('shows the new-password screen instead of the shell, despite a live session', () => {
+      recoveryLandingMock.kind = 'recovery'
+      mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+      render(<App />)
+
+      expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument()
+      // The shell must not be behind it.
+      expect(screen.queryByRole('button', { name: /Plan My Day/i })).not.toBeInTheDocument()
+      // Nor the ordinary sign-in form — they are already authenticated.
+      expect(screen.queryByRole('heading', { name: 'Sign in' })).not.toBeInTheDocument()
+    })
+
+    it('leaves the shell alone for an ordinary signed-in visit', () => {
+      mockSession.mockReturnValue({ session: { user: { id: 'u1' } }, loading: false })
+      render(<App />)
+
+      expect(
+        screen.queryByRole('heading', { name: 'Choose a new password' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('explains a dead reset link on the sign-in card rather than failing silently', () => {
+      recoveryLandingMock.kind = 'dead-link'
+      mockSession.mockReturnValue({ session: null, loading: false })
+      render(<App />)
+
+      expect(screen.getByText(/no longer valid/)).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    })
+  })
+
   it('renders the sign-in form when logged out', () => {
     mockSession.mockReturnValue({ session: null, loading: false })
     render(<App />)
