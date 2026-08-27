@@ -2,8 +2,9 @@ name: Supabase image drift canary
 
 # The unpinned half of a deliberate two-job split (see the `rls-live` job in ci.yml).
 #
-# WHY THIS EXISTS. `rls-live` in CI is PINNED to a known `supabase/setup-cli` version so a required
-# PR gate cannot go red because Supabase shipped a new image overnight. That pin buys determinism
+# WHY THIS EXISTS. `rls-live` in CI is PINNED to a known `supabase/setup-cli` version (2.116.0, #411)
+# so a PR's security signal cannot go red because Supabase shipped a new image overnight — it is not
+# one of main's four required checks, but it is the signal a reviewer reads. That pin buys determinism
 # and costs early warning — and early warning is not hypothetical here. On 2026-08-26 the platform's
 # default ACL for functions in schema `public` changed from `{postgres=X/postgres}` to
 # `{postgres=X, anon=X, authenticated=X, service_role=X}`, so every function a migration creates was
