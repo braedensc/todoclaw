@@ -80,6 +80,19 @@ are the deliberately-deferred backup least-privilege hardening (ADR-0006/ADR-002
      enable **leaked-password protection**, set a **password policy**, short **JWT expiry** +
      refresh rotation, **disable anonymous sign-ins**, and restrict **redirect/allowed URLs**
      to the Vercel domain + `http://localhost:5173`.
+   - **Self-serve password recovery (TOD-87)** depends on three hosted settings that live only
+     here — `supabase/config.toml` is the local mirror, never the source of truth for prod.
+     Recorded so the drift check (TOD-83) has something concrete to compare against:
+
+     | Setting | Where | Value | Why it matters |
+     |---|---|---|---|
+     | Redirect allow-list | Authentication → URL Configuration | the deployed origin (plus `http://localhost:5173`) | The app sends `redirectTo: window.location.origin`. An origin that is missing is **not** rejected loudly — Auth quietly falls back to `Site URL` and mails a link pointing somewhere the app isn't, which users report as "the reset link is broken". |
+     | Leaked-password protection | Authentication → Policies | on | Rejects breached passwords at the moment someone picks one. It surfaces through the ordinary auth error path, so `UpdatePasswordForm` shows its message verbatim. |
+     | Minimum password length | Authentication → Policies | **8** | Must match `minimum_password_length` in `supabase/config.toml`, `RedeemInviteForm`'s `minLength`, and `MIN_PASSWORD_LENGTH` in `UpdatePasswordForm`. Composition rules (`password_requirements`) are deliberately left off — see the comment in `config.toml`. |
+
+     Email delivery is the other half and is **not** configured yet: the default Supabase sender
+     is rate-limited and not for production, so reset mail is unreliable until the owned sender
+     domain lands (TOD-88).
    - **Invite-only (Stage 4, ADR-0014):** Authentication → **disable public sign-ups** (turn off
      "Allow new users to sign up" / "Enable email signup"). This dashboard toggle is the real gate;
      the frontend has no open sign-up. Everyone invited is trusted, which is what lets AI run on the

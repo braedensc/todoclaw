@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AuthGate } from './features/auth/AuthGate'
 import { useSession } from './features/auth/use-session'
+import { recoveryLanding } from './lib/recovery-landing'
 import { useEnsureUserSchedule } from './features/schedule/use-user-schedule'
 import { TimezoneMismatchBanner } from './features/schedule/TimezoneMismatchBanner'
 import { RemindersInline } from './features/habits/RemindersInline'
@@ -900,6 +901,10 @@ function AppShell() {
 
 export default function App() {
   const { session, loading } = useSession()
+  // A password-recovery link arrives already signed in — auth-js exchanges its fragment for a
+  // real session before React mounts (see lib/recovery-landing). So recovery has to be checked
+  // BEFORE `session`, or the shell renders and the reset silently never happens (TOD-87).
+  const [recovering, setRecovering] = useState(recoveryLanding.kind === 'recovery')
 
   return (
     // ConfirmProvider hosts the single app-themed confirm dialog (useConfirm) for every surface
@@ -913,7 +918,7 @@ export default function App() {
           <main className="mx-auto min-h-full max-w-3xl p-6 wide:min-h-screen">
             <p className="text-muted">Loading…</p>
           </main>
-        ) : session ? (
+        ) : session && !recovering ? (
           // AppShell owns the full-width layout (its own centered column + the chat push-drawer).
           <ErrorBoundary>
             <AppShell />
@@ -962,7 +967,9 @@ export default function App() {
               Sit. Stay. Prioritize.
             </p>
             <div className="mt-1 w-full">
-              <AuthGate />
+              <AuthGate
+                recovery={recovering ? { onDone: () => setRecovering(false) } : undefined}
+              />
             </div>
           </main>
         )}

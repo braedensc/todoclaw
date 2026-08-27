@@ -160,7 +160,16 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# The two :5173 entries are the Vite dev server (`npm run dev` takes Vite's default port, which
+# does NOT match site_url above). Password recovery passes `redirectTo: window.location.origin`;
+# an origin missing from this list is not rejected loudly — Auth silently falls back to site_url
+# and mails a link pointing at a port nothing is serving, which reads as "the reset link is
+# broken". The deployed origin needs the same entry in the hosted dashboard (docs/SERVICES.md).
+additional_redirect_urls = [
+  "https://127.0.0.1:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -186,9 +195,15 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+# 8 rather than the inherited 6, and it is the number three places must agree on: this line,
+# RedeemInviteForm's `minLength`, and MIN_PASSWORD_LENGTH in UpdatePasswordForm. Raising it only
+# gates NEW passwords — existing accounts and sessions are untouched.
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
+# Deliberately empty, not merely inherited: length plus the hosted leaked-password (HIBP) check
+# does more for real-world strength than composition rules, which mostly push people toward
+# predictable substitutions. Revisit together with the HIBP toggle, not on its own.
 password_requirements = ""
 
 # Configure passkey sign-ins.
