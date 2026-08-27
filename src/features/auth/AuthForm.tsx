@@ -16,6 +16,37 @@ import { supabase } from '../../lib/supabase'
 // says "no such user" is an account-existence oracle for anyone who wants to enumerate.
 const RESET_SENT =
   'If an account exists for that address, a reset link is on its way. Check your email.'
+const RESET_UNREACHABLE =
+  'We couldn’t reach the server to send that link. Check your connection and try again.'
+// GoTrue delivers the mail *before* it answers, so a slow sender makes this request slow. Rather
+// than spin forever, say something true after a while: the send may well still land, and telling
+// someone to retry immediately just walks them into the rate limit.
+const RESET_SLOW =
+  'That’s taking longer than usual. The link may still arrive — give it a minute before retrying.'
+const RESET_TIMEOUT_MS = 15_000
+
+/**
+ * Reject if `promise` has not settled within `ms`.
+ *
+ * Needed because `resetPasswordForEmail` takes no AbortSignal, so the app-update fetch's
+ * `AbortSignal.timeout` trick (lib/app-update.ts) does not apply here. This does not cancel the
+ * request — nothing can — it only stops the UI waiting on it forever.
+ */
+function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms)
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
+}
 
 export function AuthForm() {
   const [email, setEmail] = useState('')
@@ -23,17 +54,27 @@ export function AuthForm() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Separate from `busy` on purpose: sharing one flag put the "…" on the SIGN IN button while a
+  // reset was in flight, which reads as "sign-in broke" rather than "your link is sending".
+  const [resetBusy, setResetBusy] = useState(false)
 
+  // Every await here is wrapped: supabase-js returns { error } for auth failures but THROWS on a
+  // network fault, and an unhandled rejection skips the `setBusy(false)` that follows it — which
+  // is a spinner that never stops and no message at all. `finally` is the only safe home for it.
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
     setNotice(null)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-
-    if (error) setError(error.message)
-    setBusy(false)
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setError(error.message)
+    } catch {
+      setError(RESET_UNREACHABLE)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function handleForgotPassword() {
@@ -44,21 +85,24 @@ export function AuthForm() {
       return
     }
 
-    setBusy(true)
-    // redirectTo has to be on the Supabase redirect allow-list, or Auth silently falls back to
-    // site_url and mails a link pointing somewhere the app isn't — see supabase/config.toml.
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    })
-    setBusy(false)
-
-    // GoTrue answers 200 for an unknown address precisely so this cannot enumerate, so an error
-    // here is something else worth showing (rate limit, malformed address) — never "no such user".
-    if (resetErr) {
-      setError(resetErr.message)
-      return
+    setResetBusy(true)
+    try {
+      // redirectTo has to be on the Supabase redirect allow-list, or Auth silently falls back to
+      // site_url and mails a link pointing somewhere the app isn't — see supabase/config.toml.
+      const { error: resetErr } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin }),
+        RESET_TIMEOUT_MS,
+      )
+      // GoTrue answers 200 for an unknown address precisely so this cannot enumerate, so an error
+      // here is something else worth showing (rate limit, bad address) — never "no such user".
+      if (resetErr) setError(resetErr.message)
+      else setNotice(RESET_SENT)
+    } catch (err) {
+      setNotice(null)
+      setError(err instanceof Error && err.message === 'timeout' ? RESET_SLOW : RESET_UNREACHABLE)
+    } finally {
+      setResetBusy(false)
     }
-    setNotice(RESET_SENT)
   }
 
   return (
@@ -98,7 +142,7 @@ export function AuthForm() {
 
       <button
         type="submit"
-        disabled={busy}
+        disabled={busy || resetBusy}
         className="rounded-[10px] bg-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
       >
         {busy ? '…' : 'Sign in'}
@@ -107,10 +151,13 @@ export function AuthForm() {
       <button
         type="button"
         onClick={handleForgotPassword}
-        disabled={busy}
+        disabled={busy || resetBusy}
+        // aria-live so a screen reader announces the send finishing; the visible notice below is
+        // the sighted half of the same feedback.
+        aria-live="polite"
         className="text-center text-xs text-muted hover:text-ink disabled:opacity-50"
       >
-        Forgot password?
+        {resetBusy ? 'Sending reset link…' : 'Forgot password?'}
       </button>
 
       <p className="text-center text-xs text-muted">Invite-only — contact the owner for access.</p>
