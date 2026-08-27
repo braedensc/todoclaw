@@ -301,6 +301,32 @@ mirroring the security model in `CLAUDE.md`:
    - Blocks `gh pr merge` outright, including `--auto` — **merging is Braeden's
      action only.** Claude opens a PR and stops there. (`--disable-auto` is
      exempted, since it only undoes an auto-merge, never causes one.)
+   - Blocks `gh pr review --approve` in every spelling that yields an APPROVE
+     event — flag, shorthand cluster (`-ab`), the bare interactive form, the
+     REST/GraphQL endpoints, and a hand-rolled `curl` at `api.github.com`.
+     **Approving is Braeden's action only**, for the same reason merging is: an
+     approval is a claim to the next reader that *somebody else* looked at the
+     work. `main` requires 0 approving reviews today, so this is not a merge
+     unlock — it stops a session's own PR from *reading as reviewed* to the
+     person who then merges it by hand. `--comment` and `--request-changes`
+     reviews stay allowed; neither manufactures a human signal.
+   - Blocks applying or removing a **protected label** — `hooks-change`,
+     `agent:*`, `blocked:*`, `provenance:*` — via any `gh` spelling that writes
+     one. `hooks-change` is what turns the Hooks change guard green, so a
+     session that can apply it acknowledges its own guard-machinery change; the
+     `agent:*`/`blocked:*`/`provenance:*` sets are dispatcher-owned
+     (`docs/PIPELINE-CONTRACT.md` §6). Reading labels, and labelling with
+     anything outside the protected set, are untouched.
+   - **Config anchor** — blocks writing a protected git ref (`git update-ref`,
+     `git replace`, `git branch -f main`, a fetch refspec landing on
+     `origin/main`), repointing `origin`, or mutating `.git/**`. Several guards
+     deliberately read values from the **default branch** rather than the
+     worktree — `delivery.json`, the merged-PR base, the changed-file set a
+     review is judged against — and that only means something while the *ref*
+     is not model-writable. `dispatch.pinsRoot` is read from that same committed
+     copy, so moving the anchor is how a session would choose where its own pin
+     is looked for. Reads (`git log`, `git diff origin/main...HEAD`) and a plain
+     `git fetch` — the one honest writer of `origin/main` — stay allowed.
    - Blocks a session from invoking `scripts/pipeline_dispatch_local.py`, which
      writes the dispatcher **pin**. Binding a session is a human's action: a
      session that can place its own pin can retarget itself at another ticket or
