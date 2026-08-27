@@ -1,0 +1,239 @@
+name: Supabase image drift canary
+
+# The unpinned half of a deliberate two-job split (see the `rls-live` job in ci.yml).
+#
+# WHY THIS EXISTS. `rls-live` in CI is PINNED to a known `supabase/setup-cli` version so a required
+# PR gate cannot go red because Supabase shipped a new image overnight. That pin buys determinism
+# and costs early warning — and early warning is not hypothetical here. On 2026-08-26 the platform's
+# default ACL for functions in schema `public` changed from `{postgres=X/postgres}` to
+# `{postgres=X, anon=X, authenticated=X, service_role=X}`, so every function a migration creates was
+# BORN with an explicit anon/authenticated EXECUTE grant, and the `revoke ... from public` idiom
+# every DEFINER fence uses could not remove it. 69 of 70 public functions became client-reachable.
+# Nothing in this repo changed; the ground moved. The ONLY reason it surfaced is that CI was running
+# `version: latest` and the live-DB guard tripped.
+#
+# Determinism and drift detection are not a trade — they are two jobs. This is the second one: the
+# same live-DB check, on `version: latest`, on a schedule, NOT required and NOT attached to any PR.
+# When the platform moves under us again, this goes red on its own and opens an issue naming the new
+# version and the new default ACL — so bumping the pin becomes a PR with a reason attached instead of
+# an ambient break someone eventually notices.
+#
+# WHY IT OPENS ITS OWN ISSUE rather than routing through pipeline-failure-alert.yml: that alerter is
+# deliberately narrow (CI, DB Backup) and its issue body is generic by design. A canary is only
+# useful if it reports WHAT changed and WHAT to pin to, so it carries its own diagnostics — the CLI
+# version, the server version, and the actual `pg_default_acl` row. Same shape as cron-health.yml,
+# which is the precedent for a scheduled health check that opens a detailed, deduplicated issue.
+#
+# PROD CONTEXT (verified 2026-08-26 against the live catalog): prod is on an older platform build and
+# its default ACL is still the safe `postgres=X/postgres`. This canary is early warning for the day
+# prod's next platform upgrade would otherwise carry the change in silently.
+
+on:
+  schedule:
+    # Weekly, Mondays 09:00 UTC. Image drift is not a minute-to-minute risk and booting a full stack
+    # costs ~2 min; a week's notice is ample lead time on a platform upgrade. GH runs scheduled jobs
+    # on a best-effort basis, which is fine for detecting a persistent change.
+    - cron: '0 9 * * 1'
+  # Deliberately NO `pull_request` trigger: an unpinned job attached to PRs is exactly the ambient
+  # red the pin was added to remove. Use Run workflow to exercise it on demand.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  canary:
+    name: RLS coverage on the LATEST Supabase image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The whole point of this workflow — intentionally unpinned. Do NOT "fix" this to a version.
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      - name: Record the CLI version under test
+        id: cli
+        run: |
+          set -uo pipefail
+          version="$(supabase --version 2>&1 | head -1)"
+          echo "supabase CLI: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Start local Supabase (applies all migrations)
+        id: start
+        continue-on-error: true
+        run: supabase start
+
+      # Best-effort diagnostics. These are what make the issue actionable, but a failure to collect
+      # them must never mask the check's own verdict — hence `|| true` throughout.
+      - name: Capture the server version and the function default ACL
+        id: diag
+        if: steps.start.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          cat > "$RUNNER_TEMP/diag.sql" <<'SQL'
+          select n.nspname as schema, r.rolname as defacl_role,
+                 coalesce(array_to_string(d.defaclacl, ' | '), '(empty)') as default_acl
+            from pg_default_acl d
+            join pg_roles r on r.oid = d.defaclrole
+            join pg_namespace n on n.oid = d.defaclnamespace
+           where d.defaclobjtype = 'f' and n.nspname = 'public'
+           order by 2;
+          SQL
+          {
+            supabase db query --local 'select version();' -o csv 2>/dev/null || echo '(server version unavailable)'
+            echo
+            supabase db query --local -f "$RUNNER_TEMP/diag.sql" -o csv 2>/dev/null || echo '(default ACL unavailable)'
+          } > "$RUNNER_TEMP/diag.txt" || true
+          cat "$RUNNER_TEMP/diag.txt"
+          {
+            echo 'text<<DIAG_EOF'
+            head -c 2000 "$RUNNER_TEMP/diag.txt"
+            echo
+            echo 'DIAG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run the live RLS check against the latest-image stack
+        id: check
+        if: steps.start.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          source <(supabase status -o env)
+          set +e
+          SUPABASE_DB_URL="$DB_URL" \
+          SUPABASE_URL="$API_URL" \
+          SUPABASE_ANON_KEY="$ANON_KEY" \
+            node scripts/check-rls-live.mjs 2>&1 | tee "$RUNNER_TEMP/check.txt"
+          code=${PIPESTATUS[0]}
+          set -e
+          # Tail only, and capped: the report is findings text, and a bounded body keeps the issue
+          # readable no matter how loud a future check gets.
+          {
+            echo 'text<<CHECK_EOF'
+            tail -c 4000 "$RUNNER_TEMP/check.txt"
+            echo
+            echo 'CHECK_EOF'
+          } >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop || true
+
+      # One verdict for the steps below. The stack failing to BOOT on a new image is drift too, so it
+      # counts as a canary trip rather than an infrastructure shrug.
+      - name: Decide the verdict
+        id: verdict
+        if: always()
+        run: |
+          set -uo pipefail
+          if [ "${{ steps.start.outcome }}" != 'success' ]; then
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+            echo "reason=the stack failed to start on the latest CLI/image" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.check.outcome }}" != 'success' ]; then
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+            echo "reason=the live RLS check failed on the latest image" >> "$GITHUB_OUTPUT"
+          else
+            echo "failed=false" >> "$GITHUB_OUTPUT"
+            echo "reason=clean" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open/update the drift issue
+        if: always() && steps.verdict.outputs.failed == 'true'
+        uses: actions/github-script@v7
+        env:
+          CLI_VERSION: ${{ steps.cli.outputs.version }}
+          REASON: ${{ steps.verdict.outputs.reason }}
+          DIAG: ${{ steps.diag.outputs.text }}
+          REPORT: ${{ steps.check.outputs.text }}
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const title = '🐤 Supabase image drift — the unpinned RLS canary is red'
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`
+            const fence = (s, lang = '') =>
+              s && s.trim() ? ['```' + lang, s.trim(), '```'].join('\n') : '_(not collected)_'
+            const body = [
+              `The unpinned canary tripped: **${process.env.REASON}**.`,
+              '',
+              'This job runs the same live-DB RLS check as CI, but on `supabase/setup-cli@latest`',
+              'instead of the pinned version. It going red means **the platform moved, not that a PR',
+              'broke something** — no PR is blocked by this.',
+              '',
+              `**CLI under test:** \`${process.env.CLI_VERSION || 'unknown'}\``,
+              '',
+              '**Server version and `pg_default_acl` for functions in `public`:**',
+              fence(process.env.DIAG, 'csv'),
+              '',
+              '**Check output:**',
+              fence(process.env.REPORT),
+              '',
+              '### What to do',
+              '',
+              '1. Read the default ACL above. If the `postgres` row gained `anon=X` / `authenticated=X`,',
+              '   the platform changed what a newly-created function is born with — the same class of',
+              '   change as 2026-08-26, when 69 of 70 public functions silently became client-reachable.',
+              '2. Check whether **prod** has taken the change yet. It is a separate database on its own',
+              '   upgrade schedule, so a red canary is early warning, not an active incident:',
+              '   read `pg_default_acl` and `pg_proc.proacl` there before concluding anything.',
+              '3. If the new image is safe, bump the `supabase/setup-cli` pin in the `rls-live` job in',
+              '   `.github/workflows/ci.yml` in a PR that says why — that is the point of this split.',
+              '4. If it is not safe, fix the migrations first and bump the pin second.',
+              '',
+              `[Canary run](${runUrl})`,
+              '',
+              `cc @${owner} — Supabase changed something underneath us.`,
+            ].join('\n')
+            const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
+            const existing = open.data.find((i) => i.title === title && !i.pull_request)
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body })
+              core.info(`Updated #${existing.number}`)
+            } else {
+              const created = await github.rest.issues.create({ owner, repo, title, body, assignees: [owner] })
+              core.info(`Opened #${created.data.number}`)
+            }
+
+      # Self-resolving: once the pin is bumped (or the migrations fixed) and the canary comes back
+      # green, close the issue rather than leaving a stale alert for a human to tidy up.
+      - name: Close the drift issue when the canary is green again
+        if: always() && steps.verdict.outputs.failed == 'false'
+        uses: actions/github-script@v7
+        env:
+          CLI_VERSION: ${{ steps.cli.outputs.version }}
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const title = '🐤 Supabase image drift — the unpinned RLS canary is red'
+            const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 })
+            const existing = open.data.find((i) => i.title === title && !i.pull_request)
+            if (!existing) return
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: existing.number,
+              body: `The canary is green again on \`${process.env.CLI_VERSION || 'the latest CLI'}\` — closing.`,
+            })
+            await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: 'closed' })
+            core.info(`Closed #${existing.number}`)
+
+      - name: Fail the run if the canary tripped
+        if: always() && steps.verdict.outputs.failed == 'true'
+        run: |
+          echo "::error::Supabase image drift canary: ${{ steps.verdict.outputs.reason }}"
+          exit 1
