@@ -484,7 +484,6 @@ jobs:
           ALLOWED='
           pipeline-safe-outputs.yml
           pipeline-failure-alert.yml
-          pipeline-review.yml
           '
 
           fail=0

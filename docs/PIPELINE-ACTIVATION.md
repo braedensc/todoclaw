@@ -10,7 +10,8 @@ is moved.
 |---|---|
 | `pipeline-safe-outputs.yml` (TOD-106) | `pipeline-dispatch.yml` |
 | `pipeline-failure-alert.yml` (TOD-106) | `pipeline-bounce.yml` |
-| `pipeline-review.yml` (TOD-109) | `pipeline-telemetry.yml` |
+| | `pipeline-review.yml` (staged again by TOD-112) |
+| | `pipeline-telemetry.yml` |
 | | `pipeline-auto-approve.yml` |
 | | `pipeline-auto-merge.yml` |
 
@@ -20,17 +21,20 @@ own. Until a caller is activated it is a resolvable path and nothing more; that
 inertness is exactly why it and the failure alert were the safe pair to turn on
 first.
 
-**`pipeline-review.yml` (TOD-109) is the first activation with visible
-behaviour** — and the first that spends money. It is also the first *caller* of
-safe-outputs, so step 1 stops being theoretical here.
+**Nothing active today has visible behaviour either.** `pipeline-review.yml` was
+activated by TOD-109 and staged again by TOD-112 — it could not review anything,
+and said so in green (step 3 has the mechanism, and whose call its future is).
+With it back in `templates/`, no active workflow calls safe-outputs, so step 1 is
+theoretical again and nothing here spends money.
 
 **`pipeline-dispatch.yml` is deliberately held, not merely next in line.** It *is*
 the `github-actions` dispatcher, and `dispatch.backend` is now `local-daemon` —
 Cyrus dispatches from the operator's machine. Activating it would put a second
 dispatcher on the same queue; it would also just fail, since the workflow asserts
 the backend before loading state (step 4 below has the mechanism). Do not work
-through the step order below as if step 4 were simply next. Bounce, telemetry,
-auto-approve and auto-merge remain staged on their own merits.
+through the step order below as if step 4 were simply next. Review, bounce,
+telemetry, auto-approve and auto-merge remain staged on their own merits —
+review's are in step 3.
 
 ## The activation boundary — reviewed, not forbidden
 
@@ -57,8 +61,11 @@ What it guarantees is that activation cannot be *quiet*: it always surfaces as a
 explicit added line in a diff, next to the move, where a reviewer sees it. The
 list is also the standing record of what is intentionally live, so it is checked
 both ways — naming a workflow that is not active fails too, rather than lingering
-as a stale entry. `.github/workflows/**` is in `autonomy.riskPaths`, so an
-activation trips the scope fence as well; that second signal is expected.
+as a stale entry. That makes the reverse move symmetric: **staging a workflow
+again means the `git mv` back plus deleting its allowlist line, in the same PR**
+(TOD-112 did both for review). `.github/workflows/**` is in
+`autonomy.riskPaths`, so an activation trips the scope fence as well; that second
+signal is expected.
 
 > **Where the reference text lives.** Several of these workflows print
 > `see docs/AUTONOMY.md` in their warnings. That document is part of the kit and
@@ -83,8 +90,10 @@ activation trips the scope fence as well; that second signal is expected.
 >
 > Because that entry is a **glob**, a workflow named `pipeline-*.yml` is already
 > covered and needs no new line — TOD-109 activated `pipeline-review.yml` without
-> touching `.prettierignore`. Check rather than assume, since a passing
-> `npm run format` proves nothing on a file that was already clean:
+> touching `.prettierignore`, and TOD-112 staged it again without touching it
+> either, since `templates/workflows/` is exempt on the other side. Check rather
+> than assume, since a passing `npm run format` proves nothing on a file that was
+> already clean:
 >
 > ```bash
 > npx prettier --file-info .github/workflows/<file>   # want: "ignored": true
@@ -110,6 +119,12 @@ activation trips the scope fence as well; that second signal is expected.
 > is the only file todoclaw intentionally holds apart from the kit — every other
 > vendored workflow is still byte-identical, and a diff on any of them is real
 > drift.
+>
+> **The divergence followed the file.** TOD-112 moved it back to
+> `templates/workflows/pipeline-review.yml`; both changes moved with it, so the
+> port upstream is still owed and `/sync-kit` still reports this one file as
+> diverged — now at the template path. Staging it did not resolve the divergence
+> and does not excuse the port.
 
 ---
 
@@ -262,16 +277,50 @@ branch is the author's normal feedback loop, not an outage. Scheduled runs repor
 > *What is active right now* first: two alert workflows on one target is not a
 > conflict GitHub reports, it is just duplicate mail.
 
-**3. Review — the first one that spends money.** ✅ **Active** (TOD-109), and
-**able to start since TOD-110**.
+**3. Review — activated by TOD-109, staged again by TOD-112.** ⏸ **Staged.**
+Whether the cloud reviewer ever runs in todoclaw again is
+[KIT-18](https://linear.app/braedenclaw/issue/KIT-18)'s call, and that is open.
 
 ```bash
 git mv templates/workflows/pipeline-review.yml .github/workflows/pipeline-review.yml
 ```
 
-Runs on `pull_request`, so it exercises the safe-outputs path on real PRs without
-anything having to dispatch a session first. Needs `ANTHROPIC_API_KEY` and
-`LINEAR_API_KEY`.
+**Why it was switched off (TOD-112).** It was active, and it structurally could
+not review anything. The `snapshot` job resolves the dispatch pin from a GitHub
+Actions artifact (`pipeline-pin-TOD-n`) that only `pipeline-dispatch.yml` writes,
+and that workflow is staged because `dispatch.backend` is `local-daemon` — Cyrus
+dispatches from the operator's machine (step 4). So on a pipeline ticket branch
+every run ended `No dispatch snapshot found for <TICKET>. Declining to review:
+without the pin there is no scope fence to compare against.` **and exited green.**
+Nothing in a PR's checks list separated *reviewed, found nothing* from *could not
+review at all*. It was never a required check on `main` — required contexts are
+`Secret scan + forbidden paths`, `Lint`, `Typecheck`, `Test` — so the false green
+could not gate or unblock a merge. It misled a reader, which is reason enough
+once Cyrus starts opening ticket-branch PRs unattended.
+
+**What this staging is, and what it is not.** It returns the file to where
+todoclaw keeps its other vendored-but-inactive kit templates — alongside
+`pipeline-dispatch.yml`, `pipeline-bounce.yml`, `pipeline-auto-approve.yml` and
+`pipeline-auto-merge.yml`, none of which are pending activation either. It is
+**not** "parked until we switch it on." It is also **not** a retirement: the
+cloud reviewer is the correct path for a project whose dispatcher runs in GitHub
+Actions, so it stays in `claude-project-kit` untouched. todoclaw is
+`dispatch.backend: local-daemon` and simply picked the other path.
+
+**Its future is genuinely undecided — do not read this section as a promise
+either way.** [KIT-18](https://linear.app/braedenclaw/issue/KIT-18) is the
+unblocker, and its options point three different directions: publish the pin
+somewhere CI can read and *this file* is what comes back; have Cyrus write a pin
+and it could go either way; follow the kit ADR's stated direction — a reviewer
+running on the daemon — and this file never returns, with review arriving instead
+as something that does not exist yet. Until KIT-18 resolves, review on a todoclaw
+PR is a human reading the diff.
+
+The rest of this step describes the file as it stands, so a future activation —
+or the port of its divergences upstream — starts from what is actually in it.
+Activating it again needs `ANTHROPIC_API_KEY`, `LINEAR_API_KEY`, and the
+allowlist line above. It runs on `pull_request`, so it exercises the safe-outputs
+path on real PRs without anything having to dispatch a session first.
 
 **Trigger: `pull_request: [opened, synchronize]`, gated — one review per PR, but
 not one *chance* at it (TOD-110).** A push to an open PR still does not re-review
@@ -357,14 +406,20 @@ job that runs the model holds `pull-requests: read`; the only job with
 and no model. Approval is therefore structurally unreachable rather than merely
 discouraged — keep it off the required-checks list.
 
-**It reviews far fewer PRs than "every PR opened" suggests.** The snapshot job
-declines unless it finds a dispatcher-written pin artifact (`pipeline-pin-TOD-n`)
-whose `branch` equals the PR head ref. A hand-written branch has no pin, so the
-run is a green no-op that logs a warning — no model runs and nothing is spent.
-Since `pipeline-dispatch.yml` is held (above), **nothing currently writes pins**,
-so in practice every PR takes that decline path today. It also skips with a
-notice when `delivery.json` is absent or no Claude credential is set, and gets no
-secrets on fork PRs.
+**The pin lookup is the thing that made it inert.** The snapshot job declines
+unless it finds a dispatcher-written pin artifact (`pipeline-pin-TOD-n`) whose
+`branch` equals the PR head ref. A hand-written branch has no pin, so the run is
+a green no-op that logs a warning — no model runs and nothing is spent. With
+`pipeline-dispatch.yml` held (step 4), **nothing writes pins at all**, so that
+decline was every PR's outcome rather than an edge case — which is what TOD-112
+acted on. It also skips with a notice when `delivery.json` is absent or no Claude
+credential is set, and gets no secrets on fork PRs.
+
+The decline on a **non-pipeline** branch is a separate and correct path —
+*"Branch '…' is not a pipeline ticket branch — this PR was not dispatched.
+Leaving it to human review."* — and nothing about it was wrong or was changed.
+The problem was only the no-pin decline on a ticket branch, where a reader has
+every reason to expect a review happened.
 
 **4. Dispatch — superseded while `dispatch.backend` is `local-daemon`.**
 
