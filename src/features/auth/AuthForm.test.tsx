@@ -49,6 +49,19 @@ describe('AuthForm (invite-only, sign-in only)', () => {
     expect(signUp).not.toHaveBeenCalled()
   })
 
+  it('clears the spinner when sign-in throws rather than returning an error', async () => {
+    signInWithPassword.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<AuthForm />)
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
+      target: { value: 'x@y.com' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'hunter2!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByText(/couldn’t reach the server/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
+  })
+
   it('surfaces a sign-in error', async () => {
     signInWithPassword.mockResolvedValue({ error: { message: 'Invalid login credentials' } })
     render(<AuthForm />)
@@ -101,6 +114,55 @@ describe('AuthForm (invite-only, sign-in only)', () => {
 
       expect(await screen.findByText(/Enter your email address first/)).toBeInTheDocument()
       expect(resetPasswordForEmail).not.toHaveBeenCalled()
+    })
+
+    // The original report: clicking Forgot password put "…" on the SIGN IN button and left it
+    // there forever. supabase-js returns { error } for auth failures but THROWS on a network
+    // fault, and the throw skipped the setBusy(false) that followed it.
+    it('clears the spinner and explains itself when the request throws', async () => {
+      resetPasswordForEmail.mockRejectedValue(new TypeError('Failed to fetch'))
+      render(<AuthForm />)
+      requestReset('braeden@example.com')
+
+      expect(await screen.findByText(/couldn’t reach the server/)).toBeInTheDocument()
+      // Back to an actionable control, not a stuck spinner.
+      expect(await screen.findByRole('button', { name: 'Forgot password?' })).toBeEnabled()
+    })
+
+    it('shows progress on the control that was clicked, not on Sign in', async () => {
+      let settle: (v: { error: null }) => void = () => {}
+      resetPasswordForEmail.mockReturnValue(
+        new Promise((r) => {
+          settle = r
+        }),
+      )
+      render(<AuthForm />)
+      requestReset('braeden@example.com')
+
+      expect(await screen.findByRole('button', { name: 'Sending reset link…' })).toBeInTheDocument()
+      // The sign-in button must not be the thing that appears to be working.
+      expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+
+      settle({ error: null })
+      expect(await screen.findByText(/reset link is on its way/)).toBeInTheDocument()
+    })
+
+    // GoTrue sends the mail before it answers, so a slow sender makes this request slow. Say
+    // something true instead of spinning — and do not tell them to retry straight into the limit.
+    it('stops waiting after the timeout and says the link may still arrive', async () => {
+      vi.useFakeTimers()
+      try {
+        resetPasswordForEmail.mockReturnValue(new Promise(() => {}))
+        render(<AuthForm />)
+        requestReset('braeden@example.com')
+
+        await vi.advanceTimersByTimeAsync(15_000)
+
+        expect(screen.getByText(/taking longer than usual/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeEnabled()
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     // A rate-limit or malformed-address error is not an existence signal, so it is shown.
