@@ -72,6 +72,16 @@ FAKE_GH_TOKEN = "ghp" + "_" + "A" * 40
 FAKE_AWS_KEY = "AKIA" + "0" * 16
 FAKE_KEY_BLOCK = "-----BEGIN " + "PRIVATE KEY-----"
 
+# ── protected labels, assembled for the SAME reason the secrets above are ───
+# A literal label-application string in this file would trip the very guard these
+# cases assert — `grep "gh pr edit --add-label hooks-change" …` is itself a matching
+# command shape — which would block greps of, and edits to, this file. Same doctrine,
+# new guard. (Keep in step with PROTECTED_LABEL_* in the hook and §6 of the contract.)
+LBL_HOOKS = "hooks" + "-change"
+LBL_NEEDS_HUMAN = "agent" + ":needs-human"
+LBL_BLOCKED = "agent" + ":blocked"
+LBL_PROV = "provenance" + ":epic"
+
 
 def bash(c):
     return {"tool_name": "Bash", "tool_input": {"command": c}}
@@ -850,6 +860,182 @@ def main():
          bash("python3 scripts/pipeline_dispatch_local.py --selftest | tail -2"),
          ALLOW, feat_hook),
 
+        # ══ GUARD 12: config anchor — the git ref store is human-only ════════
+        # Ported with the guard from the kit (TOD-111). This repo ALREADY reads
+        # `delivery.json` from the default branch and already fails closed on an
+        # EXPIRED pin — but nothing stopped a session from MOVING the ref those two
+        # properties rest on. `dispatch.pinsRoot` is read from that same committed
+        # copy, so anchor poisoning is pin poisoning in one command.
+        ("config-anchor: git update-ref on origin/main blocked",
+         bash("git update-ref refs/remotes/origin/main abc1234"), BLOCK, feat_hook),
+        ("config-anchor: git update-ref -d blocked",
+         bash("git update-ref -d refs/heads/main"), BLOCK, feat_hook),
+        ("config-anchor: git branch -f main blocked",
+         bash("git branch -f main abc1234"), BLOCK, feat_hook),
+        ("config-anchor: git branch -D master blocked",
+         bash("git branch -D master"), BLOCK, feat_hook),
+        ("config-anchor: a fetch REFSPEC targeting origin/main blocked",
+         bash("git fetch https://example.invalid/r +HEAD:refs/remotes/origin/main"),
+         BLOCK, feat_hook),
+        ("config-anchor: repointing origin blocked",
+         bash("git remote set-url origin https://example.invalid/r"), BLOCK, feat_hook),
+        ("config-anchor: writing remote.origin.url via git config blocked",
+         bash("git config remote.origin.url https://example.invalid/r"), BLOCK, feat_hook),
+        ("config-anchor: git replace blocked (it rewrites what a ref resolves to)",
+         bash("git replace abc1234 def5678"), BLOCK, feat_hook),
+        ("config-anchor: git symbolic-ref onto main blocked",
+         bash("git symbolic-ref HEAD refs/heads/main"), BLOCK, feat_hook),
+        ("config-anchor: redirect into .git/refs blocked",
+         bash("echo abc1234 > .git/refs/remotes/origin/main"), BLOCK, feat_hook),
+        ("config-anchor: sed -i on .git/config blocked",
+         bash("sed -i 's/a/b/' .git/config"), BLOCK, feat_hook),
+        ("config-anchor: Write into .git/ blocked (the Edit/Write twin)",
+         write(os.path.join(feat_root, ".git/config"), "x"), BLOCK, feat_hook),
+        # …and the reads and honest writers it must NOT touch. `git fetch` is the one
+        # legitimate writer of origin/main: a guard that stopped it would stop the
+        # repo from learning the truth.
+        ("config-anchor: plain git fetch allowed",
+         bash("git fetch origin main"), ALLOW, feat_hook),
+        ("config-anchor: reading through the ref allowed",
+         bash("git diff origin/main...HEAD --name-only"), ALLOW, feat_hook),
+        ("config-anchor: git branch --merged main allowed (a read that names the ref)",
+         bash("git branch --merged main"), ALLOW, feat_hook),
+        ("config-anchor: git config --get remote.origin.url allowed",
+         bash("git config --get remote.origin.url"), ALLOW, feat_hook),
+        ("config-anchor: cat .git/config allowed (reads are untouched)",
+         bash("cat .git/config"), ALLOW, feat_hook),
+        # The documented codename rename from CLAUDE.md — it carries no protected ref,
+        # so the `git branch -m` arm must not catch it. Every session starts by doing
+        # this, so a false positive here would brick the branch workflow itself.
+        ("config-anchor: the documented branch rename allowed",
+         bash("git branch -m fix/some-real-work"), ALLOW, feat_hook),
+        ("config-anchor: a branch name merely CONTAINING 'main' allowed",
+         bash("git branch -m fix/domain-model-rework"), ALLOW, feat_hook),
+        ("config-anchor: an SSH URL containing ':main/' is not a refspec",
+         bash("git fetch git@code.example.invalid:main/repo.git"), ALLOW, feat_hook),
+        ("config-anchor: a path named replace.ts is not the `git replace` verb",
+         bash("git show HEAD:src/replace.ts"), ALLOW, feat_hook),
+        ("config-anchor: git remote add origin allowed (cannot repoint an existing one)",
+         bash("git remote add origin https://example.invalid/r"), ALLOW, feat_hook),
+        # .gitignore and .github/ only START with `.git` — component-wise matching, or
+        # every workflow edit in this repo would block.
+        ("config-anchor: editing .github/workflows allowed (not the git store)",
+         write(os.path.join(feat_root, ".github/workflows/ci.yml"), "x"), ALLOW, feat_hook),
+        ("config-anchor: editing .gitignore allowed (not the git store)",
+         write(os.path.join(feat_root, ".gitignore"), "x"), ALLOW, feat_hook),
+        # The ordinary fetch+rebase this repo's workflow requires before every push.
+        ("config-anchor: git pull --ff-only allowed (no refspec, no colon)",
+         bash("git pull --ff-only origin main"), ALLOW, feat_hook),
+
+        # ══ GUARD 13: PR self-approval — an approval is a SECOND pair of eyes ═
+        # Distinct from pipeline GUARD E below, which refuses a TRACKER move into
+        # `ready`; this refuses a GitHub review. A session holds Bash and a working
+        # `gh` credential, so approving its own PR simply works. Measured, not
+        # assumed: this repo's `main` requires 0 approving reviews, so an approval is
+        # not a merge unlock today — it makes the session's own PR read as reviewed
+        # to the human who then merges it by hand. Blocked in every spelling that
+        # yields an APPROVE event; `--comment` and `--request-changes` stay reachable.
+        ("pr-self-approval: gh pr review --approve blocked",
+         bash("gh pr review --approve"), BLOCK, HOOK),
+        ("pr-self-approval: --approve with a body blocked",
+         bash('gh pr review 7 --approve --body "lgtm"'), BLOCK, HOOK),
+        ("pr-self-approval: --approve --body-file blocked",
+         bash("gh pr review 7 --approve --body-file /tmp/r.md"), BLOCK, HOOK),
+        ("pr-self-approval: -a shorthand blocked", bash("gh pr review 7 -a"), BLOCK, HOOK),
+        ("pr-self-approval: -ab pflag shorthand CLUSTER blocked",
+         bash('gh pr review 7 -ab "lgtm"'), BLOCK, HOOK),
+        ("pr-self-approval: --approve=true blocked",
+         bash("gh pr review --approve=true"), BLOCK, HOOK),
+        # No event flag at all = the interactive prompt, whose event this hook cannot
+        # see. Fails CLOSED, like the label guard's opaque `--input` payload.
+        ("pr-self-approval: bare gh pr review (interactive form) blocked",
+         bash("gh pr review 7"), BLOCK, HOOK),
+        ("pr-self-approval: gh api POST /pulls/N/reviews event=APPROVE blocked",
+         bash("gh api repos/o/r/pulls/7/reviews -f event=APPROVE"), BLOCK, HOOK),
+        ("pr-self-approval: --method POST --field event=APPROVE blocked",
+         bash("gh api --method POST repos/o/r/pulls/7/reviews --field event=APPROVE"),
+         BLOCK, HOOK),
+        ("pr-self-approval: /pulls/N/reviews with an OPAQUE --input body blocked",
+         bash("gh api -X POST repos/o/r/pulls/$N/reviews --input review.json"),
+         BLOCK, HOOK),
+        ("pr-self-approval: GraphQL addPullRequestReview event: APPROVE blocked",
+         bash("gh api graphql -f query='mutation { addPullRequestReview("
+              'input: {pullRequestId: "x", event: APPROVE}) { clientMutationId } }\''),
+         BLOCK, HOOK),
+        # *.github.com is on this repo's EGRESS allowlist, so nothing else in the hook
+        # stops a hand-rolled curl at the review-creation endpoint.
+        ("pr-self-approval: curl POST to the reviews endpoint with APPROVE blocked",
+         bash('curl -X POST -H "Authorization: bearer $T" '
+              "https://api.github.com/repos/o/r/pulls/7/reviews "
+              '-d \'{"event":"APPROVE"}\''), BLOCK, HOOK),
+        ("pr-self-approval: approve in a CHAINED command still blocked",
+         bash("git status && gh pr review 7 --approve"), BLOCK, HOOK),
+        # allow: the guard is about APPROVE, not about reviewing at all.
+        ("pr-self-approval: --comment review allowed",
+         bash('gh pr review --comment -b "one question about line 12"'), ALLOW, HOOK),
+        ("pr-self-approval: --request-changes allowed",
+         bash('gh pr review 7 --request-changes -b "needs a test"'), ALLOW, HOOK),
+        ("pr-self-approval: -r shorthand allowed",
+         bash('gh pr review 7 -rb "needs a test"'), ALLOW, HOOK),
+        # `-R` (repo) is not `-r`, and an approve flag NAMED in review prose is not one
+        # handed to the parser — _strip_prose has already blanked the quoted body.
+        ("pr-self-approval: an approve flag inside a --comment BODY allowed (prose)",
+         bash('gh pr review -R o/r 7 --comment -b "we should --approve once read"'),
+         ALLOW, HOOK),
+        ("pr-self-approval: gh api POST with event=COMMENT allowed",
+         bash("gh api repos/o/r/pulls/7/reviews -f event=COMMENT -f body=x"), ALLOW, HOOK),
+        ("pr-self-approval: plain GET of a PR's reviews allowed",
+         bash("gh api repos/o/r/pulls/7/reviews --paginate"), ALLOW, HOOK),
+        ("pr-self-approval: reading reviews allowed (gh pr view --json)",
+         bash("gh pr view 7 --json reviewDecision,reviews"), ALLOW, HOOK),
+        ("pr-self-approval: requesting a REVIEWER allowed (asking is not giving)",
+         bash("gh pr edit 7 --add-reviewer someone"), ALLOW, HOOK),
+        # The two commands this repo's own workflow runs constantly must stay clean.
+        ("pr-self-approval: gh pr create allowed",
+         bash("gh pr create --title x --body-file /tmp/body.md"), ALLOW, HOOK),
+        ("pr-self-approval: gh pr checks --watch allowed",
+         bash("gh pr checks 7 --watch"), ALLOW, HOOK),
+
+        # ══ GUARD 14: protected labels — an acknowledgement is Braeden's ═════
+        # `hooks-change` is what turns CI's "Hooks change guard" job green, so a
+        # session that can apply it acknowledges its own guard-machinery change. The
+        # `agent:*` / `blocked:*` / `provenance:*` sets are dispatcher-owned (§6):
+        # the pipeline's lifecycle-label guard already refuses them through a tracker
+        # MCP, but the same write as a `gh` command was unguarded — and cheaper.
+        ("protected-label: gh pr edit --add-label <protected> blocked",
+         bash(f"gh pr edit 7 --add-label {LBL_HOOKS}"), BLOCK, HOOK),
+        ("protected-label: --add-label=<protected> blocked",
+         bash(f"gh pr edit 7 --add-label={LBL_HOOKS}"), BLOCK, HOOK),
+        ("protected-label: <protected> hidden in a comma list blocked",
+         bash(f'gh pr edit 7 --add-label "bug,{LBL_HOOKS}"'), BLOCK, HOOK),
+        ("protected-label: gh issue edit --add-label <dispatcher-owned> blocked",
+         bash(f"gh issue edit 4 --add-label {LBL_NEEDS_HUMAN}"), BLOCK, HOOK),
+        ("protected-label: gh issue edit --remove-label <dispatcher-owned> blocked",
+         bash(f"gh issue edit 4 --remove-label {LBL_BLOCKED}"), BLOCK, HOOK),
+        ("protected-label: pre-applied at PR creation blocked",
+         bash(f"gh pr create --title x --body y --label {LBL_HOOKS}"), BLOCK, HOOK),
+        ("protected-label: gh api POST /issues/N/labels blocked",
+         bash(f"gh api repos/o/r/issues/39/labels -f labels[]={LBL_PROV}"), BLOCK, HOOK),
+        ("protected-label: /issues/N/labels with an OPAQUE --input body blocked",
+         bash("gh api -X POST repos/o/r/issues/39/labels --input body.json"), BLOCK, HOOK),
+        ("protected-label: <protected> in a CHAINED command still blocked",
+         bash(f"git status && gh pr edit 7 --add-label {LBL_HOOKS}"), BLOCK, HOOK),
+        # allow: the guard is about the gating SET, not about labelling at all.
+        ("protected-label: an unrelated label allowed",
+         bash("gh pr edit 7 --add-label bug"), ALLOW, HOOK),
+        ("protected-label: an unrelated comma list allowed",
+         bash('gh pr edit 7 --add-label "bug,enhancement"'), ALLOW, HOOK),
+        ("protected-label: reading labels allowed (gh pr view --json labels)",
+         bash("gh pr view 7 --json labels"), ALLOW, HOOK),
+        ("protected-label: listing labels allowed (gh label list)",
+         bash("gh label list"), ALLOW, HOOK),
+        ("protected-label: gh label create <protected> allowed — DEFINING is setup",
+         bash(f"gh label create {LBL_HOOKS} --color B60205"), ALLOW, HOOK),
+        ("protected-label: repo-level label CRUD allowed (not issue application)",
+         bash(f"gh api repos/o/r/labels -f name={LBL_HOOKS}"), ALLOW, HOOK),
+        ("protected-label: plain GET of an issue's labels allowed",
+         bash("gh api repos/o/r/issues/39/labels"), ALLOW, HOOK),
+
         # ══ PIPELINE GUARDS (docs/PIPELINE-CONTRACT.md) ══════════════════════
         # ── OPTIONALITY: *off* is not *broken*. A project with no delivery.json
         #    must be untouched by all six. This is the regression gate for every
@@ -1115,6 +1301,21 @@ def main():
          wt_hook),
         ("stderr reason: secret-file guard names the exemption",
          bash("cat .env"), ".env.example is fine", HOOK),
+        ("stderr reason: config-anchor block says the ref store is human-only",
+         bash("git update-ref refs/remotes/origin/main abc1234"),
+         "Braeden's action at a terminal", feat_hook),
+        ("stderr reason: config-anchor block names what stays allowed",
+         bash("git update-ref refs/remotes/origin/main abc1234"),
+         "plain `git fetch` are untouched", feat_hook),
+        ("stderr reason: PR self-approval block routes to the human",
+         bash("gh pr review 7 --approve"), "print the command for Braeden", HOOK),
+        ("stderr reason: PR self-approval block says what stays allowed",
+         bash("gh pr review 7 --approve"), "`--comment` review is still allowed", HOOK),
+        ("stderr reason: protected-label block names the label",
+         bash(f"gh pr edit 7 --add-label {LBL_HOOKS}"), LBL_HOOKS, HOOK),
+        ("stderr reason: protected-label block names the unrelated-label carve-out",
+         bash(f"gh pr edit 7 --add-label {LBL_HOOKS}"),
+         "unrelated label such as `bug`", HOOK),
         ("stderr reason: rm -rf", bash("rm -rf node_modules"), "rm -rf", HOOK),
         ("stderr reason: internal error fails closed",
          {"tool_name": "Bash", "tool_input": ["ls"]}, "failing closed", HOOK),
