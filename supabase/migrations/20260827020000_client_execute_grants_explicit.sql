@@ -62,8 +62,13 @@ alter default privileges in schema public revoke execute on functions from publi
 revoke execute on all functions in schema public from public, anon, authenticated;
 
 -- ── 3. Re-grant the intended client surface ─────────────────────────────────────────────────────
--- Grouped by caller. Signatures are spelled in full because overloads exist (ai_budget_add,
--- ai_usage_record_tokens, due_task_reminders) and only the live overload should be granted.
+-- Grouped by caller. Signatures are spelled in full, not because the live schema has overloads (it
+-- has none — one signature per name, on both images and on the managed project) but because three
+-- names were REDEFINED with a different signature partway through the history: ai_budget_add
+-- (bigint → uuid, bigint), ai_usage_record_tokens (3 args → 5, 20260820215424), due_task_reminders
+-- (() → (int), 20260722161000). A bare name would be ambiguous to a reader diffing this against the
+-- migrations, and would silently resolve to the wrong function if a superseded signature ever came
+-- back.
 
 -- Called from the browser with the user's own JWT (src/**/*.ts `supabase.rpc(...)`).
 grant execute on function public.set_task_done(date, uuid, text, text) to authenticated;
