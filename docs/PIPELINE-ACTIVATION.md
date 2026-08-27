@@ -179,15 +179,25 @@ Grant the App or PAT nothing beyond the two permissions above — in particular 
 
 Secrets and variables both live under **Settings → Secrets and variables → Actions**.
 
-todoclaw's `delivery.json` sets `auth.review` to `api-key`, so the model credential
-for every workflow in the table below is **`ANTHROPIC_API_KEY`** — they all run in
-GitHub Actions, where no interactive credential exists.
+todoclaw's `delivery.json` sets **both** `auth.scheduled` and `auth.review` to
+`api-key`, so the model credential for every workflow in the table below is
+**`ANTHROPIC_API_KEY`** — they all run in GitHub Actions, where no interactive
+credential exists.
 
-`auth.scheduled` is **`subscription`**, because the unattended lane is no longer a
-workflow: `dispatch.backend` is `local-daemon`, and a daemon starts its sessions
-under `CLAUDE_CODE_OAUTH_TOKEN` on the operator's own machine. That field only
-*describes* which credential a lane uses — it configures nothing — so the secret
-lives wherever the daemon runs, not in this repository.
+> **`auth.scheduled` stays `api-key`. Do not "fix" it to `subscription` to match
+> the local daemon** — it has now been changed on that reasoning twice (#405,
+> reverted by TOD-113). `auth.*` is keyed on *what kind of work*, not *where it
+> runs*; those were the same thing only while the dispatcher lived in CI. Cyrus
+> runs on the operator's machine under its own credential and **never reads
+> `delivery.json`**, so nothing about the daemon depends on this field. Its only
+> readers are `pipeline-bounce.yml` and `pipeline-dispatch.yml`, both of which run
+> on `ubuntu-latest` and pick their secret from it — and a subscription token
+> sitting in repository secrets would have far more reach if leaked than a scoped
+> API key. Setting `subscription` wires them to `CLAUDE_CODE_OAUTH_TOKEN`, which
+> this repo does not have; the preflight only checks that *a* credential exists
+> rather than *the configured* one, so the job would run empty-handed instead of
+> skipping. Re-keying `auth.*` on execution location is the real fix and is a
+> contract amendment, not a config edit (KIT-17).
 
 | Workflow | Trigger | Secrets | Variables |
 |---|---|---|---|
