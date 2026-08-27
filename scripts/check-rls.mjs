@@ -13,8 +13,10 @@
 //   * Only the `public` schema is judged — the only schema PostgREST exposes by default. Tables in
 //     `auth`, `extensions`, `storage`, private schemas, etc. are Supabase-managed / not
 //     API-reachable and are intentionally skipped.
-//   * Parses migration SQL textually with comments stripped first, so a `create table` inside a
-//     comment (notably the `-- down:` reversal blocks every migration documents) is never counted.
+//   * Parses migration SQL textually with comments AND single-quoted string literals stripped
+//     first, so a `create table` inside a comment (notably the `-- down:` reversal blocks every
+//     migration documents) or inside a string (an event trigger's `when tag in ('CREATE TABLE AS')`)
+//     is never counted.
 //
 // Usage:  node scripts/check-rls.mjs      # exit 0 = every public table has RLS; 1 = offender(s)
 
@@ -26,6 +28,20 @@ const DIR = 'supabase/migrations'
 // never mistaken for a real statement. Block comments first, then line comments to end-of-line.
 function stripComments(sql) {
   return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ')
+}
+
+// Then strip single-quoted string literals, so SQL *named inside a string* is not read as DDL. The
+// case that forced this: an event trigger's `when tag in ('CREATE TABLE', 'CREATE TABLE AS', …)`
+// lists command tags as literals, and `'CREATE TABLE AS'` matched CREATE_RE as a table literally
+// named `as` (20260826120000). `''` is Postgres's escape for a quote inside a literal, so it is
+// consumed as part of the run rather than ending it.
+//
+// ORDER MATTERS: comments are stripped FIRST. A comment containing a lone apostrophe ("the user's
+// row") would otherwise mis-pair the quotes and swallow real DDL after it. Verified against every
+// migration in the tree: none performs DDL inside a single-quoted literal (no `execute '…'`), so
+// nothing the guard should credit is lost — dollar-quoted bodies ($$…$$) are untouched.
+function stripStrings(sql) {
+  return sql.replace(/'(?:[^']|'')*'/g, ' ')
 }
 
 // A table needs RLS iff it lives in `public` — either explicitly (`public.x`) or unqualified (which
@@ -49,7 +65,7 @@ const dropped = new Set() // tables a later migration drops (no longer need RLS)
 const rlsOn = new Set() // tables that `enable row level security` somewhere
 
 for (const file of files) {
-  const sql = stripComments(readFileSync(`${DIR}/${file}`, 'utf8'))
+  const sql = stripStrings(stripComments(readFileSync(`${DIR}/${file}`, 'utf8')))
   for (const m of sql.matchAll(CREATE_RE)) {
     const t = publicTable(m[1], m[2])
     if (t && !created.has(t)) created.set(t, file)
