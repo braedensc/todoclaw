@@ -111,14 +111,14 @@ _No `VITE_OWNER_USER_ID`: the owner's identity is server-only. The frontend reve
 | `BACKUP_GPG_PASSPHRASE` | **secret** | backup | AES-256 passphrase to encrypt the daily dump. **Lose it ⇒ backups undecryptable** |
 | `SUPABASE_ACCESS_TOKEN` | **secret** | deploy | Supabase personal access token for the function-deploy Management API |
 | `SUPABASE_ANON_KEY` | public value, stored as secret | keepalive | Prod anon key (secret only for log-masking hygiene) |
-| `DISPATCH_SECRET` | **secret** | notify | Same value as the Supabase secret — the dispatcher's caller gate |
+| `DISPATCH_SECRET` | **secret** | notify | Same value as the Supabase secret — the dispatcher's caller gate. The pg_cron tick (§4a) reads the same value from Vault under the name `dispatch_secret` |
 
 ### 3f. GitHub Actions — Variables
 | Variable | Kind | Used by | Purpose / notes |
 |---|---|---|---|
 | `SUPABASE_PROJECT_REF` | public | deploy | Prod ref `hknmhkzumkjhylxclrcy` — selects the project to deploy |
 | `SUPABASE_URL` | public | keepalive | Prod project URL for the anti-pause ping |
-| `DISPATCH_URL` | public | notify | `…/functions/v1/dispatch-messages` endpoint POSTed hourly |
+| `DISPATCH_URL` | public | notify | `…/functions/v1/dispatch-messages` endpoint, POSTed hourly by the **backup** workflow. The primary per-minute tick is pg_cron, which reads the same URL from Vault as `dispatch_messages_url` (§4a) |
 
 ### 3g. Local-dev / inactive (listed for completeness — not provisioned)
 | Variable | Where | Status |
@@ -145,12 +145,39 @@ _No `VITE_OWNER_USER_ID`: the owner's identity is server-only. The frontend reve
 
 ## 4. Automated processes
 
-### 4a. Scheduled jobs (all GitHub Actions cron, UTC — no `pg_cron`)
+### 4a. Scheduled jobs (two schedulers — `pg_cron` in Postgres, plus GitHub Actions cron; both UTC)
+
+**`pg_cron` + `pg_net` — the dispatch tick (primary).** Both dispatchers are POSTed from inside
+Postgres every minute:
+
+| Job (`cron.job` name) | When (UTC) | Does | Vault secret **names** it reads |
+|---|---|---|---|
+| `dispatch-messages` | `* * * * *` | POSTs the `dispatch-messages` function; it picks who's due (local morning/evening, quiet-hours), generates the plan/recap and pushes | `dispatch_messages_url` + `dispatch_secret` |
+| `dispatch-reminders` | `* * * * *` | POSTs the `dispatch-reminders` function; the per-task reminder sweep | `dispatch_reminders_url` + `dispatch_secret` |
+
+Each job reads its URL and the shared secret out of `vault.decrypted_secrets` **by name** (values
+live only in Vault, never here), and a `where … is not null` guard makes the job a **no-op** until
+the owner has created both — so local and fresh stacks stay quiet. Per-minute is cheap: the function
+only sends inside a user's local send-window and `claim_message` dedupes per (user, local date,
+kind), so almost every tick is a no-op with no push and no model call.
+
+Owning migrations — `cron.schedule` upserts by job name, so re-running any of them is safe:
+
+| Migration | What it does |
+|---|---|
+| `20260709033335_task_reminders_pipeline.sql` | schedules `dispatch-reminders` |
+| `20260709140000_dispatch_messages_pg_cron.sql` | moves the proactive digest onto pg_cron — GitHub's scheduled workflows silently drop most ticks under load, and a dropped tick lost a user's push for the whole day |
+| `20260714000000_dispatch_cron_pgnet_timeout.sql` | re-schedules **both** jobs with `timeout_milliseconds := 30000`; pg_net's 5s default timed out on the ~9s inline plan generation and raised false cron-health alarms |
+
+Down path for either job: `select cron.unschedule('<job name>');`.
+
+**GitHub Actions cron:**
+
 | When (UTC) | Workflow | Does | Config it needs |
 |---|---|---|---|
 | `17 8 * * *` daily | `keepalive.yml` | One REST ping so the free Supabase project never pauses (401/403 = healthy) | `SUPABASE_URL` (var) + `SUPABASE_ANON_KEY` (secret) |
 | `0 9 * * *` daily | `backup.yml` | Encrypted `pg_dump` of `public` → AES-256 GPG artifact (90-day retention) | `BACKUP_DATABASE_URL` + `BACKUP_GPG_PASSPHRASE` (secrets) |
-| `0 * * * *` hourly | `notify.yml` | POSTs `dispatch-messages`; the function picks who's due (local morning/evening, quiet-hours) and pushes | `DISPATCH_URL` (var) + `DISPATCH_SECRET` (secret) |
+| `0 * * * *` hourly | `notify.yml` | **Redundant backup only** (per its own header): POSTs the same `dispatch-messages` function the pg_cron tick drives. `claim_message` dedupes per (user, day, kind), so the pair can never double-send | `DISPATCH_URL` (var) + `DISPATCH_SECRET` (secret) |
 
 Every scheduled job **preflight-skips green** until its config is set (an unconfigured repo is never
 red). Scheduled workflows run only from `main`.
@@ -163,9 +190,11 @@ red). Scheduled workflows run only from `main`.
 | Vercel (native Git integration) | push to `main` / any branch | Prod deploy on merge; preview deploy per branch. **Not** a GitHub Action |
 
 **Deploy notes**
-- Edge Functions auto-deploy on merge, but the loop covers only `ai-status`, `plan-my-day`,
-  `ai-chat`, `dispatch-messages`. **`generate-invite` and `redeem-invite` are NOT in the loop** —
-  they need a manual `supabase functions deploy` when changed.
+- Edge Functions auto-deploy on merge. `deploy-functions` **derives the list from the tree** — it
+  globs `supabase/functions/*/index.ts` (which naturally excludes `_shared`, a helper dir with no
+  `index.ts`) and deploys each match, so **every** function ships automatically and none needs a
+  manual `supabase functions deploy`. A post-deploy smoke then probes each discovered function and
+  fails on 404 / no response / 5xx, so a function that didn't land can't pass green.
 - Migrations: `supabase/migrations/*.sql`, applied to prod by the `migrate` job (idempotent
   `db push`). **No auto down-migrations** — rollback is a manual `-- down:` block via `psql` +
   removing the `schema_migrations` row; data-lossy changes restore from a backup. `vercel rollback`
