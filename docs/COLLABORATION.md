@@ -52,6 +52,11 @@ git checkout -b feat/<short-desc>
 gh pr create --fill                      # open a PR; CI + review is the merge gate
 ```
 
+If `gh` fails (`x509: OSStatus -26276`, or a bogus *"The token in GH_TOKEN is
+invalid"*), that is the sandbox TLS bug, not your credential — use `python3
+scripts/gh_fallback.py pr-create …` instead, and see CLAUDE.md's **When `gh`
+fails**.
+
 You never merge your own work straight to `main` — that's what the PR + branch
 protection is for.
 
@@ -297,7 +302,9 @@ mirroring the security model in `CLAUDE.md`:
      merges is silently stranded, since GitHub stops syncing that PR's head and
      stops running CI on further pushes to it (learned the hard way 2026-07-03,
      PR #54). Fails open if `gh`/network is unavailable, so it never blocks on
-     something it can't verify.
+     something it can't verify — which, as of TOD-116, we know means this guard
+     is silently absent in a dispatched session, where `gh` fails every call on
+     TLS. There, checking before a follow-up push is a manual step again.
    - Blocks `gh pr merge` outright, including `--auto` — **merging is Braeden's
      action only.** Claude opens a PR and stops there. (`--disable-auto` is
      exempted, since it only undoes an auto-merge, never causes one.)

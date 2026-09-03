@@ -184,6 +184,38 @@ jobs:
   # an explicit `hooks-change` label. This flag only becomes a real gate once branch
   # protection requires a review (required_approving_review_count >= 1, owner-set in the
   # GitHub UI) so a human actually sees it. PR-only (a push to main has no label context).
+  #
+  # TOD-116 added `scripts/gh_fallback.py`. It is not a hook and it gates nothing, and the
+  # tempting call was to leave it off this list on that basis. That would have been wrong:
+  # it holds the GitHub token and writes to the API, and the ONLY thing keeping it off the
+  # merge endpoint is the ENDPOINTS mapping inside the file itself. The PreToolUse
+  # never-merge guard cannot cover it — that guard matches the merge subcommand as a `gh`
+  # invocation in a Bash line (pre-tool-use.py), and `python3 scripts/gh_fallback.py …`
+  # contains no such string. So the file IS the boundary, and it belongs behind a human's
+  # acknowledgement. The test for this list is what a change can DO, not what the file is
+  # called.
+  #
+  # WHY THIS JOB RATHER THAN PORTING claude-project-kit's `scripts/check_grader_paths.py`
+  # (TOD-116 offered both): that script's floor also sweeps in `.github/workflows/**`, every
+  # `scripts/check_*.py` and `delivery.json`, and its selftest asserts EXHAUSTIVELY over the
+  # kit's `scripts/` + `templates/` layout — which todoclaw does not have (no `templates/`,
+  # and a `scripts/` full of `.mjs` guards its globs never name). Porting it faithfully would
+  # mean re-deriving its FLOOR/UNGATED sets for a different repo AND demanding a human label
+  # on every workflow and grader PR; that is a supervision-model change deserving its own
+  # ticket, not a rider on a fallback port. The one thing it buys that this job does not —
+  # the check on WHO applied the label — todoclaw already covers from the other side: the
+  # PreToolUse protected-label guard (TOD-111) refuses to let Claude apply or remove
+  # `hooks-change` at all, and the kit's own docstring concedes that identity check has no
+  # teeth in exactly todoclaw's topology (the agent drives `gh` with the human's credential).
+  #
+  # WHAT THIS JOB STILL DOES NOT COVER, said out loud so it is not mistaken for coverage:
+  # `.github/workflows/**` is not on the list, so a PR that NARROWS the regex below — or
+  # deletes this job — goes green. And because `pull_request` runs the workflow from the
+  # PR's own head, such a PR would be graded by its own weakened copy. That gap is
+  # pre-existing (it applies equally to every CI-side guard in this file) and closing it
+  # means a human label on every CI change, which is the wider decision deliberately left
+  # to its own ticket above. Until then the backstop is branch protection plus a reviewer
+  # reading the diff — not this job.
   hooks-change-guard:
     name: Hooks change guard
     runs-on: ubuntu-latest
@@ -193,7 +225,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require the 'hooks-change' label to edit hook/settings files
+      - name: Require the 'hooks-change' label for guard-machinery changes
         env:
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -201,12 +233,12 @@ jobs:
         run: |
           set -euo pipefail
           CHANGED=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")
-          SENSITIVE=$(printf '%s\n' "$CHANGED" | grep -E '^\.claude/(hooks/|settings\.json$)' || true)
+          SENSITIVE=$(printf '%s\n' "$CHANGED" | grep -E '^\.claude/(hooks/|settings\.json$)|^scripts/gh_fallback\.py$' || true)
           if [ -z "$SENSITIVE" ]; then
             echo "No security-hook files changed — nothing to gate."
             exit 0
           fi
-          echo "This PR modifies security-critical hook/settings files:"
+          echo "This PR modifies security-critical guard machinery:"
           printf '  %s\n' $SENSITIVE
           for label in $LABELS; do
             if [ "$label" = "hooks-change" ]; then
@@ -214,7 +246,7 @@ jobs:
               exit 0
             fi
           done
-          echo "::error::This PR changes .claude/hooks/** or .claude/settings.json. Those files are the local security guard under bypassPermissions, so edits must be reviewed — not silent. Add the 'hooks-change' label to acknowledge, then this check re-runs."
+          echo "::error::This PR changes .claude/hooks/**, .claude/settings.json or scripts/gh_fallback.py. The first two are the local security guard under bypassPermissions; the third holds the GitHub token and is kept off the merge endpoint only by the endpoint set inside it. Edits must be reviewed — not silent. Add the 'hooks-change' label to acknowledge, then this check re-runs."
           exit 1
 
   # RLS coverage (static) — every table in the `public` schema must enable Row Level Security. RLS
@@ -414,6 +446,17 @@ jobs:
 
       - name: Weekly-review limits selftest (no self-raised budgets or graders)
         run: npm run test:weekly-review
+
+      # `gh` cannot verify TLS inside the dispatcher's sandbox (KIT-71/TOD-116): Go on
+      # darwin ignores SSL_CERT_FILE and asks the platform verifier, whose user/admin
+      # trust domains answer "No keychain is available" in there — and `gh auth status`
+      # mislabels the whole thing "The token in GH_TOKEN is invalid." `scripts/gh_fallback.py`
+      # is the REST fallback sessions use instead. The selftest is offline, and the
+      # assertion that earns its place in CI is the endpoint set: this script must never
+      # grow a merge path. The "Hooks change guard" job above is what keeps a session from
+      # editing that endpoint set without a human seeing it.
+      - name: GitHub REST fallback selftest (no merge capability)
+        run: npm run test:gh-fallback
 
       # The staged workflows are inert, which means nothing else ever parses
       # them: a YAML syntax error, or a reference to a script that was renamed
