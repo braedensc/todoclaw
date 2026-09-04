@@ -119,6 +119,31 @@ supabase db reset
 Local URLs: API `http://127.0.0.1:54321` · Studio `http://127.0.0.1:54323` · Mailpit (catches
 sign-up emails) `http://127.0.0.1:54324`.
 
+### Keep the stack off the network (do this before the first `supabase start`)
+
+```bash
+scripts/supabase-loopback-network.sh   # once per machine; safe to re-run
+```
+
+By default `supabase start` publishes its ports on **every** interface, not just loopback —
+so on shared wifi anyone can reach Studio, which has **no login in local mode**, and port
+54322, which is Postgres directly. The stack's own start-up banner still says
+`All services bind to 0.0.0.0`; that line is hardcoded, not measured, so ignore it and
+trust the check below.
+
+`config.toml` has no host/bind key, so the bind address comes from the Docker network. The
+script pre-creates that network pinned to `127.0.0.1`; `supabase start` then reuses it, and
+`supabase stop` leaves it alone. Verify at any time with:
+
+```bash
+scripts/supabase-loopback-network.sh --check   # exits 1 if the ports are on 0.0.0.0
+```
+
+Re-run the script after a `docker system prune` or on a fresh clone. Containers keep the
+binding they were created with, so if the check fails while the stack is up:
+`supabase stop && scripts/supabase-loopback-network.sh && supabase start` (stopping keeps
+your data — only `--no-backup` deletes volumes). See TOD-119.
+
 ### Create `.env.local` from the running stack
 
 Claude cannot write `.env.local` (the security hook blocks `.env` writes and JWT values), so
