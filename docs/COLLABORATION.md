@@ -345,11 +345,19 @@ mirroring the security model in `CLAUDE.md`:
      "What changes now that the pipeline guards are live" below.
 2. **Claude Code Stop hook** (`.claude/hooks/stop-pr-check.py`) — runs whenever
    Claude tries to end a turn, and blocks (with a reminder) when:
-   - the current branch has pushed commits ahead of `main` with **no PR** at
-     all yet, or
+   - the current branch has pushed commits ahead of `origin/main` with **no PR**
+     at all yet, or
    - the branch's open PR has **failing CI** (`statusCheckRollup` shows a
      failing conclusion — this is what CLAUDE.md's "watch CI to green" rule
      means in practice).
+
+   "Ahead of" is measured against `origin/main`, not local `main`: you branch
+   off the remote and rarely update the local ref, so measuring against local
+   `main` false-nags a branch that has nothing new. And a check that is red
+   **pending a human** — today only CI's "Hooks change guard", which waits on
+   the `hooks-change` label — is exempt from the CI nag, because no code change
+   clears it and the only self-clear would be the session applying its own
+   acknowledgement label, which another guard forbids. Both TOD-118.
 
    Dedups per `(branch, reason, commit sha)` so it can't loop even if the
    harness doesn't honor `stop_hook_active`, and fails open the same way as
