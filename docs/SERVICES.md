@@ -193,12 +193,19 @@ returns a `200`/`401` (both mean the project is awake).
 
 ---
 
-## Proactive notifications — hourly dispatch (Stage 6, ADR-0031)
+## Proactive notifications — the dispatch tick (Stage 6, ADR-0031)
 
-Opt-in morning **plan** + evening **recap** Web Push. `.github/workflows/notify.yml` POSTs the
-`dispatch-messages` Edge Function every hour; the function decides who is due (each user's local
-morning/evening hour, quiet-hours aware) and sends. Like keep-alive/backup it SKIPS (green) until
-configured, so it's never red on an unconfigured repo.
+Opt-in morning **plan** + evening **recap** Web Push. The **primary** trigger is `pg_cron` + `pg_net`
+inside Postgres, POSTing the `dispatch-messages` Edge Function **every minute** (migration
+`20260709140000_dispatch_messages_pg_cron.sql`; a 30s pg_net timeout since
+`20260714000000_dispatch_cron_pgnet_timeout.sql`) — GitHub Actions drops most scheduled ticks under
+load, which is what lost morning pushes. `.github/workflows/notify.yml` stays on as a **redundant
+hourly backup**; both POST the same function and `claim_message` dedupes per (user, day, kind), so
+the pair can never double-send. Either way the function decides who is due (each user's local
+morning/evening hour, quiet-hours aware) and sends. Like keep-alive/backup the workflow SKIPS
+(green) until configured, so it's never red on an unconfigured repo. The pg_cron job reads its URL
+and secret from Vault **by name** (`dispatch_messages_url`, `dispatch_secret`) and no-ops until the
+owner creates both. See [`INVENTORY.md`](INVENTORY.md) §4a for the full job/migration roster.
 
 **GitHub Actions** (repo → Settings → Secrets and variables → Actions):
 
@@ -217,7 +224,8 @@ supabase secrets set DISPATCH_SECRET=…   # the SAME value as the GitHub Action
 
 **Vercel** (frontend env): `VITE_VAPID_PUBLIC_KEY` = the VAPID **public** key (public by design; the
 private key stays a server-only Edge secret). Unset ⇒ the Settings notifications toggle says "not
-configured". `dispatch-messages` is already in `deploy.yml`'s deploy loop. Unset VAPID ⇒ messages
+configured". `deploy.yml` auto-discovers every `supabase/functions/*/index.ts`, so `dispatch-messages`
+deploys on merge like any other function. Unset VAPID ⇒ messages
 still persist to the in-app inbox; only the push is skipped.
 
 ---
