@@ -369,6 +369,9 @@ jobs:
   # checkout) plus a mocked `gh`, so it needs no network and no DB. python3 + git only —
   # `npm run test:hooks` is the same entry point humans and agents use locally, since the
   # hook's own self-edit guard blocks `python3 .claude/hooks/test_hooks.py`.
+  # It covers the Stop hook (stop-pr-check.py) too, on its own protocol — exit 0 plus a
+  # JSON decision — because a Stop hook that nags where no fix exists deadlocks a session
+  # just as surely as a PreToolUse guard that stops matching lets one through (TOD-118).
   hook-battery:
     name: Hook battery
     runs-on: ubuntu-latest
@@ -377,7 +380,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Assert every pre-tool-use guard still blocks (and still allows)
+      - name: Assert every hook guard still blocks (and still allows)
         run: npm run test:hooks
 
   # Pipeline contract validators — docs/PIPELINE-CONTRACT.md and schemas/ are two

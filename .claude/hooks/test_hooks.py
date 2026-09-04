@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Block/allow battery for pre-tool-use.py — the hook suite's permanent test.
+Block/allow battery for pre-tool-use.py and stop-pr-check.py — the hook
+suite's permanent test.
 
     npm run test:hooks          # ← use this; see "Running it" below
 
@@ -59,6 +60,13 @@ HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
 # live hook.
 HOOK = os.environ.get("TODOCLAW_HOOK_UNDER_TEST") or os.path.join(
     HOOKS_DIR, "pre-tool-use.py"
+)
+# The Stop hook is self-protected for the same reason and gets the same escape
+# hatch. TOD-118 is why it exists: that fix had to be proven — green against a
+# candidate carrying it and RED against the hook that lacked it — before a human
+# could copy the candidate into place.
+STOP_HOOK = os.environ.get("TODOCLAW_STOP_HOOK_UNDER_TEST") or os.path.join(
+    HOOKS_DIR, "stop-pr-check.py"
 )
 
 BLOCK, ALLOW = True, False
@@ -156,6 +164,31 @@ def check_reason_on_stderr(name, payload, needle, hook_path=HOOK, env=None, cwd=
     return 0 if ok else 1
 
 
+def run_stop_hook(payload, hook_path, raw_stdin=None, env=None):
+    """Returns True if the Stop hook BLOCKED.
+
+    A different protocol from run_hook above: the Stop hook always exits 0 and
+    expresses its verdict as a JSON `decision` on STDOUT. A non-zero exit is
+    therefore a CRASH, not a block — raised, so a hook that dies can never be
+    scored as a quiet ALLOW. It takes no cwd: like the real thing, it anchors on
+    the PROJECT_ROOT it derives from its own __file__."""
+    stdin = raw_stdin if raw_stdin is not None else json.dumps(payload)
+    r = subprocess.run(
+        [sys.executable, hook_path],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"stop hook crashed (exit {r.returncode}): {r.stderr}")
+    out = r.stdout.strip()
+    if not out:
+        return False
+    return json.loads(out).get("decision") == "block"
+
+
 def _git_env():
     return {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_SYSTEM": os.devnull}
@@ -167,7 +200,7 @@ def _git(root, *a):
 
 
 def make_sandbox(branch):
-    """Throwaway git repo on <branch> with a COPY of the hook inside it.
+    """Throwaway git repo on <branch> with a COPY of each hook inside it.
 
     The copy sits at <root>/.claude/hooks/pre-tool-use.py so the hook's own
     __file__-derived PROJECT_ROOT resolves to <root> — every state-dependent guard
@@ -178,6 +211,7 @@ def make_sandbox(branch):
     os.makedirs(hooks)
     hook_copy = os.path.join(hooks, "pre-tool-use.py")
     shutil.copy(HOOK, hook_copy)
+    shutil.copy(STOP_HOOK, os.path.join(hooks, "stop-pr-check.py"))
     _git(root, "init", "-q", "-b", branch)
     # rev-parse --abbrev-ref HEAD reports "HEAD" on an unborn branch, so seed one commit.
     _git(root, "-c", "user.name=battery", "-c", "user.email=battery@test.invalid",
@@ -229,6 +263,51 @@ def make_worktree_sandbox():
     sibling = root + "-sibling"
     _git(root, "worktree", "add", "-q", "-b", "feat/sibling", sibling)
     return root, hook_copy, sibling
+
+
+def make_stop_sandbox(list_json, view_json):
+    """Stop-hook sandbox: `main` plus a pushed feature branch one commit AHEAD of
+    it, with a mocked `gh` answering both `pr list` and `pr view`.
+
+    Deliberately has NO `origin/main` ref, so the base-resolution chain falls
+    through to local `main` — which is the honest base here. That keeps these
+    cases about PR/CI state; base resolution gets its own sandbox below."""
+    root, _ = make_sandbox("main")
+    _git(root, "checkout", "-q", "-b", "feat/battery")
+    _git(root, "-c", "user.name=battery", "-c", "user.email=battery@test.invalid",
+         "commit", "--allow-empty", "-q", "-m", "ahead")
+    _wire_upstream(root, "feat/battery")
+    body = (
+        'case "$2" in\n'
+        f"  list) echo '{list_json}' ;;\n"
+        f"  view) echo '{view_json}' ;;\n"
+        "esac"
+    )
+    env = _fake_gh(root, body)
+    return root, os.path.join(root, ".claude", "hooks", "stop-pr-check.py"), env
+
+
+def make_stale_main_sandbox():
+    """Stop-hook sandbox in the shape EVERY dispatched session has: local `main`
+    frozen at clone time, the branch cut from `origin/main`, and no commits of its
+    own — HEAD == origin/main, nothing to ship.
+
+    Measured against stale local `main` that looks "ahead of main" and false-nags
+    (TOD-118 drift 1). The fake `gh` reports NO PR, so a hook that resolves the
+    base wrongly runs on into the no-PR block and this case comes back BLOCK —
+    which is what the pre-fix hook does, and what makes the assertion able to
+    fail rather than merely able to pass."""
+    root, _ = make_sandbox("main")                     # local main = seed (A)
+    _git(root, "checkout", "-q", "-b", "feat/battery")
+    _git(root, "-c", "user.name=battery", "-c", "user.email=battery@test.invalid",
+         "commit", "--allow-empty", "-q", "-m", "B")   # feat/battery = B
+    _git(root, "update-ref", "refs/remotes/origin/main", "HEAD")  # origin/main = B
+    _git(root, "remote", "add", "origin", os.devnull)
+    _git(root, "config", "branch.feat/battery.remote", "origin")
+    # @{u} = origin/main — the upstream a dispatched branch actually tracks.
+    _git(root, "config", "branch.feat/battery.merge", "refs/heads/main")
+    env = _fake_gh(root, "echo '[]'")                 # no PR
+    return root, os.path.join(root, ".claude", "hooks", "stop-pr-check.py"), env
 
 
 # ── pipeline sandboxes (docs/PIPELINE-CONTRACT.md) ───────────────────────────
@@ -371,7 +450,11 @@ def main():
     if not os.path.exists(HOOK):
         print(f"FATAL: hook not found at {HOOK}")
         return 1
-    print(f"hook under test: {HOOK}\n")
+    if not os.path.exists(STOP_HOOK):
+        print(f"FATAL: stop hook not found at {STOP_HOOK}")
+        return 1
+    print(f"hook under test: {HOOK}")
+    print(f"stop hook under test: {STOP_HOOK}\n")
 
     main_root, main_hook = make_sandbox("main")
     master_root, master_hook = make_sandbox("master")
@@ -383,6 +466,34 @@ def main():
     open_root, open_hook, open_env = make_pr_sandbox(
         "echo '{\"state\":\"OPEN\",\"number\":7}'")
     gherr_root, gherr_hook, gherr_env = make_pr_sandbox("exit 1")
+
+    # ── Stop-hook sandboxes (TOD-118) ────────────────────────────────────────
+    stop_nopr_root, stop_nopr, stop_nopr_env = make_stop_sandbox("[]", "{}")
+    stop_red_root, stop_red, stop_red_env = make_stop_sandbox(
+        '[{"number":7,"state":"OPEN"}]',
+        '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}')
+    stop_green_root, stop_green, stop_green_env = make_stop_sandbox(
+        '[{"number":7,"state":"OPEN"}]',
+        '{"statusCheckRollup":[{"name":"Test","conclusion":"SUCCESS"}]}')
+    # Red ONLY on a human-pending check. Nothing Claude can push turns "Hooks
+    # change guard" green — it stays red until a person applies `hooks-change`,
+    # and the protected-label guard forbids the session applying it. Nagging here
+    # deadlocks the turn against the very acknowledgment the guard demands.
+    stop_pending_root, stop_pending, stop_pending_env = make_stop_sandbox(
+        '[{"number":7,"state":"OPEN"}]',
+        '{"statusCheckRollup":[{"name":"Test","conclusion":"SUCCESS"},'
+        '{"name":"Hooks change guard","conclusion":"FAILURE"}]}')
+    # ...and that exemption must not become a blanket: a real failure BESIDE the
+    # human-pending one still has to nag.
+    stop_mixed_root, stop_mixed, stop_mixed_env = make_stop_sandbox(
+        '[{"number":7,"state":"OPEN"}]',
+        '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"},'
+        '{"name":"Hooks change guard","conclusion":"FAILURE"}]}')
+    stop_dirty_root, stop_dirty, stop_dirty_env = make_stop_sandbox(
+        '[{"number":7,"state":"OPEN"}]',
+        '{"mergeStateStatus":"DIRTY","statusCheckRollup":'
+        '[{"name":"CodeQL","conclusion":"SUCCESS"}]}')
+    stale_root, stale_stop, stale_env = make_stale_main_sandbox()
 
     # ── pipeline sandboxes (see make_pipeline_sandbox) ────────────────────────
     pl_root, pl_hook, pl_pins = make_pipeline_sandbox()
@@ -1278,6 +1389,49 @@ def main():
         print(f"[{verdict}] {name}  (want {want}, got {got})")
         failures += 0 if ok else 1
 
+    # ── Stop hook: a different protocol (exit 0 + JSON decision on stdout) ───
+    # (name, payload_or_None(raw), expect_block, hook_path, env)
+    stop_cases = [
+        ("stop: stop_hook_active short-circuits",
+         {"stop_hook_active": True}, ALLOW, STOP_HOOK, None),
+        ("stop: garbage stdin on a protected branch allowed",
+         None, ALLOW,
+         os.path.join(main_root, ".claude", "hooks", "stop-pr-check.py"), None),
+        ("stop: no upstream allowed (local-only work in progress)",
+         {}, ALLOW,
+         os.path.join(feat_root, ".claude", "hooks", "stop-pr-check.py"), None),
+        ("stop: pushed branch ahead of main with NO PR blocks",
+         {}, BLOCK, stop_nopr, stop_nopr_env),
+        ("stop: same (branch, reason, sha) nags only once (dedup)",
+         {}, ALLOW, stop_nopr, stop_nopr_env),
+        ("stop: open PR with failing CI blocks",
+         {}, BLOCK, stop_red, stop_red_env),
+        ("stop: open PR with green CI allowed",
+         {}, ALLOW, stop_green, stop_green_env),
+        ("stop: DIRTY PR blocks despite green side checks",
+         {}, BLOCK, stop_dirty, stop_dirty_env),
+        ("stop: stale local main + HEAD==origin/main does NOT nag (base-ref fix)",
+         {}, ALLOW, stale_stop, stale_env),
+        ("stop: red ONLY on a human-pending check does NOT nag (label, not a defect)",
+         {}, ALLOW, stop_pending, stop_pending_env),
+        ("stop: a human-pending check does not mask a real failure beside it",
+         {}, BLOCK, stop_mixed, stop_mixed_env),
+    ]
+    for name, payload, expect_block, hook_path, env in stop_cases:
+        raw = "this is not json" if payload is None else None
+        try:
+            blocked = run_stop_hook(payload, hook_path, raw_stdin=raw, env=env)
+        except Exception as e:
+            print(f"[FAIL] {name} — {e}")
+            failures += 1
+            continue
+        ok = blocked == expect_block
+        verdict = "PASS" if ok else "FAIL"
+        want = "BLOCK" if expect_block else "ALLOW"
+        got = "BLOCK" if blocked else "ALLOW"
+        print(f"[{verdict}] {name}  (want {want}, got {got})")
+        failures += 0 if ok else 1
+
     # ── block reasons must arrive on STDERR (exit 2 relays stderr ONLY) ──────
     # Asserting the REASON, not just the exit code, is what keeps a case honest when
     # two guards can both block the same payload: an exit-code-only assertion passes
@@ -1328,12 +1482,14 @@ def main():
                                            env=_env, cwd=_cwd)
 
     for r in (main_root, master_root, feat_root, codename_root, wt_root, wt_sibling,
-              merged_root, open_root, gherr_root):
+              merged_root, open_root, gherr_root, stop_nopr_root, stop_red_root,
+              stop_green_root, stop_pending_root, stop_mixed_root, stop_dirty_root,
+              stale_root):
         shutil.rmtree(r, ignore_errors=True)
 
     # Counts EVERY assertion, reason_cases included — an under-reported total makes a
     # red run print a nonsense ratio.
-    total = len(cases) + len(reason_cases)
+    total = len(cases) + len(stop_cases) + len(reason_cases)
     print(f"\n{total - failures}/{total} cases passed")
     return 1 if failures else 0
 

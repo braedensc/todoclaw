@@ -175,13 +175,17 @@ Use this to review what Claude did in a session, especially before a commit.
 
 ## Stop — `stop-pr-check.py`
 
-Runs when Claude tries to end a turn. Blocks (with a reason Claude must address) on a **pushed** branch that is ahead of `main` when any of these hold — so "open a PR and watch CI to green" isn't just a written rule that gets skipped across parallel sessions:
+Runs when Claude tries to end a turn. Blocks (with a reason Claude must address) on a **pushed** branch that is ahead of the mainline when any of these hold — so "open a PR and watch CI to green" isn't just a written rule that gets skipped across parallel sessions:
 
 | Blocks ending the turn when | Why |
 |---|---|
 | The branch has **no PR** yet | CLAUDE.md expects a PR once a task is done (`gh pr create`) |
-| The open PR has **failing CI** (`FAILURE`/`CANCELLED`/`TIMED_OUT`/…) | CI must be watched to green before a task is "done" |
+| The open PR has **failing CI** (`FAILURE`/`CANCELLED`/`TIMED_OUT`/…) that Claude could actually fix | CI must be watched to green before a task is "done". Checks that are red *pending a human* are exempt — see below |
 | The open PR is **`DIRTY`** (merge conflicts) | GitHub can't build the merge ref, so the required CI (Lint/Typecheck/Test/E2E) **never runs** — only side checks (CodeQL/Vercel) report and can look green. A conflicted PR must be rebased, not mistaken for passing (2026-07-03 near-miss). Fires only on explicit `DIRTY`, never the transient `UNKNOWN` right after a push |
+
+**The mainline is `origin/main`, not local `main`.** The base is resolved through `origin/main` → `origin/master` → `main` → `master`. In normal PR flow you branch off `origin/main` and never update local `main`, so local `main` is usually stale and comparing against it makes a branch with nothing new look "ahead of main" — a false nag on every dispatched session, whose clone freezes local `main` at clone time (TOD-118).
+
+**Red *pending a human* is not a defect.** `HUMAN_PENDING_CHECKS` exempts checks no code change can clear — today only CI's **Hooks change guard**, which stays red until a person applies the `hooks-change` label. Without the exemption that guard and this nag deadlock each other: the session cannot end its turn, and its only self-clear would be applying its own acknowledgement label, which the PreToolUse protected-label guard forbids outright. Keep the set tiny — a check that can fail for a second reason does not belong in it. A genuine failure *alongside* a pending one still blocks; the pending check is only named in the message.
 
 Fires once per `(branch, HEAD commit, reason)` — deduped in `.claude/.stop-pr-nag/` (gitignored) — so explaining instead of acting can't trap the session in a loop. Fails open on any `git`/`gh`/network error (never blocks on what it can't verify).
 
@@ -192,4 +196,4 @@ Fires once per `(branch, HEAD commit, reason)` — deduped in `.claude/.stop-pr-
 These hooks are **layer 1** of three:
 1. **Claude Code hooks** (this) — guard Claude's actions; model cannot bypass in-session. But under `bypassPermissions` this hook is the *only* local gate, so its own files are protected (GAP 1) and its security checks fail closed (GAP 4).
 2. **Git pre-commit hooks** (Husky + secretlint) — guard commit contents locally; bypassable via `--no-verify`.
-3. **CI + branch protection** — the unbypassable gate on every PR; runs secretlint + forbidden-paths + the **Hooks change guard** (a PR that edits `.claude/hooks/**` or `.claude/settings.json` must carry a `hooks-change` label). Branch protection's `required_approving_review_count` (owner-set, GitHub UI) is the human backstop that makes the CI flag meaningful.
+3. **CI + branch protection** — the unbypassable gate on every PR; runs secretlint + forbidden-paths + the **Hooks change guard** (a PR that edits `.claude/hooks/**`, `.claude/settings.json` or `scripts/gh_fallback.py` must carry a `hooks-change` label). Branch protection's `required_approving_review_count` (owner-set, GitHub UI) is the human backstop that makes the CI flag meaningful.
