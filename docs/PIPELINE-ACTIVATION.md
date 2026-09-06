@@ -254,6 +254,15 @@ observable behaviour** — see *What is active right now* above. If `LINEAR_API_
 is not set yet, nothing breaks in the meantime; the key is only read once a caller
 exists. Confirm it is set before activating step 3 or 4.
 
+> **It is also unreachable on the current lane, not merely uncalled.** Its inputs
+> `pinned_ticket_id` and `pinned_dispatch_id` are both `required: true`, and they
+> come from a **pin** — which the `local-daemon` backend does not write
+> ([ADR 2026-09-06](adr/2026-09-06-delegation-bound-dispatch.md)). So even a caller
+> activated today would have nothing to pass. Whatever re-keys the binding
+> ([KIT-18](https://linear.app/braedenclaw/issue/KIT-18)) has to supply these two
+> values, or supersede this validator, before the safe-outputs path can carry a
+> Cyrus session's writes.
+
 **2. Failure alert — free, and it is how you find out the rest broke.** ✅ **Active** (TOD-106)
 
 ```bash

@@ -227,11 +227,17 @@ pipeline's `/work` skill, which refuses to run on trust.
 Since #392 this repo has a committed `delivery.json`, so the pipeline counts as
 **configured**. Per `docs/PIPELINE-CONTRACT.md` §2 that makes a `ticket`-mode
 session with no **pin** the *Broken* state, and broken fails closed — `/work`
-stops before doing anything. The pin is the one piece of authority a session
-cannot write for itself: the dispatcher places it **outside every worktree**,
-before the session starts, and it carries the ticket's acceptance criteria and
-scope fence. Everything a session *can* write — the branch name, the PR body — is
-reporting, never authority.
+stops before doing anything. The pin is one piece of authority a session cannot
+write for itself: a **pin-writing** dispatcher — tier 0 below, or the
+`github-actions` backend — places it **outside every worktree**, before the
+session starts, and it carries the ticket's acceptance criteria and scope fence.
+
+Not every dispatcher writes one. This repo's backend is `local-daemon`, and Cyrus
+binds a session by **a named person delegating the ticket in Linear** — no file at
+all, which satisfies the same doctrine by a different route
+([ADR 2026-09-06](adr/2026-09-06-delegation-bound-dispatch.md)). Either way the
+rule is unchanged: everything a session *can* write — the branch name, the PR
+body — is reporting, never authority.
 
 `scripts/pipeline_dispatch_local.py` is the human-run dispatcher (kit Tier 0). It
 writes exactly the pin the CI dispatcher would, so a local `/work` run is properly
@@ -388,6 +394,18 @@ ad-hoc session, and every guard that *withholds* something fails open for an
 unpinned session. Ordinary edits, `npm test`, `git commit`, `gh pr create` and
 even editing a CI workflow all behave exactly as before. This was verified
 against this repo's real `delivery.json` before the change landed.
+
+> **A Cyrus session is unpinned too, so it takes that same branch.** Since the
+> backend became `local-daemon`, the live lane binds by delegation and writes no
+> pin — and to the hook that is indistinguishable from a human working ad hoc. So
+> `scope-fence` and `lifecycle-label` do not hold on it, and `ticket-branch` is
+> inactive. **That is intended behaviour, not a bug**: a guard that failed closed
+> on pin absence would brick every ad-hoc session in this repo. What still holds
+> is `self-approval` (unconditional), the hook's self-edit and config-anchor Bash
+> arms, the protected-label guard, branch protection and CI — none of which read a
+> pin. Full table and the reasoning:
+> [ADR 2026-09-06](adr/2026-09-06-delegation-bound-dispatch.md); re-keying the
+> binding is [KIT-18](https://linear.app/braedenclaw/issue/KIT-18).
 
 **Two things change for everyone, pinned or not:**
 
