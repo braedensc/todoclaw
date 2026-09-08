@@ -183,7 +183,7 @@ a ticket out of `Backlog` is what claims it:
 | `Backlog` | Exists, not scheduled | the default |
 | `Todo` | Claimed — this is next | Braeden |
 | `In Progress` | A branch or draft PR exists | GitHub integration † |
-| `In Review` | PR open, Braeden's court | GitHub integration † |
+| `In AI Review` | PR open, Braeden's court | GitHub integration † |
 | `Done` | Merged | GitHub integration † |
 
 † Once Linear's GitHub integration is connected (workspace Settings → Integrations),
