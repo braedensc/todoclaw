@@ -140,5 +140,7 @@ supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=ma
 
 `supabase/functions/**` is **excluded from the frontend ESLint** (different runtime/globals +
 `npm:`/`jsr:` specifiers) and from `tsc -b` (`src`-only). It is checked with Deno
-(`deno test` / `deno check`). Prettier still formats it (one repo formatter). CI auto-deploy of
-functions is deferred to Stage 6; until then deploy is manual (`supabase functions deploy <name>`).
+(`deno test` / `deno check`). Prettier still formats it (one repo formatter). CI **auto-deploys**
+every function after green CI on `main` (ADR-0022): `deploy.yml` globs `supabase/functions/*/index.ts`
+and deploys each match, so adding a directory here is all it takes — there is no deploy list to edit,
+and `_shared` is skipped for free by having no `index.ts`.

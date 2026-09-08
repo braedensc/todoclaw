@@ -207,7 +207,11 @@ supabase functions serve        # serve all functions, hot-reload; http://127.0.
 - **CORS is locked** to `ALLOWED_ORIGIN` (defaults to `http://localhost:5173`). Note: local
   `supabase functions serve` injects a permissive `*` at the gateway, so the lock is verified by
   the deno unit test, not local curl (see `supabase/functions/README.md`).
-- Deploy is **manual** for now (`supabase functions deploy <name>`); CI auto-deploy → Stage 6.
+- **Deploy is automatic** (ADR-0022): `deploy.yml`'s `deploy-functions` job runs after CI goes
+  green on `main` and **derives the list from the tree** — it globs `supabase/functions/*/index.ts`
+  (which naturally excludes `_shared`, a helper dir with no `index.ts`) and deploys every match, so
+  a new function ships with no deploy-list to edit. A post-deploy smoke then probes each one and
+  fails on 404 / no response / 5xx. Don't run `supabase functions deploy` against prod by hand.
 
 ## Troubleshooting
 
