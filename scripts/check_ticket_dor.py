@@ -55,14 +55,14 @@ BEGIN_MARKER = "<!-- BEGIN TICKET TEMPLATE -->"
 END_MARKER = "<!-- END TICKET TEMPLATE -->"
 
 EFFORTS = ("effort:S", "effort:M", "effort:L")
-PROVENANCE_CLASSES = ("epic", "monitor", "review", "retro-proposal", "human")
+PROVENANCE_CLASSES = ("epic", "monitor", "review", "retro-proposal", "human", "agent")
 # Dispatcher-owned lifecycle labels (contract §6). A session setting one is a
 # session editing its own supervision.
 FORBIDDEN_LABEL_RE = re.compile(r"^(agent:|blocked:capacity$)")
 
 TICKET_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
 PROVENANCE_RE = re.compile(
-    r"^(epic/[A-Z][A-Z0-9]*-\d+|monitor|review|retro-proposal|human)$"
+    r"^(epic/[A-Z][A-Z0-9]*-\d+|monitor|review|retro-proposal|human|agent)$"
 )
 HEADING_RE = re.compile(r"^##\s+(\S.*?)\s*$")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
@@ -214,6 +214,28 @@ def bullets(lines):
     return [m.group(1).strip() for m in map(BULLET_RE.match, lines or []) if m]
 
 
+def scope_items(lines):
+    """Out-of-scope entries, written EITHER way, in document order.
+
+    THE DEFECT THIS REPLACES. `bullets()` carries a negative lookahead that
+    deliberately excludes checkbox items, and Out of scope was parsed with it
+    alone. But the section immediately ABOVE it requires checkboxes, and
+    Linear's editor emits the same syntax for both — so an author who wrote
+    `- [ ] not this`, the natural thing to do, had every exclusion silently
+    dropped. Nothing said so: no decline, no warning, no log line. The review
+    ticket then rendered the scope fence as "_(none listed)_", and the reviewer
+    — one of whose four mandated dimensions IS scope — judged the change against
+    a fence that had been written and thrown away. A deliberate exclusion became
+    indistinguishable from an unrequested drive-by, in both directions.
+    """
+    found = []
+    for line in (lines or []):
+        m = CHECKLIST_RE.match(line) or BULLET_RE.match(line)
+        if m and m.group(1).strip():
+            found.append(m.group(1).strip())
+    return found
+
+
 def pin_fields(description):
     """Contract §3 "Ticket → pin field mapping": the two lists a pin snapshots.
 
@@ -228,7 +250,7 @@ def pin_fields(description):
     sections = split_sections(description)
     return {
         "acceptance_criteria": checklist_items(body_of(sections, "Acceptance criteria")),
-        "out_of_scope": bullets(body_of(sections, "Out of scope")),
+        "out_of_scope": scope_items(body_of(sections, "Out of scope")),
     }
 
 
@@ -428,7 +450,7 @@ def check_acceptance(sections, r, strict):
 
 def check_scope_and_tests(sections, r, strict):
     oos = body_of(sections, "Out of scope")
-    if oos is not None and not bullets(oos):
+    if oos is not None and not scope_items(oos):
         (r.err if strict else r.warn)(
             "out-of-scope", "'## Out of scope' has no bullets — the ticket has no scope fence"
         )
@@ -745,6 +767,7 @@ GOOD_CONFIG = {
                 "effort:M": "lbl-m",
                 "effort:L": "lbl-l",
                 "provenance:epic": "lbl-prov",
+                "provenance:agent": "lbl-prov-agent",
                 "agent:queued": "lbl-queued",
             }
         },
@@ -1022,6 +1045,26 @@ def selftest():
 
         t = good_ticket(); t.pop("provenance"); t["parentId"] = None
         expect("round-trip-provenance-no-parent", t, ["provenance"])
+
+        # provenance:agent (KIT-96): the class an agent-filed finding ticket
+        # carries. Ported from the kit; before it, the class was rejected.
+        t = good_ticket()
+        t["labels"] = ["track:platform", "effort:M", "provenance:agent"]
+        t.pop("provenance")
+        t["parentId"] = None
+        expect("provenance-agent", t, [])
+
+        # Out of scope written as checkboxes (Linear's editor emits the same
+        # syntax as the section above) must still be read as a scope fence.
+        # Ported from the kit's scope_items; `bullets()` alone dropped these.
+        t = good_ticket()
+        t["description"] = t["description"].replace(
+            "- Refresh-token rotation", "- [ ] Refresh-token rotation"
+        )
+        note()
+        errs, warns = rules(check(t))
+        if errs or warns:
+            failures.append(f"checkbox-style out-of-scope dropped: errors={errs} warnings={warns}")
 
     # 10. An unrecognized delivery.json version refuses; it does not guess.
     with tempfile.TemporaryDirectory() as tmp2:
