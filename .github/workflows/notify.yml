@@ -2,7 +2,7 @@ name: Notify (proactive daily messages)
 
 # BACKUP hourly cron (ADR-0031) → POST the dispatch-messages Edge Function with the shared
 # DISPATCH_SECRET. The PRIMARY trigger is now pg_cron + pg_net inside Postgres (migration
-# 20260709130000_dispatch_messages_pg_cron.sql) — GitHub Actions drops most scheduled ticks under
+# 20260709140000_dispatch_messages_pg_cron.sql) — GitHub Actions drops most scheduled ticks under
 # load, which is exactly what lost morning pushes, so this workflow is kept only as a redundant
 # backup. Both POST the same function and claim_message dedupes per (user, day, kind), so the pair
 # can never double-send. The FUNCTION decides who is due (each user's LOCAL morning/evening send-
