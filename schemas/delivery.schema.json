@@ -64,13 +64,12 @@
             "ready",
             "working",
             "review",
-            "done",
-            "needsApproval"
+            "done"
           ],
           "additionalProperties": false,
           "x-tier-additionalProperties": "warning",
           "x-rule": "linear.stateIds",
-          "description": "The six workflow-state IDs. A closed, mandatory set.",
+          "description": "The workflow-state IDs. raw/ready/working/review/done are mandatory; needsApproval is the Stage E conclusion lane, optional here until this repo syncs the kit's current contract.",
           "x-fix": "States are referenced by ID, never by display name (§1) — a rename in the UI must not silently desync a guard. Run /setup-board to resolve the six UUIDs; a missing value stalls the whole queue.",
           "properties": {
             "raw": {
