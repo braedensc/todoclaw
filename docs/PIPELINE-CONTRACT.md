@@ -102,6 +102,7 @@ booleans and enums carry real defaults instead. `~` in a path value is expanded 
 | `stateIds.working` | string (UUID) | dispatcher | A session holds it. Counts against `budgets.wipLimit`. |
 | `stateIds.review` | string (UUID) | dispatcher, reviewer | PR open, awaiting review/CI. |
 | `stateIds.done` | string (UUID) | dispatcher | Merged/closed. |
+| `stateIds.needsApproval` | string (UUID) | Stage E bounce driver | **Provisioned as type `unstarted` — never `started`, never `completed`.** AI review has concluded and a person should accept the work: findings were clean or below `budgets.reviewSeverityThreshold`, or the bounce budget is spent (then `agent:needs-human` is on the ticket too, and that label is what tells the two apart). Reached ONLY by the bounce driver's own move — never a session. It authorises nothing; approval is `ready`. |
 | `labels.ids` | object → string (UUID) | dispatcher, guards | Map of **canonical key → Linear label ID**. The key is the stable name used in code; the Linear display name may drift from it. |
 | `labels.required` | string[] | validator | Subset of `labels.ids` keys that must resolve before the pipeline may dispatch. |
 
