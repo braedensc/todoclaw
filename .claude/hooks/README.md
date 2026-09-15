@@ -181,13 +181,31 @@ Runs when Claude tries to end a turn. Blocks (with a reason Claude must address)
 |---|---|
 | The branch has **no PR** yet | CLAUDE.md expects a PR once a task is done (`gh pr create`) |
 | The open PR has **failing CI** (`FAILURE`/`CANCELLED`/`TIMED_OUT`/…) that Claude could actually fix | CI must be watched to green before a task is "done". Checks that are red *pending a human* are exempt — see below |
-| The open PR is **`DIRTY`** (merge conflicts) | GitHub can't build the merge ref, so the required CI (Lint/Typecheck/Test/E2E) **never runs** — only side checks (CodeQL/Vercel) report and can look green. A conflicted PR must be rebased, not mistaken for passing (2026-07-03 near-miss). Fires only on explicit `DIRTY`, never the transient `UNKNOWN` right after a push |
+| The open PR is **`DIRTY`** (merge conflicts) | GitHub can't build the merge ref, so the required CI (Secret scan + forbidden paths, Lint, Typecheck, Test) **never runs** — only side checks (CodeQL/Vercel) report and can look green. A conflicted PR must be rebased, not mistaken for passing (2026-07-03 near-miss). Fires only on explicit `DIRTY`, never the transient `UNKNOWN` right after a push |
 
 **The mainline is `origin/main`, not local `main`.** The base is resolved through `origin/main` → `origin/master` → `main` → `master`. In normal PR flow you branch off `origin/main` and never update local `main`, so local `main` is usually stale and comparing against it makes a branch with nothing new look "ahead of main" — a false nag on every dispatched session, whose clone freezes local `main` at clone time (TOD-118).
 
 **Red *pending a human* is not a defect.** `HUMAN_PENDING_CHECKS` exempts checks no code change can clear — today only CI's **Hooks change guard**, which stays red until a person applies the `hooks-change` label. Without the exemption that guard and this nag deadlock each other: the session cannot end its turn, and its only self-clear would be applying its own acknowledgement label, which the PreToolUse protected-label guard forbids outright. Keep the set tiny — a check that can fail for a second reason does not belong in it. A genuine failure *alongside* a pending one still blocks; the pending check is only named in the message.
 
-Fires once per `(branch, HEAD commit, reason)` — deduped in `.claude/.stop-pr-nag/` (gitignored) — so explaining instead of acting can't trap the session in a loop. Fails open on any `git`/`gh`/network error (never blocks on what it can't verify).
+Fires once per `(branch, HEAD commit, reason)` — deduped in `.claude/.stop-pr-nag/` (gitignored) — so explaining instead of acting can't trap the session in a loop. Fails open on any `git`/`gh`/network error (never blocks on what it can't verify) — which includes `gh` failing TLS inside a dispatcher's sandbox (TOD-116), so there the nag is absent, not satisfied.
+
+**It points at `/fix-ci` instead of letting the session improvise.** A hook cannot make a model run a skill — it can only block and inject text — so every not-green message names `.claude/skills/fix-ci/` (`FIX_CI_HINT`), and says up front that a fix under `.github/workflows/` is not landable by a session at all (`UNFIXABLE_HINT`). The battery asserts the message *content*, not just block/allow: a block that went back to "read the log, fix it" would otherwise stay green.
+
+**Conflict before code.** `DIRTY` is classified *before* the rollup and reported *instead of* it. While conflicted the required CI never ran, so "read the failing job's log" is advice about a log that does not exist, and a session spends its attempts editing code that was never the problem.
+
+**The fix loop is bounded — one budget per branch, shared by both not-green reasons.** The per-commit dedup above stops a loop on an *unchanged* commit; a session that keeps pushing fixes gets a new sha each time and used to be nagged forever. So `ci-failing` and `pr-dirty` draw on `MAX_FIX_ATTEMPTS` (3 — equal to `/fix-ci`'s own bound; deliberately *not* `delivery.json`'s `fixIterations`, which bounds cycles inside one fix session and is unenforced prompt material):
+
+| Turn | What the hook does |
+|---|---|
+| Attempts 1–3 | Blocks, numbered `Fix attempt n of 3` |
+| 4th | Blocks **once** with `STOP FIXING` — demands a written report of every still-red check, each fix tried, and whether a session can fix it at all |
+| After that | Stops blocking, but emits a visible `systemMessage` per commit — "could not do it" must never render as "nothing to do" |
+
+Two files beside the dedup markers carry it: `<branch>__attempts` (one sha per line, so a reason switch on one commit — DIRTY, then red once the rebase lands — cannot charge it twice) and `<branch>__exhausted`. `no-pr` never draws on it. The ledger clears **only** on positive evidence the loop worked — checks exist, every one has *finished*, none failed — so a later failure gets its own three attempts. CI merely still running does **not** clear it (that was the commonest turn in the whole loop, and clearing there made the bound unreachable), and a human-pending-only red neither spends nor clears.
+
+**One check, one conclusion.** `statusCheckRollup` returns one entry per *run*, so a check re-run green still carries its superseded `FAILURE`. `_latest_per_name` keeps the newest run per name (`startedAt`, else array order); without it a genuinely green PR reads red, spends an attempt, and can exhaust a branch that was never broken. (Kit PRs #92/#95.)
+
+**Status contexts are normalized first — a todoclaw-only fix the kit does not need.** GitHub's legacy commit-status API reports as a `StatusContext`, with `context` and `state` but no `name` and no `conclusion`. Todoclaw has one on every PR (Vercel); the kit has none, so its battery could not see this. Read raw, the "settled" test above never passed on a green todoclaw PR, so the budget **never cleared** and an exhausted branch stayed exhausted after going green; and a red status was silently ignored. `_normalize` maps `SUCCESS`→`SUCCESS`, `FAILURE`/`ERROR`→`FAILURE`, and `PENDING`/`EXPECTED`→still running, before anything else reads the rollup. Consequence worth knowing: **a failing Vercel status now nags**, as any other fixable red check does. Observed on PR #430, 2026-09-13; pinned by `check_status_context`.
 
 ---
 

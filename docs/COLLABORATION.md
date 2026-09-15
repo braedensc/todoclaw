@@ -201,8 +201,9 @@ autolinks on, which is what moves the ticket's status without anyone touching th
 board.
 
 **CI-green is deliberately not a board state.** The Stop hook blocks ending a turn
-on a red PR and branch protection blocks merging one, so "merged" already implies
-"green" — modelling it in Linear too would only add a second thing to keep in sync.
+on a red PR (for a bounded number of attempts — see "What's automatic" below) and
+branch protection blocks merging one, so "merged" already implies "green" — modelling
+it in Linear too would only add a second thing to keep in sync.
 
 Two things worth knowing when a session reads a ticket:
 
@@ -352,7 +353,8 @@ mirroring the security model in `CLAUDE.md`:
 2. **Claude Code Stop hook** (`.claude/hooks/stop-pr-check.py`) — runs whenever
    Claude tries to end a turn, and blocks (with a reminder) when:
    - the current branch has pushed commits ahead of `origin/main` with **no PR**
-     at all yet, or
+     at all yet,
+   - the branch's open PR is **DIRTY** (merge conflicts with `main`), or
    - the branch's open PR has **failing CI** (`statusCheckRollup` shows a
      failing conclusion — this is what CLAUDE.md's "watch CI to green" rule
      means in practice).
@@ -365,9 +367,29 @@ mirroring the security model in `CLAUDE.md`:
    clears it and the only self-clear would be the session applying its own
    acknowledgement label, which another guard forbids. Both TOD-118.
 
+   **It points at `/fix-ci` rather than letting the session improvise.** A hook
+   cannot make a model run a skill; it can only block and inject text, so naming
+   the loop *is* the mechanism. `.claude/skills/fix-ci/SKILL.md` triages a conflict
+   before touching code, reads each failing job's log, pushes the smallest fix and
+   re-watches.
+
+   **The two not-green reasons share ONE bounded budget per branch** (three
+   attempts, `MAX_FIX_ATTEMPTS`, tracked in the gitignored `.claude/.stop-pr-nag/`).
+   The per-commit dedup below stops a loop on an *unchanged* commit, but a session
+   that keeps pushing fixes gets a new sha each time and was nagged forever — and
+   some failures no session can clear (a change under `.github/workflows/`, which a
+   dispatched session's credential deliberately cannot push; a rebase the sandbox
+   refuses). After the bound the hook escalates **once**, loudly, demanding a written
+   report, and then stops blocking while still printing a visible notice — because
+   "could not do it" and "nothing to do" must never render alike. A PR observed with
+   nothing red and no conflict clears the ledger, so a *later* failure gets its own
+   three attempts; CI merely still running does not. A human-pending-only red neither
+   spends the budget nor clears it. (Ported from the kit, PRs #92/#95.)
+
    Dedups per `(branch, reason, commit sha)` so it can't loop even if the
    harness doesn't honor `stop_hook_active`, and fails open the same way as
-   the PreToolUse hook above.
+   the PreToolUse hook above — including when `gh` cannot verify TLS, which is
+   exactly the state inside a dispatcher's sandbox (TOD-116).
 3. **Git pre-commit hook** (`.husky/pre-commit`) — blocks human/CLI commits on
    `main`. Bypassable with `--no-verify`, but…
 4. **CI + branch protection** — the unbypassable gate. All changes land via PR

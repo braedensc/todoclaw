@@ -12,6 +12,17 @@ TodoClaw is a standalone, multi-tenant-ready web app — a personal planner wher
 
 > **Maintainer note:** TodoClaw originated from an earlier planner (EisenClaw). That origin story, the gitignored `planning/` reference files, and the `npm run legacy-ui` runner are maintainer-local and documented in `CLAUDE.local.md` (gitignored) — they aren't part of a fresh clone.
 
+**If a dispatcher started this session — a ticket delegated you and nobody is watching —
+read `docs/SESSION-BRIEF.md` first.** It is the committed, generic brief: who you are
+(your ticket is your authority; the branch name is cosmetic), where you run (a sandbox
+that allows writes only in your worktree, a network allowlist, a home you cannot read),
+what you can and cannot do, what the review stage will do to your PR (a fresh reviewer; a
+possible re-prompt in your ticket's thread with fenced findings; a bounce budget), and the
+runbook for the unexpected. Its one rule to carry even into an interactive session: never
+try to ask a user who is not there — comment on the ticket and ask for the blocked label
+instead. When your PR is red or conflicted, the loop is **`/fix-ci`**
+(`.claude/skills/fix-ci/`), not an improvised one of your own.
+
 ---
 
 ## Stack
