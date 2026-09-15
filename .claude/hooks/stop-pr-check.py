@@ -12,6 +12,15 @@ doesn't honor stop_hook_active — re-blocking on an unchanged commit/reason
 would trap Claude if it explains rather than pushes a new commit. Keying by
 reason (not just commit) means opening the PR after a "no PR" nag doesn't
 suppress a later "CI failing" nag on that same commit.
+
+The two not-green reasons additionally share ONE bounded budget per branch
+(see MAX_FIX_ATTEMPTS): the per-commit dedup above stops a loop on an
+unchanged commit, but a session that keeps pushing fixes gets a new sha each
+time and was nagged forever. Some failures no session can clear — a fix under
+.github/workflows/ that its push credential is deliberately not allowed to
+land, a rebase the sandbox will not let it perform — and telling it to try
+again is then pure waste. After the budget the hook escalates once, loudly,
+and stops blocking.
 """
 import json
 import os
@@ -42,7 +51,46 @@ FAILING_CONCLUSIONS = {"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "
 #   scripts/gh_fallback.py.
 # Keep this set TINY and only for checks whose sole failure mode is an absent
 # human action; anything that can fail for a second reason belongs above.
+# THE ONE LIST *for this hook* — never add a second one beside it. Be precise about
+# the scope of that claim: the Stage E bounce driver judges the same redness without
+# consulting this set, and it runs OUTSIDE this repo (todoclaw is the repo it bounces),
+# so a PR red only on a label-pending check can still trigger a bounce. That is a real
+# gap, not a thing this comment can close by asserting it away.
 HUMAN_PENDING_CHECKS = {"Hooks change guard"}
+
+# How many commits this hook will demand a fix for on one branch before it
+# escalates instead. Equal to `/fix-ci`'s own ~3-iteration bound, and to the
+# default documented for `budgets.fixIterations` in docs/PIPELINE-CONTRACT.md §1.
+# NOT equal to this repo's live `delivery.json`, which sets fixIterations to 5 —
+# and that is not drift to "fix" by raising this number. The two bound different
+# things: `fixIterations` is prompt material bounding read→fix→push cycles INSIDE
+# one fix session (§1 says so, and says nothing enforces it), while this bounds how
+# many TURNS a session may spend on the same red PR however it improvises. This one
+# has teeth, so it is deliberately the tighter of the two. Change it only with
+# `/fix-ci`'s bound, together.
+MAX_FIX_ATTEMPTS = 3
+
+# Named once, spent in every not-green message: a session improvising its own
+# fix loop is the behaviour this hook exists to replace, and this repo already
+# ships the loop at `.claude/skills/fix-ci/`.
+FIX_CI_HINT = (
+    "Run `/fix-ci` — this repo ships that loop (resolve the PR, triage conflicts "
+    "first, read each failing job's log, smallest fix, push, re-watch). Use it "
+    "rather than improvising a different one."
+)
+
+# The failure class no session can clear, named where the session will meet it
+# rather than after it has spent the budget discovering it. A dispatched
+# session's push credential deliberately lacks GitHub's Workflows permission —
+# a session that can rewrite CI can disable the guards supervising it — so a
+# change under .github/workflows/ cannot be landed by `git push` OR by the REST
+# contents API. Observed live 2026-09-08, three sessions deep.
+UNFIXABLE_HINT = (
+    "If the fix lives under `.github/workflows/`, STOP now and escalate instead: "
+    "a dispatched session's push credential deliberately lacks GitHub's Workflows "
+    "permission, so neither `git push` nor the REST contents API can land it. "
+    "Retrying only spends the budget."
+)
 
 
 def _run(args, timeout=5):
@@ -74,11 +122,89 @@ def _record_nag(branch: str, reason: str, head_sha: str) -> None:
         pass
 
 
+# ── the shared fix budget ────────────────────────────────────────────────────
+# Two files per branch, beside the per-reason dedup markers above:
+#   <branch>__attempts   one HEAD sha per line — the commits already nagged for
+#   <branch>__exhausted  present once the escalation has been delivered
+# Keyed by sha, not by a counter, so a reason switch on one commit (DIRTY, then
+# red once the rebase lands) cannot charge that commit twice. Only the two
+# not-green reasons draw on it: `no-pr` asks for a different action entirely
+# and is cleared by taking it, so it must not consume fix attempts.
+
+
+def _attempts_file(branch: str) -> str:
+    return os.path.join(STATE_DIR, f"{branch.replace('/', '_')}__attempts")
+
+
+def _exhausted_file(branch: str) -> str:
+    return os.path.join(STATE_DIR, f"{branch.replace('/', '_')}__exhausted")
+
+
+def _read_attempts(branch: str) -> list:
+    try:
+        with open(_attempts_file(branch)) as f:
+            return [ln.strip() for ln in f if ln.strip()]
+    except FileNotFoundError:
+        return []
+    except OSError:
+        return []
+
+
+def _record_attempt(branch: str, head_sha: str) -> None:
+    if head_sha in _read_attempts(branch):
+        return
+    os.makedirs(STATE_DIR, exist_ok=True)
+    try:
+        with open(_attempts_file(branch), "a") as f:
+            f.write(head_sha + "\n")
+    except OSError:
+        pass
+
+
+def _is_exhausted(branch: str) -> bool:
+    return os.path.exists(_exhausted_file(branch))
+
+
+def _mark_exhausted(branch: str) -> None:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    try:
+        with open(_exhausted_file(branch), "w") as f:
+            f.write("1")
+    except OSError:
+        pass
+
+
+def _clear_budget(branch: str) -> None:
+    """Called only when the PR is observed with nothing red and no conflict —
+    the fix loop succeeded. A LATER red on this branch is a new failure and
+    deserves its own three attempts, not the remains of a spent ledger. A
+    human-pending-only red is NOT this: it is no evidence the loop worked, so
+    it neither spends the budget nor clears it."""
+    for path in (_attempts_file(branch), _exhausted_file(branch)):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def _block(branch: str, reason: str, head_sha: str, msg: str) -> None:
     if _already_nagged(branch, reason, head_sha):
         sys.exit(0)
     _record_nag(branch, reason, head_sha)
     print(json.dumps({"decision": "block", "reason": msg, "systemMessage": msg}))
+    sys.exit(0)
+
+
+def _notice(msg: str) -> None:
+    """Allow the turn to end, but say so out loud. 'Nothing to do' and 'could not
+    do it' have identical symptoms — no output, no error, nothing red — and opposite
+    meanings, so they must never share a rendering; a still-red PR whose budget is
+    spent is emphatically the second. (The kit states this as PIPELINE-CONTRACT.md
+    §13 'Absence is not failure'; this repo's vendored copy of that contract stops at
+    §12, so the doctrine is written out here rather than cited to a section that does
+    not exist locally.) Advisory — the guaranteed half of the escalation is the block
+    that preceded it."""
+    print(json.dumps({"systemMessage": msg}))
     sys.exit(0)
 
 
@@ -164,49 +290,167 @@ try:
     info = json.loads(out or "{}")
 except Exception:
     sys.exit(0)
-checks = info.get("statusCheckRollup", [])
+raw_checks = info.get("statusCheckRollup", [])
 
+
+# GitHub's legacy commit-status API reports as a `StatusContext`, which has no `name`
+# and no `conclusion` — it carries `context` and `state` instead. Todoclaw has one on
+# every PR (Vercel), and read raw it broke two things observed on PR #430 on
+# 2026-09-13: the `settled` test below requires every entry to have a conclusion, so a
+# genuinely green PR NEVER cleared the budget (red, green, red came back as attempt 2,
+# and an exhausted branch stayed exhausted after going green); and a red status was
+# silently not failing. Map each one onto the CheckRun shape once, up front, so every
+# reader below sees a single vocabulary.
+_STATUS_STATE_TO_CONCLUSION = {
+    "SUCCESS": "SUCCESS",
+    "FAILURE": "FAILURE",
+    "ERROR": "FAILURE",
+    "PENDING": None,   # still running
+    "EXPECTED": None,  # required, not yet reported
+}
+
+
+def _normalize(entries):
+    out = []
+    for c in entries or []:
+        if not isinstance(c, dict):
+            continue
+        if c.get("__typename") == "StatusContext" or ("context" in c and "name" not in c):
+            out.append({
+                "name": c.get("context"),
+                "conclusion": _STATUS_STATE_TO_CONCLUSION.get(c.get("state")),
+                "startedAt": c.get("startedAt") or c.get("createdAt"),
+            })
+        else:
+            out.append(c)
+    return out
+
+
+def _latest_per_name(entries):
+    """statusCheckRollup returns one entry per RUN, not per check name, so a check
+    that was red and has since been re-run green appears TWICE — old conclusion and
+    new. Taking the list at face value reads a genuinely green PR as red: observed
+    2026-09-09 on this kit's own PR, where a re-run `Hooks change guard` reported
+    both FAILURE and SUCCESS while `gh pr checks` said pass and mergeStateStatus was
+    CLEAN. Before the budget existed that cost a spurious nag; now it would also
+    spend an attempt and could exhaust a branch's budget on a PR that was never red.
+    Keep the newest run per name — `startedAt` when present, array order otherwise,
+    which is the order the API already returns them in."""
+    latest = {}
+    for i, c in enumerate(entries or []):
+        if not isinstance(c, dict):
+            continue
+        name = c.get("name")
+        key = (c.get("startedAt") or "", i)
+        if name not in latest or key > latest[name][0]:
+            latest[name] = (key, c)
+    return [v[1] for v in latest.values()]
+
+
+checks = _latest_per_name(_normalize(raw_checks))
+
+# ── classify: is this PR not-green, and for which reason? ────────────────────
 # DIRTY = merge conflicts with the base branch. GitHub can't build the merge ref, so the
-# PR's `pull_request` CI (Lint/Typecheck/Test/E2E) never runs — only side workflows like
+# PR's `pull_request` CI (Secret scan + forbidden paths, Lint, Typecheck, Test) never
+# runs — only side workflows like
 # CodeQL/Vercel report, which can be SUCCESS and make a conflicted PR look green (a real
 # near-miss, 2026-07-03: `gh pr checks` showed passing while the required CI hadn't run at
-# all). Block so the PR gets rebased instead of mistaken for done. Fires only on explicit
-# DIRTY — the transient UNKNOWN right after a push is ignored, so it can't false-block while
-# GitHub is still computing mergeability.
-if info.get("mergeStateStatus") == "DIRTY":
-    msg = (
-        f"PR #{pr['number']} for `{branch}` is DIRTY — it has merge conflicts with `main`, "
-        "so the required CI (Lint/Typecheck/Test/E2E) never ran; only side checks such as "
-        "CodeQL/Vercel reported, which can look green. Don't mistake that for a passing PR — "
-        "rebase onto latest main, resolve, force-push, then watch CI to green "
-        f"(`gh pr checks {pr['number']} --watch`):\n"
-        "  git fetch origin main && git rebase origin/main\n"
-        "  # resolve conflicts, then: git push --force-with-lease"
-    )
-    _block(branch, "pr-dirty", head_sha, msg)
-    sys.exit(0)
-
+# all). Checked BEFORE the rollup and reported instead of it: fixing code cannot fix a
+# conflict, so a PR that is both conflicted and red must be triaged as a conflict first or
+# the session spends its attempts editing code that was never the problem. Fires only on
+# explicit DIRTY — the transient UNKNOWN right after a push is ignored, so it can't
+# false-block while GitHub is still computing mergeability.
+dirty = info.get("mergeStateStatus") == "DIRTY"
 failing = [c for c in checks if c.get("conclusion") in FAILING_CONCLUSIONS]
-if not failing:
-    sys.exit(0)  # clean, or still running — nothing to nag about yet
-
 # Red-pending-a-human is not a defect: let the turn end so Claude can hand the
 # action over, rather than trapping it in a loop it must not self-clear.
 fixable = [c for c in failing if c.get("name") not in HUMAN_PENDING_CHECKS]
-if not fixable:
-    sys.exit(0)
-
-names = ", ".join(c.get("name", "?") for c in fixable[:5])
 pending = [c.get("name", "?") for c in failing if c.get("name") in HUMAN_PENDING_CHECKS]
 also = (
     f" (Also red, but waiting on you, not on a fix: {', '.join(pending)}.)"
     if pending else ""
 )
-msg = (
-    f"PR #{pr['number']} for `{branch}` has failing CI ({names}). CLAUDE.md's "
-    "branch workflow expects CI watched to green (`gh pr checks "
-    f"{pr['number']} --watch`) before considering a task done — read the "
-    f"failing job's log, fix it, push, and re-watch.{also}"
+
+if dirty:
+    reason = "pr-dirty"
+    what = "still has merge conflicts with `main`"
+    msg = (
+        f"PR #{pr['number']} for `{branch}` is DIRTY — it has merge conflicts with `main`, "
+        "so the required CI (Secret scan + forbidden paths / Lint / Typecheck / Test) "
+        "never ran; only side checks such as "
+        "CodeQL/Vercel reported, which can look green. Don't mistake that for a passing PR — "
+        "rebase onto latest main, resolve, force-push, then watch CI to green "
+        f"(`gh pr checks {pr['number']} --watch`):\n"
+        "  git fetch origin main && git rebase origin/main\n"
+        "  # resolve conflicts, then: git push --force-with-lease\n"
+        f"{FIX_CI_HINT} It triages the conflict before touching any code. If the sandbox "
+        "refuses the rebase or the force-push, that is an environment limit, not a bug to "
+        "work around: say so and escalate."
+    )
+elif fixable:
+    reason = "ci-failing"
+    names = ", ".join(c.get("name", "?") for c in fixable[:5])
+    what = f"is still red ({names})"
+    msg = (
+        f"PR #{pr['number']} for `{branch}` has failing CI ({names}). CLAUDE.md's "
+        "branch workflow expects CI watched to green (`gh pr checks "
+        f"{pr['number']} --watch`) before considering a task done — read the "
+        f"failing job's log, fix it, push, and re-watch.{also}\n"
+        f"{FIX_CI_HINT}\n{UNFIXABLE_HINT}"
+    )
+else:
+    # Green, still running, or red only on a human-pending check. Only the first is
+    # evidence the fix loop worked, and "not failing" is NOT that evidence: a rollup
+    # whose checks are still queued has no failing conclusions either, and so did an
+    # empty one. Clearing on that would reset the ledger on the single commonest turn
+    # in the whole loop — push a fix, CI queues, the turn ends — and the bound would
+    # then almost never be reached. Require the positive form instead: checks exist,
+    # every one has finished, and none of them failed.
+    settled = bool(checks) and all(
+        c.get("conclusion") not in (None, "") for c in checks
+    )
+    if settled and not failing:
+        _clear_budget(branch)
+    sys.exit(0)
+
+# ── spend the shared budget ──────────────────────────────────────────────────
+if _already_nagged(branch, reason, head_sha):
+    sys.exit(0)  # this exact commit was already nagged under this reason
+
+if _is_exhausted(branch):
+    # The bound is spent AND the escalation has already been delivered. Blocking
+    # again would trap the session in the very loop it was told to stop — but
+    # going silent would render "could not do it" as "nothing to do" (§13). One
+    # visible, non-blocking notice per commit instead.
+    _record_nag(branch, reason, head_sha)
+    _notice(
+        f"PR #{pr['number']} for `{branch}` {what}, and this branch's "
+        f"{MAX_FIX_ATTEMPTS}-attempt fix budget is spent. Not blocking again — but "
+        "this PR is NOT green and needs a person. Say so in your final message."
+    )
+
+if len(_read_attempts(branch)) >= MAX_FIX_ATTEMPTS:
+    _mark_exhausted(branch)
+    _block(
+        branch,
+        reason,
+        head_sha,
+        f"STOP FIXING. PR #{pr['number']} for `{branch}` {what} after "
+        f"{MAX_FIX_ATTEMPTS} attempts — that is this branch's whole budget, and a "
+        "human decision now beats a fourth guess. Do NOT push another fix. Instead, "
+        "before you end the turn, report: every check still red and what its log "
+        "actually says, each fix you already tried and why it didn't work, and your "
+        "best hypothesis — including whether this is fixable by a session at all "
+        "(a change under `.github/workflows/` is not). Ending quietly is the one "
+        "wrong answer: an unfinished job and a finished one must never look alike.",
+    )
+
+_record_attempt(branch, head_sha)
+_block(
+    branch,
+    reason,
+    head_sha,
+    f"{msg}\n(Fix attempt {len(_read_attempts(branch))} of {MAX_FIX_ATTEMPTS} on this "
+    "branch — after that this hook stops asking and expects a written escalation.)",
 )
-_block(branch, "ci-failing", head_sha, msg)
 sys.exit(0)

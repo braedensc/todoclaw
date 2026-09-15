@@ -189,6 +189,299 @@ def run_stop_hook(payload, hook_path, raw_stdin=None, env=None):
     return json.loads(out).get("decision") == "block"
 
 
+def run_stop_hook_json(payload, hook_path, env=None):
+    """Same call, but returns the parsed stdout object (or {} when it stayed
+    silent). The block/allow helper above cannot see WHICH message came out, and
+    for the fix loop the message IS the product: it is the only channel a Stop
+    hook has to point the session at `/fix-ci` instead of letting it improvise.
+    It also distinguishes the two non-blocking endings — silence (nothing to do)
+    from a `systemMessage` (could not do it), which must never render alike."""
+    r = subprocess.run(
+        [sys.executable, hook_path],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"stop hook crashed (exit {r.returncode}): {r.stderr}")
+    out = r.stdout.strip()
+    return json.loads(out) if out else {}
+
+
+def check_stop_reason(name, hook_path, env, needles, absent=()):
+    """Assert the Stop hook BLOCKED and what its message said. For the fix loop the
+    message is the whole product — a hook cannot make a model run a skill, it can only
+    block and inject text, so pointing the session at `/fix-ci` IS the mechanism. A
+    block/allow assertion alone would stay green if the message went back to telling
+    the session to improvise. Returns 0 on pass, 1 on fail."""
+    try:
+        out = run_stop_hook_json({}, hook_path, env=env)
+    except Exception as e:
+        print(f"[FAIL] {name} — {e}")
+        return 1
+    msg = out.get("reason", "")
+    ok = out.get("decision") == "block"
+    missing = [n for n in needles if n not in msg]
+    present = [n for n in absent if n in msg]
+    ok = ok and not missing and not present
+    detail = ""
+    if not out.get("decision") == "block":
+        detail = " (did not block)"
+    elif missing:
+        detail = f" (message never said: {missing})"
+    elif present:
+        detail = f" (message wrongly said: {present})"
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}{detail}")
+    return 0 if ok else 1
+
+
+# ── the bounded fix loop, which only a SEQUENCE of turns can exercise ────────
+# One evaluation can never show a bound: the whole behaviour is nag, nag, nag,
+# escalate, then go quiet-but-visible, across commits the session pushes between
+# turns. `advance()` supplies those commits and the flip sandbox supplies the
+# changing CI answer.
+RED_VIEW = '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}'
+GREEN_VIEW = '{"statusCheckRollup":[{"name":"Test","conclusion":"SUCCESS"}]}'
+PENDING_VIEW = ('{"statusCheckRollup":[{"name":"Test","conclusion":"SUCCESS"},'
+                '{"name":"Hooks change guard","conclusion":"FAILURE"}]}')
+# CI queued or mid-flight: `status` set, `conclusion` still null. This is the most
+# common state at the exact moment a fix-and-push turn ends.
+INFLIGHT_VIEW = ('{"statusCheckRollup":[{"name":"Test","status":"IN_PROGRESS",'
+                 '"conclusion":null}]}')
+DIRTY_VIEW = '{"mergeStateStatus":"DIRTY","statusCheckRollup":[]}'
+# One check, re-run: the rollup carries BOTH runs, oldest first — the real shape,
+# copied from this kit's own PR #92 on 2026-09-09, where a green PR still advertised
+# its superseded FAILURE.
+RERUN_GREEN_VIEW = (
+    '{"statusCheckRollup":['
+    '{"name":"Test","conclusion":"FAILURE","startedAt":"2026-09-09T03:25:02Z"},'
+    '{"name":"Test","conclusion":"SUCCESS","startedAt":"2026-09-09T03:30:35Z"}]}')
+
+
+def _say(name, ok, detail=""):
+    print(f"[{'PASS' if ok else 'FAIL'}] {name}{detail}")
+    return 0 if ok else 1
+
+
+def check_fix_budget(root, hook_path, env, view_file):
+    """The bound, end to end: a human-pending-only red spends nothing, three real reds
+    each earn one numbered nag, the fourth escalates instead, and after that the hook
+    stops blocking WITHOUT going silent. Returns (assertions, failures)."""
+    failures, ran = 0, 6
+
+    def turn():
+        advance(root)
+        return run_stop_hook_json({}, hook_path, env=env)
+
+    # A check that is red pending a HUMAN is not a fix attempt. If it charged the
+    # budget, a PR carrying the `hooks-change` label requirement would arrive at the
+    # real failure with part of its budget already gone.
+    with open(view_file, "w") as f:
+        f.write(PENDING_VIEW)
+    out = turn()
+    failures += _say(
+        "stop: a human-pending-only red does not spend a fix attempt",
+        out == {}, "" if out == {} else f" (said: {out})")
+
+    with open(view_file, "w") as f:
+        f.write(RED_VIEW)
+    for i in (1, 2, 3):
+        out = turn()
+        want = f"attempt {i} of 3"
+        ok = out.get("decision") == "block" and want in out.get("reason", "")
+        failures += _say(f"stop: red CI nag {i} of 3 blocks and says so",
+                         ok, "" if ok else f" (wanted '{want}', got: {out})")
+
+    # The fourth is the escalation: no fourth guess, and an explicit demand
+    # for a written report, since an unfinished job and a finished one must not look
+    # alike to whoever reads the session's last message.
+    out = turn()
+    reason = out.get("reason", "")
+    ok = (out.get("decision") == "block"
+          and "STOP FIXING" in reason
+          and "Test" in reason
+          and "attempt 4 of 3" not in reason)
+    failures += _say("stop: exhausting the bound escalates instead of asking again",
+                     ok, "" if ok else f" (got: {out})")
+
+    # …and then it lets go. Blocking on would trap the session in the one loop it was
+    # just told to stop; silence would render "could not do it" as "nothing to do".
+    out = turn()
+    ok = out.get("decision") != "block" and "spent" in out.get("systemMessage", "")
+    failures += _say("stop: past the bound it stops blocking but stays visible",
+                     ok, "" if ok else f" (got: {out})")
+    return ran, failures
+
+
+def check_budget_cleared(root, hook_path, env, view_file):
+    """A green PR clears the ledger, so the bound means 'three attempts at THIS
+    failure' rather than 'three attempts ever on this branch'. Without it, a
+    long-lived branch that went red early would never be nagged about a genuinely
+    new failure later. Returns (assertions, failures)."""
+    failures, ran = 0, 3
+
+    def turn():
+        advance(root)
+        return run_stop_hook_json({}, hook_path, env=env)
+
+    with open(view_file, "w") as f:
+        f.write(RED_VIEW)
+    out = turn()
+    ok = "attempt 1 of 3" in out.get("reason", "")
+    failures += _say("stop: (setup) first red spends attempt 1",
+                     ok, "" if ok else f" (got: {out})")
+
+    with open(view_file, "w") as f:
+        f.write(GREEN_VIEW)
+    out = turn()
+    failures += _say("stop: a green PR ends the turn silently",
+                     out == {}, "" if out == {} else f" (got: {out})")
+
+    with open(view_file, "w") as f:
+        f.write(RED_VIEW)
+    out = turn()
+    ok = "attempt 1 of 3" in out.get("reason", "")
+    failures += _say("stop: green clears the ledger, so a later red starts at 1 again",
+                     ok, "" if ok else f" (got: {out})")
+    return ran, failures
+
+
+def check_budget_not_cleared_prematurely(root, hook_path, env, view_file):
+    """The two ways a NOT-green PR used to read as clearable, each of which quietly
+    reset the bound and made it unreachable in practice. Returns (assertions, failures)."""
+    failures, ran = 0, 4
+
+    def turn():
+        advance(root)
+        return run_stop_hook_json({}, hook_path, env=env)
+
+    with open(view_file, "w") as f:
+        f.write(RED_VIEW)
+    out = turn()
+    failures += _say("stop: (setup) first red spends attempt 1",
+                     "attempt 1 of 3" in out.get("reason", ""),
+                     "" if "attempt 1 of 3" in out.get("reason", "") else f" (got: {out})")
+
+    # CI queued has no FAILING conclusions — and neither does a green PR. Reading the
+    # absence of failure as success reset the ledger on the commonest turn in the whole
+    # loop (push a fix, CI queues, turn ends), so the bound was never reached.
+    with open(view_file, "w") as f:
+        f.write(INFLIGHT_VIEW)
+    out = turn()
+    failures += _say("stop: in-flight CI ends the turn quietly WITHOUT clearing the budget",
+                     out == {}, "" if out == {} else f" (got: {out})")
+
+    with open(view_file, "w") as f:
+        f.write(RED_VIEW)
+    out = turn()
+    ok = "attempt 2 of 3" in out.get("reason", "")
+    failures += _say("stop: …so the next red is attempt 2, not a restarted 1",
+                     ok, "" if ok else f" (got: {out})")
+
+    # A re-run check appears twice in the rollup, old conclusion and new. Taking the
+    # list at face value reads a genuinely green PR as red — observed on PR #92.
+    with open(view_file, "w") as f:
+        f.write(RERUN_GREEN_VIEW)
+    out = turn()
+    failures += _say("stop: a re-run check's stale FAILURE does not make a green PR red",
+                     out == {}, "" if out == {} else f" (got: {out})")
+    return ran, failures
+
+
+def check_budget_is_shared(root, hook_path, env, view_file):
+    """The change's headline claim: `ci-failing` and `pr-dirty` draw on ONE budget.
+    Every earlier sequence assertion is red-CI only, so nothing yet proves a conflict
+    spends the same counter — or that clearing it forgets the exhausted marker too.
+    Returns (assertions, failures)."""
+    failures, ran = 0, 4
+
+    def turn():
+        advance(root)
+        return run_stop_hook_json({}, hook_path, env=env)
+
+    with open(view_file, "w") as f:
+        f.write(DIRTY_VIEW)
+    out = turn()
+    ok = "attempt 1 of 3" in out.get("reason", "") and "rebase" in out.get("reason", "")
+    failures += _say("stop: a DIRTY turn spends from the same budget as red CI",
+                     ok, "" if ok else f" (got: {out})")
+
+    with open(view_file, "w") as f:
+        f.write(RED_VIEW)
+    out = turn()
+    ok = "attempt 2 of 3" in out.get("reason", "")
+    failures += _say("stop: …so red CI after a conflict continues at 2, not at 1",
+                     ok, "" if ok else f" (got: {out})")
+
+    # Same commit, second look: the ledger is keyed by sha, so a reason switch on ONE
+    # commit must not charge it twice. No advance() here — that is the whole point.
+    with open(view_file, "w") as f:
+        f.write(DIRTY_VIEW)
+    out = run_stop_hook_json({}, hook_path, env=env)
+    ok = "attempt 3 of 3" not in out.get("reason", "")
+    failures += _say("stop: a reason switch on ONE commit does not charge it twice",
+                     ok, "" if ok else f" (got: {out})")
+
+    # Drive to exhaustion, then go green: clearing must forget the exhausted marker as
+    # well as the attempts, or the branch stays permanently past its bound.
+    for _ in range(4):
+        turn()
+    with open(view_file, "w") as f:
+        f.write(GREEN_VIEW)
+    turn()
+    with open(view_file, "w") as f:
+        f.write(RED_VIEW)
+    out = turn()
+    ok = out.get("decision") == "block" and "attempt 1 of 3" in out.get("reason", "")
+    failures += _say("stop: clearing after exhaustion restores blocking, not just the count",
+                     ok, "" if ok else f" (got: {out})")
+    return ran, failures
+
+
+def check_status_context(root, hook_path, env, view_file):
+    """Todoclaw-specific, and the kit's battery cannot catch it: the kit has no
+    `StatusContext` checks, todoclaw has one on every PR (Vercel). A StatusContext has
+    no `conclusion`, so read raw it made a green PR look unsettled forever — the budget
+    never cleared — and made a red status invisible. Shape copied from PR #430,
+    2026-09-13. Returns (assertions, failures)."""
+    failures, ran = 0, 4
+    red = '{"statusCheckRollup":[{"__typename":"CheckRun","name":"Test","conclusion":"FAILURE"}]}'
+    green = ('{"statusCheckRollup":[{"__typename":"CheckRun","name":"Test","conclusion":"SUCCESS"},'
+             '{"__typename":"StatusContext","context":"Vercel","state":"SUCCESS"}]}')
+    status_pending = ('{"statusCheckRollup":[{"__typename":"CheckRun","name":"Test","conclusion":"SUCCESS"},'
+                      '{"__typename":"StatusContext","context":"Vercel","state":"PENDING"}]}')
+    status_red = ('{"statusCheckRollup":[{"__typename":"CheckRun","name":"Test","conclusion":"SUCCESS"},'
+                  '{"__typename":"StatusContext","context":"Vercel","state":"FAILURE"}]}')
+
+    def turn(view):
+        with open(view_file, "w") as f:
+            f.write(view)
+        advance(root)
+        return run_stop_hook_json({}, hook_path, env=env)
+
+    turn(red)                                          # attempt 1
+    out = turn(status_pending)
+    failures += _say("stop: a PENDING status context is in flight — quiet, no clear",
+                     out == {}, "" if out == {} else f" (got: {out})")
+    out = turn(red)
+    ok = "attempt 2 of 3" in out.get("reason", "")
+    failures += _say("stop: …so the next red is attempt 2 (pending status did not clear)",
+                     ok, "" if ok else f" (got: {out})")
+    turn(green)
+    out = turn(red)
+    ok = "attempt 1 of 3" in out.get("reason", "")
+    failures += _say("stop: a green PR carrying a SUCCESS status context clears the budget",
+                     ok, "" if ok else f" (got: {out})")
+    turn(green)
+    out = turn(status_red)
+    ok = out.get("decision") == "block" and "Vercel" in out.get("reason", "")
+    failures += _say("stop: a FAILURE status context is red, not silently green",
+                     ok, "" if ok else f" (got: {out})")
+    return ran, failures
+
+
 def _git_env():
     return {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_SYSTEM": os.devnull}
@@ -286,6 +579,39 @@ def make_stop_sandbox(list_json, view_json):
     env = _fake_gh(root, body)
     return root, os.path.join(root, ".claude", "hooks", "stop-pr-check.py"), env
 
+
+def make_stop_flip_sandbox(list_json, view_json):
+    """Stop-hook sandbox whose mocked `gh` reads its answers from FILES, so a case
+    can change what GitHub says between calls — needed for anything about the fix
+    budget, which is a property of a SEQUENCE of turns (nag, nag, nag, escalate,
+    go quiet) rather than of one. Returns the two paths alongside the usual triple."""
+    root, _ = make_sandbox("main")
+    _git(root, "checkout", "-q", "-b", "feat/battery")
+    _git(root, "-c", "user.name=battery", "-c", "user.email=battery@test.invalid",
+         "commit", "--allow-empty", "-q", "-m", "ahead")
+    _wire_upstream(root, "feat/battery")
+    list_file = os.path.join(root, "gh-list.json")
+    view_file = os.path.join(root, "gh-view.json")
+    with open(list_file, "w") as f:
+        f.write(list_json)
+    with open(view_file, "w") as f:
+        f.write(view_json)
+    env = _fake_gh(root, (
+        'case "$2" in\n'
+        f'  list) cat "{list_file}" ;;\n'
+        f'  view) cat "{view_file}" ;;\n'
+        "esac"
+    ))
+    stop_copy = os.path.join(root, ".claude", "hooks", "stop-pr-check.py")
+    return root, stop_copy, env, view_file
+
+
+def advance(root):
+    """One more commit, so HEAD's sha changes — what a session pushing a fix does.
+    The per-(branch, reason, sha) dedup deliberately lets a NEW commit nag again,
+    which is exactly why the loop needed a bound across commits."""
+    _git(root, "-c", "user.name=battery", "-c", "user.email=battery@test.invalid",
+         "commit", "--allow-empty", "-q", "-m", "fix attempt")
 
 def make_stale_main_sandbox():
     """Stop-hook sandbox in the shape EVERY dispatched session has: local `main`
@@ -493,6 +819,37 @@ def main():
         '[{"number":7,"state":"OPEN"}]',
         '{"mergeStateStatus":"DIRTY","statusCheckRollup":'
         '[{"name":"CodeQL","conclusion":"SUCCESS"}]}')
+    # Message-content sandboxes: a block/allow assertion stays green even if the
+    # message stops naming `/fix-ci`, and for the fix loop the message IS the product.
+    stop_msgred_root, stop_msgred, stop_msgred_env = make_stop_sandbox(
+        '[{"number":7,"state":"OPEN"}]',
+        '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}')
+    stop_dirtyred_root, stop_dirtyred, stop_dirtyred_env = make_stop_sandbox(
+        '[{"number":7,"state":"OPEN"}]',
+        '{"mergeStateStatus":"DIRTY","statusCheckRollup":'
+        '[{"name":"Test","conclusion":"FAILURE"}]}')
+    # Flip sandboxes: the budget is a property of a SEQUENCE of turns, so each of
+    # these needs a `gh` whose answer can change between calls.
+    stop_budget_root, stop_budget, stop_budget_env, stop_budget_view = \
+        make_stop_flip_sandbox(
+            '[{"number":7,"state":"OPEN"}]',
+            '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}')
+    stop_clear_root, stop_clear, stop_clear_env, stop_clear_view = \
+        make_stop_flip_sandbox(
+            '[{"number":7,"state":"OPEN"}]',
+            '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}')
+    stop_prem_root, stop_prem, stop_prem_env, stop_prem_view = \
+        make_stop_flip_sandbox(
+            '[{"number":7,"state":"OPEN"}]',
+            '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}')
+    stop_shared_root, stop_shared, stop_shared_env, stop_shared_view = \
+        make_stop_flip_sandbox(
+            '[{"number":7,"state":"OPEN"}]',
+            '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}')
+    stop_status_root, stop_status, stop_status_env, stop_status_view = \
+        make_stop_flip_sandbox(
+            '[{"number":7,"state":"OPEN"}]',
+            '{"statusCheckRollup":[{"name":"Test","conclusion":"FAILURE"}]}')
     stale_root, stale_stop, stale_env = make_stale_main_sandbox()
 
     # ── pipeline sandboxes (see make_pipeline_sandbox) ────────────────────────
@@ -1432,6 +1789,40 @@ def main():
         print(f"[{verdict}] {name}  (want {want}, got {got})")
         failures += 0 if ok else 1
 
+    # ── the message is the product: naming the loop this repo ships is the ────
+    # difference between a session running `/fix-ci` and a session improvising.
+    stop_reason_cases = [
+        ("stop reason: red CI points at /fix-ci and at what a session cannot fix",
+         stop_msgred, stop_msgred_env,
+         ["/fix-ci", ".github/workflows/", "Workflows", "attempt 1 of 3"], []),
+        # Conflict before code, always: while DIRTY the required CI has not run at
+        # all, so "read the failing job's log" is advice about a log that does not exist.
+        ("stop reason: DIRTY is triaged as a conflict even when a check is red too",
+         stop_dirtyred, stop_dirtyred_env,
+         ["rebase", "--force-with-lease", "/fix-ci", "triages the conflict"],
+         ["has failing CI"]),
+    ]
+    for name, hook_path, env, needles, absent in stop_reason_cases:
+        failures += check_stop_reason(name, hook_path, env, needles, absent)
+
+    # These run a SEQUENCE of turns rather than one, so they report how many
+    # assertions they made — the total below has to count them all.
+    seq_ran = 0
+    for ran, failed in (
+        check_fix_budget(
+            stop_budget_root, stop_budget, stop_budget_env, stop_budget_view),
+        check_budget_cleared(
+            stop_clear_root, stop_clear, stop_clear_env, stop_clear_view),
+        check_budget_not_cleared_prematurely(
+            stop_prem_root, stop_prem, stop_prem_env, stop_prem_view),
+        check_budget_is_shared(
+            stop_shared_root, stop_shared, stop_shared_env, stop_shared_view),
+        check_status_context(
+            stop_status_root, stop_status, stop_status_env, stop_status_view),
+    ):
+        seq_ran += ran
+        failures += failed
+
     # ── block reasons must arrive on STDERR (exit 2 relays stderr ONLY) ──────
     # Asserting the REASON, not just the exit code, is what keeps a case honest when
     # two guards can both block the same payload: an exit-code-only assertion passes
@@ -1484,12 +1875,15 @@ def main():
     for r in (main_root, master_root, feat_root, codename_root, wt_root, wt_sibling,
               merged_root, open_root, gherr_root, stop_nopr_root, stop_red_root,
               stop_green_root, stop_pending_root, stop_mixed_root, stop_dirty_root,
+              stop_msgred_root, stop_dirtyred_root, stop_budget_root,
+              stop_clear_root, stop_prem_root, stop_shared_root, stop_status_root,
               stale_root):
         shutil.rmtree(r, ignore_errors=True)
 
     # Counts EVERY assertion, reason_cases included — an under-reported total makes a
     # red run print a nonsense ratio.
-    total = len(cases) + len(stop_cases) + len(reason_cases)
+    total = (len(cases) + len(stop_cases) + len(reason_cases)
+             + len(stop_reason_cases) + seq_ran)
     print(f"\n{total - failures}/{total} cases passed")
     return 1 if failures else 0
 
