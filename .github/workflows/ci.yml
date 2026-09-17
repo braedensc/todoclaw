@@ -509,13 +509,30 @@ jobs:
           print("%d pipeline workflow(s), staged and active, parse — and every referenced script exists" % len(staged))
           EOF
 
-      # TOD-125. The conflict monitor imports `scripts/pr_conflict.py`, which imports
-      # `scripts/pipeline_dispatch_local.py` at module scope. Rename either and every
-      # scheduled tick dies at import while every required check stays green. Its own
-      # selftest cannot run here (it imports the kit's bounce driver, KIT-166), so this
-      # imports the module and nothing more: no network, no token, no GitHub call.
-      - name: The conflict monitor's script imports
-        run: python3 -c "import sys; sys.path.insert(0, 'scripts'); import pr_conflict; print('pr_conflict imports; monitor entry point:', callable(pr_conflict.monitor))"
+      # TOD-125. The conflict monitor runs `scripts/pr_conflict.py` on a schedule, with no
+      # pull request of its own to go red on — so a break here is invisible until a
+      # conflict goes unanswered. This runs the script's OWN battery: the fix request, the
+      # bounded escalation, the unforgeable markers, the stale-label sweep, the refusals.
+      #
+      # One line of setup. The battery's last case compares the role-account marker with
+      # the kit's bounce driver, which this repo does not vendor (it answers dispatcher
+      # PRs, and no dispatcher runs here). A stub carrying that constant lets the other
+      # cases run; that ONE case is vacuous here and is checked in the kit instead.
+      # Nothing else is faked: no network, no token, no GitHub call.
+      - name: The conflict monitor's own selftest
+        run: |
+          python3 - <<'EOF'
+          import sys, types
+          sys.path.insert(0, "scripts")
+          import pr_conflict
+          stub = types.ModuleType("pipeline_bounce_local")
+          stub.DEFAULT_ENV_FILE = pr_conflict.DISPATCHER_ENV_FILE
+          sys.modules["pipeline_bounce_local"] = stub
+          rc = pr_conflict.selftest()
+          if rc != 0:
+              print("::error::the conflict monitor's selftest failed (exit %r)" % rc)
+          sys.exit(rc)
+          EOF
 
       # Activation needs repo secrets and is a human action
       # (docs/PIPELINE-ACTIVATION.md). This step used to assert that NOTHING under

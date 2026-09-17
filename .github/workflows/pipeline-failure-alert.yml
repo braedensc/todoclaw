@@ -37,6 +37,11 @@ on:
     workflows:
       - 'CI'
       - 'DB Backup'
+      # A conflict-monitor pass that COULD NOT TELL whether a pull request is
+      # conflicted exits non-zero, and that is the one failure nobody would see:
+      # it runs every two hours with no pull request of its own to go red on, so
+      # without this it is red only in the Actions tab (TOD-125 review).
+      - 'PR conflict monitor'
     types: [completed]
 
 permissions:

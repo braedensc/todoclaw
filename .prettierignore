@@ -27,6 +27,11 @@ templates/workflows/
 # files — the rest of `.github/workflows/` is todoclaw's own and stays under
 # Prettier.
 .github/workflows/pipeline-*.yml
+# …and the conflict monitor, vendored from the same kit under the same rule. It
+# does not match `pipeline-*` because the kit names it for what it watches, so
+# it needs its own line or Prettier reformats it and every future /sync-kit
+# reads a cosmetic diff as drift (TOD-125 review).
+.github/workflows/pr-conflict-monitor.yml
 
 # Sibling git worktrees checked out inside the main checkout (docs/COLLABORATION.md).
 # Prettier already skips these via its default .gitignore honouring — this entry makes the

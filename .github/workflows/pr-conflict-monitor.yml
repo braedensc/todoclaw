@@ -65,8 +65,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Request fixes, escalate stalled ones, clear stale labels
+      # NOTHING IN THIS REPOSITORY ANSWERS A FIX REQUEST (TOD-125 review). The kit's
+      # default asks up to three times before paging, because a waker or a dispatcher
+      # answers there. Here neither does: the waker on the owner's machine serves the
+      # kit checkout only, no dispatcher runs against this repo, and dependabot's
+      # branches — the most common conflict here — have no local worktree at all. So a
+      # request would be a comment addressed to nobody, and would delay the page by a
+      # whole tick. `0` pages a person at the first conflict instead, which is what this
+      # repository's previous monitor did. Raise it the day a waker serves this checkout.
+      - name: Page on a conflict, escalate stalled ones, clear stale labels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_CONFLICT_PAGE_TO: ${{ vars.PR_CONFLICT_PAGE_TO }}
-        run: python3 scripts/pr_conflict.py monitor
+        run: python3 scripts/pr_conflict.py monitor --max-fix-requests 0
