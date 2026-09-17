@@ -487,6 +487,9 @@ jobs:
           if not staged:
               sys.exit("no staged workflow templates found — did the directory move?")
           staged += sorted(pathlib.Path(".github/workflows").glob("pipeline-*.yml"))
+          # TOD-125: the conflict monitor runs a kit script on a schedule, and nothing else
+          # here reads that reference.
+          staged += [pathlib.Path(".github/workflows/pr-conflict-monitor.yml")]
 
           for f in staged:
               text = f.read_text(encoding="utf-8")
@@ -505,6 +508,14 @@ jobs:
               sys.exit(1)
           print("%d pipeline workflow(s), staged and active, parse — and every referenced script exists" % len(staged))
           EOF
+
+      # TOD-125. The conflict monitor imports `scripts/pr_conflict.py`, which imports
+      # `scripts/pipeline_dispatch_local.py` at module scope. Rename either and every
+      # scheduled tick dies at import while every required check stays green. Its own
+      # selftest cannot run here (it imports the kit's bounce driver, KIT-166), so this
+      # imports the module and nothing more: no network, no token, no GitHub call.
+      - name: The conflict monitor's script imports
+        run: python3 -c "import sys; sys.path.insert(0, 'scripts'); import pr_conflict; print('pr_conflict imports; monitor entry point:', callable(pr_conflict.monitor))"
 
       # Activation needs repo secrets and is a human action
       # (docs/PIPELINE-ACTIVATION.md). This step used to assert that NOTHING under
