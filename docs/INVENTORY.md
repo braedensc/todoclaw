@@ -119,6 +119,7 @@ _No `VITE_OWNER_USER_ID`: the owner's identity is server-only. The frontend reve
 | `SUPABASE_PROJECT_REF` | public | deploy | Prod ref `hknmhkzumkjhylxclrcy` — selects the project to deploy |
 | `SUPABASE_URL` | public | keepalive | Prod project URL for the anti-pause ping |
 | `DISPATCH_URL` | public | notify | `…/functions/v1/dispatch-messages` endpoint, POSTed hourly by the **backup** workflow. The primary per-minute tick is pg_cron, which reads the same URL from Vault as `dispatch_messages_url` (§4a) |
+| `PR_CONFLICT_PAGE_TO` | public, optional | pr-conflict-monitor | Logins or `org/team`, comma-separated, paged when a conflict fix goes unanswered. Unset ⇒ the PR's author when that is a person, else a person who owns the repo. On this user-owned repo, unset works |
 
 ### 3g. Local-dev / inactive (listed for completeness — not provisioned)
 | Variable | Where | Status |
@@ -188,6 +189,7 @@ red). Scheduled workflows run only from `main`.
 | `ci.yml` ("CI") | push to `main`, every PR | Secret-scan + forbidden-paths, Lint, Typecheck, Test (each is a required check); E2E smoke + Hooks-change guard (not required) |
 | `deploy.yml` ("Deploy (prod)") | after green CI on `main` | `migrate` (applies pending migrations via `db push`) → `deploy-functions` (deploys Edge Functions) |
 | Vercel (native Git integration) | push to `main` / any branch | Prod deploy on merge; preview deploy per branch. **Not** a GitHub Action |
+| `pr-conflict-monitor.yml` ("PR conflict monitor") | push to `main`, every 20 min, manual | On a newly conflicted PR: labels it `conflict` and posts a fix request, which the Stage E bounce driver answers for a dispatcher's PR. Pages a person when nobody answers in 15 min, and clears stale labels. Never merges, pushes or rebases. Runs `scripts/pr_conflict.py monitor` |
 
 **Deploy notes**
 - Edge Functions auto-deploy on merge. `deploy-functions` **derives the list from the tree** — it
@@ -226,6 +228,26 @@ red). Scheduled workflows run only from `main`.
 | Auth policy (signups off, email confirm, redirect URLs) | Supabase → Authentication |
 | Security response headers / CSP | `vercel.json` |
 | Who is "owner" | `OWNER_USER_ID` (Supabase secret) — the gate for `generate-invite` + `admin`. The frontend reveals the owner UI via the `admin` `whoami` action, so no owner id ships to the client |
+
+---
+
+## 7. Files ported from the kit
+
+These files came from `claude-project-kit`. `/sync-kit` does not read this table: it decides
+what changed upstream by comparing a file's bytes with the kit's history. A byte-identical
+file reads as *upstream-newer* when the kit moves; an adapted one reads as *drifted*, and a
+person decides. This table says which is which, so a sync report can be read.
+
+| File | Ported in | Kept as | Notes |
+|---|---|---|---|
+| `scripts/pr_conflict.py` | TOD-125 | **byte-identical** to the kit | The monitor half runs here. Its selftest's last case imports the kit's bounce driver, so it is not run in this repo's CI |
+| `.github/workflows/pr-conflict-monitor.yml` | TOD-125 | the kit's job, **this repo's header** | Only the header comment differs |
+| `.claude/hooks/stop-pr-check.py` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
+| `.claude/skills/fix-ci/SKILL.md` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
+| `docs/SESSION-BRIEF.md` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
+
+Not a complete list: other `scripts/` and `.claude/hooks/` files are kit-derived too and are
+not yet recorded here (no ticket yet).
 
 ---
 
