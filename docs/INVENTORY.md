@@ -119,6 +119,7 @@ _No `VITE_OWNER_USER_ID`: the owner's identity is server-only. The frontend reve
 | `SUPABASE_PROJECT_REF` | public | deploy | Prod ref `hknmhkzumkjhylxclrcy` — selects the project to deploy |
 | `SUPABASE_URL` | public | keepalive | Prod project URL for the anti-pause ping |
 | `DISPATCH_URL` | public | notify | `…/functions/v1/dispatch-messages` endpoint, POSTed hourly by the **backup** workflow. The primary per-minute tick is pg_cron, which reads the same URL from Vault as `dispatch_messages_url` (§4a) |
+| `PR_CONFLICT_PAGE_TO` | public, optional — **not set on this repo** | pr-conflict-monitor | Logins or `org/team`, comma-separated, paged on a conflict. Listed here because the monitor reads it, not because it exists: unset ⇒ the PR's author when that is a person, else a person who owns the repo, which on this user-owned repo reaches the owner. Set it only to page someone else |
 
 ### 3g. Local-dev / inactive (listed for completeness — not provisioned)
 | Variable | Where | Status |
@@ -178,6 +179,7 @@ Down path for either job: `select cron.unschedule('<job name>');`.
 | `17 8 * * *` daily | `keepalive.yml` | One REST ping so the free Supabase project never pauses (401/403 = healthy) | `SUPABASE_URL` (var) + `SUPABASE_ANON_KEY` (secret) |
 | `0 9 * * *` daily | `backup.yml` | Encrypted `pg_dump` of `public` → AES-256 GPG artifact (90-day retention) | `BACKUP_DATABASE_URL` + `BACKUP_GPG_PASSPHRASE` (secrets) |
 | `0 * * * *` hourly | `notify.yml` | **Redundant backup only** (per its own header): POSTs the same `dispatch-messages` function the pg_cron tick drives. `claim_message` dedupes per (user, day, kind), so the pair can never double-send | `DISPATCH_URL` (var) + `DISPATCH_SECRET` (secret) |
+| `7,27,47 * * * *` every 20 min | `pr-conflict-monitor.yml` | The repo's most frequent scheduled job. Labels a newly conflicted PR and pages a person at once (`--max-fix-requests 0` — nothing here answers a fix request), escalates one that stays conflicted, and clears stale labels | `PR_CONFLICT_PAGE_TO` (var, optional) |
 
 Every scheduled job **preflight-skips green** until its config is set (an unconfigured repo is never
 red). Scheduled workflows run only from `main`.
@@ -188,6 +190,7 @@ red). Scheduled workflows run only from `main`.
 | `ci.yml` ("CI") | push to `main`, every PR | Secret-scan + forbidden-paths, Lint, Typecheck, Test (each is a required check); E2E smoke + Hooks-change guard (not required) |
 | `deploy.yml` ("Deploy (prod)") | after green CI on `main` | `migrate` (applies pending migrations via `db push`) → `deploy-functions` (deploys Edge Functions) |
 | Vercel (native Git integration) | push to `main` / any branch | Prod deploy on merge; preview deploy per branch. **Not** a GitHub Action |
+| `pr-conflict-monitor.yml` ("PR conflict monitor") | push to `main`, every 20 min, manual | On a newly conflicted PR: labels it `conflict` and **pages a person at once** — this repo runs with `--max-fix-requests 0` because nothing here answers a fix request (no waker serves this checkout, no dispatcher runs against it, and dependabot's branches have no worktree). Escalates one that stays conflicted, and clears stale labels. Never merges, pushes or rebases. A pass that could not tell is a failure, watched by `pipeline-failure-alert.yml` |
 
 **Deploy notes**
 - Edge Functions auto-deploy on merge. `deploy-functions` **derives the list from the tree** — it
@@ -226,6 +229,26 @@ red). Scheduled workflows run only from `main`.
 | Auth policy (signups off, email confirm, redirect URLs) | Supabase → Authentication |
 | Security response headers / CSP | `vercel.json` |
 | Who is "owner" | `OWNER_USER_ID` (Supabase secret) — the gate for `generate-invite` + `admin`. The frontend reveals the owner UI via the `admin` `whoami` action, so no owner id ships to the client |
+
+---
+
+## 7. Files ported from the kit
+
+These files came from `claude-project-kit`. `/sync-kit` does not read this table: it decides
+what changed upstream by comparing a file's bytes with the kit's history. A byte-identical
+file reads as *upstream-newer* when the kit moves; an adapted one reads as *drifted*, and a
+person decides. This table says which is which, so a sync report can be read.
+
+| File | Ported in | Kept as | Notes |
+|---|---|---|---|
+| `scripts/pr_conflict.py` | TOD-125 | **byte-identical** to the kit | The monitor half runs here; the waker half serves no checkout in this repo. Its whole selftest runs in CI, with one case stubbed: case 23 compares the role-account marker against the kit's bounce driver, which this repo does not vendor |
+| `.github/workflows/pr-conflict-monitor.yml` | TOD-125 | the kit's job, **this repo's header** | Only the header comment differs |
+| `.claude/hooks/stop-pr-check.py` | #59, 2026-07-03 | **adapted** | Predates TOD-122 by two months; #430 only recorded it here. Matched no kit revision checked on 2026-09-17 |
+| `.claude/skills/fix-ci/SKILL.md` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
+| `docs/SESSION-BRIEF.md` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
+
+Not a complete list: other `scripts/` and `.claude/hooks/` files are kit-derived too and are
+not yet recorded here (no ticket yet).
 
 ---
 
