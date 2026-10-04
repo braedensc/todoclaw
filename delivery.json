@@ -2,6 +2,11 @@
   "version": 1,
 
   "linear": {
+    "findingTicket": {
+      "landing": "raw",
+      "notify": "subscribe",
+      "ownerUserId": "ee70f259-f5a6-44fe-a633-65e05772cd83"
+    },
     "teamKey": "TOD",
     "workspace": "braedenclaw",
     "stateIds": {
@@ -14,6 +19,7 @@
     },
     "labels": {
       "ids": {
+        "provenance:agent": "07045b5d-b491-4f15-a16e-e47b539f6d28",
         "track:backend": "41ef8746-ec2c-4ead-9188-c95a76df617c",
         "track:frontend": "912d937f-eee0-4fe7-a58a-10364451c4a2",
         "track:infra": "f65f8fce-cd3a-4595-ab5a-30227570dec2",
