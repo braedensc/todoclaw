@@ -202,29 +202,28 @@ export function haltedToolUseIds(messages: Msg[]): string[] {
 // ---- DB: reads (caller JWT — RLS is the ownership check) ----------------------------------------
 
 // Load the session's pending state (and confirm it belongs to the caller). Returns undefined when the
-// session isn't the caller's (or doesn't exist), so callers can 404.
+// session isn't the caller's (or doesn't exist), so callers can 404. `pending` is encrypted at rest,
+// so this goes through the decrypting chat_load_session RPC (DEFINER, fenced to auth.uid()) rather
+// than a raw SELECT — RLS/ownership is re-checked inside the RPC, and a non-owner gets zero rows.
 export async function loadSession(
   client: SupabaseClient,
   sessionId: string,
 ): Promise<{ pending: PendingState | null } | undefined> {
-  const { data } = await client
-    .from('chat_sessions')
-    .select('pending')
-    .eq('id', sessionId)
-    .maybeSingle()
-  if (!data) return undefined
-  return { pending: (data.pending as PendingState | null) ?? null }
+  const { data } = await client.rpc('chat_load_session', { p_session: sessionId })
+  const row = ((data ?? []) as { pending: unknown }[])[0]
+  if (!row) return undefined
+  return { pending: (row.pending as PendingState | null) ?? null }
 }
 
-// Load + window the newest messages for a session (oldest-first, boundary/size cut, merged).
+// Load + window the newest messages for a session (oldest-first, boundary/size cut, merged). content
+// and meta are encrypted at rest → the chat_load_messages RPC (DEFINER, fenced to auth.uid()) decrypts
+// them and already returns oldest-first (newest p_limit rows, ascending), so no reverse is needed.
 export async function loadWindow(client: SupabaseClient, sessionId: string): Promise<Msg[]> {
-  const { data } = await client
-    .from('chat_messages')
-    .select('seq, role, content, meta')
-    .eq('session_id', sessionId)
-    .order('seq', { ascending: false })
-    .limit(WINDOW_LIMIT)
-  const ordered = ((data ?? []) as ChatMessageRow[]).slice().reverse() // oldest-first
+  const { data } = await client.rpc('chat_load_messages', {
+    p_session: sessionId,
+    p_limit: WINDOW_LIMIT,
+  })
+  const ordered = (data ?? []) as ChatMessageRow[] // already oldest-first from the RPC
   return windowMessages(rowsToMessages(ordered))
 }
 
