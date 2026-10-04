@@ -105,6 +105,10 @@ booleans and enums carry real defaults instead. `~` in a path value is expanded 
 | `stateIds.needsApproval` | string (UUID) | Stage E bounce driver | **Provisioned as type `unstarted` — never `started`, never `completed`.** AI review has concluded and a person should accept the work: findings were clean or below `budgets.reviewSeverityThreshold`, or the bounce budget is spent (then `agent:needs-human` is on the ticket too, and that label is what tells the two apart). Reached ONLY by the bounce driver's own move — never a session. It authorises nothing; approval is `ready`. |
 | `labels.ids` | object → string (UUID) | dispatcher, guards | Map of **canonical key → Linear label ID**. The key is the stable name used in code; the Linear display name may drift from it. |
 | `labels.required` | string[] | validator | Subset of `labels.ids` keys that must resolve before the pipeline may dispatch. |
+| `findingTicket` | object \| absent | the kit's plan executor (idea gate) | **Opt-in.** Present ⇒ machine-filed plans are on: the idea gate's executor files a plan's epic and children into `landing` and notifies `ownerUserId`. Absent ⇒ every plan is rejected. Defined in the kit's contract (§1, and §8 *Filing a plan*); this copy has not synced that section yet. |
+| `findingTicket.landing` | enum `raw` | the kit's plan executor | The state a filed ticket lands in — the backlog/intake state only. Never `ready` (self-approval), never `working`/`review`/`done` (§5). |
+| `findingTicket.notify` | enum `subscribe`\|`assign`\|`both` | the kit's plan executor | How `ownerUserId` is notified. A filed ticket is never assigned to a session's own identity. |
+| `findingTicket.ownerUserId` | string | the kit's plan executor | Linear **user ID** notified on each filed ticket. A person, never a session. |
 
 > **States and labels are referenced by ID, never by display name.** A rename in the
 > Linear UI must not silently desync a guard — with names, a renamed "Ready" state stops
