@@ -51,7 +51,10 @@ looks like it does without the guard the kit compensates with. The `agent:*` /
 `blocked:*` / `provenance:*` sets are dispatcher-owned by
 `docs/PIPELINE-CONTRACT.md` §6 — the pipeline's `lifecycle-label` guard already
 refused them through a **tracker MCP**, but the identical write arriving as a `gh`
-command was unguarded, and cheaper.
+command was unguarded, and cheaper. *(Correction, 2026-10-11: on the tracker path that
+guard covered only `agent:*` and `blocked:*`; `provenance:*` and `hooks-change` passed
+there, by name and by ID, until KIT-241's second review. See the update at the end of
+`2026-09-06-delegation-bound-dispatch.md`.)*
 
 **PR self-approval.** `braedensc/todoclaw`'s `main` has
 `required_approving_review_count: 0`, four required status checks, and admins

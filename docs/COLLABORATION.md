@@ -417,17 +417,32 @@ unpinned session. Ordinary edits, `npm test`, `git commit`, `gh pr create` and
 even editing a CI workflow all behave exactly as before. This was verified
 against this repo's real `delivery.json` before the change landed.
 
-> **A Cyrus session is unpinned too, so it takes that same branch.** Since the
-> backend became `local-daemon`, the live lane binds by delegation and writes no
-> pin — and to the hook that is indistinguishable from a human working ad hoc. So
-> `scope-fence` and `lifecycle-label` do not hold on it, and `ticket-branch` is
-> inactive. **That is intended behaviour, not a bug**: a guard that failed closed
-> on pin absence would brick every ad-hoc session in this repo. What still holds
-> is `self-approval` (unconditional), the hook's self-edit and config-anchor Bash
-> arms, the protected-label guard, branch protection and CI — none of which read a
-> pin. Full table and the reasoning:
-> [ADR 2026-09-06](adr/2026-09-06-delegation-bound-dispatch.md); re-keying the
-> binding is [KIT-18](https://linear.app/braedenclaw/issue/KIT-18).
+> **A Cyrus session is unpinned too, but it is not ad hoc.** Since the backend
+> became `local-daemon`, the live lane binds by delegation and writes no pin. A
+> guard that failed closed on pin absence would brick every ad-hoc session in this
+> repo, so the lane is told apart another way: the dispatcher's OS account carries
+> a root-owned **lane marker**, `/etc/claude-pipeline/dispatched-lane/<account>`, in
+> folders root owns all the way down (KIT-241; written by card CK-10 of
+> claude-project-kit's Stage E installer, as this repo has none; the older marker
+> under the pins root still counts, but the role account can rename its folders).
+> With it, the tracker guards apply as for a pinned `ticket` session — no direct
+> ticket create, no protected label (`agent:*`, `blocked:*`, `provenance:*`,
+> `hooks-change`, by name or by ID, nor defining or renaming one), no state set by
+> name rather than its `linear.stateIds` ID, writes only to the ticket the worktree
+> folder is named after, no rewrite of that ticket's acceptance criteria (a partial
+> `patch` included). A marker the hook cannot check for counts as there, and with a
+> marker no pin is read: none is written for that account, so one found there was
+> forged. `scope-fence` and `ticket-branch` still do not hold on this lane. What
+> holds besides is `self-approval` (unconditional), the hook's self-edit and
+> config-anchor Bash arms, the protected-label guard, branch protection and CI —
+> none of which read a pin. `~` in the pins root is the account's home from the
+> account database, never `$HOME`, for the pin as for the marker; the hook's git
+> reads run without the session's `GIT_*` variables or a global git config (a
+> planted `GIT_DIR`, or a broken config at a planted `$HOME`, used to turn the
+> pipeline off, KIT-240); and moving `delivery.json` out of the working tree leaves
+> the pipeline on while a commit still holds it. Full table and the reasoning:
+> [ADR 2026-09-06](adr/2026-09-06-delegation-bound-dispatch.md) and its KIT-241
+> update; re-keying the binding is [KIT-18](https://linear.app/braedenclaw/issue/KIT-18).
 
 **Two things change for everyone, pinned or not:**
 
@@ -440,9 +455,10 @@ against this repo's real `delivery.json` before the change landed.
   so the repo can never be taken hostage by its own config.
 
 **For a dispatched (pinned) session,** the branch must carry the ticket ID, writes
-to `autonomy.riskPaths` are refused, the session cannot set its own `agent:*`
-labels or rewrite its own acceptance criteria, and it writes only to its own
-ticket. An **expired** pin in ticket mode fails closed — a lapsed binding is
+to `autonomy.riskPaths` are refused, the session cannot set or clear a protected
+label (`agent:*`, `blocked:*`, `provenance:*`, `hooks-change`), set a state by name
+rather than by its ID, or rewrite its own acceptance criteria, and it writes only to
+its own ticket. An **expired** pin in ticket mode fails closed — a lapsed binding is
 broken, not absent, or waiting would be an escape.
 
 **If a pipeline guard blocks you and you think it is wrong,** read the reason: it
