@@ -57,7 +57,7 @@ export function MoveToQuadrantSheet({
               disabled={isCurrent}
               aria-label={`Move to ${m.label}`}
               className="relative flex min-h-[76px] flex-col gap-1 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] disabled:cursor-default disabled:opacity-55 disabled:active:scale-100"
-              style={{ borderLeft: `4px solid ${m.color}`, background: QUADRANT_TINT[key] }}
+              style={{ borderLeft: `4px solid ${m.color}`, backgroundColor: QUADRANT_TINT[key] }}
             >
               <span className="font-serif text-sm font-semibold" style={{ color: m.color }}>
                 {m.label}

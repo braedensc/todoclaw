@@ -70,6 +70,17 @@ to a done card (it has already left the grid). The exact tiers/constants live in
 `src/lib/visual-urgency.ts` (`urgencyGlowStyle`, `staleness`/`staleRingStyle`) and are pinned (authoritative) by
 `src/lib/visual-urgency.test.ts` (tuned on TodoClaw's own merits — e.g. the amplified glow ladder).
 
+Every color in this layer — and in `quadrantMeta`, `RC_COLOR` and `features/grid/grid-constants.ts`
+— is applied as an inline style, so it is written as a theme-token string (`rgb(var(--c-…))` or
+`rgb(var(--c-…) / α)`) that the `dark` class can reach (TOD-138). The board-only tokens
+(`urgency-gold`/`-olive`/`-muted`, `tint-*`, `stale`, `paused`, `card-shadow`, the grid's
+`quadrant-tint-*`/`gridline`/`axis`/`axis-label`) live in `src/index.css` beside the palette but
+not in `tailwind.config.js`; `theme-tokens.test.ts` checks every `var(--c-…)` used in `src/` has a
+light and a dark value. In dark, card tints are low-alpha hue over `card` rather than pastels,
+the card shadow is a light rim, solid chips take `on-accent` text, and stale blue / paused slate
+are lifted. Tests assert the token strings, never resolved rgb, and inline tints use the
+`backgroundColor` longhand.
+
 - **Urgency glow** — a `box-shadow` ring that intensifies as the due date approaches, keyed on
   `daysUntil(due)` (timezone-aware). Overdue → strongest terracotta ring **+ pulse**; due today →
   ring; `≤ 2d` / `≤ 7d` / `≤ 14d` → progressively fainter; beyond 14 days (or no due date) → none.
@@ -81,9 +92,9 @@ to a done card (it has already left the grid). The exact tiers/constants live in
   past due** — the point where the 🔥 has stopped working — and an undated one only after **90
   days on the board** (it may be a long-term idea, not an ignored commitment). A stale card FLIPS
   lanes: the whole hot dress (pulse, warm tint, 🔥, terracotta chip) is replaced by a **cool-blue
-  `box-shadow` ring** (azure `50,118,205`, distinct from the reserved `puppy` brand blue) that
+  `box-shadow` ring** (azure `--c-stale`, distinct from the reserved `puppy` brand blue) that
   deepens at 1×/2×/3× the floor (3/6/9 weeks past due, or 3/6/9 months undated), **an icy card
-  tint that graduates with depth** (`#f3f8fd` → `#eaf3fc` → `#e0edfb`), a **❄️ corner flag**
+  tint that graduates with depth** (`tint-stale` → `-deep` → `-deepest`), a **❄️ corner flag**
   replacing the 🔥, and an azure **"Stale · Nd" chip** replacing the due chip — the hot and cool
   dresses never co-exist on one card. This keeps a deliberate **inverse** of a fade-out
   treatment: an ignored task should draw the eye, not recede. A **cluster bubble** takes the ring +

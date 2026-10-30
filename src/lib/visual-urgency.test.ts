@@ -22,7 +22,7 @@ import {
 
 // These tests pin the urgency ladder: the 2026-07-08 workshop tiers, the 2026-07-09 stronger
 // rings/halos, and the two reinforcing channels added alongside them — the graduated card tint
-// (urgencyGlowStyle.background) and the scarce hot-tier icon (urgencyIcon). If a value changes,
+// (urgencyGlowStyle.backgroundColor) and the scarce hot-tier icon (urgencyIcon). If a value changes,
 // that is a visual-design decision — update the table in visual-urgency.ts AND the keyframes in
 // index.css, not just the assertion. The cool STALE lane (below) is the hot lane's off-ramp: a
 // task ignored 3+ weeks past due (or undated + months old) flips from 🔥 to ❄️.
@@ -64,43 +64,43 @@ describe('urgencyGlowStyle', () => {
   it('overdue: strongest ring + pulse + warm card tint', () => {
     expect(urgencyGlowStyle('overdue')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)',
+        '0 2px 7px rgb(var(--c-card-shadow) / 0.08), 0 0 0 4px rgb(var(--c-accent) / 1), 0 0 32px 12px rgb(var(--c-accent) / 0.6)',
       animation: 'urgency-pulse 2s ease-in-out infinite',
-      background: '#fff1e8',
+      backgroundColor: 'rgb(var(--c-tint-overdue))',
     })
   })
 
   it('final-hours: today ring + the soft pulse + tint', () => {
     expect(urgencyGlowStyle('final-hours')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)',
+        '0 2px 7px rgb(var(--c-card-shadow) / 0.08), 0 0 0 3px rgb(var(--c-accent) / 0.92), 0 0 26px 10px rgb(var(--c-accent) / 0.5)',
       animation: 'urgency-pulse-soft 3s ease-in-out infinite',
-      background: '#fff4ec',
+      backgroundColor: 'rgb(var(--c-tint-final-hours))',
     })
   })
 
   it('today / closing-in / this-week: static rings + graduated tint, no pulse', () => {
     expect(urgencyGlowStyle('today')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)',
-      background: '#fff7f0',
+        '0 2px 7px rgb(var(--c-card-shadow) / 0.08), 0 0 0 3px rgb(var(--c-accent) / 0.92), 0 0 26px 10px rgb(var(--c-accent) / 0.5)',
+      backgroundColor: 'rgb(var(--c-tint-today))',
     })
     expect(urgencyGlowStyle('closing-in')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)',
-      background: '#fdf7ec',
+        '0 2px 7px rgb(var(--c-card-shadow) / 0.08), 0 0 0 3px rgb(var(--c-urgency-gold) / 0.8), 0 0 22px 8px rgb(var(--c-urgency-gold) / 0.42)',
+      backgroundColor: 'rgb(var(--c-tint-closing-in))',
     })
     expect(urgencyGlowStyle('this-week')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)',
-      background: '#faf7ee',
+        '0 2px 7px rgb(var(--c-card-shadow) / 0.08), 0 0 0 2.5px rgb(var(--c-urgency-olive) / 0.6), 0 0 18px 6px rgb(var(--c-urgency-olive) / 0.3)',
+      backgroundColor: 'rgb(var(--c-tint-this-week))',
     })
   })
 
   it('radar: faintest ring, no tint (stays paper)', () => {
     expect(urgencyGlowStyle('radar')).toEqual({
       boxShadow:
-        '0 2px 7px rgba(0,0,0,.08), 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)',
+        '0 2px 7px rgb(var(--c-card-shadow) / 0.08), 0 0 0 1.5px rgb(var(--c-urgency-olive) / 0.35), 0 0 14px 4px rgb(var(--c-urgency-olive) / 0.22)',
     })
   })
 })
@@ -120,18 +120,27 @@ describe('urgencyIcon', () => {
 
 describe('dueChipStyle', () => {
   it('terracotta fill for the hot tiers, gold for closing-in, olive outline for this-week, muted otherwise', () => {
-    const hot = { backgroundColor: '#c2693f', color: '#fff' }
+    const hot = { backgroundColor: 'rgb(var(--c-accent))', color: 'rgb(var(--c-on-accent))' }
     expect(dueChipStyle('overdue')).toEqual(hot)
     expect(dueChipStyle('final-hours')).toEqual(hot)
     expect(dueChipStyle('today')).toEqual(hot)
-    expect(dueChipStyle('closing-in')).toEqual({ backgroundColor: '#b8862a', color: '#fff' })
+    expect(dueChipStyle('closing-in')).toEqual({
+      backgroundColor: 'rgb(var(--c-urgency-gold))',
+      color: 'rgb(var(--c-on-accent))',
+    })
     expect(dueChipStyle('this-week')).toEqual({
       backgroundColor: 'transparent',
-      color: '#8a7828',
-      border: '1.5px solid rgba(138,120,40,0.55)',
+      color: 'rgb(var(--c-urgency-olive))',
+      border: '1.5px solid rgb(var(--c-urgency-olive) / 0.55)',
     })
-    expect(dueChipStyle('radar')).toEqual({ backgroundColor: '#8a8577', color: '#fff' })
-    expect(dueChipStyle('none')).toEqual({ backgroundColor: '#8a8577', color: '#fff' })
+    expect(dueChipStyle('radar')).toEqual({
+      backgroundColor: 'rgb(var(--c-urgency-muted))',
+      color: 'rgb(var(--c-on-accent))',
+    })
+    expect(dueChipStyle('none')).toEqual({
+      backgroundColor: 'rgb(var(--c-urgency-muted))',
+      color: 'rgb(var(--c-on-accent))',
+    })
   })
 })
 
@@ -306,8 +315,8 @@ describe('staleRingStyle', () => {
 
   it('depth < 2×: thin cool-blue ring + faintest icy tint', () => {
     const expected = {
-      boxShadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 14px 3px rgba(50,118,205,0.3)',
-      background: '#f3f8fd',
+      boxShadow: '0 0 0 2px rgb(var(--c-stale) / 0.6), 0 0 14px 3px rgb(var(--c-stale) / 0.3)',
+      backgroundColor: 'rgb(var(--c-tint-stale))',
     }
     expect(staleRingStyle(overdueBy(21))).toEqual(expected)
     expect(staleRingStyle(overdueBy(41))).toEqual(expected)
@@ -317,8 +326,8 @@ describe('staleRingStyle', () => {
 
   it('depth < 3×: medium cool-blue ring + icier tint', () => {
     const expected = {
-      boxShadow: '0 0 0 2.5px rgba(50,118,205,0.78), 0 0 20px 5px rgba(50,118,205,0.42)',
-      background: '#eaf3fc',
+      boxShadow: '0 0 0 2.5px rgb(var(--c-stale) / 0.78), 0 0 20px 5px rgb(var(--c-stale) / 0.42)',
+      backgroundColor: 'rgb(var(--c-tint-stale-deep))',
     }
     expect(staleRingStyle(overdueBy(42))).toEqual(expected)
     expect(staleRingStyle(overdueBy(62))).toEqual(expected)
@@ -327,8 +336,8 @@ describe('staleRingStyle', () => {
 
   it('depth >= 3×: thick cool-blue ring + brighter halo + iciest tint', () => {
     const expected = {
-      boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
-      background: '#e0edfb',
+      boxShadow: '0 0 0 3px rgb(var(--c-stale) / 0.95), 0 0 28px 7px rgb(var(--c-stale) / 0.55)',
+      backgroundColor: 'rgb(var(--c-tint-stale-deepest))',
     }
     expect(staleRingStyle(overdueBy(63))).toEqual(expected)
     expect(staleRingStyle(overdueBy(365))).toEqual(expected)
@@ -419,7 +428,10 @@ describe('staleBadge', () => {
 
 describe('staleChipStyle', () => {
   it('solid azure fill (the cold-lane mirror of the terracotta overdue chip)', () => {
-    expect(staleChipStyle()).toEqual({ backgroundColor: 'rgb(50,118,205)', color: '#fff' })
+    expect(staleChipStyle()).toEqual({
+      backgroundColor: 'rgb(var(--c-stale))',
+      color: 'rgb(var(--c-on-accent))',
+    })
   })
 })
 
@@ -430,13 +442,16 @@ describe('staleChipStyle', () => {
 describe('paused lane', () => {
   it('pausedRingStyle: a full-alpha slate ring + halo + slate tint (no depth ladder)', () => {
     expect(pausedRingStyle()).toEqual({
-      boxShadow: '0 0 0 3px rgba(100,116,139,1), 0 0 24px 8px rgba(100,116,139,0.45)',
-      background: '#e7ebf2',
+      boxShadow: '0 0 0 3px rgb(var(--c-paused) / 1), 0 0 24px 8px rgb(var(--c-paused) / 0.45)',
+      backgroundColor: 'rgb(var(--c-tint-paused))',
     })
   })
 
   it('pausedChipStyle: solid slate fill (the set-aside mirror of the due / stale chips)', () => {
-    expect(pausedChipStyle()).toEqual({ backgroundColor: 'rgb(100,116,139)', color: '#fff' })
+    expect(pausedChipStyle()).toEqual({
+      backgroundColor: 'rgb(var(--c-paused))',
+      color: 'rgb(var(--c-on-accent))',
+    })
   })
 
   it('pausedChipLabel: "⏸ starts <day>", reusing formatStartDay', () => {

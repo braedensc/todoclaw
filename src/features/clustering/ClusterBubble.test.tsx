@@ -7,15 +7,15 @@ import type { Task } from '../../types/task'
 
 // A stand-in overdue glow (shape matches urgencyGlowStyle('overdue')): ring + pulse + warm tint.
 const OVERDUE_GLOW: GlowStyle = {
-  boxShadow: '0 0 0 4px rgba(194,105,63,1)',
+  boxShadow: '0 0 0 4px rgb(var(--c-accent) / 1)',
   animation: 'urgency-pulse 2s ease-in-out infinite',
-  background: '#fff1e8',
+  backgroundColor: 'rgb(var(--c-tint-overdue))',
 }
 
 // A stand-in cool-blue stale ring + icy tint (shape matches staleRingStyle's deepest rung).
 const STALE_RING: StaleRingStyle = {
-  boxShadow: '0 0 0 3px rgba(50,118,205,0.95), 0 0 28px 7px rgba(50,118,205,0.55)',
-  background: '#e0edfb',
+  boxShadow: '0 0 0 3px rgb(var(--c-stale) / 0.95), 0 0 28px 7px rgb(var(--c-stale) / 0.55)',
+  backgroundColor: 'rgb(var(--c-tint-stale-deepest))',
 }
 
 // The contract under test: pointer events inside the bubble must NOT reach the grid canvas.
@@ -57,7 +57,7 @@ function renderBubble({
     <div onPointerDown={onSurfacePointerDown} onClick={onSurfaceClick}>
       <ClusterBubble
         group={[task('a'), task('b')]}
-        accentColor="#bf5e2a"
+        accentColor="rgb(var(--c-quadrant-do-now))"
         screenX={0.5}
         screenY={0.5}
         open={open}
@@ -99,7 +99,7 @@ describe('ClusterBubble', () => {
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.boxShadow).toBe(OVERDUE_GLOW.boxShadow)
     expect(button.style.animation).toContain('urgency-pulse')
-    expect(button.style.background).toBeTruthy()
+    expect(button.style.backgroundColor).toBeTruthy()
   })
 
   // Opening the bubble drops the tint/pulse for its raised popup shadow (no ring animation crowding
@@ -108,7 +108,7 @@ describe('ClusterBubble', () => {
     renderBubble({ open: true, glow: OVERDUE_GLOW })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.animation).toBe('')
-    expect(button.style.background).toBe('')
+    expect(button.style.backgroundColor).toBe('')
   })
 
   // A STALE cluster gains the same cool-blue ring its coldest folded card would show —
@@ -117,7 +117,7 @@ describe('ClusterBubble', () => {
     const { rerender } = render(
       <ClusterBubble
         group={[task('a'), task('b')]}
-        accentColor="#bf5e2a"
+        accentColor="rgb(var(--c-quadrant-do-now))"
         screenX={0.5}
         screenY={0.5}
         open={false}
@@ -128,13 +128,13 @@ describe('ClusterBubble', () => {
     )
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     // Closed: both the warm glow ring and the cool-blue stale ring are present.
-    expect(button.style.boxShadow).toContain('rgba(194,105,63,1)')
-    expect(button.style.boxShadow).toContain('rgba(50,118,205,0.95)')
+    expect(button.style.boxShadow).toContain('rgb(var(--c-accent) / 1)')
+    expect(button.style.boxShadow).toContain('rgb(var(--c-stale) / 0.95)')
 
     rerender(
       <ClusterBubble
         group={[task('a'), task('b')]}
-        accentColor="#bf5e2a"
+        accentColor="rgb(var(--c-quadrant-do-now))"
         screenX={0.5}
         screenY={0.5}
         open
@@ -144,28 +144,34 @@ describe('ClusterBubble', () => {
       />,
     )
     // Open: raised popup shadow only — no stale ring.
-    expect(button.style.boxShadow).not.toContain('rgba(50,118,205,0.95)')
+    expect(button.style.boxShadow).not.toContain('rgb(var(--c-stale) / 0.95)')
   })
 
   // With no glow, the stale ring + icy tint still compose over the bubble's resting shadow.
   it('shows the stale ring + icy tint over the resting shadow when there is no glow', () => {
     renderBubble({ open: false, staleRing: STALE_RING })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
-    expect(button.style.boxShadow).toContain('rgba(50,118,205,0.95)')
+    expect(button.style.boxShadow).toContain('rgb(var(--c-stale) / 0.95)')
     expect(button.style.boxShadow).toContain('rgba(0,0,0,.10)')
-    expect(button.style.background).toBe('rgb(224, 237, 251)') // #e0edfb
+    expect(button.style.backgroundColor).toBe('rgb(var(--c-tint-stale-deepest))')
   })
 
   // Trait discs — the card corner-disc family on the bubble: a glance says what's folded inside.
   it('renders one trait disc per held type (↻ / ∞ / 💤), counted in the hover title', () => {
     renderBubble({
-      traits: { paused: 1, recurring: 2, ongoing: 1, allPaused: false, recurringColor: '#c2693f' },
+      traits: {
+        paused: 1,
+        recurring: 2,
+        ongoing: 1,
+        allPaused: false,
+        recurringColor: 'rgb(var(--c-accent))',
+      },
     })
     expect(screen.getByTitle('2 repeating tasks').textContent).toBe('↻')
     expect(screen.getByTitle('1 ongoing project').textContent).toBe('∞')
     expect(screen.getByTitle('1 paused task').textContent).toBe('💤')
     // The ↻ disc takes the loudest folded chore's own status color.
-    expect(screen.getByTitle('2 repeating tasks').style.color).toBe('rgb(194, 105, 63)')
+    expect(screen.getByTitle('2 repeating tasks').style.color).toBe('rgb(var(--c-accent))')
   })
 
   it('renders no discs for a cluster of plain one-off tasks', () => {
@@ -183,8 +189,8 @@ describe('ClusterBubble', () => {
       traits: { paused: 2, recurring: 0, ongoing: 0, allPaused: true, recurringColor: null },
     })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
-    expect(button.style.boxShadow).toContain('rgba(100,116,139,1)')
-    expect(button.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
+    expect(button.style.boxShadow).toContain('rgb(var(--c-paused) / 1)')
+    expect(button.style.backgroundColor).toBe('rgb(var(--c-tint-paused))')
     const bubble = screen.getByTestId('cluster-bubble')
     expect(parseFloat(bubble.style.opacity)).toBeLessThan(1)
     expect(bubble).toHaveAttribute('data-paused')
@@ -199,7 +205,7 @@ describe('ClusterBubble', () => {
       traits: { paused: 2, recurring: 0, ongoing: 0, allPaused: true, recurringColor: null },
     })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
-    expect(button.style.boxShadow).not.toContain('rgba(100,116,139,1)')
+    expect(button.style.boxShadow).not.toContain('rgb(var(--c-paused) / 1)')
     expect(screen.getByTestId('cluster-bubble').style.opacity).toBe('')
     // The 💤 trait disc stays — it's information, not dress.
     expect(screen.getByTitle('2 paused tasks').textContent).toBe('💤')

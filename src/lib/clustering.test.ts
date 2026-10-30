@@ -199,19 +199,19 @@ describe('clusterAccentColor', () => {
   const opts = { timeZone: 'UTC', now: new Date('2026-06-23T12:00:00Z') }
 
   it('uses the dominant task quadrant color when not recurring', () => {
-    // Dominant is high-urgency, high-importance → Do Now → #bf5e2a.
+    // Dominant is high-urgency, high-importance → Do Now → rgb(var(--c-quadrant-do-now)).
     const a = makeTask('a', 0.9, 0.9)
     const b = makeTask('b', 0.85, 0.88)
-    expect(clusterAccentColor([a, b], opts)).toBe('#bf5e2a')
+    expect(clusterAccentColor([a, b], opts)).toBe('rgb(var(--c-quadrant-do-now))')
   })
 
   it('uses the recurring status color when the dominant is recurring', () => {
-    // A recurring task never done → overdue → #c2693f. Make it dominant by score.
+    // A recurring task never done → overdue → rgb(var(--c-accent)). Make it dominant by score.
     const dominant = makeTask('rec', 0.9, 0.9, {
       recurring: { frequencyDays: 7, lastDoneAt: null, doneCount: 0 },
     })
     const other = makeTask('other', 0.85, 0.88)
-    expect(clusterAccentColor([dominant, other], opts)).toBe('#c2693f')
+    expect(clusterAccentColor([dominant, other], opts)).toBe('rgb(var(--c-accent))')
   })
 })
 

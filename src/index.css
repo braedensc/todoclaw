@@ -42,6 +42,31 @@
     --c-quadrant-schedule: 61 122 95; /* #3d7a5f */
     --c-quadrant-errands: 125 107 30; /* #7d6b1e */
     --c-quadrant-someday: 133 124 110; /* #857c6e */
+    /* Board signal tables (TOD-138) — read by src/lib/visual-urgency.ts, recurring.ts,
+       quadrants.ts and features/grid/grid-constants.ts as inline `rgb(var(--c-…) / α)` styles.
+       Terracotta urgency = accent; recurring "ok" = primary. */
+    --c-urgency-gold: 184 134 42; /* #b8862a */
+    --c-urgency-olive: 138 120 40; /* #8a7828 */
+    --c-urgency-muted: 138 133 119; /* #8a8577 */
+    --c-tint-overdue: 255 241 232; /* #fff1e8 */
+    --c-tint-final-hours: 255 244 236; /* #fff4ec */
+    --c-tint-today: 255 247 240; /* #fff7f0 */
+    --c-tint-closing-in: 253 247 236; /* #fdf7ec */
+    --c-tint-this-week: 250 247 238; /* #faf7ee */
+    --c-stale: 50 118 205;
+    --c-tint-stale: 243 248 253; /* #f3f8fd */
+    --c-tint-stale-deep: 234 243 252; /* #eaf3fc */
+    --c-tint-stale-deepest: 224 237 251; /* #e0edfb */
+    --c-paused: 100 116 139;
+    --c-tint-paused: 231 235 242; /* #e7ebf2 */
+    --c-card-shadow: 0 0 0;
+    --c-quadrant-tint-schedule: 70 130 100;
+    --c-quadrant-tint-do-now: 205 110 50;
+    --c-quadrant-tint-someday: 130 120 105;
+    --c-quadrant-tint-errands: 170 148 50;
+    --c-gridline: 148 136 116;
+    --c-axis: 0 0 0;
+    --c-axis-label: 165 156 136; /* #a59c88 */
   }
   /* Warm charcoal. Surfaces step UP in lightness bg → panel → card (the light set's elevation
      order); fills are lifted so dark `on-*` text clears them; the scrim stays black. */
@@ -66,6 +91,31 @@
     --c-quadrant-schedule: 118 180 150;
     --c-quadrant-errands: 200 178 92;
     --c-quadrant-someday: 176 166 150;
+    /* Hues lifted like the fills above. Card tints are the matching hue at low alpha over `card`
+       (pre-blended: overdue 22%, final-hours 18%, today 14%, closing-in 12%, this-week 9%; stale
+       10/15/20%; paused 18%), not the light pastels. The card shadow flips to a light rim. */
+    --c-urgency-gold: 222 172 80;
+    --c-urgency-olive: 184 172 92;
+    --c-urgency-muted: 168 162 148;
+    --c-tint-overdue: 76 55 42;
+    --c-tint-final-hours: 69 51 39;
+    --c-tint-today: 61 46 36;
+    --c-tint-closing-in: 57 48 32;
+    --c-tint-this-week: 47 44 32;
+    --c-stale: 110 165 235;
+    --c-tint-stale: 42 44 47;
+    --c-tint-stale-deep: 45 51 57;
+    --c-tint-stale-deepest: 49 58 68;
+    --c-paused: 150 164 184;
+    --c-tint-paused: 55 55 54;
+    --c-card-shadow: 255 244 228;
+    --c-quadrant-tint-schedule: 118 180 150;
+    --c-quadrant-tint-do-now: 226 138 92;
+    --c-quadrant-tint-someday: 176 166 150;
+    --c-quadrant-tint-errands: 200 178 92;
+    --c-gridline: 200 188 168;
+    --c-axis: 246 241 232;
+    --c-axis-label: 136 127 111;
   }
   body {
     @apply bg-bg font-sans text-ink antialiased;
@@ -272,20 +322,20 @@ input[type='range'] {
    urgencyGlowStyle().animation; the keyframes must be global. Values mirror the amplified
    2026-07-08 workshop ladder in src/lib/visual-urgency.ts (the 0%/100% frames = that tier's
    static ring, so the pulse breathes DOWN from it and reduced-motion freezes it at full).
-   The ring color is terracotta (#c2693f = accent). */
+   The ring color is terracotta (accent); the base layer is BASE_CARD_SHADOW (card-shadow). */
 @keyframes urgency-pulse {
   0%,
   100% {
     box-shadow:
-      0 2px 7px rgba(0, 0, 0, 0.08),
-      0 0 0 4px rgba(194, 105, 63, 1),
-      0 0 32px 12px rgba(194, 105, 63, 0.6);
+      0 2px 7px rgb(var(--c-card-shadow) / 0.08),
+      0 0 0 4px rgb(var(--c-accent) / 1),
+      0 0 32px 12px rgb(var(--c-accent) / 0.6);
   }
   50% {
     box-shadow:
-      0 2px 7px rgba(0, 0, 0, 0.08),
-      0 0 0 3px rgba(194, 105, 63, 0.7),
-      0 0 20px 7px rgba(194, 105, 63, 0.34);
+      0 2px 7px rgb(var(--c-card-shadow) / 0.08),
+      0 0 0 3px rgb(var(--c-accent) / 0.7),
+      0 0 20px 7px rgb(var(--c-accent) / 0.34);
   }
 }
 
@@ -294,15 +344,15 @@ input[type='range'] {
   0%,
   100% {
     box-shadow:
-      0 2px 7px rgba(0, 0, 0, 0.08),
-      0 0 0 3px rgba(194, 105, 63, 0.92),
-      0 0 26px 10px rgba(194, 105, 63, 0.5);
+      0 2px 7px rgb(var(--c-card-shadow) / 0.08),
+      0 0 0 3px rgb(var(--c-accent) / 0.92),
+      0 0 26px 10px rgb(var(--c-accent) / 0.5);
   }
   50% {
     box-shadow:
-      0 2px 7px rgba(0, 0, 0, 0.08),
-      0 0 0 2px rgba(194, 105, 63, 0.62),
-      0 0 16px 5px rgba(194, 105, 63, 0.28);
+      0 2px 7px rgb(var(--c-card-shadow) / 0.08),
+      0 0 0 2px rgb(var(--c-accent) / 0.62),
+      0 0 16px 5px rgb(var(--c-accent) / 0.28);
   }
 }
 

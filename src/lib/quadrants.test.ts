@@ -3,21 +3,25 @@ import { quadrantMeta } from './quadrants'
 
 describe('quadrantMeta', () => {
   it('maps each of the four quadrants to its label and color', () => {
-    expect(quadrantMeta(0.8, 0.8)).toEqual({ key: 'do-now', label: 'Do Now', color: '#bf5e2a' })
+    expect(quadrantMeta(0.8, 0.8)).toEqual({
+      key: 'do-now',
+      label: 'Do Now',
+      color: 'rgb(var(--c-quadrant-do-now))',
+    })
     expect(quadrantMeta(0.2, 0.8)).toEqual({
       key: 'schedule',
       label: 'Schedule',
-      color: '#3d7a5f',
+      color: 'rgb(var(--c-quadrant-schedule))',
     })
     expect(quadrantMeta(0.8, 0.2)).toEqual({
       key: 'errands',
       label: 'Errands',
-      color: '#7d6b1e',
+      color: 'rgb(var(--c-quadrant-errands))',
     })
     expect(quadrantMeta(0.2, 0.2)).toEqual({
       key: 'someday',
       label: 'Someday',
-      color: '#857c6e',
+      color: 'rgb(var(--c-quadrant-someday))',
     })
   })
 

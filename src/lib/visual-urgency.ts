@@ -13,7 +13,7 @@
 //     with a due TIME, minutes until the exact instant (timed tasks go overdue when their
 //     instant passes, not at midnight; the final two hours get their own tier).
 //   - urgencyGlowStyle(tier): a box-shadow ring that intensifies tier by tier, plus a graduated
-//     warm card tint (background) on the warm tiers; overdue pulses (urgency-pulse), the final
+//     warm card tint (backgroundColor) on the warm tiers; overdue pulses (urgency-pulse), the final
 //     hours pulse softly (urgency-pulse-soft). Keyframes live in src/index.css with a
 //     reduced-motion kill-switch.
 //   - urgencyIcon(tier): a scarce 🔥 corner flag on the hot tiers (overdue + due-today) — the
@@ -42,11 +42,64 @@ import { formatStartDay } from './start-date'
 
 const MS_PER_DAY = 86_400_000
 
-/** Urgency hues (tailwind.config.js tokens): terracotta = accent, gold/olive = the softer tiers. */
-export const DUE_BADGE_URGENT = '#c2693f' // = accent
-export const DUE_BADGE_MUTED = '#8a8577'
-const GOLD = '#b8862a'
-const OLIVE = '#8a7828'
+/**
+ * The lane hues, as opaque theme-token colors (`--c-*` in src/index.css — light values are the
+ * original hex, html.dark lifts them): terracotta = accent for the hot tiers, gold/olive for the
+ * softer ones, azure for stale, slate for paused. Every inline color below is one of these, alone
+ * or through `withAlpha`, so the dark class reaches the inline styles. Exported for GridLegend.
+ */
+export const URGENT_HUE = 'rgb(var(--c-accent))'
+export const GOLD_HUE = 'rgb(var(--c-urgency-gold))'
+export const OLIVE_HUE = 'rgb(var(--c-urgency-olive))'
+/**
+ * Cool-blue for the stale lane — a deliberately COOL hue with no overlap with the warm urgency
+ * ladder (terracotta / gold / olive), so "gone cold" and "due soon" read as two different things
+ * across the board. A confident azure (distinct from the muted `puppy` brand blue, which is
+ * reserved for BabyClaw / habits). Reused across the ring, halo, and chip.
+ */
+export const STALE_HUE = 'rgb(var(--c-stale))'
+/**
+ * Slate for the PAUSED (dormant / future start_date) lane — a deliberately NEUTRAL, cool-grey hue
+ * chosen to overlap NONE of the other card lanes: not the warm urgency ladder (terracotta / gold /
+ * olive), not the cool STALE azure, and not the muted `puppy` brand blue reserved for BabyClaw /
+ * habits. A paused task is a third thing entirely: it isn't due (its deadline is intentionally
+ * deferred) and it isn't ignored (the user scheduled the wake) — it's just SET ASIDE, waiting for
+ * its start date. Reused across the ring, tint, and chip.
+ */
+export const PAUSED_HUE = 'rgb(var(--c-paused))'
+export type LaneHue =
+  | typeof URGENT_HUE
+  | typeof GOLD_HUE
+  | typeof OLIVE_HUE
+  | typeof STALE_HUE
+  | typeof PAUSED_HUE
+
+/** A lane hue at alpha `a`: `rgb(var(--c-accent))` → `rgb(var(--c-accent) / 0.6)`. */
+export function withAlpha(hue: LaneHue, a: number): string {
+  return `${hue.slice(0, -1)} / ${a})`
+}
+
+/**
+ * One ring + halo box-shadow pair in a lane hue — the shape every glow, stale and paused ring
+ * (and GridLegend's dot-scaled swatches) is built from: a solid `ringPx` spread ring, then a
+ * `blur`/`spread` halo.
+ */
+export function ringShadow(
+  hue: LaneHue,
+  ringPx: number,
+  ringAlpha: number,
+  blur: number,
+  spread: number,
+  haloAlpha: number,
+): string {
+  return `0 0 0 ${ringPx}px ${withAlpha(hue, ringAlpha)}, 0 0 ${blur}px ${spread}px ${withAlpha(hue, haloAlpha)}`
+}
+
+/** Due-chip fills: the urgent terracotta, and the muted fill of the far-off tiers. */
+export const DUE_BADGE_URGENT = URGENT_HUE
+export const DUE_BADGE_MUTED = 'rgb(var(--c-urgency-muted))'
+/** Text on every solid chip fill (due, stale, paused): white in light, dark ink in dark. */
+const CHIP_TEXT = 'rgb(var(--c-on-accent))'
 
 /** A timed task is "in the final hours" within this many minutes of its due instant. */
 export const FINAL_HOURS_MINUTES = 120
@@ -88,64 +141,66 @@ export interface GlowStyle {
    * A warm card tint replacing the plain paper fill — a whole-card fill channel that survives
    * even when a neighbour overlaps the ring. Graduated across the warm tiers (loudest = warmest),
    * absent on `radar`/`none`. Read by the grid card, the closed cluster bubble, and each
-   * cluster-popup row so a clustered urgent task matches a standalone card.
+   * cluster-popup row so a clustered urgent task matches a standalone card. The
+   * `backgroundColor` longhand, so it composes with (and never resets) other background layers.
    */
-  background?: string
+  backgroundColor?: string
 }
 
 /** The card's resting drop-shadow — the base depth layer that sits under every glow. Exported
  *  so GridCard can lay the cool aging ring over this same base when a card has no warm urgency
  *  glow (an inline box-shadow would otherwise clobber the card's resting `shadow-sm` class). */
-export const BASE_CARD_SHADOW = '0 2px 7px rgba(0,0,0,.08)'
+export const BASE_CARD_SHADOW = '0 2px 7px rgb(var(--c-card-shadow) / 0.08)'
 
 /**
  * Box-shadow "glow" by tier. The 2026-07-08 workshop's ~2× ladder still read too faint next to a
  * card's own 1px border, so it was pushed HARDER on 2026-07-09 ("much stronger" was the explicit
  * ask): thicker, more opaque rings that clearly out-weight the border, plus a bigger, brighter
- * halo. The tier-to-tier gradient is preserved so nearer-due still reads louder.
+ * halo. The tier-to-tier gradient is preserved so nearer-due still reads louder. Tints are the
+ * `--c-tint-*` tokens (light = the pastel noted; dark = low-alpha hue over `card`).
  *
- * | tier          | ring + glow                          | card tint |
- * |---------------|--------------------------------------|-----------|
- * | `overdue`     | 4px solid ring + 32px glow + **pulse** | `#fff1e8` |
- * | `final-hours` | today's ring + **soft pulse**        | `#fff4ec` |
- * | `today`       | 3px terracotta ring + 26px glow      | `#fff7f0` |
- * | `closing-in`  | 3px gold ring + 22px glow            | `#fdf7ec` |
- * | `this-week`   | 2.5px olive ring + 18px glow         | `#faf7ee` |
- * | `radar`       | faint 1.5px olive ring + 14px haze   | —         |
- * | `none`        | none (`null`)                        | —         |
+ * | tier          | ring + glow                          | card tint (light) |
+ * |---------------|--------------------------------------|-------------------|
+ * | `overdue`     | 4px solid ring + 32px glow + **pulse** | `#fff1e8`       |
+ * | `final-hours` | today's ring + **soft pulse**        | `#fff4ec`         |
+ * | `today`       | 3px terracotta ring + 26px glow      | `#fff7f0`         |
+ * | `closing-in`  | 3px gold ring + 22px glow            | `#fdf7ec`         |
+ * | `this-week`   | 2.5px olive ring + 18px glow         | `#faf7ee`         |
+ * | `radar`       | faint 1.5px olive ring + 14px haze   | —                 |
+ * | `none`        | none (`null`)                        | —                 |
  */
 export function urgencyGlowStyle(tier: UrgencyTier): GlowStyle | null {
   switch (tier) {
     case 'overdue':
       return {
-        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 4px rgba(194,105,63,1), 0 0 32px 12px rgba(194,105,63,0.6)`,
+        boxShadow: `${BASE_CARD_SHADOW}, ${ringShadow(URGENT_HUE, 4, 1, 32, 12, 0.6)}`,
         animation: 'urgency-pulse 2s ease-in-out infinite',
-        background: '#fff1e8',
+        backgroundColor: 'rgb(var(--c-tint-overdue))',
       }
     case 'final-hours':
       return {
-        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
+        boxShadow: `${BASE_CARD_SHADOW}, ${ringShadow(URGENT_HUE, 3, 0.92, 26, 10, 0.5)}`,
         animation: 'urgency-pulse-soft 3s ease-in-out infinite',
-        background: '#fff4ec',
+        backgroundColor: 'rgb(var(--c-tint-final-hours))',
       }
     case 'today':
       return {
-        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 3px rgba(194,105,63,0.92), 0 0 26px 10px rgba(194,105,63,0.5)`,
-        background: '#fff7f0',
+        boxShadow: `${BASE_CARD_SHADOW}, ${ringShadow(URGENT_HUE, 3, 0.92, 26, 10, 0.5)}`,
+        backgroundColor: 'rgb(var(--c-tint-today))',
       }
     case 'closing-in':
       return {
-        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 3px rgba(184,134,42,0.8), 0 0 22px 8px rgba(184,134,42,0.42)`,
-        background: '#fdf7ec',
+        boxShadow: `${BASE_CARD_SHADOW}, ${ringShadow(GOLD_HUE, 3, 0.8, 22, 8, 0.42)}`,
+        backgroundColor: 'rgb(var(--c-tint-closing-in))',
       }
     case 'this-week':
       return {
-        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 2.5px rgba(138,120,40,0.6), 0 0 18px 6px rgba(138,120,40,0.3)`,
-        background: '#faf7ee',
+        boxShadow: `${BASE_CARD_SHADOW}, ${ringShadow(OLIVE_HUE, 2.5, 0.6, 18, 6, 0.3)}`,
+        backgroundColor: 'rgb(var(--c-tint-this-week))',
       }
     case 'radar':
       return {
-        boxShadow: `${BASE_CARD_SHADOW}, 0 0 0 1.5px rgba(138,120,40,0.35), 0 0 14px 4px rgba(138,120,40,0.22)`,
+        boxShadow: `${BASE_CARD_SHADOW}, ${ringShadow(OLIVE_HUE, 1.5, 0.35, 14, 4, 0.22)}`,
       }
     case 'none':
       return null
@@ -187,18 +242,18 @@ export function dueChipStyle(tier: UrgencyTier): DueChipStyle {
     case 'overdue':
     case 'final-hours':
     case 'today':
-      return { backgroundColor: DUE_BADGE_URGENT, color: '#fff' }
+      return { backgroundColor: DUE_BADGE_URGENT, color: CHIP_TEXT }
     case 'closing-in':
-      return { backgroundColor: GOLD, color: '#fff' }
+      return { backgroundColor: GOLD_HUE, color: CHIP_TEXT }
     case 'this-week':
       return {
         backgroundColor: 'transparent',
-        color: OLIVE,
-        border: '1.5px solid rgba(138,120,40,0.55)',
+        color: OLIVE_HUE,
+        border: `1.5px solid ${withAlpha(OLIVE_HUE, 0.55)}`,
       }
     case 'radar':
     case 'none':
-      return { backgroundColor: DUE_BADGE_MUTED, color: '#fff' }
+      return { backgroundColor: DUE_BADGE_MUTED, color: CHIP_TEXT }
   }
 }
 
@@ -247,23 +302,15 @@ export function gridChipLabel(
 
 /**
  * The cool stale card treatment — a box-shadow ring plus a faint cool-blue card TINT, the
- * cold-side mirror of the warm urgency tint (`GlowStyle.background`). Composed by the caller
+ * cold-side mirror of the warm urgency tint (`GlowStyle.backgroundColor`). Composed by the caller
  * exactly like a glow: ring appended after the base shadow, tint replacing the paper fill. A
  * stale card never wears the warm dress at the same time (staleness gates the tier to 'none').
  */
 export interface StaleRingStyle {
   boxShadow: string
   /** Cool-blue paper tint replacing the plain card fill, graduating icier with staleness depth. */
-  background?: string
+  backgroundColor?: string
 }
-
-/**
- * Cool-blue rgb triplet for the stale lane — a deliberately COOL hue with no overlap with the
- * warm urgency ladder (terracotta / gold / olive), so "gone cold" and "due soon" read as two
- * different things across the board. A confident azure (distinct from the muted `puppy` brand
- * blue, which is reserved for BabyClaw / habits). Reused across the ring + halo alphas.
- */
-const STALE_BLUE = '50,118,205'
 
 /**
  * A DATED task goes stale this many days PAST DUE — the point where the 🔥 has clearly stopped
@@ -380,9 +427,9 @@ export function staleness(
  * ramp on the same ladder: a dated task at 3/6/9 weeks past due hits the same rungs an undated
  * one hits at 3/6/9 months on the board. Ring/halo/tint values carry over unchanged from the
  * retired created-age ladder (pushed louder than a same-rung warm tier, owner ask 2026-07-12);
- * the loudest rung still sits just under the overdue ring.
+ * the loudest rung still sits just under the overdue ring. Tints are `--c-tint-stale*` tokens.
  *
- * | depth        | ring + halo                   | tint       |
+ * | depth        | ring + halo                   | tint (light) |
  * |--------------|-------------------------------|------------|
  * | not stale    | none (`null`)                 | —          |
  * | `< 2×` floor | 2px ring + 14px haze          | `#f3f8fd`  |
@@ -394,17 +441,17 @@ export function staleRingStyle(stale: StaleInfo | null): StaleRingStyle | null {
   const depth = stale.days / stale.floor
   if (depth < 2)
     return {
-      boxShadow: `0 0 0 2px rgba(${STALE_BLUE},0.6), 0 0 14px 3px rgba(${STALE_BLUE},0.3)`,
-      background: '#f3f8fd',
+      boxShadow: ringShadow(STALE_HUE, 2, 0.6, 14, 3, 0.3),
+      backgroundColor: 'rgb(var(--c-tint-stale))',
     }
   if (depth < 3)
     return {
-      boxShadow: `0 0 0 2.5px rgba(${STALE_BLUE},0.78), 0 0 20px 5px rgba(${STALE_BLUE},0.42)`,
-      background: '#eaf3fc',
+      boxShadow: ringShadow(STALE_HUE, 2.5, 0.78, 20, 5, 0.42),
+      backgroundColor: 'rgb(var(--c-tint-stale-deep))',
     }
   return {
-    boxShadow: `0 0 0 3px rgba(${STALE_BLUE},0.95), 0 0 28px 7px rgba(${STALE_BLUE},0.55)`,
-    background: '#e0edfb',
+    boxShadow: ringShadow(STALE_HUE, 3, 0.95, 28, 7, 0.55),
+    backgroundColor: 'rgb(var(--c-tint-stale-deepest))',
   }
 }
 
@@ -479,23 +526,13 @@ export function staleBadge(stale: StaleInfo | null): StaleBadge | null {
 
 /**
  * Inline style for the ❄️ stale chip — the cold-lane mirror of the terracotta overdue chip
- * (`dueChipStyle('overdue')`): a solid azure fill in the same `STALE_BLUE` hue as the ring, so
+ * (`dueChipStyle('overdue')`): a solid azure fill in the same `STALE_HUE` as the ring, so
  * the textual "how stale" badge reads as a sibling of the warm "how soon" badge without ever
  * being mistaken for it.
  */
 export function staleChipStyle(): DueChipStyle {
-  return { backgroundColor: `rgb(${STALE_BLUE})`, color: '#fff' }
+  return { backgroundColor: STALE_HUE, color: CHIP_TEXT }
 }
-
-/**
- * Slate rgb triplet for the PAUSED (dormant / future start_date) lane — a deliberately NEUTRAL,
- * cool-grey hue chosen to overlap NONE of the other card lanes: not the warm urgency ladder
- * (terracotta / gold / olive), not the cool STALE azure, and not the muted `puppy` brand blue
- * reserved for BabyClaw / habits. A paused task is a third thing entirely: it isn't due (its
- * deadline is intentionally deferred) and it isn't ignored (the user scheduled the wake) — it's
- * just SET ASIDE, waiting for its start date. Reused across the ring, tint, and chip.
- */
-const PAUSED_SLATE = '100,116,139'
 
 /**
  * Whole-card opacity a paused card is dimmed to. The set-aside cue that reads even where the slate
@@ -513,7 +550,7 @@ export const PAUSED_OPACITY = 0.7
  */
 export interface PausedRingStyle {
   boxShadow: string
-  background?: string
+  backgroundColor?: string
 }
 
 /**
@@ -527,19 +564,19 @@ export interface PausedRingStyle {
  */
 export function pausedRingStyle(): PausedRingStyle {
   return {
-    boxShadow: `0 0 0 3px rgba(${PAUSED_SLATE},1), 0 0 24px 8px rgba(${PAUSED_SLATE},0.45)`,
-    background: '#e7ebf2',
+    boxShadow: ringShadow(PAUSED_HUE, 3, 1, 24, 8, 0.45),
+    backgroundColor: 'rgb(var(--c-tint-paused))',
   }
 }
 
 /**
  * Inline style for the solid slate ⏸ paused chip — the set-aside-lane mirror of the terracotta
  * due chip (`dueChipStyle('overdue')`) and the azure stale chip (`staleChipStyle`): the same
- * `PAUSED_SLATE` hue as the ring, so the "when it comes back" badge reads as a sibling of the
+ * `PAUSED_HUE` as the ring, so the "when it comes back" badge reads as a sibling of the
  * "how soon" / "how stale" badges without ever being mistaken for either.
  */
 export function pausedChipStyle(): DueChipStyle {
-  return { backgroundColor: `rgb(${PAUSED_SLATE})`, color: '#fff' }
+  return { backgroundColor: PAUSED_HUE, color: CHIP_TEXT }
 }
 
 /**

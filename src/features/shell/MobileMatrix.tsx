@@ -210,7 +210,7 @@ export function MobileMatrix({
                 <span
                   aria-hidden
                   className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-white"
-                  style={{ background: isActive ? km.color : '#9a9080' }}
+                  style={{ backgroundColor: isActive ? km.color : '#9a9080' }}
                 >
                   {buckets[key].count}
                 </span>
@@ -259,7 +259,7 @@ export function MobileMatrix({
                   'flex min-h-[128px] flex-col gap-2 rounded-2xl border border-border-strong p-3 text-left transition-transform active:scale-[0.98] ' +
                   (empty ? 'opacity-60' : '')
                 }
-                style={{ borderLeft: `4px solid ${m.color}`, background: QUADRANT_TINT[key] }}
+                style={{ borderLeft: `4px solid ${m.color}`, backgroundColor: QUADRANT_TINT[key] }}
               >
                 <div className="flex items-start justify-between gap-2">
                   <span className="font-serif text-[15px] font-semibold" style={{ color: m.color }}>
@@ -282,7 +282,7 @@ export function MobileMatrix({
                     <span
                       aria-hidden
                       className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
-                      style={{ background: m.color }}
+                      style={{ backgroundColor: m.color }}
                     >
                       {count}
                     </span>
@@ -315,7 +315,7 @@ export function MobileMatrix({
                         <span
                           aria-hidden
                           className="h-1 w-1 shrink-0 rounded-full"
-                          style={{ background: m.color }}
+                          style={{ backgroundColor: m.color }}
                         />
                         <span className="truncate">{t.text}</span>
                       </li>

@@ -91,10 +91,10 @@ describe('recurringStatus', () => {
 describe('RC_COLOR', () => {
   it('maps each code to its exact color', () => {
     expect(RC_COLOR).toEqual({
-      overdue: '#c2693f',
-      due: '#b8862a',
-      soon: '#8a7828',
-      ok: '#5b8a72',
+      overdue: 'rgb(var(--c-accent))',
+      due: 'rgb(var(--c-urgency-gold))',
+      soon: 'rgb(var(--c-urgency-olive))',
+      ok: 'rgb(var(--c-primary))',
     })
   })
 })

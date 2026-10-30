@@ -325,19 +325,19 @@ export function TouchGridSurface({
               itself counts as background (dismiss + tap-to-place both key off it). */}
           <div
             className="pointer-events-none absolute left-0 top-0 h-1/2 w-1/2"
-            style={{ background: QUADRANT_TINT.schedule }}
+            style={{ backgroundColor: QUADRANT_TINT.schedule }}
           />
           <div
             className="pointer-events-none absolute right-0 top-0 h-1/2 w-1/2"
-            style={{ background: QUADRANT_TINT['do-now'] }}
+            style={{ backgroundColor: QUADRANT_TINT['do-now'] }}
           />
           <div
             className="pointer-events-none absolute bottom-0 left-0 h-1/2 w-1/2"
-            style={{ background: QUADRANT_TINT.someday }}
+            style={{ backgroundColor: QUADRANT_TINT.someday }}
           />
           <div
             className="pointer-events-none absolute bottom-0 right-0 h-1/2 w-1/2"
-            style={{ background: QUADRANT_TINT.errands }}
+            style={{ backgroundColor: QUADRANT_TINT.errands }}
           />
 
           {/* Decorative character layer, same as GridCanvas: the paw trail wandering toward

@@ -20,11 +20,15 @@ export interface QuadrantMeta {
  * - `x >= 0.5 && y <  0.5` → Errands  (urgent, not important)
  * - otherwise              → Someday  (neither)
  *
- * Colors are verbatim from the EisenClaw source (html:36-42).
+ * Colors are the `--c-quadrant-*` palette tokens (src/index.css), whose light values are verbatim
+ * from the EisenClaw source (html:36-42); as CSS-variable strings they follow the theme.
  */
 export function quadrantMeta(x: number, y: number): QuadrantMeta {
-  if (x >= 0.5 && y >= 0.5) return { key: 'do-now', label: 'Do Now', color: '#bf5e2a' }
-  if (x < 0.5 && y >= 0.5) return { key: 'schedule', label: 'Schedule', color: '#3d7a5f' }
-  if (x >= 0.5 && y < 0.5) return { key: 'errands', label: 'Errands', color: '#7d6b1e' }
-  return { key: 'someday', label: 'Someday', color: '#857c6e' }
+  if (x >= 0.5 && y >= 0.5)
+    return { key: 'do-now', label: 'Do Now', color: 'rgb(var(--c-quadrant-do-now))' }
+  if (x < 0.5 && y >= 0.5)
+    return { key: 'schedule', label: 'Schedule', color: 'rgb(var(--c-quadrant-schedule))' }
+  if (x >= 0.5 && y < 0.5)
+    return { key: 'errands', label: 'Errands', color: 'rgb(var(--c-quadrant-errands))' }
+  return { key: 'someday', label: 'Someday', color: 'rgb(var(--c-quadrant-someday))' }
 }

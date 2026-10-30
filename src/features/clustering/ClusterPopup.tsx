@@ -404,8 +404,8 @@ function ClusterPopupRow({
         // once paused) — exactly the spread GridCard does.
         ...(boxShadow ? { boxShadow } : {}),
         ...(glow?.animation ? { animation: glow.animation } : {}),
-        ...((glow?.background ?? coolRing?.background)
-          ? { background: glow?.background ?? coolRing?.background }
+        ...((glow?.backgroundColor ?? coolRing?.backgroundColor)
+          ? { backgroundColor: glow?.backgroundColor ?? coolRing?.backgroundColor }
           : {}),
         // A paused row dims whole, like the grid's paused card.
         ...(paused ? { opacity: PAUSED_OPACITY } : {}),
