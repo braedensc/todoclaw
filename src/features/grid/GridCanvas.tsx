@@ -60,7 +60,7 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
       // bubble, or menu sitting on top is untouched by this — see useBackgroundDismiss.
       {...{ [BACKGROUND_DISMISS_ATTR]: true }}
       onPointerDown={onBackgroundPointerDown}
-      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card shadow-[0_1px_2px_rgba(46,42,36,0.05),0_16px_40px_-18px_rgba(46,42,36,0.28)] wide:h-auto wide:aspect-[1046/640]"
+      className="relative h-[500px] overflow-hidden rounded-[14px] border border-border-strong bg-card shadow-canvas wide:h-auto wide:aspect-[1046/640]"
       style={PAPER_STYLE}
     >
       {/* Quadrant background tints (under the graph-paper lines is fine; they're translucent). */}

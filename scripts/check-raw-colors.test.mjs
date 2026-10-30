@@ -37,7 +37,6 @@ export function rawColors(src) {
 
 // path → one-line reason it still carries raw colors. Shrink only.
 const ALLOWLIST = {
-  'src/index.css': 'rgba() merge-preview shadows on grid cards and cluster bubbles',
   'src/components/TodoClawIcon.tsx': 'mascot SVG artwork fills',
   'src/components/TodoClawPeek.tsx': 'mascot SVG artwork fills',
   'src/features/ai/ChatConversation.tsx': 'text-white and [#hex] text on fills',
@@ -45,17 +44,7 @@ const ALLOWLIST = {
   'src/features/ai/PlanBox.tsx': 'text-white and a [#hex] chip background',
   'src/features/auth/AuthMascot.tsx': 'mascot SVG artwork fills',
   'src/features/backups/BackupsPanel.tsx': 'text-white on a solid fill',
-  'src/features/clustering/ClusterBubble.tsx': 'inline rgba() box-shadows',
-  'src/features/clustering/ClusterPopup.tsx': 'bg-white surface and text-white on a fill',
   'src/features/done/DoneView.tsx': 'deleted-task accent hex and text-white on a fill',
-  'src/features/grid/GridCard.tsx': 'inline rgba() drag shadow and text-white on a fill',
-  'src/features/grid/GridSurface.tsx': 'text-white pill and ring-black',
-  'src/features/grid/PawTrail.tsx': 'paw SVG fill hex',
-  'src/features/grid/TouchCardPopover.tsx': 'text-white on a solid fill',
-  'src/features/grid/TouchGridChip.tsx': 'text-white on a solid fill',
-  'src/features/grid/TouchGridSurface.tsx':
-    'inline rgba() lift shadow, text-white pill, ring-black',
-  'src/features/grid/TouchTaskSheet.tsx': 'text-white on a solid fill',
   'src/features/habits/HabitCheck.tsx': 'text-white on the puppy fill',
   'src/features/habits/HabitsView.tsx': 'text-white on a solid fill',
   'src/features/habits/RemindersInline.tsx': 'text-white on a solid fill',

@@ -186,7 +186,7 @@ export function TouchTaskSheet({
               title={recency ? doneCopy.title : undefined}
               aria-pressed={recency ? recency.workedToday : undefined}
               className={`min-h-[44px] flex-1 rounded-xl border border-primary text-sm font-semibold ${
-                recency?.workedToday ? 'bg-primary text-white' : 'bg-card text-primary'
+                recency?.workedToday ? 'bg-primary text-on-accent' : 'bg-card text-primary'
               }`}
             >
               ✓ {doneCopy.label}

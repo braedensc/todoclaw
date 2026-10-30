@@ -200,7 +200,7 @@ export function TouchGridSurface({
       })
       n.style.zIndex = '30'
       n.style.transform = 'translate(-50%, -50%) scale(1.12)'
-      n.style.boxShadow = '0 10px 22px rgba(0,0,0,0.26), 0 0 0 2px rgba(46,42,36,0.25)'
+      n.style.boxShadow = 'var(--shadow-lift-chip)'
     },
     onFrame: (id, p) => {
       const n = chipNodes.current.get(id)
@@ -510,7 +510,7 @@ export function TouchGridSurface({
                 type="button"
                 onClick={onExit}
                 aria-label="Exit grid view"
-                className="absolute right-3 top-3 z-[60] flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg ring-1 ring-black/10"
+                className="absolute right-3 top-3 z-[60] flex min-h-[44px] items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-on-accent shadow-lg ring-1 ring-ink/10"
               >
                 <span aria-hidden className="text-base leading-none">
                   ✕
@@ -542,7 +542,7 @@ export function TouchGridSurface({
                 type="button"
                 onClick={() => setAddOpen(true)}
                 aria-label="Add a task"
-                className="absolute bottom-4 right-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full bg-primary text-2xl font-semibold text-white shadow-lg"
+                className="absolute bottom-4 right-4 z-[60] flex h-[52px] w-[52px] items-center justify-center rounded-full bg-primary text-2xl font-semibold text-on-accent shadow-lg"
               >
                 ＋
               </button>

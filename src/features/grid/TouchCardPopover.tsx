@@ -198,7 +198,7 @@ export function TouchCardPopover({
       data-testid="touch-card-popover"
       role="dialog"
       aria-label={`Task: ${task.text}`}
-      className="overflow-y-auto overscroll-contain rounded-xl border border-border-strong bg-panel p-3 shadow-[0_10px_30px_rgba(0,0,0,.2)]"
+      className="overflow-y-auto overscroll-contain rounded-xl border border-border-strong bg-panel p-3 shadow-popover"
       style={style}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
@@ -276,7 +276,7 @@ export function TouchCardPopover({
             title={recency ? doneCopy.title : undefined}
             aria-pressed={recency ? recency.workedToday : undefined}
             className={`min-h-[44px] flex-1 rounded-xl border border-primary text-sm font-semibold ${
-              recency?.workedToday ? 'bg-primary text-white' : 'bg-card text-primary'
+              recency?.workedToday ? 'bg-primary text-on-accent' : 'bg-card text-primary'
             }`}
           >
             ✓ {doneCopy.label}

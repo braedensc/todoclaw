@@ -79,6 +79,13 @@ export default {
           someday: c('quadrant-someday'),
         },
       },
+      // Grid elevation (TOD-140): composite shadows defined per mode in src/index.css, so they
+      // deepen and gain a light rim on dark.
+      boxShadow: {
+        canvas: 'var(--shadow-canvas)',
+        popover: 'var(--shadow-popover)',
+        lift: 'var(--shadow-lift)',
+      },
       fontFamily: {
         serif: ['"Fraunces Variable"', 'Fraunces', 'Georgia', 'serif'],
         sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],

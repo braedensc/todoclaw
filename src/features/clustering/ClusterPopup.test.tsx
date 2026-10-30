@@ -132,10 +132,10 @@ describe('ClusterPopup row card-twin styling', () => {
     expect(rec?.querySelector('[title="Overdue"]')).toBeNull()
   })
 
-  it('renders the panel white so each card color reads as its own', () => {
+  it('renders the panel on the card surface so each card color reads as its own', () => {
     renderPopup([task('a')])
     const panel = document.querySelector('[data-testid="cluster-popup"]')
-    expect(panel?.className).toContain('bg-white')
+    expect(panel?.className).toContain('bg-card')
   })
 })
 
