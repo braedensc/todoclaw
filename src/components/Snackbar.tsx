@@ -9,7 +9,8 @@ import { createPortal } from 'react-dom'
 // Two tones: 'default' is a plain confirmation (the "Added to X ✓" pill); 'error' carries a
 // terracotta ⚠ and announces assertively — used by the shared task mutations' onError so a failed
 // write shows a notice instead of looking like a silent no-op. Both keep the AA-contrast dark pill
-// (white on `ink`); the tone differs by the leading glyph, not sub-AA colored text.
+// (`on-ink` on `ink`); the tone differs by the leading glyph, not sub-AA colored text. The glyph
+// takes `on-ink-accent`, not `accent`: in dark the pill is cream and plain accent washes out on it.
 //
 // pointer-events-none end to end — a toast must never block taps on the content behind it. The
 // entrance reuses the existing `babyclaw-flash` keyframe, whose reduced-motion guard in index.css
@@ -37,7 +38,7 @@ export function Snackbar({
           style={{ animation: 'babyclaw-flash 180ms ease-out' }}
         >
           {tone === 'error' && (
-            <span aria-hidden className="mr-1.5 text-accent">
+            <span aria-hidden className="mr-1.5 text-on-ink-accent">
               ⚠
             </span>
           )}

@@ -58,6 +58,7 @@ export default {
         // Text on solid fills: `on-ink` on `bg-ink`, `on-accent` on primary/accent/danger/puppy.
         'on-ink': c('on-ink'),
         'on-accent': c('on-accent'),
+        'on-ink-accent': c('on-ink-accent'), // terracotta that reads on a solid `ink` fill
         // Modal overlays — dark in BOTH modes (an ink scrim would turn light in dark mode).
         scrim: c('scrim'),
         // Borders

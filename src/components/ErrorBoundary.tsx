@@ -35,15 +35,16 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children
     if (this.props.fallback !== undefined) return this.props.fallback
 
+    // Theme tokens only (TOD-139): `danger` over a 10% `danger` wash reads in both modes.
     return (
-      <div role="alert" className="rounded border border-red-200 bg-red-50 p-4 text-sm">
-        <p className="font-medium text-red-700">Something went wrong.</p>
-        <p className="mt-1 text-red-600">
+      <div role="alert" className="rounded border border-danger/30 bg-danger/10 p-4 text-sm">
+        <p className="font-medium text-danger">Something went wrong.</p>
+        <p className="mt-1 text-ink">
           This part of the app hit an unexpected error. You can try again.
         </p>
         <button
           onClick={this.handleReset}
-          className="mt-3 rounded bg-red-600 px-3 py-1.5 text-white hover:bg-red-700"
+          className="mt-3 rounded bg-danger px-3 py-1.5 text-on-accent hover:opacity-90"
         >
           Try again
         </button>

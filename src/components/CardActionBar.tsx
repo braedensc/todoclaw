@@ -110,7 +110,7 @@ export function CardActionBar({
   // A logged session is the ONE state this pill fills for: everywhere else it stays outlined so it
   // reads as "mark done", not "already done" (see the header). Filled = today is already banked.
   const donePill = workedToday
-    ? 'border-primary bg-primary text-white hover:bg-primary/90'
+    ? 'border-primary bg-primary text-on-accent hover:bg-primary/90'
     : 'border-primary text-primary hover:bg-primary/10'
 
   return (

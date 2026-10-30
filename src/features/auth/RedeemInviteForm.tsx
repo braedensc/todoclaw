@@ -114,7 +114,7 @@ export function RedeemInviteForm({
       <button
         type="submit"
         disabled={busy}
-        className="rounded-[10px] bg-primary px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+        className="rounded-[10px] bg-primary px-3 py-2 text-sm font-semibold text-on-accent hover:opacity-90 disabled:opacity-50"
       >
         {busy ? '…' : 'Create account & sign in'}
       </button>

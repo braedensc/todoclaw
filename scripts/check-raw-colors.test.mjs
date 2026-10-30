@@ -37,21 +37,13 @@ export function rawColors(src) {
 
 // path → one-line reason it still carries raw colors. Shrink only.
 const ALLOWLIST = {
-  'src/index.css':
-    'rgba() washes, glows and shadows in plain CSS; washes/glows are themed by a later child',
-  'src/App.tsx': 'plan-pill gradient hex, inline SVG strokes and text-white on fills',
-  'src/components/CardActionBar.tsx': 'text-white on a solid fill',
-  'src/components/ConfirmDialog.tsx': 'text-white on danger/primary fills',
-  'src/components/ErrorBoundary.tsx': 'Tailwind red-* palette for the crash screen',
+  'src/index.css': 'rgba() merge-preview shadows on grid cards and cluster bubbles',
   'src/components/TodoClawIcon.tsx': 'mascot SVG artwork fills',
   'src/components/TodoClawPeek.tsx': 'mascot SVG artwork fills',
   'src/features/ai/ChatConversation.tsx': 'text-white and [#hex] text on fills',
   'src/features/ai/ChatSessionList.tsx': 'text-white on a solid fill',
   'src/features/ai/PlanBox.tsx': 'text-white and a [#hex] chip background',
-  'src/features/auth/AuthForm.tsx': 'text-white on the primary button',
   'src/features/auth/AuthMascot.tsx': 'mascot SVG artwork fills',
-  'src/features/auth/RedeemInviteForm.tsx': 'text-white on the primary button',
-  'src/features/auth/UpdatePasswordForm.tsx': 'text-white on the primary button',
   'src/features/backups/BackupsPanel.tsx': 'text-white on a solid fill',
   'src/features/clustering/ClusterBubble.tsx': 'inline rgba() box-shadows',
   'src/features/clustering/ClusterPopup.tsx': 'bg-white surface and text-white on a fill',
@@ -78,10 +70,6 @@ const ALLOWLIST = {
   'src/features/schedule/TimezoneMismatchBanner.tsx': 'text-white on a solid fill',
   'src/features/settings/InviteManager.tsx': 'text-white on a solid fill',
   'src/features/settings/SettingsPanel.tsx': 'text-white on a solid fill',
-  'src/features/shell/AddTaskForm.tsx': 'text-white on the primary button',
-  'src/features/shell/MobileMatrix.tsx': 'inline quadrant/due hex + rgba() and text-white',
-  'src/features/shell/TaskInputWidget.tsx':
-    'inline BabyClaw rgba() focus dress, text-white, ring-black',
 }
 
 function walk(dir) {

@@ -56,8 +56,12 @@ import {
 
 // Plan My Day pill (style mix): the ink fill warmed with a deep-green cast toward one corner,
 // the ✦ picked out in gold — the header's one quiet "AI moment". Shared by the mobile and
-// desktop headers so the pill is identical at every width.
-const planPillStyle = { backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #2c4a3a 115%)' }
+// desktop headers so the pill is identical at every width. Theme tokens (TOD-139): in dark the
+// ink fill is cream, so the cast is a pale sage and the ✦ a deeper gold (src/index.css).
+const planPillStyle = {
+  backgroundImage:
+    'linear-gradient(135deg, rgb(var(--c-ink)) 20%, rgb(var(--c-plan-pill-end)) 115%)',
+}
 
 // The signed-in app shell (B8 layout): header (wordmark + Plan My Day + quiet Reminders/Settings/
 // Done/Backups/Sign out links), the persistent Plan card top-center, the work region (a compact
@@ -348,7 +352,7 @@ function AppShell() {
                         </h1>
                         {/* Terracotta claw-swipe under the wordmark (aligned past the mark). */}
                         <svg
-                          className="ml-[52px] block"
+                          className="ml-[52px] block text-accent"
                           width="104"
                           height="12"
                           viewBox="0 0 118 14"
@@ -356,7 +360,7 @@ function AppShell() {
                         >
                           <path
                             d="M2,4 Q58,15 114,3"
-                            stroke="#c2693f"
+                            stroke="currentColor"
                             strokeWidth="2.6"
                             strokeLinecap="round"
                             fill="none"
@@ -364,7 +368,7 @@ function AppShell() {
                           />
                           <path
                             d="M8,8 Q56,17 104,7"
-                            stroke="#c2693f"
+                            stroke="currentColor"
                             strokeWidth="2"
                             strokeLinecap="round"
                             fill="none"
@@ -372,7 +376,7 @@ function AppShell() {
                           />
                           <path
                             d="M16,12 Q54,18 88,11"
-                            stroke="#c2693f"
+                            stroke="currentColor"
                             strokeWidth="1.5"
                             strokeLinecap="round"
                             fill="none"
@@ -473,7 +477,7 @@ function AppShell() {
                             <Thinking label="Thinking" />
                           ) : (
                             <>
-                              <span aria-hidden className="text-[#e8c47a]">
+                              <span aria-hidden className="text-[rgb(var(--c-plan-spark))]">
                                 ✦
                               </span>{' '}
                               {hasPlan ? 'Re-plan my day' : 'Plan My Day'}
@@ -487,7 +491,7 @@ function AppShell() {
                           type="button"
                           onClick={enterGridOnly}
                           title="Fill the screen with just the grid — hide everything else"
-                          className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                          className="whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-on-accent hover:opacity-90"
                         >
                           <span aria-hidden>▦</span> Grid-only view
                         </button>
@@ -498,7 +502,7 @@ function AppShell() {
                               (the 62px mark + gap on its left), three strokes fading like a
                               scratch through paper. */}
                           <svg
-                            className="ml-[68px] block"
+                            className="ml-[68px] block text-accent"
                             width="118"
                             height="14"
                             viewBox="0 0 118 14"
@@ -506,7 +510,7 @@ function AppShell() {
                           >
                             <path
                               d="M2,4 Q58,15 114,3"
-                              stroke="#c2693f"
+                              stroke="currentColor"
                               strokeWidth="2.6"
                               strokeLinecap="round"
                               fill="none"
@@ -514,7 +518,7 @@ function AppShell() {
                             />
                             <path
                               d="M8,8 Q56,17 104,7"
-                              stroke="#c2693f"
+                              stroke="currentColor"
                               strokeWidth="2"
                               strokeLinecap="round"
                               fill="none"
@@ -522,7 +526,7 @@ function AppShell() {
                             />
                             <path
                               d="M16,12 Q54,18 88,11"
-                              stroke="#c2693f"
+                              stroke="currentColor"
                               strokeWidth="1.5"
                               strokeLinecap="round"
                               fill="none"
@@ -557,7 +561,7 @@ function AppShell() {
                         {unread > 0 && (
                           <span
                             aria-hidden
-                            className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-puppy px-1 text-[10px] font-semibold leading-none text-white"
+                            className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-puppy px-1 text-[10px] font-semibold leading-none text-on-accent"
                           >
                             {unread > 9 ? '9+' : unread}
                           </span>
@@ -709,7 +713,7 @@ function AppShell() {
                           <Thinking label="Thinking" />
                         ) : (
                           <>
-                            <span aria-hidden className="text-[#e8c47a]">
+                            <span aria-hidden className="text-[rgb(var(--c-plan-spark))]">
                               ✦
                             </span>{' '}
                             {hasPlan ? 'Re-plan my day' : 'Plan My Day'}
@@ -941,10 +945,16 @@ export default function App() {
                 .
               </span>
             </h1>
-            <svg className="mt-1.5" width="130" height="14" viewBox="0 0 118 14" aria-hidden="true">
+            <svg
+              className="mt-1.5 text-accent"
+              width="130"
+              height="14"
+              viewBox="0 0 118 14"
+              aria-hidden="true"
+            >
               <path
                 d="M2,4 Q58,15 114,3"
-                stroke="#c2693f"
+                stroke="currentColor"
                 strokeWidth="2.6"
                 strokeLinecap="round"
                 fill="none"
@@ -952,7 +962,7 @@ export default function App() {
               />
               <path
                 d="M8,8 Q56,17 104,7"
-                stroke="#c2693f"
+                stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
                 fill="none"
@@ -960,7 +970,7 @@ export default function App() {
               />
               <path
                 d="M16,12 Q54,18 88,11"
-                stroke="#c2693f"
+                stroke="currentColor"
                 strokeWidth="1.5"
                 strokeLinecap="round"
                 fill="none"

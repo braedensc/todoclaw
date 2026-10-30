@@ -68,8 +68,8 @@ export function ConfirmDialog({
   const confirmText = confirmLabel ?? (tone === 'danger' ? 'Delete' : 'Confirm')
   const confirmClasses =
     tone === 'danger'
-      ? 'bg-danger text-white hover:opacity-90'
-      : 'bg-primary text-white hover:opacity-90'
+      ? 'bg-danger text-on-accent hover:opacity-90'
+      : 'bg-primary text-on-accent hover:opacity-90'
 
   // Title + message + the Cancel/Confirm row — identical on both surfaces.
   const body = (

@@ -82,11 +82,11 @@ export function TaskInputWidget({ grid, chat, canPlace, onOpenChat }: TaskInputW
         style={
           mode === 'babyclaw' && !status.waiting
             ? {
-                borderColor: 'rgba(95, 138, 163, 0.45)',
+                borderColor: 'rgb(var(--c-puppy) / 0.45)',
                 boxShadow:
-                  '0 0 0 1px rgba(95, 138, 163, 0.14), 0 2px 10px -4px rgba(95, 138, 163, 0.25)',
+                  '0 0 0 1px rgb(var(--c-puppy) / 0.14), 0 2px 10px -4px rgb(var(--c-puppy) / 0.25)',
                 backgroundImage:
-                  'linear-gradient(180deg, rgba(95, 138, 163, 0.045), rgba(255, 255, 255, 0) 60%)',
+                  'linear-gradient(180deg, rgb(var(--c-puppy) / 0.045), rgb(var(--c-card) / 0) 60%)',
               }
             : undefined
         }
@@ -327,7 +327,7 @@ function ManualInput({ grid, canPlace }: { grid: GridApi; canPlace: boolean }) {
           <button
             type="submit"
             disabled={addTask.isPending || !text.trim()}
-            className="rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-on-accent hover:opacity-90 disabled:opacity-50"
           >
             Add
           </button>
@@ -391,7 +391,7 @@ function ChipPopover({
         // section made it ~700px tall), and an absolutely-positioned panel that runs off the
         // bottom has no way to reach its lower controls. 70vh keeps the whole panel usable on a
         // 13" laptop without touching the roomy-desktop layout.
-        <div className="absolute left-0 top-full z-30 mt-1.5 max-h-[70vh] min-w-max overflow-y-auto rounded-xl border border-border-strong bg-card p-3 shadow-xl ring-1 ring-black/5">
+        <div className="absolute left-0 top-full z-30 mt-1.5 max-h-[70vh] min-w-max overflow-y-auto rounded-xl border border-border-strong bg-card p-3 shadow-xl ring-1 ring-scrim/5">
           {children(onClose)}
         </div>
       )}
@@ -492,7 +492,7 @@ function BabyClawInput({
           role="status"
           aria-live="polite"
           className="rounded-lg border border-accent/40 px-2.5 py-1.5"
-          style={{ backgroundColor: 'rgba(194, 105, 63, 0.07)' }}
+          style={{ backgroundColor: 'rgb(var(--c-accent) / 0.07)' }}
         >
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <p className="min-w-0 flex-1 text-[12px] leading-snug text-ink">
@@ -507,7 +507,7 @@ function BabyClawInput({
                 <button
                   type="button"
                   onClick={confirm}
-                  className="rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-white hover:opacity-90"
+                  className="rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-on-accent hover:opacity-90"
                 >
                   Yes, go ahead
                 </button>
@@ -574,7 +574,9 @@ function BabyClawInput({
                 // Faint tint behind the chip. Tailwind opacity modifiers aren't used in this codebase
                 // (it sets translucent colors inline — see index.css), so do the same here.
                 animation: 'babyclaw-flash 220ms ease-out',
-                backgroundColor: flash.ok ? 'rgba(91, 138, 114, 0.12)' : 'rgba(194, 105, 63, 0.12)',
+                backgroundColor: flash.ok
+                  ? 'rgb(var(--c-primary) / 0.12)'
+                  : 'rgb(var(--c-accent) / 0.12)',
               }}
             >
               {flash.ok ? `${flash.verb} ✓` : 'error ✕'}
