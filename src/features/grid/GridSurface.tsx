@@ -265,7 +265,7 @@ export function GridSurface({
           onClick={onExitGridOnly}
           aria-label="Exit grid-only view"
           title="Exit grid-only view (Esc)"
-          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-lg ring-1 ring-black/10 hover:opacity-90"
+          className="absolute right-4 top-4 z-[60] flex items-center gap-1.5 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-on-accent shadow-lg ring-1 ring-ink/10 hover:opacity-90"
         >
           <span aria-hidden className="text-base leading-none">
             ✕

@@ -269,7 +269,7 @@ export function GridCard({
     ...(menuOpen ? { zIndex: 40 } : {}),
     // Dragging treatment overrides the glow/aging shadow so the card under the pointer
     // always stays clearly visible, and lifts it above every other card while it moves.
-    ...(dragging ? { opacity: 0.85, boxShadow: '0 10px 24px rgba(0,0,0,0.28)', zIndex: 30 } : {}),
+    ...(dragging ? { opacity: 0.85, boxShadow: 'var(--shadow-lift)', zIndex: 30 } : {}),
   }
 
   function commitRename(): void {
@@ -363,7 +363,7 @@ export function GridCard({
           two-line badge (html:569/587) rather than a single row of separate chips. */}
       {rc && (
         <div
-          className="mb-0.5 block rounded-[3px] px-1 py-px text-[8.5px] font-bold leading-tight text-white"
+          className="mb-0.5 block rounded-[3px] px-1 py-px text-[8.5px] font-bold leading-tight text-on-accent"
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
           <span>↻ {rc.label}</span>
@@ -490,7 +490,7 @@ export function GridCard({
                 // Fixed + portaled so the ~460px panel can never be clipped by the grid canvas.
                 // z-90 sits above the fullscreen grid overlay (z-50) and below the confirm dialog
                 // (z-100), matching ClusterPopup. Hidden until the first measure lands.
-                className="fixed overflow-y-auto rounded-lg border border-border-strong bg-panel p-3 text-ink shadow-[0_8px_28px_rgba(0,0,0,.18)]"
+                className="fixed overflow-y-auto rounded-lg border border-border-strong bg-panel p-3 text-ink shadow-popover"
                 style={{
                   zIndex: 90,
                   width: MENU_W,

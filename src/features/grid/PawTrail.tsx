@@ -25,11 +25,11 @@ const PRINTS: Array<{ x: number; y: number; r: number; s: number; o: number }> =
   { x: 868, y: 90, r: 52, s: 0.25, o: 0.09 },
 ]
 
-// One print (100×100 local units, ink fill), toes pointing up. Shared: the trail rotates it
+// One print (100×100 local units, `fill-ink`, so it lightens on dark), toes pointing up. Shared: the trail rotates it
 // per step below, and GridSurface stamps it where a card was just marked done.
 export function PawPrintShape() {
   return (
-    <g fill="#2e2a24">
+    <g className="fill-ink">
       <ellipse cx="50" cy="66" rx="24" ry="19" />
       <ellipse cx="22" cy="38" rx="9" ry="12" transform="rotate(-18 22 38)" />
       <ellipse cx="42" cy="26" rx="9" ry="12" transform="rotate(-6 42 26)" />

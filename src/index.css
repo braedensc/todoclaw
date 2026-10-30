@@ -75,6 +75,23 @@
     --wash-top: 0.15;
     --wash-bottom-left: 0.13;
     --wash-bottom-right: 0.11;
+    /* Grid elevation (TOD-140): drop-shadow color (black in both modes — it is the alpha and the
+       rim below that change), and the composite shadows the grid/cluster components use as
+       `var(--shadow-*)` inline or via tailwind.config.js `boxShadow` (shadow-lift/-popover/-canvas).
+       Rings are ink, so on dark they turn into a light rim. The merge-target filter dims a card
+       on paper and brightens one on charcoal, where dimming barely shows. */
+    --c-shadow: 0 0 0;
+    --shadow-canvas: 0 1px 2px rgb(var(--c-ink) / 0.05), 0 16px 40px -18px rgb(var(--c-ink) / 0.28);
+    --shadow-popover: 0 8px 28px rgb(var(--c-shadow) / 0.18);
+    --shadow-lift: 0 10px 24px rgb(var(--c-shadow) / 0.28);
+    --shadow-lift-chip: 0 10px 22px rgb(var(--c-shadow) / 0.26), 0 0 0 2px rgb(var(--c-ink) / 0.25);
+    --shadow-bubble: 0 2px 8px rgb(var(--c-shadow) / 0.1);
+    --shadow-bubble-open: 0 6px 20px rgb(var(--c-shadow) / 0.18);
+    --shadow-merge: 0 8px 20px rgb(var(--c-shadow) / 0.3), 0 0 0 2px rgb(var(--c-ink) / 0.35);
+    --shadow-merge-bubble:
+      0 8px 22px rgb(var(--c-shadow) / 0.28), 0 0 0 2px rgb(var(--c-ink) / 0.3);
+    --merge-filter: brightness(0.96);
+    --merge-filter-bubble: brightness(0.97);
   }
   /* Warm charcoal. Surfaces step UP in lightness bg → panel → card (the light set's elevation
      order); fills are lifted so dark `on-*` text clears them; the scrim stays black. */
@@ -130,6 +147,24 @@
     --wash-top: 0.08;
     --wash-bottom-left: 0.07;
     --wash-bottom-right: 0.06;
+    /* Black shadows vanish on charcoal, so each one deepens and the lifted/floating ones gain a
+       faint light rim (card-shadow); ink rings are already light here. */
+    --c-shadow: 0 0 0;
+    --shadow-canvas:
+      0 1px 2px rgb(var(--c-shadow) / 0.3), 0 16px 40px -18px rgb(var(--c-shadow) / 0.7);
+    --shadow-popover:
+      0 10px 32px rgb(var(--c-shadow) / 0.55), 0 0 0 1px rgb(var(--c-card-shadow) / 0.08);
+    --shadow-lift:
+      0 12px 28px rgb(var(--c-shadow) / 0.6), 0 0 0 1px rgb(var(--c-card-shadow) / 0.18);
+    --shadow-lift-chip: 0 10px 22px rgb(var(--c-shadow) / 0.6), 0 0 0 2px rgb(var(--c-ink) / 0.45);
+    --shadow-bubble: 0 2px 8px rgb(var(--c-shadow) / 0.45);
+    --shadow-bubble-open:
+      0 6px 20px rgb(var(--c-shadow) / 0.6), 0 0 0 1px rgb(var(--c-card-shadow) / 0.1);
+    --shadow-merge: 0 8px 20px rgb(var(--c-shadow) / 0.6), 0 0 0 2px rgb(var(--c-ink) / 0.7);
+    --shadow-merge-bubble:
+      0 8px 22px rgb(var(--c-shadow) / 0.6), 0 0 0 2px rgb(var(--c-ink) / 0.65);
+    --merge-filter: brightness(1.18);
+    --merge-filter-bubble: brightness(1.15);
   }
   body {
     @apply bg-bg font-sans text-ink antialiased;
@@ -599,16 +634,15 @@ input[type='range'] {
    every task it would merge with is flagged `data-merge-target` from the per-frame drag handler (a
    plain DOM attribute — no React re-render): a standalone under-card, and/or the cluster BUBBLE a
    folded task is drawn inside. The flagged element's transform/box-shadow are set inline, so these
-   must win with !important. Kept deliberately subtle.
+   must win with !important. Kept deliberately subtle. The shadow and filter are --shadow-merge* /
+   --merge-filter* (palette blocks above): on charcoal the target brightens and its ink ring is light.
 
    CARD variant — scoped away from the bubble wrapper (which gets its own rule below): the flagged
    element IS the visible card, so grow + shadow + brightness all land on it. */
 [data-merge-target]:not([data-testid='cluster-bubble']) {
   transform: translate(-50%, -50%) scale(1.08) !important;
-  box-shadow:
-    0 8px 20px rgba(0, 0, 0, 0.3),
-    0 0 0 2px rgba(46, 42, 36, 0.35) !important;
-  filter: brightness(0.96);
+  box-shadow: var(--shadow-merge) !important;
+  filter: var(--merge-filter);
   z-index: 20;
   transition:
     transform 120ms ease,
@@ -625,10 +659,8 @@ input[type='range'] {
   transition: transform 120ms ease;
 }
 [data-testid='cluster-bubble'][data-merge-target] > button {
-  box-shadow:
-    0 8px 22px rgba(0, 0, 0, 0.28),
-    0 0 0 2px rgba(46, 42, 36, 0.3) !important;
-  filter: brightness(0.97);
+  box-shadow: var(--shadow-merge-bubble) !important;
+  filter: var(--merge-filter-bubble);
   transition: box-shadow 120ms ease;
 }
 @media (prefers-reduced-motion: reduce) {

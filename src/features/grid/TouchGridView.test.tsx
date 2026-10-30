@@ -515,6 +515,8 @@ describe('TouchGridSurface hold-drag', () => {
       })
       // The chip rides 56px above the finger — drop the finger at y = 200 + 56 so the CHIP
       // (and therefore the committed point) lands at screen y 200 → data y 0.75.
+      // The lift dress is the themed shadow token, so it deepens and rims on dark.
+      expect(chip.style.boxShadow).toBe('var(--shadow-lift-chip)')
       fireEvent.pointerMove(window, { clientX: 300, clientY: 256 })
       // Crosshairs + quadrant outline paint at the offset-corrected point while dragging.
       expect(screen.getByTestId('drag-crosshair-x').style.display).toBe('block')

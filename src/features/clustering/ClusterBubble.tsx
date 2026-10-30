@@ -152,12 +152,8 @@ export function ClusterBubble({
     // so a cluster holding an urgent task reads with the SAME ring + pulse + tint a standalone card
     // gets — and a stale cluster gains the same cool ring its coldest folded card would show.
     boxShadow: open
-      ? '0 6px 20px rgba(0,0,0,.18)'
-      : [
-          glow?.boxShadow ?? '0 2px 8px rgba(0,0,0,.10)',
-          staleRing?.boxShadow,
-          pausedDress?.boxShadow,
-        ]
+      ? 'var(--shadow-bubble-open)'
+      : [glow?.boxShadow ?? 'var(--shadow-bubble)', staleRing?.boxShadow, pausedDress?.boxShadow]
           .filter(Boolean)
           .join(', '),
     ...(!open && glow?.animation ? { animation: glow.animation } : {}),

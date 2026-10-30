@@ -80,7 +80,10 @@ not in `tailwind.config.js`; `theme-tokens.test.ts` checks every `var(--c-…)` 
 light and a dark value. In dark, card tints are low-alpha hue over `card` rather than pastels,
 the card shadow is a light rim, solid chips take `on-accent` text, and stale blue / paused slate
 are lifted. Tests assert the token strings, never resolved rgb, and inline tints use the
-`backgroundColor` longhand.
+`backgroundColor` longhand. Grid and cluster elevation (canvas, popovers, drag/lift, bubbles,
+the merge-target preview) uses composite `--shadow-*` variables beside the palette (Tailwind
+`shadow-canvas`/`-popover`/`-lift`, or `var(--shadow-…)` inline): on dark each shadow deepens and
+the floating ones gain a faint light rim, and the merge target brightens instead of dimming (TOD-140).
 
 - **Urgency glow** — a `box-shadow` ring that intensifies as the due date approaches, keyed on
   `daysUntil(due)` (timezone-aware). Overdue → strongest terracotta ring **+ pulse**; due today →

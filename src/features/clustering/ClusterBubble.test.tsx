@@ -109,6 +109,7 @@ describe('ClusterBubble', () => {
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.animation).toBe('')
     expect(button.style.backgroundColor).toBe('')
+    expect(button.style.boxShadow).toBe('var(--shadow-bubble-open)')
   })
 
   // A STALE cluster gains the same cool-blue ring its coldest folded card would show —
@@ -152,7 +153,7 @@ describe('ClusterBubble', () => {
     renderBubble({ open: false, staleRing: STALE_RING })
     const button = screen.getByRole('button', { name: '2 tasks stacked here' })
     expect(button.style.boxShadow).toContain('rgb(var(--c-stale) / 0.95)')
-    expect(button.style.boxShadow).toContain('rgba(0,0,0,.10)')
+    expect(button.style.boxShadow).toContain('var(--shadow-bubble)')
     expect(button.style.backgroundColor).toBe('rgb(var(--c-tint-stale-deepest))')
   })
 

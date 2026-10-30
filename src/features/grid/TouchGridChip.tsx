@@ -238,7 +238,7 @@ export function TouchGridChip({
         </span>
       ) : rc ? (
         <span
-          className="mt-0.5 inline-block rounded px-1 py-[1.5px] text-[9px] font-semibold leading-none text-white"
+          className="mt-0.5 inline-block rounded px-1 py-[1.5px] text-[9px] font-semibold leading-none text-on-accent"
           style={{ backgroundColor: RC_COLOR[rc.code] }}
         >
           ↻ {rc.label}

@@ -201,7 +201,7 @@ export function ClusterPopup({
       // WHITE panel (not the cream bg-panel): the rows inside are dressed as mini grid cards with
       // their own urgency tints/glows, and against cream the whole menu read as one warm blob —
       // white makes each card's color read as the card's, not the menu's (owner feedback 2026-07-09).
-      className="overflow-y-auto rounded-xl border border-border bg-white shadow-[0_8px_28px_rgba(0,0,0,.18)]"
+      className="overflow-y-auto rounded-xl border border-border bg-card shadow-popover"
       style={style}
       // Portaled to <body>, but React events still bubble to the bubble (which stops them). Stop
       // clicks/pointer-downs here too so nothing inside can ever reach the grid background (whose
@@ -467,7 +467,7 @@ function ClusterPopupRow({
             </span>
           ) : rc ? (
             <span
-              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-white"
+              className="flex-shrink-0 rounded px-1 text-[9px] font-semibold text-on-accent"
               style={{ backgroundColor: RC_COLOR[rc.code] }}
               title={rc.label}
             >
@@ -524,7 +524,7 @@ function ClusterPopupRow({
                 role="menu"
                 aria-label="Due date and recurring"
                 // z-95: above this popup's own z-90 portal, still below the confirm dialog (z-100).
-                className="fixed overflow-y-auto rounded-lg border border-border-strong bg-panel p-3 text-ink shadow-[0_8px_28px_rgba(0,0,0,.18)]"
+                className="fixed overflow-y-auto rounded-lg border border-border-strong bg-panel p-3 text-ink shadow-popover"
                 style={{
                   zIndex: 95,
                   width: ROW_MENU_W,
