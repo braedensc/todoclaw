@@ -182,7 +182,7 @@ export function InviteManager() {
           type="button"
           onClick={() => generate.mutate({ maxUses, expiresInDays })}
           disabled={generate.isPending}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-accent hover:opacity-90 disabled:opacity-60"
         >
           {generate.isPending ? '…' : 'Generate link'}
         </button>

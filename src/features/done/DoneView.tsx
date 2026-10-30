@@ -31,8 +31,9 @@ import type { Task } from '../../types/task'
 // soft-deleted the task instead, which looked like a no-op — see the done README / ADR-0012.)
 
 // Left-accent for a completion whose task is gone (soft-deleted / no task_id): a muted parchment
-// grey, since there is no live x/y to derive a quadrant color from.
-const DELETED_ACCENT = '#c9c0ad'
+// grey (the faint-label token, so it dims on charcoal too), since there is no live x/y to derive a
+// quadrant color from.
+const DELETED_ACCENT = 'rgb(var(--c-muted-faint))'
 
 interface HistoryRowProps {
   entry: History
@@ -71,7 +72,7 @@ function HistoryRow({
           {rc && (
             <span
               aria-hidden
-              className="shrink-0 rounded-[3px] px-1 py-px text-[9px] font-bold leading-none text-white"
+              className="shrink-0 rounded-[3px] px-1 py-px text-[9px] font-bold leading-none text-on-accent"
               style={{ backgroundColor: RC_COLOR[rc.code] }}
             >
               ↻
@@ -100,7 +101,7 @@ function HistoryRow({
           )}
           {days !== null && (
             <span
-              className="rounded-[3px] px-[5px] py-px font-bold text-white"
+              className="rounded-[3px] px-[5px] py-px font-bold text-on-accent"
               style={{ backgroundColor: days <= 2 ? DUE_BADGE_URGENT : DUE_BADGE_MUTED }}
             >
               {days < 0 ? 'overdue' : days === 0 ? 'due today' : `due ${days}d`}

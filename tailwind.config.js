@@ -61,6 +61,8 @@ export default {
         'on-ink-accent': c('on-ink-accent'), // terracotta that reads on a solid `ink` fill
         // Modal overlays — dark in BOTH modes (an ink scrim would turn light in dark mode).
         scrim: c('scrim'),
+        // Warm paper in BOTH modes — the plate under fixed light artwork (the install mockups).
+        'paper-fixed': c('paper-fixed'),
         // Borders
         border: {
           DEFAULT: c('border'),
@@ -69,6 +71,9 @@ export default {
         // Brand accents
         primary: c('primary'), // green — Add / Set buttons
         accent: c('accent'), // terracotta — one-time bucket dot, urgency
+        // Deeper text shades of primary/accent for small type on their own /10 washes (chat receipts).
+        'primary-deep': c('primary-deep'),
+        'accent-deep': c('accent-deep'),
         danger: c('danger'), // warm brick red — destructive/delete affordances
         puppy: c('puppy'), // BabyClaw slate-blue — BabyClaw mode + the habits surface
         // Eisenhower quadrants

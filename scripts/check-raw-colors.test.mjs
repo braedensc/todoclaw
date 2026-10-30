@@ -39,26 +39,9 @@ export function rawColors(src) {
 const ALLOWLIST = {
   'src/components/TodoClawIcon.tsx': 'mascot SVG artwork fills',
   'src/components/TodoClawPeek.tsx': 'mascot SVG artwork fills',
-  'src/features/ai/ChatConversation.tsx': 'text-white and [#hex] text on fills',
-  'src/features/ai/ChatSessionList.tsx': 'text-white on a solid fill',
-  'src/features/ai/PlanBox.tsx': 'text-white and a [#hex] chip background',
   'src/features/auth/AuthMascot.tsx': 'mascot SVG artwork fills',
-  'src/features/backups/BackupsPanel.tsx': 'text-white on a solid fill',
-  'src/features/done/DoneView.tsx': 'deleted-task accent hex and text-white on a fill',
-  'src/features/habits/HabitCheck.tsx': 'text-white on the puppy fill',
-  'src/features/habits/HabitsView.tsx': 'text-white on a solid fill',
-  'src/features/habits/RemindersInline.tsx': 'text-white on a solid fill',
-  'src/features/list/ExpandedRow.tsx': 'slider accent hex props and text-white on a fill',
-  'src/features/onboarding/AppSetupWizard.tsx': 'text-white on solid fills',
-  'src/features/onboarding/DemoScene.tsx': 'demo plan-pill gradient hex, [#hex] text, text-white',
-  'src/features/onboarding/FeatureTour.tsx': 'inline rgba() spotlight scrim and text-white',
-  'src/features/onboarding/InstallPanels.tsx': 'illustrated phone/browser mockup artwork',
-  'src/features/onboarding/SetupGuide.tsx': 'text-white and [#hex] text',
-  'src/features/reminders/ReminderPicker.tsx': 'text-white on a solid fill',
-  'src/features/schedule/SchedulePanel.tsx': 'text-white on solid fills',
-  'src/features/schedule/TimezoneMismatchBanner.tsx': 'text-white on a solid fill',
-  'src/features/settings/InviteManager.tsx': 'text-white on a solid fill',
-  'src/features/settings/SettingsPanel.tsx': 'text-white on a solid fill',
+  'src/features/onboarding/InstallPanels.tsx':
+    'fixed phone/browser mockup artwork (on the bg-paper-fixed plate)',
 }
 
 function walk(dir) {

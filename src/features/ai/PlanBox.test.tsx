@@ -146,6 +146,8 @@ describe('PlanBox', () => {
     expect(screen.getByText('Write the novel')).toBeInTheDocument()
     expect(screen.getByText(/A relaxed hour would move it along\./)).toBeInTheDocument()
     expect(screen.getByText(/no pressure/i)).toBeInTheDocument()
+    // The inset chip is the themed paper token (it recesses on charcoal), not a fixed hex.
+    expect(screen.getByText(/no pressure/i)).toHaveClass('bg-bg', 'text-muted')
     // …but it is NOT dressed up as a Big rock (that's the whole point).
     expect(screen.queryByText('Big rock')).not.toBeInTheDocument()
   })

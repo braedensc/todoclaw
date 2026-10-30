@@ -235,7 +235,7 @@ export function ChatConversation({
                 <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
                   <span
                     aria-hidden
-                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(91,138,114,0.16)]"
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgb(var(--c-primary)/0.16)]"
                   />
                   your AI planning pup
                 </p>
@@ -320,7 +320,7 @@ export function ChatConversation({
                 <button
                   type="button"
                   onClick={confirm}
-                  className="rounded-lg bg-puppy px-3 py-1.5 text-sm font-medium text-white"
+                  className="rounded-lg bg-puppy px-3 py-1.5 text-sm font-medium text-on-accent"
                 >
                   Yes, do it
                 </button>
@@ -382,7 +382,7 @@ export function ChatConversation({
                   type="submit"
                   disabled={busy || paused || !text.trim()}
                   aria-label="Send"
-                  className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-white shadow-[0_2px_0_rgba(58,90,73,0.35)] disabled:opacity-50"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-on-accent shadow-[0_2px_0_rgb(var(--c-shadow)/0.3)] disabled:opacity-50"
                 >
                   <PawPrint className="h-5 w-5" />
                 </button>
@@ -422,8 +422,8 @@ function Bubble({ item }: { item: ChatItem }) {
         <span
           className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium ${
             ok
-              ? 'border-primary/30 bg-primary/10 text-[#39604c]'
-              : 'border-accent/30 bg-accent/10 text-[#8a4a29]'
+              ? 'border-primary/30 bg-primary/10 text-primary-deep'
+              : 'border-accent/30 bg-accent/10 text-accent-deep'
           }`}
         >
           <span aria-hidden className="text-[13px] leading-none">

@@ -86,7 +86,7 @@ export function RemindersInline() {
   const tally = (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
-        allDone ? 'bg-puppy text-white' : 'bg-puppy/10 text-puppy'
+        allDone ? 'bg-puppy text-on-accent' : 'bg-puppy/10 text-puppy'
       }`}
     >
       <BoneIcon className="h-2 w-auto" />

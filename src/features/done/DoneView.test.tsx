@@ -121,6 +121,18 @@ describe('DoneView', () => {
     expect(screen.queryByRole('button', { name: /Restore/i })).not.toBeInTheDocument()
   })
 
+  it('edges a gone task’s row with the faint-label token, not a fixed hex (dark mode)', () => {
+    historyMock.mockReturnValue({
+      data: [entry({ task_id: null })],
+      isLoading: false,
+      isError: false,
+    })
+    tasksMock.mockReturnValue({ data: [] })
+    renderView()
+    const row = screen.getByText('Ship PR6').closest('li') as HTMLElement
+    expect(row.style.borderLeftColor).toBe('rgb(var(--c-muted-faint))')
+  })
+
   it('does NOT delete when the confirm dialog is cancelled', async () => {
     historyMock.mockReturnValue({ data: [entry()], isLoading: false, isError: false })
     renderView()

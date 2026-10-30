@@ -170,7 +170,7 @@ export function SchedulePanel({
     touch ? 'px-3.5 py-2 text-[13px]' : 'px-2.5 py-1 text-xs'
   }`
   const chipOff = `${chipBase} border-border-strong bg-card text-muted hover:text-ink`
-  const chipOn = `${chipBase} border-primary bg-primary text-white`
+  const chipOn = `${chipBase} border-primary bg-primary text-on-accent`
   const segBase = `rounded-lg font-semibold transition-colors ${
     touch ? 'min-h-[40px] flex-1 px-3 text-[13px]' : 'px-3 py-1.5 text-xs'
   }`
@@ -339,7 +339,7 @@ export function SchedulePanel({
                 onClick={() => pickDay(iso)}
                 className={`${cellH} rounded-lg border text-xs transition-colors ${
                   selected
-                    ? 'border-primary bg-primary font-bold text-white'
+                    ? 'border-primary bg-primary font-bold text-on-accent'
                     : isToday
                       ? 'border-accent font-bold text-accent hover:bg-bg'
                       : `border-transparent hover:bg-bg ${isPast ? 'text-muted-faint' : 'text-ink'}`

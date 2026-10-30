@@ -43,6 +43,13 @@ describe('FeatureTour', () => {
     expect(onClose).toHaveBeenCalledWith(true)
   })
 
+  it('dims the page with the scrim token, which stays dark in both themes', () => {
+    plantAnchors('alpha')
+    render(<FeatureTour steps={STEPS} onClose={() => {}} />)
+    const spotlight = screen.getByRole('dialog').firstElementChild as HTMLElement
+    expect(spotlight.style.boxShadow).toContain('rgb(var(--c-scrim) / 0.5)')
+  })
+
   describe('`also` — the secondary call-out', () => {
     it('rings the named anchor alongside the spotlight, and clears it on the next step', () => {
       // The mobile bottom bar's reason for existing: a panel shows the surface, `also` says which

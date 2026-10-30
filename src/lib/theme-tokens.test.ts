@@ -79,6 +79,8 @@ const CHECKED_PAIRS: [string, string][] = [
     'muted-light',
     'primary',
     'accent',
+    'primary-deep',
+    'accent-deep',
     'danger',
     'puppy',
     'quadrant-do-now',
@@ -165,6 +167,11 @@ describe('theme tokens', () => {
 
   it('the scrim stays dark in dark mode', () => {
     expect(luminance(dark.get('scrim') as Rgb)).toBeLessThan(0.05)
+  })
+
+  it('the install-mockup plate is the same warm paper in both modes', () => {
+    expect(dark.get('paper-fixed')).toEqual(light.get('paper-fixed'))
+    expect(light.get('paper-fixed')).toEqual(light.get('bg'))
   })
 
   it.each(SURFACES.flatMap((bg) => ['ink', 'muted'].map((fg) => [fg, bg])))(

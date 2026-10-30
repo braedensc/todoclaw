@@ -90,18 +90,18 @@ export function ExpandedRow({
           value={xPct}
           onChange={setXPct}
           onCommit={commit}
-          accent="#c2693f"
+          accent="rgb(var(--c-accent))"
         />
         <AxisControl
           label="Importance"
           value={yPct}
           onChange={setYPct}
           onCommit={commit}
-          accent="#3d7a5f"
+          accent="rgb(var(--c-quadrant-schedule))"
         />
 
         <span
-          className="rounded px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white"
+          className="rounded px-2 py-1 text-xs font-semibold uppercase tracking-wide text-on-accent"
           style={{ backgroundColor: live.color }}
         >
           {live.label}
