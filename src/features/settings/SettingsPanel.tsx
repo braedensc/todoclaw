@@ -744,7 +744,7 @@ export function SettingsPanel({
       role="dialog"
       aria-label="Settings"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(2.5rem_+_env(safe-area-inset-top))]"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-scrim/40 p-4 pt-[calc(2.5rem_+_env(safe-area-inset-top))]"
       onClick={onClose}
     >
       <section

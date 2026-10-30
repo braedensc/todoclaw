@@ -479,7 +479,7 @@ function BabyClawInput({
         <button
           type="submit"
           disabled={busy || paused || !text.trim()}
-          className="rounded-lg bg-ink px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className="rounded-lg bg-ink px-3.5 py-1.5 text-sm font-medium text-on-ink hover:opacity-90 disabled:opacity-50"
         >
           Send
         </button>

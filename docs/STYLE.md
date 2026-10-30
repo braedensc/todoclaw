@@ -13,6 +13,14 @@ The "warm paper" palette and fonts are TodoClaw's design tokens, defined in
 components. The body base (background + text + body font) is applied in `src/index.css`
 (`@layer base { body { ... } }`).
 
+Every color token is a CSS variable: `tailwind.config.js` maps it to
+`rgb(var(--c-<name>) / <alpha-value>)` (so opacity modifiers like `bg-panel/80` work), and
+`src/index.css` holds the values as space-separated RGB triplets — the light set on `:root`, the
+warm-charcoal dark set on `html.dark` (`darkMode: 'class'`). `src/lib/theme-tokens.test.ts` pins
+that both sets define every token and that dark is at least as contrasted as light for the
+checked text/fill pairs. `scripts/check-raw-colors.test.mjs` fails on a new raw color (hex,
+`rgb()`/`rgba()`, `text-white`, `bg-red-*`, `[#…]`) in `src/` outside its shrinking allowlist.
+
 ### Fonts
 
 Self-hosted via [`@fontsource`](https://fontsource.org/) — imported in `src/main.tsx`, so the
@@ -26,24 +34,30 @@ third party). Families are declared as Tailwind tokens.
 
 ### Colors
 
-| Token | Hex | Use |
+| Token | Light | Use |
 |---|---|---|
 | `bg` | `#f4efe6` | App background (warm paper) |
 | `panel` | `#fbf8f1` | Raised panels / cards-backing |
 | `card` | `#ffffff` | Task cards |
 | `ink` | `#2e2a24` | Primary text; dark buttons |
-| `muted` | `#7a7466` | Secondary text |
-| `muted-light` | `#9a9080` | Tertiary text |
+| `muted` | `#706a5d` | Secondary text |
+| `muted-light` | `#807768` | Tertiary text |
 | `muted-faint` | `#bcb09a` | Faint labels / placeholders |
+| `on-ink` | `#ffffff` | Text on solid `bg-ink` fills (inverted pills, Snackbar, Tooltip) — never `text-white` |
+| `on-accent` | `#ffffff` | Text on solid `primary` / `accent` / `danger` / `puppy` fills |
+| `scrim` | `#2e2a24` | Modal overlays (`bg-scrim/40`) — dark in **both** modes, unlike `ink` |
 | `border` | `#e4dcc9` | Default hairline borders |
 | `border-strong` | `#ddd4c0` | Stronger borders (grid, inputs) |
 | `primary` | `#5b8a72` | Green — Add / Set primary buttons |
 | `accent` | `#c2693f` | Terracotta — one-time bucket dot, urgency badge |
+| `danger` | `#b3392f` | Warm brick red — destructive/delete affordances |
 | `puppy` | `#5f8aa3` | Soft slate-blue from BabyClaw's real-life namesake's eyes — BabyClaw-mode accents (active tab ring, input focus) **and the habits surface** (paw checks, bone marks, habit cards — habits are BabyClaw's daily routine). Never functional/urgency colors |
 | `quadrant-do-now` | `#bf5e2a` | "Do Now" quadrant (urgent + important) |
 | `quadrant-schedule` | `#3d7a5f` | "Schedule" quadrant (important, not urgent) |
 | `quadrant-errands` | `#7d6b1e` | "Errands" quadrant (urgent, not important) |
 | `quadrant-someday` | `#857c6e` | "Someday" quadrant (neither) |
+
+Dark values live beside the light ones in `src/index.css` (`html.dark`).
 
 ---
 

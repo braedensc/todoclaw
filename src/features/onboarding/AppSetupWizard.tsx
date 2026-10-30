@@ -256,7 +256,7 @@ export function AppSetupWizard({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-scrim/40 p-4"
       onClick={onClose}
     >
       <div

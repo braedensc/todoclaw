@@ -190,7 +190,7 @@ export function Tooltip({ label, children, delay = OPEN_DELAY_MS }: TooltipProps
               left: coords?.left ?? 0,
               visibility: coords ? 'visible' : 'hidden',
             }}
-            className="pointer-events-none fixed z-[200] max-w-[16rem] rounded-md bg-ink px-2 py-1 text-center font-sans text-[11px] font-medium leading-snug text-white shadow-[0_4px_14px_rgba(0,0,0,.22)]"
+            className="pointer-events-none fixed z-[200] max-w-[16rem] rounded-md bg-ink px-2 py-1 text-center font-sans text-[11px] font-medium leading-snug text-on-ink shadow-[0_4px_14px_rgba(0,0,0,.22)]"
           >
             {label}
           </div>,
