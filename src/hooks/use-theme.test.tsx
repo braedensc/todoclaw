@@ -54,15 +54,15 @@ afterEach(() => {
 })
 
 describe('useTheme', () => {
-  it('defaults to light with no stored value', async () => {
+  it('defaults to system with no stored value, so an OS-dark device renders dark', async () => {
     stubMatchMedia(true)
     const useTheme = await load()
     const { result } = renderHook(() => useTheme())
-    expect(result.current.preference).toBe('light')
-    expect(result.current.resolved).toBe('light')
-    expect(root.classList.contains('dark')).toBe(false)
-    expect(root.style.colorScheme).toBe('light')
-    expect(meta.content).toBe('#f4efe6')
+    expect(result.current.preference).toBe('system')
+    expect(result.current.resolved).toBe('dark')
+    expect(root.classList.contains('dark')).toBe(true)
+    expect(root.style.colorScheme).toBe('dark')
+    expect(meta.content).toBe('#161411')
   })
 
   it('reads a stored preference and ignores garbage', async () => {
@@ -75,7 +75,7 @@ describe('useTheme', () => {
 
     localStorage.setItem(THEME_STORAGE_KEY, 'dark foo')
     const again = renderHook(() => useTheme())
-    expect(again.result.current.preference).toBe('light')
+    expect(again.result.current.preference).toBe('system')
   })
 
   it('setPreference persists and applies class, colorScheme and theme-color', async () => {
@@ -131,7 +131,7 @@ describe('useTheme', () => {
     })
     const useTheme = await load()
     const { result } = renderHook(() => useTheme())
-    expect(result.current.preference).toBe('light')
+    expect(result.current.preference).toBe('system')
     act(() => result.current.setPreference('dark'))
     expect(result.current.preference).toBe('dark')
     expect(root.classList.contains('dark')).toBe(true)

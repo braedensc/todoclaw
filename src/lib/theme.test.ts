@@ -9,7 +9,7 @@ import {
 describe('theme constants', () => {
   it('pins the storage key and the default', () => {
     expect(THEME_STORAGE_KEY).toBe('todoclaw.theme')
-    expect(DEFAULT_THEME_PREFERENCE).toBe('light')
+    expect(DEFAULT_THEME_PREFERENCE).toBe('system')
   })
 })
 

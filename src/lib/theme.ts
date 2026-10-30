@@ -15,8 +15,8 @@ export type ResolvedTheme = 'light' | 'dark'
 
 export const THEME_STORAGE_KEY = 'todoclaw.theme'
 
-/** What an absent or unreadable stored value means. Flipped to 'system' once the Settings UI ships. */
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'light'
+/** What an absent or unreadable stored value means: follow the OS (TOD-142, with the Settings control). */
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system'
 
 /** Exactly the three literals are accepted; anything else (null, garbage, 'dark foo') is the default. */
 export function parseThemePreference(raw: unknown): ThemePreference {

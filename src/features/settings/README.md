@@ -14,6 +14,15 @@ link. It edits the single `user_schedule.config` jsonb blob — no new table, no
   legacy `config.babyclaw` key, written before the two were unified 2026-07-09, is still read as a
   migration fallback and rewritten to `assistant` on the next save.)
 
+## Appearance (device-local, not the draft)
+
+`AppearanceControl` (Light / Dark / System, default System) sits above the tabs and outside the
+schedule loading gate. It is **not** part of `user_schedule.config`. A click calls
+`useTheme().setPreference` (`src/hooks/use-theme.ts`) at once and writes localStorage on this
+device only. If storage throws, the choice applies for the session only. Save never sends it,
+Cancel never reverts it, and it works while the row is loading or has failed to load. See
+docs/STYLE.md → Dark mode.
+
 ## Why it matters
 
 The Plan My Day edge function reads `config` **server-side**
@@ -43,6 +52,7 @@ system details (see rule 7 in `SYSTEM_PROMPT` and the USER PLANNING PREFERENCES 
 ## Files
 
 - `SettingsPanel.tsx` — the modal (BackupsPanel overlay pattern) + form sections + save.
+- `AppearanceControl.tsx` — the device-local theme radiogroup (outside the draft; see above).
 - `settings-form.ts` — pure `configToDraft` / `draftToConfig` mapping (flat form model ⇄ nested
   config), number parsing/clamping, empty-field pruning. Unit-tested.
 - The save mutation (`useSaveScheduleConfig`) lives with the row's other hooks in
