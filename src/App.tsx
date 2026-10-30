@@ -15,6 +15,7 @@ import { MobileAddSheet } from './features/shell/MobileAddSheet'
 import { useQuadrantFocus } from './features/shell/use-quadrant-focus'
 import { useGridOnly } from './features/shell/use-grid-only'
 import { useIsMobile } from './hooks/use-is-mobile'
+import { useTheme } from './hooks/use-theme'
 import { useLockedViewportGuard } from './hooks/use-locked-viewport-guard'
 import { useAppHeight } from './hooks/use-app-height'
 import { BACKGROUND_DISMISS_ATTR } from './hooks/use-background-dismiss'
@@ -905,6 +906,9 @@ export default function App() {
   // real session before React mounts (see lib/recovery-landing). So recovery has to be checked
   // BEFORE `session`, or the shell renders and the reset silently never happens (TOD-87).
   const [recovering, setRecovering] = useState(recoveryLanding.kind === 'recovery')
+  // Mounted at the root so the device-local theme (applied pre-paint by public/theme-boot.js)
+  // follows OS and cross-tab changes on every screen, signed in or not.
+  useTheme()
 
   return (
     // ConfirmProvider hosts the single app-themed confirm dialog (useConfirm) for every surface
