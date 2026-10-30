@@ -18,6 +18,7 @@ import { AiPrivacyNote } from '../ai/AiPrivacyNote'
 import { MemoryList } from '../ai/MemoryList'
 import { NotificationSettings } from '../notifications/NotificationSettings'
 import { BackupsPanel } from '../backups/BackupsPanel'
+import { AppearanceControl } from './AppearanceControl'
 
 // Settings — an overlay editing `user_schedule.config`: the schedule the Plan My Day prompt reads
 // (so it stops assuming your day), a bounded Plan My Day "preferences" note, and BabyClaw tuning.
@@ -433,8 +434,11 @@ export function SettingsPanel({
 
   // The description + the loading gate / form + footer — identical on both surfaces. Only the
   // chrome around it differs (centered card + ✕ header on desktop; slide-up sheet on mobile).
+  // Appearance sits ABOVE the gate and the TabBar: it is device-local and applied instantly, so it
+  // must work while the row loads or fails, and the draft's Save/Cancel never touch it.
   const content = (
-    <>
+    <div className="flex flex-col gap-5">
+      <AppearanceControl />
       {scheduleQuery.isLoading ? (
         <p className="py-6 text-sm text-muted">Loading…</p>
       ) : (
@@ -725,7 +729,7 @@ export function SettingsPanel({
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 
   // Mobile: a slide-up sheet (swipe/scrim/Escape to dismiss, no ✕). The sheet supplies the

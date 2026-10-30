@@ -65,8 +65,10 @@ describe('public/theme-boot.js', () => {
     ['light', false, 'light'],
     ['system', true, 'dark'],
     ['system', false, 'light'],
-    ['garbage', true, DEFAULT_THEME_PREFERENCE],
-    ['dark foo', true, DEFAULT_THEME_PREFERENCE],
+    // Garbage is the default ('system'), so it follows the OS.
+    ['garbage', true, 'dark'],
+    ['garbage', false, 'light'],
+    ['dark foo', true, 'dark'],
   ])('stored %j with OS dark=%s → %s', (stored, osDark, expected) => {
     localStorage.setItem(THEME_STORAGE_KEY, stored)
     stubMatchMedia(osDark)
@@ -78,21 +80,36 @@ describe('public/theme-boot.js', () => {
     expect(root.className).toBe(expected === 'dark' ? 'dark' : '')
   })
 
-  it('no stored value → the default', () => {
-    stubMatchMedia(true)
+  it.each([
+    [true, 'dark'],
+    [false, 'light'],
+  ])('no stored value → the default (system) with OS dark=%s → %s', (osDark, expected) => {
+    stubMatchMedia(osDark)
     run()
-    expect(root.classList.contains('dark')).toBe(false)
-    expect(root.style.colorScheme).toBe(DEFAULT_THEME_PREFERENCE)
+    expect(root.classList.contains('dark')).toBe(expected === 'dark')
+    expect(root.style.colorScheme).toBe(expected)
   })
 
-  it('a throwing localStorage falls back to the default', () => {
+  it('a throwing localStorage falls back to the default (system)', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('SecurityError')
     })
     stubMatchMedia(true)
     expect(run).not.toThrow()
+    expect(root.classList.contains('dark')).toBe(true)
+    expect(root.style.colorScheme).toBe('dark')
+  })
+
+  it('a throwing matchMedia under system treats the OS as light', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => {
+        throw new Error('no matchMedia')
+      }),
+    )
+    expect(run).not.toThrow()
     expect(root.classList.contains('dark')).toBe(false)
-    expect(root.style.colorScheme).toBe(DEFAULT_THEME_PREFERENCE)
+    expect(root.style.colorScheme).toBe('light')
   })
 
   it('leaves classes it does not own alone', () => {

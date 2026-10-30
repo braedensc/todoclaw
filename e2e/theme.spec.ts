@@ -33,9 +33,24 @@ test('a stored dark preference colors the sign-in heading with the dark --c-ink'
   await expect(heading).toHaveCSS('color', 'rgb(246, 241, 232)')
 })
 
-test('with no stored preference an OS dark scheme stays light (the default)', async ({ page }) => {
+// The default is 'system' (TOD-142): an OS-dark device with nothing stored gets dark on load.
+test('with no stored preference an OS dark scheme renders dark (the system default)', async ({
+  page,
+}) => {
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+  await expect(page.locator('html')).toHaveClass(/(^|\s)dark(\s|$)/)
+  // html.dark --c-bg (src/index.css) = 22 20 17.
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(22, 20, 17)')
+})
+
+test('a stored light preference stays light on an OS dark scheme', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.addInitScript(() => localStorage.setItem('todoclaw.theme', 'light'))
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   await expect(page.locator('html')).not.toHaveClass(/(^|\s)dark(\s|$)/)
+  // :root --c-bg (src/index.css) = 244 239 230.
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(244, 239, 230)')
 })

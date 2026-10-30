@@ -8,7 +8,7 @@
 // Any failure (storage blocked, no matchMedia) leaves the default.
 ;(function () {
   var KEY = 'todoclaw.theme'
-  var DEFAULT = 'light'
+  var DEFAULT = 'system'
   var COLORS = { light: '#f4efe6', dark: '#161411' }
   var pref = DEFAULT
   try {
@@ -23,7 +23,7 @@
       pref === 'dark' ||
       (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   } catch (_e) {
-    dark = DEFAULT === 'dark'
+    dark = false // no matchMedia: treat the OS as light, as useTheme does
   }
   var theme = dark ? 'dark' : 'light'
   try {

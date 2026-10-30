@@ -34,33 +34,57 @@ third party). Families are declared as Tailwind tokens.
 
 ### Colors
 
-| Token | Light | Use |
-|---|---|---|
-| `bg` | `#f4efe6` | App background (warm paper) |
-| `panel` | `#fbf8f1` | Raised panels / cards-backing |
-| `card` | `#ffffff` | Task cards |
-| `ink` | `#2e2a24` | Primary text; dark buttons |
-| `muted` | `#706a5d` | Secondary text |
-| `muted-light` | `#807768` | Tertiary text |
-| `muted-faint` | `#bcb09a` | Faint labels / placeholders |
-| `on-ink` | `#ffffff` | Text on solid `bg-ink` fills (inverted pills, Snackbar, Tooltip) — never `text-white` |
-| `on-accent` | `#ffffff` | Text on solid `primary` / `accent` / `danger` / `puppy` fills |
-| `on-ink-accent` | `#c2693f` | Terracotta glyphs on a solid `ink` fill (the error toast's ⚠) — plain `accent` washes out on dark's cream pill |
-| `scrim` | `#2e2a24` | Modal overlays (`bg-scrim/40`) and the feature-tour spotlight dimmer — dark in **both** modes, unlike `ink` |
-| `paper-fixed` | `#f4efe6` | Warm paper in **both** modes — the plate under fixed light artwork (the install mockups), so it never glares on charcoal |
-| `border` | `#e4dcc9` | Default hairline borders |
-| `border-strong` | `#ddd4c0` | Stronger borders (grid, inputs) |
-| `primary` | `#5b8a72` | Green — Add / Set primary buttons |
-| `accent` | `#c2693f` | Terracotta — one-time bucket dot, urgency badge |
-| `primary-deep` / `accent-deep` | `#39604c` / `#8a4a29` | Small text on a `primary/10` / `accent/10` wash (the chat ✓/✕ receipts) |
-| `danger` | `#b3392f` | Warm brick red — destructive/delete affordances |
-| `puppy` | `#5f8aa3` | Soft slate-blue from BabyClaw's real-life namesake's eyes — BabyClaw-mode accents (active tab ring, input focus) **and the habits surface** (paw checks, bone marks, habit cards — habits are BabyClaw's daily routine). Never functional/urgency colors |
-| `quadrant-do-now` | `#bf5e2a` | "Do Now" quadrant (urgent + important) |
-| `quadrant-schedule` | `#3d7a5f` | "Schedule" quadrant (important, not urgent) |
-| `quadrant-errands` | `#7d6b1e` | "Errands" quadrant (urgent, not important) |
-| `quadrant-someday` | `#857c6e` | "Someday" quadrant (neither) |
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `bg` | `#f4efe6` | `#161411` | App background (warm paper) |
+| `panel` | `#fbf8f1` | `#1c1915` | Raised panels / cards-backing |
+| `card` | `#ffffff` | `#221f1a` | Task cards |
+| `ink` | `#2e2a24` | `#f6f1e8` | Primary text; dark buttons |
+| `muted` | `#706a5d` | `#bcb2a1` | Secondary text |
+| `muted-light` | `#807768` | `#a09686` | Tertiary text |
+| `muted-faint` | `#bcb09a` | `#6a6256` | Faint labels / placeholders |
+| `on-ink` | `#ffffff` | `#161411` | Text on solid `bg-ink` fills (inverted pills, Snackbar, Tooltip) — never `text-white` |
+| `on-accent` | `#ffffff` | `#161411` | Text on solid `primary` / `accent` / `danger` / `puppy` fills |
+| `on-ink-accent` | `#c2693f` | `#a8522c` | Terracotta glyphs on a solid `ink` fill (the error toast's ⚠) — plain `accent` washes out on dark's cream pill |
+| `scrim` | `#2e2a24` | `#000000` | Modal overlays (`bg-scrim/40`) and the feature-tour spotlight dimmer — dark in **both** modes, unlike `ink` |
+| `paper-fixed` | `#f4efe6` | `#f4efe6` | Warm paper in **both** modes — the plate under fixed light artwork (the install mockups), so it never glares on charcoal |
+| `border` | `#e4dcc9` | `#342f28` | Default hairline borders |
+| `border-strong` | `#ddd4c0` | `#423c33` | Stronger borders (grid, inputs) |
+| `primary` | `#5b8a72` | `#84b89c` | Green — Add / Set primary buttons |
+| `accent` | `#c2693f` | `#e28c62` | Terracotta — one-time bucket dot, urgency badge |
+| `primary-deep` / `accent-deep` | `#39604c` / `#8a4a29` | `#a8d2ba` / `#f0aa86` | Small text on a `primary/10` / `accent/10` wash (the chat ✓/✕ receipts) |
+| `danger` | `#b3392f` | `#f0867a` | Warm brick red — destructive/delete affordances |
+| `puppy` | `#5f8aa3` | `#88b2ca` | Soft slate-blue from BabyClaw's real-life namesake's eyes — BabyClaw-mode accents (active tab ring, input focus) **and the habits surface** (paw checks, bone marks, habit cards — habits are BabyClaw's daily routine). Never functional/urgency colors |
+| `quadrant-do-now` | `#bf5e2a` | `#e28a5c` | "Do Now" quadrant (urgent + important) |
+| `quadrant-schedule` | `#3d7a5f` | `#76b496` | "Schedule" quadrant (important, not urgent) |
+| `quadrant-errands` | `#7d6b1e` | `#c8b25c` | "Errands" quadrant (urgent, not important) |
+| `quadrant-someday` | `#857c6e` | `#b0a696` | "Someday" quadrant (neither) |
 
-Dark values live beside the light ones in `src/index.css` (`html.dark`).
+Both columns are the `--c-*` triplets in `src/index.css` (`:root` / `html.dark`), shown as hex.
+
+---
+
+## Dark mode
+
+- **Tokens, not colors.** Every color goes through a palette token, and every token is a `--c-*`
+  RGB triplet in `src/index.css`: the light set on `:root`, the dark set on `html.dark` (the Dark
+  column above). Tailwind reads them as `rgb(var(--c-<name>) / <alpha-value>)`. Inline styles and
+  CSS spell them as `rgb(var(--c-<name>) / α)`. Flipping the `dark` class on `<html>` re-themes
+  everything, with no `dark:` variants per component. A new color is a new `--c-*` pair, with a
+  light and a dark value.
+- **Fixed art is the only exception.** Artwork that must look the same in both modes (the mascot
+  SVGs, the install-guide phone and browser mockups) may keep raw colors. It sits on a plate that
+  doesn't flip (`bg-paper-fixed`), so it never glares on charcoal. Those files, and only those,
+  are on `scripts/check-raw-colors.test.mjs`'s allowlist, each with a one-line reason. Anything
+  else with a raw color fails CI.
+- **The preference is device-only.** Settings → Appearance (Light / Dark / System, default System)
+  writes `localStorage['todoclaw.theme']` and applies instantly. It is never account config and
+  is never sent to the server or the AI. On iOS, Safari and the installed home-screen app have
+  separate storage, so each keeps its own setting. `public/theme-boot.js` applies the choice
+  before first paint. `src/lib/theme-boot.test.ts` keeps it in lockstep with `src/lib/theme.ts`.
+- **Accepted limitation: the launch splash is cream.** The PWA manifest's `background_color` is
+  one fixed value (`vite.config.ts`), so an installed app launched in dark mode shows the cream
+  splash for a moment before the dark page paints. A per-scheme manifest or splash is out of scope.
 
 ---
 

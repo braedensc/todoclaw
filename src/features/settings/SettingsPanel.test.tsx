@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // Mock the schedule data hooks (mirrors HabitsView.test) so the panel renders with no Supabase.
@@ -293,5 +293,98 @@ describe('SettingsPanel — location confirmation', () => {
     await waitFor(() => expect(saveMutate).toHaveBeenCalledTimes(1))
     const [payload] = saveMutate.mock.calls[0]! as [{ config: Record<string, unknown> }]
     expect(payload.config).toEqual({})
+  })
+})
+
+// Appearance (TOD-142): the device-local theme control. It runs on the REAL useTheme (no mock), so
+// these assert what the user sees — the stored key and the `dark` class on <html> — not a spy.
+describe('SettingsPanel — Appearance', () => {
+  const root = document.documentElement
+  const radio = (name: 'Light' | 'Dark' | 'System') => screen.getByRole('radio', { name })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+    root.className = ''
+    root.style.colorScheme = ''
+  })
+
+  it('renders Light / Dark / System above the TabBar, with the device-only hint', () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    const group = screen.getByRole('radiogroup', { name: 'Appearance' })
+    expect(group).toHaveAccessibleDescription('Applies instantly · this device only')
+    expect(screen.getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual([
+      'Light',
+      'Dark',
+      'System',
+    ])
+    // No stored value → the default, System.
+    expect(radio('System')).toBeChecked()
+    const tablist = screen.getByRole('tablist')
+    expect(group.compareDocumentPosition(tablist) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('applies a choice immediately — no Save, and Cancel does not revert it', () => {
+    const onClose = vi.fn()
+    render(<SettingsPanel onClose={onClose} />)
+    fireEvent.click(radio('Dark'))
+    expect(localStorage.getItem('todoclaw.theme')).toBe('dark')
+    expect(root.classList.contains('dark')).toBe(true)
+    expect(radio('Dark')).toBeChecked()
+    expect(saveMutate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('todoclaw.theme')).toBe('dark')
+    expect(root.classList.contains('dark')).toBe(true)
+
+    fireEvent.click(radio('Light'))
+    expect(localStorage.getItem('todoclaw.theme')).toBe('light')
+    expect(root.classList.contains('dark')).toBe(false)
+  })
+
+  it('is not part of the saved settings draft', async () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    fireEvent.click(radio('Dark'))
+    fireEvent.click(screen.getByRole('button', { name: /save settings/i }))
+    await waitFor(() => expect(saveMutate).toHaveBeenCalledTimes(1))
+    const [payload] = saveMutate.mock.calls[0]! as [{ config: Record<string, unknown> }]
+    expect(JSON.stringify(payload)).not.toMatch(/theme|appearance|dark/i)
+  })
+
+  it('works while the schedule is still loading (outside the loading gate)', () => {
+    scheduleMock.mockReturnValue({ data: undefined, isLoading: true })
+    render(<SettingsPanel onClose={() => {}} />)
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    fireEvent.click(radio('Dark'))
+    expect(root.classList.contains('dark')).toBe(true)
+    expect(radio('Dark')).toBeChecked()
+  })
+
+  it('works when the schedule query has errored', () => {
+    scheduleMock.mockReturnValue({ data: undefined, isLoading: false, isError: true })
+    render(<SettingsPanel onClose={() => {}} />)
+    fireEvent.click(radio('Dark'))
+    expect(localStorage.getItem('todoclaw.theme')).toBe('dark')
+    expect(root.classList.contains('dark')).toBe(true)
+  })
+
+  it('applies for the session only when localStorage throws', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    render(<SettingsPanel onClose={() => {}} />)
+    fireEvent.click(radio('Dark'))
+    expect(setItem).toHaveBeenCalled()
+    expect(localStorage.getItem('todoclaw.theme')).toBeNull()
+    expect(root.classList.contains('dark')).toBe(true)
+    expect(radio('Dark')).toBeChecked()
+
+    // Restore storage and make a writable choice, clearing useTheme's module-level session
+    // fallback so it cannot leak into later tests.
+    setItem.mockRestore()
+    fireEvent.click(radio('System'))
+    expect(localStorage.getItem('todoclaw.theme')).toBe('system')
   })
 })
