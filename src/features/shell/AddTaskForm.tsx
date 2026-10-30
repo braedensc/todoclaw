@@ -227,7 +227,7 @@ export function AddTaskForm({
       <button
         type="submit"
         disabled={!canAdd}
-        className="min-h-[48px] w-full rounded-xl bg-primary px-4 text-base font-semibold text-white transition-opacity disabled:opacity-50"
+        className="min-h-[48px] w-full rounded-xl bg-primary px-4 text-base font-semibold text-on-accent transition-opacity disabled:opacity-50"
       >
         Add task
       </button>

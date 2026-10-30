@@ -45,6 +45,7 @@ third party). Families are declared as Tailwind tokens.
 | `muted-faint` | `#bcb09a` | Faint labels / placeholders |
 | `on-ink` | `#ffffff` | Text on solid `bg-ink` fills (inverted pills, Snackbar, Tooltip) — never `text-white` |
 | `on-accent` | `#ffffff` | Text on solid `primary` / `accent` / `danger` / `puppy` fills |
+| `on-ink-accent` | `#c2693f` | Terracotta glyphs on a solid `ink` fill (the error toast's ⚠) — plain `accent` washes out on dark's cream pill |
 | `scrim` | `#2e2a24` | Modal overlays (`bg-scrim/40`) — dark in **both** modes, unlike `ink` |
 | `border` | `#e4dcc9` | Default hairline borders |
 | `border-strong` | `#ddd4c0` | Stronger borders (grid, inputs) |

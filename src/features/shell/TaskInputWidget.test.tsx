@@ -128,6 +128,31 @@ describe('TaskInputWidget', () => {
     expect(deny).toHaveBeenCalledOnce()
   })
 
+  it('dresses the frame and waiting strip in theme tokens, never raw rgba (TOD-139)', () => {
+    // jsdom cannot resolve var(), so the token strings are the contract; real colors are checked
+    // in Playwright (e2e/theme.spec.ts).
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TaskInputWidget grid={gridStub} chat={chatStub()} canPlace onOpenChat={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    const idleFrame = screen.getByRole('region', { name: 'Task manager' })
+      .firstElementChild as HTMLElement
+    expect(idleFrame.style.borderColor).toBe('rgb(var(--c-puppy) / 0.45)')
+    expect(idleFrame.getAttribute('style')).not.toMatch(/rgba\(/)
+    unmount()
+
+    renderWidget(chatStub({ pending: { toolUseId: 't1', summary: 'Delete "old draft"' } }))
+    const frame = screen.getByRole('region', { name: 'Task manager' })
+      .firstElementChild as HTMLElement
+    expect(frame).toHaveClass('babyclaw-waiting-frame')
+    expect(screen.getByRole('status').style.backgroundColor).toBe('rgb(var(--c-accent) / 0.07)')
+    expect(screen.getByRole('button', { name: 'Yes, go ahead' })).toHaveClass(
+      'bg-accent',
+      'text-on-accent',
+    )
+  })
+
   it('a question from BabyClaw shows the waiting strip without confirm buttons, linking the full chat', () => {
     // The status/flash read THIS visit's liveItems (not hydrated history) — a cold resume of an old
     // question must NOT read as "waiting", so a live question here is what surfaces the strip.

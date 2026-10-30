@@ -89,6 +89,7 @@ const CHECKED_PAIRS: [string, string][] = [
     'urgency-olive',
   ].flatMap((fg) => SURFACES.map((bg): [string, string] => [fg, bg])),
   ['on-ink', 'ink'],
+  ['on-ink-accent', 'ink'],
   ...[
     'primary',
     'accent',

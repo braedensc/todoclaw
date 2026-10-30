@@ -37,7 +37,7 @@ export function AuthGate({ recovery }: { recovery?: { onDone: () => void } }) {
     <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-3">
       <div className="relative mt-[72px] w-full">
         <AuthMascot className="pointer-events-none absolute left-1/2 top-[-97px] z-10 h-[150px] w-[150px] -translate-x-1/2" />
-        <div className="rounded-2xl border border-border-strong bg-panel p-5 shadow-[0_1px_2px_rgba(46,42,36,0.05),0_18px_44px_-18px_rgba(46,42,36,0.28)]">
+        <div className="rounded-2xl border border-border-strong bg-panel p-5 shadow-[0_1px_2px_rgb(var(--c-scrim)/0.05),0_18px_44px_-18px_rgb(var(--c-scrim)/0.28)]">
           {deadLink && (
             <p className="mb-3 rounded-[10px] border border-border-strong bg-card px-3 py-2 text-sm text-accent">
               That reset link is no longer valid — they expire, and each one works once. Request a

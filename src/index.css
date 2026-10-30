@@ -67,6 +67,14 @@
     --c-gridline: 148 136 116;
     --c-axis: 0 0 0;
     --c-axis-label: 165 156 136; /* #a59c88 */
+    /* Shell (TOD-139): the error ⚠ on the inverted ink pill, and the Plan My Day pill's cast + ✦. */
+    --c-on-ink-accent: 194 105 63; /* = accent */
+    --c-plan-pill-end: 44 74 58; /* #2c4a3a */
+    --c-plan-spark: 232 196 122; /* #e8c47a */
+    /* Atmosphere wash strengths (body::before) — plain alphas, quieter on charcoal. */
+    --wash-top: 0.15;
+    --wash-bottom-left: 0.13;
+    --wash-bottom-right: 0.11;
   }
   /* Warm charcoal. Surfaces step UP in lightness bg → panel → card (the light set's elevation
      order); fills are lifted so dark `on-*` text clears them; the scrim stays black. */
@@ -116,6 +124,12 @@
     --c-gridline: 200 188 168;
     --c-axis: 246 241 232;
     --c-axis-label: 136 127 111;
+    --c-on-ink-accent: 168 82 44;
+    --c-plan-pill-end: 206 228 214;
+    --c-plan-spark: 150 106 24;
+    --wash-top: 0.08;
+    --wash-bottom-left: 0.07;
+    --wash-bottom-right: 0.06;
   }
   body {
     @apply bg-bg font-sans text-ink antialiased;
@@ -146,10 +160,26 @@
     pointer-events: none;
     background-image:
       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
-      radial-gradient(58% 46% at 8% 0%, rgba(61, 122, 95, 0.15), transparent 70%),
-      radial-gradient(58% 46% at 94% 0%, rgba(191, 94, 42, 0.15), transparent 70%),
-      radial-gradient(52% 42% at 4% 100%, rgba(133, 124, 110, 0.13), transparent 70%),
-      radial-gradient(52% 42% at 96% 100%, rgba(125, 107, 30, 0.11), transparent 70%);
+      radial-gradient(
+        58% 46% at 8% 0%,
+        rgb(var(--c-quadrant-schedule) / var(--wash-top)),
+        transparent 70%
+      ),
+      radial-gradient(
+        58% 46% at 94% 0%,
+        rgb(var(--c-quadrant-do-now) / var(--wash-top)),
+        transparent 70%
+      ),
+      radial-gradient(
+        52% 42% at 4% 100%,
+        rgb(var(--c-quadrant-someday) / var(--wash-bottom-left)),
+        transparent 70%
+      ),
+      radial-gradient(
+        52% 42% at 96% 100%,
+        rgb(var(--c-quadrant-errands) / var(--wash-bottom-right)),
+        transparent 70%
+      );
   }
 }
 
@@ -410,26 +440,26 @@ input[type='range'] {
    stopped on the user, the whole Task Manager widget shifts to the attention terracotta and
    breathes so the state is unmissable. Class-based so reduced motion can hold a static ring. */
 .babyclaw-waiting-frame {
-  border-color: rgba(194, 105, 63, 0.55);
+  border-color: rgb(var(--c-accent) / 0.55);
   animation: babyclaw-waiting-pulse 2.4s ease-in-out infinite;
 }
 @keyframes babyclaw-waiting-pulse {
   0%,
   100% {
     box-shadow:
-      0 0 0 1px rgba(194, 105, 63, 0.14),
-      0 2px 10px -4px rgba(194, 105, 63, 0.25);
+      0 0 0 1px rgb(var(--c-accent) / 0.14),
+      0 2px 10px -4px rgb(var(--c-accent) / 0.25);
   }
   50% {
     box-shadow:
-      0 0 0 3px rgba(194, 105, 63, 0.22),
-      0 4px 16px -4px rgba(194, 105, 63, 0.4);
+      0 0 0 3px rgb(var(--c-accent) / 0.22),
+      0 4px 16px -4px rgb(var(--c-accent) / 0.4);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .babyclaw-waiting-frame {
     animation: none;
-    box-shadow: 0 0 0 2px rgba(194, 105, 63, 0.2);
+    box-shadow: 0 0 0 2px rgb(var(--c-accent) / 0.2);
   }
 }
 

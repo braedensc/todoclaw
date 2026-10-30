@@ -30,8 +30,16 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>,
     )
 
-    expect(screen.getByRole('alert')).toBeInTheDocument()
+    const alert = screen.getByRole('alert')
+    expect(alert).toBeInTheDocument()
     expect(Sentry.captureException).toHaveBeenCalledOnce()
+    // Themed with the danger token (TOD-139), never the light-only Tailwind red-* palette.
+    expect(alert).toHaveClass('border-danger/30', 'bg-danger/10')
+    expect(screen.getByRole('button', { name: 'Try again' })).toHaveClass(
+      'bg-danger',
+      'text-on-accent',
+    )
+    expect(alert.outerHTML).not.toMatch(/red-\d|text-white/)
 
     errorSpy.mockRestore()
   })

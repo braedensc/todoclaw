@@ -209,8 +209,8 @@ export function MobileMatrix({
                 <span className="leading-none">{km.label}</span>
                 <span
                   aria-hidden
-                  className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-white"
-                  style={{ backgroundColor: isActive ? km.color : '#9a9080' }}
+                  className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-on-accent"
+                  style={{ backgroundColor: isActive ? km.color : 'rgb(var(--c-muted-light))' }}
                 >
                   {buckets[key].count}
                 </span>
@@ -281,7 +281,7 @@ export function MobileMatrix({
                     )}
                     <span
                       aria-hidden
-                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-white"
+                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none text-on-accent"
                       style={{ backgroundColor: m.color }}
                     >
                       {count}
@@ -294,7 +294,10 @@ export function MobileMatrix({
                 {dueBadge && (
                   <span
                     className="inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                    style={{ color: '#c2693f', backgroundColor: 'rgba(194,105,63,0.10)' }}
+                    style={{
+                      color: 'rgb(var(--c-accent))',
+                      backgroundColor: 'rgb(var(--c-accent) / 0.1)',
+                    }}
                   >
                     <span aria-hidden>⏰</span>
                     {dueBadge}
