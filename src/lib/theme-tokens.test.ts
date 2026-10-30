@@ -7,10 +7,36 @@ import { describe, expect, it } from 'vitest'
 // vitest's CSS pipeline blanks `?raw` CSS imports, so node:fs is loaded untyped at runtime.
 const fs = (await import('node:fs' as string)) as {
   readFileSync: (path: URL, encoding: 'utf8') => string
+  readdirSync: (path: string, opts: { withFileTypes: true }) => Dirent[]
+}
+interface Dirent {
+  name: string
+  isDirectory(): boolean
 }
 const read = (rel: string) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8')
 const css = read('../index.css')
 const tailwindConfig = read('../../tailwind.config.js')
+
+// Every non-test src/** source file, for the "every referenced var(--c-*) is defined" check: inline
+// styles (TOD-138) name tokens directly as `rgb(var(--c-…))`, outside tailwind.config.js.
+function sources(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const path = `${dir}/${e.name}`
+    if (e.isDirectory()) return e.name === 'test' ? [] : sources(path)
+    if (!/\.(ts|tsx|css)$/.test(e.name) || /\.test\.tsx?$/.test(e.name)) return []
+    return [fs.readFileSync(new URL(`file://${path}`), 'utf8')]
+  })
+}
+// Vite rewrites `new URL(dir, import.meta.url)` to a served path, so the walk roots at the cwd
+// (vitest runs from the repo root).
+const srcDir = `${(globalThis as unknown as { process: { cwd(): string } }).process.cwd()}/src`
+const referencedTokens = [
+  ...new Set(
+    sources(srcDir).flatMap((src) =>
+      [...src.matchAll(/var\(--c-([a-z-]+)\)/g)].map((m) => m[1] as string),
+    ),
+  ),
+].sort()
 
 type Rgb = [number, number, number]
 
@@ -59,9 +85,20 @@ const CHECKED_PAIRS: [string, string][] = [
     'quadrant-schedule',
     'quadrant-errands',
     'quadrant-someday',
+    'urgency-gold',
+    'urgency-olive',
   ].flatMap((fg) => SURFACES.map((bg): [string, string] => [fg, bg])),
   ['on-ink', 'ink'],
-  ...['primary', 'accent', 'danger', 'puppy'].map((bg): [string, string] => ['on-accent', bg]),
+  ...[
+    'primary',
+    'accent',
+    'danger',
+    'puppy',
+    'urgency-gold',
+    'urgency-muted',
+    'stale',
+    'paused',
+  ].map((bg): [string, string] => ['on-accent', bg]),
 ]
 
 describe('theme tokens', () => {
@@ -74,6 +111,44 @@ describe('theme tokens', () => {
     expect(tailwindConfig).toContain("darkMode: 'class'")
     expect(tailwindConfig).toContain('`rgb(var(--c-${name}) / <alpha-value>)`')
     expect(tokenNames).toEqual(expect.arrayContaining(['on-ink', 'on-accent', 'scrim']))
+  })
+
+  it('inline styles reference --c-* tokens (the board signal tables, TOD-138)', () => {
+    expect(referencedTokens).toEqual(
+      expect.arrayContaining(['accent', 'quadrant-do-now', 'tint-overdue', 'stale', 'paused']),
+    )
+  })
+
+  it.each(referencedTokens)('referenced var(--c-%s) has a :root and an html.dark value', (name) => {
+    expect(light.has(name), `:root --c-${name}`).toBe(true)
+    expect(dark.has(name), `html.dark --c-${name}`).toBe(true)
+  })
+
+  it('dark card tints, stale depths and the paused tint are all distinguishable', () => {
+    const tints = [
+      'card',
+      'tint-overdue',
+      'tint-final-hours',
+      'tint-today',
+      'tint-closing-in',
+      'tint-this-week',
+      'tint-stale',
+      'tint-stale-deep',
+      'tint-stale-deepest',
+      'tint-paused',
+    ].map((n) => (dark.get(n) as Rgb).join(' '))
+    expect(new Set(tints).size).toBe(tints.length)
+    // The warm ladder stays ordered: louder tier = more accent over `card` = brighter.
+    const warm = ['tint-overdue', 'tint-final-hours', 'tint-today'].map((n) =>
+      luminance(dark.get(n) as Rgb),
+    )
+    expect(warm).toEqual([...warm].sort((a, b) => b - a))
+  })
+
+  it('dark lifts the stale blue and paused slate above their light values', () => {
+    for (const n of ['stale', 'paused']) {
+      expect(luminance(dark.get(n) as Rgb), n).toBeGreaterThan(luminance(light.get(n) as Rgb))
+    }
   })
 
   it.each(tokenNames)('%s has both a :root and an html.dark value', (name) => {

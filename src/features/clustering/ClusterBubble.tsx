@@ -164,8 +164,12 @@ export function ClusterBubble({
     // Closed-only card tint: the warm urgency fill if any, else the icy stale fill (its coldest
     // member's) or the slate paused fill — the cool-side mirrors of the warm tint, matching a
     // standalone card.
-    ...(!open && (glow?.background ?? staleRing?.background ?? pausedDress?.background)
-      ? { background: glow?.background ?? staleRing?.background ?? pausedDress?.background }
+    ...(!open &&
+    (glow?.backgroundColor ?? staleRing?.backgroundColor ?? pausedDress?.backgroundColor)
+      ? {
+          backgroundColor:
+            glow?.backgroundColor ?? staleRing?.backgroundColor ?? pausedDress?.backgroundColor,
+        }
       : {}),
   }
 

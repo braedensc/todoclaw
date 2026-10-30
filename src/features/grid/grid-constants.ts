@@ -1,6 +1,7 @@
 // Verbatim visual constants for the priority grid, ported from EisenClaw
 // (planning/EISENCLAW-LOGIC-TO-PORT.md §13, html:537-590). Kept in one place so the
-// canvas, cards, and tray share a single source of truth.
+// canvas, cards, and tray share a single source of truth. Colors are theme tokens (`--c-*` in
+// src/index.css, light values = the ported ones) so the dark class reaches these inline styles.
 
 import type { QuadrantKey } from '../../lib/quadrants'
 
@@ -38,11 +39,11 @@ export const TOUCH_CHIP_LIFTED_WIDTH = 150
 /**
  * Card border accent — EisenClaw colored every card by its bucket dot
  * (`getBucket(t.bucket).dot`, html:20-23/587). In its final state only the `oneoff` bucket
- * survives (dot `#c2693f` = the terracotta accent; `weekly`/`project` were migrated away —
+ * survives (its dot = the terracotta accent; `weekly`/`project` were migrated away —
  * see EISENCLAW-LOGIC-TO-PORT.md Discrepancy #8), so this is a uniform side/bottom accent,
  * not a per-task differentiator. The 3px top border still encodes quadrant / recurring status.
  */
-export const BUCKET_DOT = '#c2693f'
+export const BUCKET_DOT = 'rgb(var(--c-accent))'
 
 /** Recurring `×N` badge appears once a recurring task has been completed this many times. */
 export const RECURRING_BADGE_MIN_DONE = 3
@@ -53,17 +54,17 @@ export const RECURRING_BADGE_MIN_DONE = 3
  * (top = high importance), so Schedule/Do-Now occupy the top, Someday/Errands the bottom.
  */
 export const QUADRANT_TINT: Record<QuadrantKey, string> = {
-  schedule: 'rgba(70,130,100,0.09)', // top-left
-  'do-now': 'rgba(205,110,50,0.10)', // top-right
-  someday: 'rgba(130,120,105,0.04)', // bottom-left
-  errands: 'rgba(170,148,50,0.08)', // bottom-right
+  schedule: 'rgb(var(--c-quadrant-tint-schedule) / 0.09)', // top-left
+  'do-now': 'rgb(var(--c-quadrant-tint-do-now) / 0.1)', // top-right
+  someday: 'rgb(var(--c-quadrant-tint-someday) / 0.04)', // bottom-left
+  errands: 'rgb(var(--c-quadrant-tint-errands) / 0.08)', // bottom-right
 }
 
 /** Graph-paper line color (html:548). Drawn as a 10×10 background-size gradient. */
-export const GRIDLINE_COLOR = 'rgba(148,136,116,.12)'
+export const GRIDLINE_COLOR = 'rgb(var(--c-gridline) / 0.12)'
 
 /** Center axis (x=0.5 / y=0.5) line color (html:548). */
-export const AXIS_COLOR = 'rgba(0,0,0,.11)'
+export const AXIS_COLOR = 'rgb(var(--c-axis) / 0.11)'
 
 /** Muted color for the URGENCY / IMPORTANCE edge axis labels (html:535-536). */
-export const AXIS_LABEL_COLOR = '#a59c88'
+export const AXIS_LABEL_COLOR = 'rgb(var(--c-axis-label))'

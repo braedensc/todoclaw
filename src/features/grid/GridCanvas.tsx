@@ -71,7 +71,7 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
           left: 0,
           width: '50%',
           height: '50%',
-          background: QUADRANT_TINT.schedule,
+          backgroundColor: QUADRANT_TINT.schedule,
         }}
       />
       <div
@@ -81,7 +81,7 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
           left: '50%',
           width: '50%',
           height: '50%',
-          background: QUADRANT_TINT['do-now'],
+          backgroundColor: QUADRANT_TINT['do-now'],
         }}
       />
       <div
@@ -91,7 +91,7 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
           left: 0,
           width: '50%',
           height: '50%',
-          background: QUADRANT_TINT.someday,
+          backgroundColor: QUADRANT_TINT.someday,
         }}
       />
       <div
@@ -101,7 +101,7 @@ export function GridCanvas({ surfaceRef, onBackgroundPointerDown, children }: Gr
           left: '50%',
           width: '50%',
           height: '50%',
-          background: QUADRANT_TINT.errands,
+          backgroundColor: QUADRANT_TINT.errands,
         }}
       />
 

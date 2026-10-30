@@ -6,55 +6,47 @@
 // instruction. Desktop-only by construction (the grid never renders on mobile, ADR-0028; mobile's
 // colored list chips carry their meaning in words).
 
+import {
+  GOLD_HUE,
+  OLIVE_HUE,
+  PAUSED_HUE,
+  STALE_HUE,
+  URGENT_HUE,
+  ringShadow,
+} from '../../lib/visual-urgency'
+
 interface Swatch {
   label: string
   shadow: string
 }
 
 // Dot-scaled echoes of urgencyGlowStyle's WARM rings — full card spreads would swamp a 10px
-// swatch. Ring alphas match lib/visual-urgency.ts's (stronger, 2026-07-09) ladder exactly; only
-// the halo spread is scaled to ~1/3 for the dot. Keep the two in step.
+// swatch. Built with the same ringShadow + lane hues as lib/visual-urgency.ts (so they follow the
+// theme); ring alphas match its (stronger, 2026-07-09) ladder exactly, only the halo spread is
+// scaled to ~1/3 for the dot. Keep the two in step.
 const SWATCHES: Swatch[] = [
-  {
-    label: 'due this week',
-    shadow: '0 0 0 1.5px rgba(138,120,40,0.6), 0 0 5px 2px rgba(138,120,40,0.28)',
-  },
-  {
-    label: 'within 2 days',
-    shadow: '0 0 0 2px rgba(184,134,42,0.8), 0 0 6px 2px rgba(184,134,42,0.4)',
-  },
-  {
-    label: 'due today',
-    shadow: '0 0 0 2px rgba(194,105,63,0.92), 0 0 7px 3px rgba(194,105,63,0.48)',
-  },
-  {
-    label: 'overdue (pulses)',
-    shadow: '0 0 0 2.5px rgba(194,105,63,1), 0 0 9px 4px rgba(194,105,63,0.55)',
-  },
+  { label: 'due this week', shadow: ringShadow(OLIVE_HUE, 1.5, 0.6, 5, 2, 0.28) },
+  { label: 'within 2 days', shadow: ringShadow(GOLD_HUE, 2, 0.8, 6, 2, 0.4) },
+  { label: 'due today', shadow: ringShadow(URGENT_HUE, 2, 0.92, 7, 3, 0.48) },
+  { label: 'overdue (pulses)', shadow: ringShadow(URGENT_HUE, 2.5, 1, 9, 4, 0.55) },
 ]
 
-// Dot-scaled echoes of the COOL-BLUE staleRingStyle rings — same azure hue (50,118,205), halo
-// scaled to ~1/3 for the dot. Two rungs stand in for the three depth tiers (a card colder than
-// these just reads "long stale"). A task goes stale once it's clearly being IGNORED — 3+ weeks
-// past due (the 🔥 cools into ❄️), or months on the board for an undated card. Keep in step with
+// Dot-scaled echoes of the COOL-BLUE staleRingStyle rings — same STALE_HUE, halo scaled to ~1/3
+// for the dot. Two rungs stand in for the three depth tiers (a card colder than these just reads
+// "long stale"). A task goes stale once it's clearly being IGNORED — 3+ weeks past due (the 🔥
+// cools into ❄️), or months on the board for an undated card. Keep in step with
 // lib/visual-urgency.ts.
 const STALE_SWATCHES: Swatch[] = [
-  {
-    label: 'stale (long past due)',
-    shadow: '0 0 0 2px rgba(50,118,205,0.6), 0 0 5px 2px rgba(50,118,205,0.3)',
-  },
-  {
-    label: 'long stale',
-    shadow: '0 0 0 2.5px rgba(50,118,205,0.95), 0 0 6px 2px rgba(50,118,205,0.45)',
-  },
+  { label: 'stale (long past due)', shadow: ringShadow(STALE_HUE, 2, 0.6, 5, 2, 0.3) },
+  { label: 'long stale', shadow: ringShadow(STALE_HUE, 2.5, 0.95, 6, 2, 0.45) },
 ]
 
-// Dot-scaled echo of the SLATE pausedRingStyle ring — same slate hue (100,116,139), halo scaled to
-// ~1/3 for the dot. One rung (the paused lane is binary): a card with a future start date sleeps,
-// dimmed, at its spot until the date arrives. Keep in step with lib/visual-urgency.ts.
+// Dot-scaled echo of the SLATE pausedRingStyle ring — same PAUSED_HUE, halo scaled to ~1/3 for
+// the dot. One rung (the paused lane is binary): a card with a future start date sleeps, dimmed,
+// at its spot until the date arrives. Keep in step with lib/visual-urgency.ts.
 const PAUSED_SWATCH: Swatch = {
   label: 'paused (dimmed)',
-  shadow: '0 0 0 2px rgba(100,116,139,1), 0 0 7px 3px rgba(100,116,139,0.45)',
+  shadow: ringShadow(PAUSED_HUE, 2, 1, 7, 3, 0.45),
 }
 
 function SwatchItem({ label, shadow }: Swatch) {

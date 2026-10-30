@@ -19,7 +19,8 @@ const PREFIX =
 const RAW_COLOR = new RegExp(
   [
     '#[0-9a-fA-F]{3,8}\\b',
-    '\\brgba?\\(',
+    // rgb(var(--c-…)) / rgb(var(--c-…) / α) is the themed form (TOD-138), not a raw color.
+    '\\brgba?\\((?!var\\(--c-)',
     `(?<![\\w-])(?:${PREFIX})-(?:(?:white|black|(?:${PALETTE})-\\d{2,3})(?![\\w-])|\\[#)`,
   ].join('|'),
   'g',
@@ -56,7 +57,6 @@ const ALLOWLIST = {
   'src/features/clustering/ClusterPopup.tsx': 'bg-white surface and text-white on a fill',
   'src/features/done/DoneView.tsx': 'deleted-task accent hex and text-white on a fill',
   'src/features/grid/GridCard.tsx': 'inline rgba() drag shadow and text-white on a fill',
-  'src/features/grid/GridLegend.tsx': 'inline rgba() urgency-glow swatches',
   'src/features/grid/GridSurface.tsx': 'text-white pill and ring-black',
   'src/features/grid/PawTrail.tsx': 'paw SVG fill hex',
   'src/features/grid/TouchCardPopover.tsx': 'text-white on a solid fill',
@@ -64,7 +64,6 @@ const ALLOWLIST = {
   'src/features/grid/TouchGridSurface.tsx':
     'inline rgba() lift shadow, text-white pill, ring-black',
   'src/features/grid/TouchTaskSheet.tsx': 'text-white on a solid fill',
-  'src/features/grid/grid-constants.ts': 'inline grid color constants (hex/rgba)',
   'src/features/habits/HabitCheck.tsx': 'text-white on the puppy fill',
   'src/features/habits/HabitsView.tsx': 'text-white on a solid fill',
   'src/features/habits/RemindersInline.tsx': 'text-white on a solid fill',
@@ -83,9 +82,6 @@ const ALLOWLIST = {
   'src/features/shell/MobileMatrix.tsx': 'inline quadrant/due hex + rgba() and text-white',
   'src/features/shell/TaskInputWidget.tsx':
     'inline BabyClaw rgba() focus dress, text-white, ring-black',
-  'src/lib/quadrants.ts': 'shared quadrant color table (inline styles)',
-  'src/lib/recurring.ts': 'shared recurring-status color table (inline styles)',
-  'src/lib/visual-urgency.ts': 'shared urgency glow/badge/stale color tables (inline styles)',
 }
 
 function walk(dir) {
@@ -111,6 +107,7 @@ describe('raw-color matcher', () => {
   it('catches hex, rgb()/rgba() and default-palette classes', () => {
     expect(rawColors("color: '#2e2a24'")).toEqual(['#2e2a24'])
     expect(rawColors('box-shadow: 0 1px rgba(0,0,0,.1)')).toEqual(['rgba('])
+    expect(rawColors('color: rgb(var(--other))')).toEqual(['rgb('])
     expect(rawColors('className="text-white hover:bg-red-600 border-[#fff]"')).toEqual([
       'text-white',
       'bg-red-600',
@@ -124,6 +121,9 @@ describe('raw-color matcher', () => {
     expect(rawColors('className="bg-ink text-on-ink bg-scrim/40 text-whitespace"')).toEqual([])
     expect(rawColors("fetch('https://example.com/a') // text-white")).toEqual([])
     expect(rawColors("document.querySelector('#root')")).toEqual([])
+    expect(rawColors("color: 'rgb(var(--c-accent))', ring: 'rgb(var(--c-stale) / 0.6)'")).toEqual(
+      [],
+    )
   })
 })
 

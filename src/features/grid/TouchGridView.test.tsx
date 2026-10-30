@@ -200,7 +200,7 @@ describe('TouchGridSurface rendering', () => {
     render(<TouchHarness />)
     const chip = chipFor('Renew insurance')
     expect(within(chip).getByTitle('Overdue').textContent).toBe('🔥')
-    expect(chip.style.boxShadow).toContain('rgba(194,105,63')
+    expect(chip.style.boxShadow).toContain('rgb(var(--c-accent) /')
     expect(chip.style.animation).toContain('urgency-pulse')
   })
 

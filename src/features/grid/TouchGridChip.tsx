@@ -119,7 +119,7 @@ export function TouchGridChip({
   // urgencyGlowStyle bakes BASE_CARD_SHADOW in; the cool rings deliberately don't — compose.
   const boxShadow =
     glow?.boxShadow ?? (coolRing ? `${BASE_CARD_SHADOW}, ${coolRing.boxShadow}` : undefined)
-  const background = glow?.background ?? coolRing?.background
+  const backgroundColor = glow?.backgroundColor ?? coolRing?.backgroundColor
 
   const topColor = rc ? RC_COLOR[rc.code] : quadrant.color
   const sideColor = rc ? RC_COLOR[rc.code] : BUCKET_DOT
@@ -163,7 +163,7 @@ export function TouchGridChip({
         borderBottom: `1px ${rc ? 'dashed' : 'solid'} ${sideColor}`,
         borderLeft: `1px ${rc ? 'dashed' : 'solid'} ${sideColor}`,
         boxShadow,
-        background,
+        backgroundColor,
         opacity: dimmed ? 0.45 : paused ? PAUSED_OPACITY : undefined,
         animation: glow?.animation,
         zIndex: paused ? 5 : 10,

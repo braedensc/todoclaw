@@ -137,11 +137,13 @@ describe('ListView', () => {
     tasksData = [makeTask({ id: 'a', text: 'do now task', x: 0.9, y: 0.9 })]
     renderList()
 
-    const color = quadrantMeta(0.9, 0.9).color // Do Now → #bf5e2a
-    const rank = screen.getByLabelText('Rank 1')
-    expect(rank).toHaveStyle({ color })
-    const item = screen.getByRole('listitem')
-    expect(item).toHaveStyle({ borderLeft: `4px solid ${color}` })
+    // Token strings, not resolved rgb: the quadrant color is a theme variable (TOD-138).
+    const color = quadrantMeta(0.9, 0.9).color
+    expect(color).toBe('rgb(var(--c-quadrant-do-now))')
+    expect(screen.getByLabelText('Rank 1').getAttribute('style')).toContain(
+      'color: rgb(var(--c-quadrant-do-now))',
+    )
+    expect(screen.getByRole('listitem').getAttribute('style')).toContain('var(--c-quadrant-do-now)')
   })
 
   it('double-clicking the row opens an inline edit that commits via useUpdateTask', () => {

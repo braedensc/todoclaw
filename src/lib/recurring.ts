@@ -15,12 +15,13 @@ export interface RecurringStatus {
   daysLeft: number
 }
 
-/** Status accent colors keyed by code (html:69). */
+/** Status accent colors keyed by code (html:69), as theme tokens (src/index.css): the urgency
+ *  ladder's terracotta / gold / olive, then the brand primary for "ok". */
 export const RC_COLOR: Record<RecurringCode, string> = {
-  overdue: '#c2693f',
-  due: '#b8862a',
-  soon: '#8a7828',
-  ok: '#5b8a72',
+  overdue: 'rgb(var(--c-accent))',
+  due: 'rgb(var(--c-urgency-gold))',
+  soon: 'rgb(var(--c-urgency-olive))',
+  ok: 'rgb(var(--c-primary))',
 }
 
 export interface RecurringOpts {

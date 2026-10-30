@@ -144,7 +144,7 @@ export function AddTaskForm({
                 }
                 style={{
                   borderLeft: `4px solid ${m.color}`,
-                  background: QUADRANT_TINT[key],
+                  backgroundColor: QUADRANT_TINT[key],
                   ...(on ? { boxShadow: `0 0 0 2px ${m.color}` } : {}),
                 }}
               >

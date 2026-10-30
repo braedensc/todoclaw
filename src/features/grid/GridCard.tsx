@@ -252,13 +252,13 @@ export function GridCard({
     transition: dragging ? 'none' : 'box-shadow 120ms ease, transform 120ms ease',
     // Composed warm-glow OR cool-stale-ring shadow (see `boxShadow` above); overrides the resting
     // `shadow-sm` when present. Overdue cards also pulse and get a warm tint; the final hours pulse
-    // softly. Keyframes are global (src/index.css). `animation`/`background` spread only when
+    // softly. Keyframes are global (src/index.css). `animation`/`backgroundColor` spread only when
     // present so a future base value on this card can't be clobbered. The card TINT follows the
     // same lane flip: the warm urgency tint while hot, the icy stale tint once ignored.
     ...(boxShadow ? { boxShadow } : {}),
     ...(glow?.animation ? { animation: glow.animation } : {}),
-    ...((glow?.background ?? coolRing?.background)
-      ? { background: glow?.background ?? coolRing?.background }
+    ...((glow?.backgroundColor ?? coolRing?.backgroundColor)
+      ? { backgroundColor: glow?.backgroundColor ?? coolRing?.backgroundColor }
       : {}),
     // A paused card is dimmed whole — the set-aside cue that survives even where the slate
     // ring/chip can't be told from another lane. When it IS being dragged, the dragging branch

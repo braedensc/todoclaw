@@ -120,6 +120,15 @@ describe('MobileMatrix', () => {
     expect(screen.getByText('ship the release')).toBeInTheDocument()
   })
 
+  it('colors each overview cell with theme tokens (quadrant border + tint longhand)', () => {
+    tasksData = onerPerQuadrant()
+    renderMatrix()
+
+    const style = screen.getByLabelText('Do Now, 2 tasks').getAttribute('style') ?? ''
+    expect(style).toContain('var(--c-quadrant-do-now)')
+    expect(style).toContain('background-color: rgb(var(--c-quadrant-tint-do-now) / 0.1)')
+  })
+
   it('excludes completed tasks from counts/preview even when today’s daily state is empty', () => {
     // Regression: a one-off completion lived only in today's daily_state.done map, so a fresh
     // (empty) day resurrected it. completed_at makes the hide permanent — the completed task

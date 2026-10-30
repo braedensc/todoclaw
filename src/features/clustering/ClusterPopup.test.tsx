@@ -78,7 +78,7 @@ function renderPopup(group: Task[], onRowPointerDown: () => () => void = () => v
       <div ref={anchorRef} />
       <ClusterPopup
         group={group}
-        accentColor="#bf5e2a"
+        accentColor="rgb(var(--c-quadrant-do-now))"
         anchorRef={anchorRef}
         reflowKey={0}
         timeZone="UTC"
@@ -104,13 +104,13 @@ describe('ClusterPopup row card-twin styling', () => {
     const { row } = renderPopup([task('over', { due: OVERDUE_DUE }), task('plain')])
     const over = row('over')
     // Ring + pulse + warm tint — the same three channels a standalone grid card gets.
-    expect(over?.style.background).toBeTruthy()
+    expect(over?.style.backgroundColor).toBeTruthy()
     expect(over?.style.boxShadow).toBeTruthy()
     expect(over?.style.animation).toContain('urgency-pulse')
     // Color-independent 🔥 corner flag on the hot tiers.
     expect(over?.querySelector('[title="Overdue"]')?.textContent).toBe('🔥')
     const plain = row('plain')
-    expect(plain?.style.background).toBe('')
+    expect(plain?.style.backgroundColor).toBe('')
     expect(plain?.style.animation).toBe('')
     expect(plain?.querySelector('[title="Overdue"]')).toBeNull()
   })
@@ -120,14 +120,14 @@ describe('ClusterPopup row card-twin styling', () => {
     const style = row('over')?.style
     expect(style?.borderTopWidth).toBe('3px')
     expect(style?.borderTopColor).toBeTruthy() // quadrant color for a one-off
-    expect(style?.borderRightColor).toBe('rgb(194, 105, 63)') // BUCKET_DOT terracotta sides
+    expect(style?.borderRightColor).toBe('rgb(var(--c-accent))') // BUCKET_DOT terracotta sides
   })
 
   it('keeps a recurring row on plain paper with dashed accent sides (its own status color)', () => {
     // Even overdue-on-cadence, a recurring task takes no urgency tier here.
     const { row } = renderPopup([task('rec', { due: OVERDUE_DUE, recurring })])
     const rec = row('rec')
-    expect(rec?.style.background).toBe('')
+    expect(rec?.style.backgroundColor).toBe('')
     expect(rec?.style.borderRightStyle).toBe('dashed')
     expect(rec?.querySelector('[title="Overdue"]')).toBeNull()
   })
@@ -180,8 +180,8 @@ describe('ClusterPopup paused rows', () => {
     expect(paused.textContent).not.toContain('Overdue')
     expect(paused.style.animation).toBe('') // no urgency pulse while asleep
     // Slate ring + slate tint + whole-row dim — the same dress its standalone card wears.
-    expect(paused.style.boxShadow).toContain('rgba(100,116,139,1)')
-    expect(paused.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
+    expect(paused.style.boxShadow).toContain('rgb(var(--c-paused) / 1)')
+    expect(paused.style.backgroundColor).toBe('rgb(var(--c-tint-paused))')
     expect(parseFloat(paused.style.opacity)).toBeLessThan(1)
     // The 💤 corner flag (title spelled out, shared with the chip).
     expect(
@@ -190,7 +190,7 @@ describe('ClusterPopup paused rows', () => {
     // The live row stays undimmed on plain paper.
     const live = row('live')!
     expect(live.style.opacity).toBe('')
-    expect(live.style.background).toBe('')
+    expect(live.style.backgroundColor).toBe('')
     // The Done pill stays on a paused row — the popup row is the desktop grid card's twin, and a
     // paused GridCard keeps its Done pill too (unlike the touch sheet/popover's paused mode).
     // Pinned so the two surfaces can't drift apart silently in either direction.

@@ -315,8 +315,9 @@ describe('GridView card visuals', () => {
     tasksFixture = [makeTask({ id: 'donow', x: 0.8, y: 0.8 })]
     render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
-    // quadrantMeta(0.8,0.8) → Do Now #bf5e2a → rgb(191, 94, 42)
-    expect(card.style.borderTopColor).toBe('rgb(191, 94, 42)')
+    // quadrantMeta(0.8,0.8) → Do Now. Asserted as the theme token, never a resolved rgb (TOD-138).
+    expect(card.style.borderTopColor).toBe('rgb(var(--c-quadrant-do-now))')
+    expect(card.getAttribute('style')).toContain('var(--c-quadrant-do-now)')
   })
 
   it('colors a recurring card top border by recurring status (overdue = terracotta)', () => {
@@ -330,8 +331,8 @@ describe('GridView card visuals', () => {
     ]
     render(<GridHarness />)
     const card = screen.getByTestId('grid-card')
-    // RC_COLOR.overdue #c2693f → rgb(194, 105, 63)
-    expect(card.style.borderTopColor).toBe('rgb(194, 105, 63)')
+    // RC_COLOR.overdue = the terracotta accent token.
+    expect(card.style.borderTopColor).toBe('rgb(var(--c-accent))')
   })
 
   it('positions a card with y inverted (high importance near the top)', () => {
@@ -367,7 +368,7 @@ describe('GridView card visuals', () => {
     expect(within(card).getByText(/^Overdue · \d+d$/)).toBeInTheDocument()
     // The overdue tier pulses and warms the card; the keyframes live in src/index.css.
     expect(card.style.animation).toContain('urgency-pulse')
-    expect(card.style.background).toBe('rgb(255, 241, 232)') // #fff1e8
+    expect(card.style.backgroundColor).toBe('rgb(var(--c-tint-overdue))')
     // …and the color-independent 🔥 corner flag threads onto the DOM (urgencyIcon).
     expect(within(card).getByTitle('Overdue')).toHaveTextContent('🔥')
   })
@@ -388,8 +389,8 @@ describe('GridView card visuals', () => {
     expect(staleBits.some((el) => el.textContent === '❄️')).toBe(true)
     // …the azure "Stale · Nw" chip, and the mid-depth cool ring + icy tint (60d ≈ 2.9× the floor).
     expect(within(card).getByText(/^❄️ Stale · \d+w$/)).toBeInTheDocument()
-    expect(card.style.boxShadow).toContain('rgba(50,118,205,0.78)')
-    expect(card.style.background).toBe('rgb(234, 243, 252)') // #eaf3fc
+    expect(card.style.boxShadow).toContain('rgb(var(--c-stale) / 0.78)')
+    expect(card.style.backgroundColor).toBe('rgb(var(--c-tint-stale-deep))')
   })
 
   it('cools an undated card only after months on the board (a long-term idea, not ignored)', () => {
@@ -398,8 +399,8 @@ describe('GridView card visuals', () => {
     const card = screen.getByTestId('grid-card')
     // Decades past the 90-day undated floor → the deepest cool-blue stale ring threads onto the
     // card (see staleRingStyle), plus the iciest tint — and the ❄️ badge says how long it's sat.
-    expect(card.style.boxShadow).toContain('rgba(50,118,205,0.95)')
-    expect(card.style.background).toBe('rgb(224, 237, 251)') // #e0edfb
+    expect(card.style.boxShadow).toContain('rgb(var(--c-stale) / 0.95)')
+    expect(card.style.backgroundColor).toBe('rgb(var(--c-tint-stale-deepest))')
     expect(within(card).getByText(/^❄️ Stale · \d+y$/)).toBeInTheDocument()
     const staleBits = within(card).getAllByTitle(/^Stale — \d+y on the board$/)
     expect(staleBits.some((el) => el.textContent === '❄️')).toBe(true)
@@ -456,9 +457,9 @@ describe('GridView paused (dormant) cards', () => {
     // with the chip, so query for the flag as the 💤-only element among them (stale-test pattern).
     const sleepBits = within(card).getAllByTitle(/^Paused — starts /)
     expect(sleepBits.some((el) => el.textContent === '💤')).toBe(true)
-    // The slate dress threads onto the node: full-alpha slate ring + slate tint (#e7ebf2).
-    expect(card.style.boxShadow).toContain('rgba(100,116,139,1)')
-    expect(card.style.background).toBe('rgb(231, 235, 242)')
+    // The slate dress threads onto the node: full-alpha slate ring + slate tint (rgb(var(--c-tint-paused))).
+    expect(card.style.boxShadow).toContain('rgb(var(--c-paused) / 1)')
+    expect(card.style.backgroundColor).toBe('rgb(var(--c-tint-paused))')
     // Draggable like any card (parity with the touch grid) — dragging just sets where it lands on
     // wake. The slate dress is flagged for E2E/style hooks via data-paused.
     expect(card).toHaveAttribute('data-paused')
@@ -513,7 +514,7 @@ describe('GridView paused (dormant) cards', () => {
     const pausedRow = rows.find((r) => r.textContent?.includes('Paused task'))!
     const liveRow = rows.find((r) => r.textContent?.includes('Live task'))!
     expect(within(pausedRow).getByText(/^⏸ starts /)).toBeInTheDocument()
-    expect(pausedRow.style.boxShadow).toContain('rgba(100,116,139,1)')
+    expect(pausedRow.style.boxShadow).toContain('rgb(var(--c-paused) / 1)')
     expect(parseFloat(pausedRow.style.opacity)).toBeLessThan(1)
     expect(liveRow.style.opacity).toBe('')
   })
@@ -530,8 +531,8 @@ describe('GridView paused (dormant) cards', () => {
     expect(within(bubble).getByTitle('2 paused tasks').textContent).toBe('💤')
     const button = within(bubble).getByRole('button', { name: '2 tasks stacked here' })
     // The paused card's slate ring + tint + whole-bubble dim, on the bubble (closed state).
-    expect(button.style.boxShadow).toContain('rgba(100,116,139,1)')
-    expect(button.style.background).toBe('rgb(231, 235, 242)') // #e7ebf2
+    expect(button.style.boxShadow).toContain('rgb(var(--c-paused) / 1)')
+    expect(button.style.backgroundColor).toBe('rgb(var(--c-tint-paused))')
     expect(parseFloat(bubble.style.opacity)).toBeLessThan(1)
   })
 
