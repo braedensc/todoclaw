@@ -1,10 +1,12 @@
 // InstallPanels — drawn "screenshot" recreations for the setup wizard. Real screenshots would be
 // binary assets someone has to capture and re-capture every OS redesign; these SVG lookalikes of
 // the exact browser UI (iOS share sheet, Safari's File menu, Chrome's install icon) are shipped
-// as code, follow the app theme, and can be swapped for real captures later without changing the
-// wizard (each panel fills the same slot). All panels are decorative (aria-hidden) — the numbered
-// instructions beside them are the accessible content. Hex literals are scene paint (depicting
-// Apple/Google UI, like App.tsx's claw-swipe artwork), not theme colors.
+// as code, and can be swapped for real captures later without changing the wizard (each panel
+// fills the same slot). All panels are decorative (aria-hidden) — the numbered instructions beside
+// them are the accessible content. Hex literals are scene paint (depicting Apple/Google UI, like
+// App.tsx's claw-swipe artwork), not theme colors, so they do NOT follow dark mode: instead every
+// panel sits on a fixed warm-paper plate (`bg-paper-fixed`, the same in both modes), so the light
+// mockups read as a picture on paper rather than white slabs glaring on charcoal.
 
 import type { ReactNode } from 'react'
 
@@ -24,7 +26,10 @@ function Frame({
     <svg
       viewBox={viewBox}
       aria-hidden
-      className={'block h-auto w-full max-w-[300px] select-none ' + (className ?? '')}
+      className={
+        'block h-auto w-full max-w-[300px] select-none rounded-lg bg-paper-fixed p-1.5 ' +
+        (className ?? '')
+      }
     >
       {children}
     </svg>

@@ -131,7 +131,7 @@ function InstallPage({
         <button
           type="button"
           onClick={onInstallNow}
-          className="self-start rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90"
+          className="self-start rounded-full bg-primary px-5 py-2 text-sm font-medium text-on-accent hover:opacity-90"
         >
           Install now
         </button>
@@ -235,7 +235,7 @@ export function AppSetupWizard({
         <button
           type="button"
           onClick={() => (last ? onClose() : setPage((p) => p + 1))}
-          className="rounded-full bg-primary px-4 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
+          className="rounded-full bg-primary px-4 py-1.5 text-[13px] font-medium text-on-accent hover:opacity-90"
         >
           {!last ? 'Next' : id === 'switch' ? 'Done — I’ll finish in the app' : 'Done'}
         </button>

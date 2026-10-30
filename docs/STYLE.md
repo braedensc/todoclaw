@@ -46,11 +46,13 @@ third party). Families are declared as Tailwind tokens.
 | `on-ink` | `#ffffff` | Text on solid `bg-ink` fills (inverted pills, Snackbar, Tooltip) — never `text-white` |
 | `on-accent` | `#ffffff` | Text on solid `primary` / `accent` / `danger` / `puppy` fills |
 | `on-ink-accent` | `#c2693f` | Terracotta glyphs on a solid `ink` fill (the error toast's ⚠) — plain `accent` washes out on dark's cream pill |
-| `scrim` | `#2e2a24` | Modal overlays (`bg-scrim/40`) — dark in **both** modes, unlike `ink` |
+| `scrim` | `#2e2a24` | Modal overlays (`bg-scrim/40`) and the feature-tour spotlight dimmer — dark in **both** modes, unlike `ink` |
+| `paper-fixed` | `#f4efe6` | Warm paper in **both** modes — the plate under fixed light artwork (the install mockups), so it never glares on charcoal |
 | `border` | `#e4dcc9` | Default hairline borders |
 | `border-strong` | `#ddd4c0` | Stronger borders (grid, inputs) |
 | `primary` | `#5b8a72` | Green — Add / Set primary buttons |
 | `accent` | `#c2693f` | Terracotta — one-time bucket dot, urgency badge |
+| `primary-deep` / `accent-deep` | `#39604c` / `#8a4a29` | Small text on a `primary/10` / `accent/10` wash (the chat ✓/✕ receipts) |
 | `danger` | `#b3392f` | Warm brick red — destructive/delete affordances |
 | `puppy` | `#5f8aa3` | Soft slate-blue from BabyClaw's real-life namesake's eyes — BabyClaw-mode accents (active tab ring, input focus) **and the habits surface** (paw checks, bone marks, habit cards — habits are BabyClaw's daily routine). Never functional/urgency colors |
 | `quadrant-do-now` | `#bf5e2a` | "Do Now" quadrant (urgent + important) |

@@ -209,7 +209,7 @@ export function FeatureTour({
             left: rect.left,
             width: rect.width,
             height: rect.height,
-            boxShadow: '0 0 0 200vmax rgba(46, 42, 36, 0.5)',
+            boxShadow: '0 0 0 200vmax rgb(var(--c-scrim) / 0.5)',
           }}
         />
       )}
@@ -300,7 +300,7 @@ export function FeatureTour({
             ref={nextRef}
             type="button"
             onClick={next}
-            className="whitespace-nowrap rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            className="whitespace-nowrap rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-on-accent hover:opacity-90"
           >
             {last ? finishLabel : 'Next'}
           </button>

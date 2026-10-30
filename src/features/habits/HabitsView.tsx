@@ -185,7 +185,7 @@ export function HabitsView() {
         <button
           type="submit"
           disabled={addHabit.isPending}
-          className="shrink-0 rounded bg-puppy px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="shrink-0 rounded bg-puppy px-4 py-1.5 text-sm font-medium text-on-accent disabled:opacity-50"
         >
           Add habit
         </button>

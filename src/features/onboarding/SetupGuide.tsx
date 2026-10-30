@@ -41,7 +41,7 @@ function Step({
         aria-hidden
         className={
           'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ' +
-          (done ? 'bg-primary text-white' : 'border border-border-strong bg-card text-muted')
+          (done ? 'bg-primary text-on-accent' : 'border border-border-strong bg-card text-muted')
         }
       >
         {done ? '✓' : index}
@@ -253,7 +253,7 @@ export function SetupGuide({
                   into a realistic plan for today.
                 </StepHint>
                 <StepButton onClick={onPlan} disabled={!canPlan || planPending}>
-                  <span aria-hidden className="text-[#b58a3d]">
+                  <span aria-hidden className="text-[rgb(var(--c-urgency-gold))]">
                     ✦
                   </span>{' '}
                   {planPending ? 'Planning…' : 'Plan my day'}
@@ -355,7 +355,7 @@ export function SetupGuide({
         <button
           type="button"
           onClick={() => guide.dismiss()}
-          className="mt-4 rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:opacity-90"
+          className="mt-4 rounded-full bg-primary px-5 py-2 text-sm font-medium text-on-accent hover:opacity-90"
         >
           Finish setup
         </button>

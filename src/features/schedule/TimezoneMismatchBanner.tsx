@@ -71,7 +71,7 @@ export function TimezoneMismatchBanner({
           type="button"
           onClick={switchZone}
           disabled={save.isPending}
-          className="whitespace-nowrap rounded-full bg-primary px-3.5 py-2 text-xs font-medium text-white hover:opacity-90 disabled:opacity-60"
+          className="whitespace-nowrap rounded-full bg-primary px-3.5 py-2 text-xs font-medium text-on-accent hover:opacity-90 disabled:opacity-60"
         >
           Switch to {zoneLabel(deviceZone)}
         </button>

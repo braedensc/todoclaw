@@ -33,6 +33,13 @@ describe('BackupsPanel', () => {
     expect(createMutate).toHaveBeenCalledTimes(1)
   })
 
+  it('labels the solid Create button with the on-accent token so it reads in both themes', () => {
+    render(<BackupsPanel onClose={() => {}} />)
+    const create = screen.getByRole('button', { name: 'Create backup' })
+    expect(create).toHaveClass('bg-primary', 'text-on-accent')
+    expect(create).not.toHaveClass('text-white')
+  })
+
   it('lists a backup and restores it after the user confirms', () => {
     backupsData = [{ id: 'b1', label: null, created_at: '2026-07-01T10:00:00.000Z' }]
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)

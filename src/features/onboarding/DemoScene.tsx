@@ -322,10 +322,13 @@ export function DemoScene({ onReady }: { onReady: () => void }) {
         <div data-tour="demo-plan" className="flex flex-col items-center gap-3">
           <button
             type="button"
-            className="whitespace-nowrap rounded-full px-6 py-3 text-sm font-medium text-white"
-            style={{ backgroundImage: 'linear-gradient(135deg, #2e2a24 20%, #2c4a3a 115%)' }}
+            className="whitespace-nowrap rounded-full bg-ink px-6 py-3 text-sm font-medium text-on-ink"
+            style={{
+              backgroundImage:
+                'linear-gradient(135deg, rgb(var(--c-ink)) 20%, rgb(var(--c-plan-pill-end)) 115%)',
+            }}
           >
-            <span aria-hidden className="text-[#e8c47a]">
+            <span aria-hidden className="text-[rgb(var(--c-plan-spark))]">
               ✦
             </span>{' '}
             Plan My Day

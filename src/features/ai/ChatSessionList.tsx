@@ -263,7 +263,7 @@ export function ChatSessionList({
                   <button
                     type="button"
                     onClick={() => confirmDelete(s.id)}
-                    className="rounded-md bg-accent px-2 py-1 text-xs font-medium text-white"
+                    className="rounded-md bg-accent px-2 py-1 text-xs font-medium text-on-accent"
                   >
                     Delete
                   </button>
@@ -357,7 +357,7 @@ export function ChatSessionList({
               {unread && (
                 <span
                   aria-label="unread"
-                  className="h-2 w-2 shrink-0 rounded-full bg-puppy shadow-[0_0_0_3px_rgba(95,138,163,0.15)]"
+                  className="h-2 w-2 shrink-0 rounded-full bg-puppy shadow-[0_0_0_3px_rgb(var(--c-puppy)/0.15)]"
                 />
               )}
             </button>

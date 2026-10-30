@@ -24,7 +24,7 @@ export function ReminderPicker({
 }) {
   const none = values.length === 0
   const chipBase = 'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors '
-  const chipOn = 'border-primary bg-primary text-white'
+  const chipOn = 'border-primary bg-primary text-on-accent'
   const chipOff = 'border-border-strong bg-card text-muted hover:text-ink'
 
   return (

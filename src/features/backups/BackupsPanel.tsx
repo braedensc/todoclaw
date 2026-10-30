@@ -62,7 +62,7 @@ export function BackupsPanel({
           type="button"
           onClick={() => create.mutate(undefined)}
           disabled={busy}
-          className="rounded bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-primary px-4 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
         >
           {create.isPending ? 'Creating…' : 'Create backup'}
         </button>

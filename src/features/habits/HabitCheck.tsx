@@ -32,7 +32,9 @@ export function PawMark({ checked, className = '' }: { checked: boolean; classNa
     <span
       aria-hidden
       className={`flex items-center justify-center rounded-full border transition-colors duration-150 motion-reduce:transition-none ${
-        checked ? 'border-puppy bg-puppy text-white' : 'border-puppy/50 bg-transparent text-puppy'
+        checked
+          ? 'border-puppy bg-puppy text-on-accent'
+          : 'border-puppy/50 bg-transparent text-puppy'
       } ${className}`}
     >
       <PawGlyph

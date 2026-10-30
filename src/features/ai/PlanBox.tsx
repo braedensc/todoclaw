@@ -101,7 +101,7 @@ export function PlanBox({
           >
             <span
               aria-hidden
-              className="shrink-0 rounded-md bg-accent px-[7px] py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
+              className="shrink-0 rounded-md bg-accent px-[7px] py-0.5 text-[10px] font-bold uppercase tracking-wider text-on-accent"
             >
               Plan
             </span>
@@ -140,7 +140,7 @@ export function PlanBox({
           <button
             type="button"
             onClick={onRetry}
-            className="self-start rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+            className="self-start rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-accent hover:opacity-90"
           >
             Retry
           </button>
@@ -260,7 +260,7 @@ function PlanContent({
       {plan.bigRock && (
         <div className="mt-3 flex items-start gap-2.5">
           <PlanCheck item={plan.bigRock} done={done(plan.bigRock)} itemCheck={itemCheck} />
-          <span className="mt-0.5 shrink-0 rounded-md bg-accent px-[7px] py-1 text-[10px] font-bold uppercase tracking-wider text-white">
+          <span className="mt-0.5 shrink-0 rounded-md bg-accent px-[7px] py-1 text-[10px] font-bold uppercase tracking-wider text-on-accent">
             Big rock
           </span>
           <RockBody
@@ -432,7 +432,7 @@ function PlanCheck({
   const box =
     'flex h-[20px] w-[20px] items-center justify-center rounded-[6px] border text-[12px] font-bold leading-none transition-colors wide:h-[18px] wide:w-[18px] wide:text-[11px]'
   const filled = done
-    ? 'border-primary bg-primary text-white'
+    ? 'border-primary bg-primary text-on-accent'
     : 'border-border-strong text-transparent'
 
   // Nothing on the board matches this item (a model-invented one, or a task deleted since the plan
@@ -544,7 +544,7 @@ function NudgeBody({ nudge }: { nudge: PlanNudge }) {
 // Small duration / when pill — the warm inset paper chip from the EisenClaw card.
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded bg-[#f0ebe0] px-[7px] py-0.5 text-[10.5px] font-medium text-muted">
+    <span className="rounded bg-bg px-[7px] py-0.5 text-[10.5px] font-medium text-muted">
       {children}
     </span>
   )

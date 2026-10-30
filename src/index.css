@@ -32,10 +32,13 @@
     --c-on-ink: 255 255 255;
     --c-on-accent: 255 255 255;
     --c-scrim: 46 42 36; /* = light ink, so bg-scrim/40 matches the old bg-scrim/40 exactly */
+    --c-paper-fixed: 244 239 230; /* = light bg, and the SAME in dark: the install-mockup plate */
     --c-border: 228 220 201; /* #e4dcc9 */
     --c-border-strong: 221 212 192; /* #ddd4c0 */
     --c-primary: 91 138 114; /* #5b8a72 */
     --c-accent: 194 105 63; /* #c2693f */
+    --c-primary-deep: 57 96 76; /* #39604c — chat ✓ receipt text on a primary/10 wash */
+    --c-accent-deep: 138 74 41; /* #8a4a29 — chat ✕ receipt text on an accent/10 wash */
     --c-danger: 179 57 47; /* #b3392f — AA for white text on the fill and the glyph on paper */
     --c-puppy: 95 138 163; /* #5f8aa3 */
     --c-quadrant-do-now: 191 94 42; /* #bf5e2a */
@@ -106,10 +109,13 @@
     --c-on-ink: 22 20 17;
     --c-on-accent: 22 20 17;
     --c-scrim: 0 0 0;
+    --c-paper-fixed: 244 239 230;
     --c-border: 52 47 40;
     --c-border-strong: 66 60 51;
     --c-primary: 132 184 156;
     --c-accent: 226 140 98;
+    --c-primary-deep: 168 210 186;
+    --c-accent-deep: 240 170 134;
     --c-danger: 240 134 122;
     --c-puppy: 136 178 202;
     --c-quadrant-do-now: 226 138 92;
