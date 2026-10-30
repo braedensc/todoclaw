@@ -465,7 +465,7 @@ function AppShell() {
                               : 'Generate a schedule-aware daily plan from your grid, recurring chores, and habits'
                           }
                           data-tour="plan"
-                          className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                          className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-sm font-medium text-on-ink hover:opacity-90 disabled:opacity-60"
                           style={planPillStyle}
                         >
                           {planner.isPending ? (
@@ -701,7 +701,7 @@ function AppShell() {
                             : 'Generate a schedule-aware daily plan from your grid, recurring chores, and habits'
                         }
                         data-tour="plan"
-                        className="whitespace-nowrap rounded-full bg-ink px-6 py-3 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                        className="whitespace-nowrap rounded-full bg-ink px-6 py-3 text-sm font-medium text-on-ink hover:opacity-90 disabled:opacity-60"
                         style={planPillStyle}
                       >
                         {planner.isPending ? (

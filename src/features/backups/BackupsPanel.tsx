@@ -132,7 +132,7 @@ export function BackupsPanel({
       role="dialog"
       aria-label="Backups"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 pt-[calc(4rem_+_env(safe-area-inset-top))]"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-scrim/40 p-4 pt-[calc(4rem_+_env(safe-area-inset-top))]"
       onClick={onClose}
     >
       <section

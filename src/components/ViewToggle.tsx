@@ -31,7 +31,7 @@ export function ViewToggle({ view, onSelect }: ViewToggleProps) {
             aria-current={isActive ? 'page' : undefined}
             className={
               'flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ' +
-              (isActive ? 'bg-ink text-white shadow-sm' : 'text-muted hover:text-ink')
+              (isActive ? 'bg-ink text-on-ink shadow-sm' : 'text-muted hover:text-ink')
             }
           >
             <span aria-hidden>{v.icon}</span>

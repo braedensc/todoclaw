@@ -1,11 +1,16 @@
 /** @type {import('tailwindcss').Config} */
 
-// EisenClaw design tokens. Exact hex values come from
-// planning/EISENCLAW-LOGIC-TO-PORT.md § 13 and are documented in docs/STYLE.md.
+// Design tokens, documented in docs/STYLE.md. Color VALUES live in src/index.css as `--c-*`
+// RGB triplets (light on :root, dark on html.dark); src/lib/theme-tokens.test.ts pins that every
+// token below has both.
 // Fonts are self-hosted via @fontsource (imported in src/main.tsx) — no external
 // Google Fonts request, which keeps the warm-paper look without leaking the page
 // load to a third party (privacy).
+/** A palette token backed by the `--c-<name>` CSS variable, alpha-modifier aware. */
+const c = (name) => `rgb(var(--c-${name}) / <alpha-value>)`
+
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
@@ -33,45 +38,44 @@ export default {
           raw: '(min-width: 720px) and (pointer: fine), (min-width: 720px) and (pointer: none), (min-width: 1024px), (min-width: 720px) and (max-aspect-ratio: 1599/1000)',
         },
       },
+      // Every color is a CSS variable (an RGB triplet) defined in src/index.css — today's warm-paper
+      // values on :root, the warm-charcoal dark set on html.dark — consumed as
+      // `rgb(var(--c-x) / <alpha-value>)` so opacity modifiers (`bg-panel/80`) keep compiling.
+      // Per-token rationale (the 2026-07-08 muted darkening, danger's AA tuning, puppy's sparing
+      // use) lives beside the values in index.css; the token table is docs/STYLE.md.
       colors: {
         // Surfaces (warm paper)
-        bg: '#f4efe6',
-        panel: '#fbf8f1',
-        card: '#fff',
+        bg: c('bg'),
+        panel: c('panel'),
+        card: c('card'),
         // Text
-        ink: '#2e2a24',
-        // Darkened 2026-07-08 (mobile audit §6.1) from #7a7466 / #9a9080: the old pair measured
-        // 4.4:1 / 2.9:1 against `panel`, under WCAG AA for the small sizes they're used at. These
-        // hold the same warm hue at 5.1:1 / 4.2:1 while keeping the two tiers visually distinct
-        // (a full 4.5:1 light tier would collapse into `muted`). Applies app-wide by design.
+        ink: c('ink'),
         muted: {
-          DEFAULT: '#706a5d',
-          light: '#807768',
-          faint: '#bcb09a',
+          DEFAULT: c('muted'),
+          light: c('muted-light'),
+          faint: c('muted-faint'),
         },
+        // Text on solid fills: `on-ink` on `bg-ink`, `on-accent` on primary/accent/danger/puppy.
+        'on-ink': c('on-ink'),
+        'on-accent': c('on-accent'),
+        // Modal overlays — dark in BOTH modes (an ink scrim would turn light in dark mode).
+        scrim: c('scrim'),
         // Borders
         border: {
-          DEFAULT: '#e4dcc9',
-          strong: '#ddd4c0',
+          DEFAULT: c('border'),
+          strong: c('border-strong'),
         },
         // Brand accents
-        primary: '#5b8a72', // green — Add / Set buttons
-        accent: '#c2693f', // terracotta — one-time bucket dot, urgency
-        // Warm brick red for destructive/delete affordances (IconButton `danger`, ConfirmDialog).
-        // Distinct from terracotta `accent` (which is orange-leaning) but tuned to the warm-paper
-        // palette; passes AA for white text on the fill and for the glyph on paper/card. See
-        // src/components/IconButton.tsx.
-        danger: '#b3392f',
-        // Soft slate-blue pulled from BabyClaw's real-life namesake's eyes. Sparing use —
-        // BabyClaw-mode accents (active toggle, focus ring) plus the HABITS surface (paw checks,
-        // bone marks, habit cards: habits are his daily routine). Never functional/urgency colors.
-        puppy: '#5f8aa3',
+        primary: c('primary'), // green — Add / Set buttons
+        accent: c('accent'), // terracotta — one-time bucket dot, urgency
+        danger: c('danger'), // warm brick red — destructive/delete affordances
+        puppy: c('puppy'), // BabyClaw slate-blue — BabyClaw mode + the habits surface
         // Eisenhower quadrants
         quadrant: {
-          'do-now': '#bf5e2a',
-          schedule: '#3d7a5f',
-          errands: '#7d6b1e',
-          someday: '#857c6e',
+          'do-now': c('quadrant-do-now'),
+          schedule: c('quadrant-schedule'),
+          errands: c('quadrant-errands'),
+          someday: c('quadrant-someday'),
         },
       },
       fontFamily: {

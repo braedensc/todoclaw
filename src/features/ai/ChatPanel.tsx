@@ -66,7 +66,7 @@ export function ChatPanel({
           tracks the drag so home brightens as the sheet is pulled down. */}
       <div
         aria-hidden
-        className="bottom-sheet-scrim absolute inset-0 bg-ink/40"
+        className="bottom-sheet-scrim absolute inset-0 bg-scrim/40"
         onClick={onClose}
         style={swipe.dragging ? { opacity: 1 - swipe.progress } : undefined}
       />

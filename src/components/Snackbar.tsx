@@ -33,7 +33,7 @@ export function Snackbar({
     >
       {message && (
         <span
-          className="flex max-w-md items-center rounded-full bg-ink px-4 py-2 text-sm font-medium text-white shadow-lg"
+          className="flex max-w-md items-center rounded-full bg-ink px-4 py-2 text-sm font-medium text-on-ink shadow-lg"
           style={{ animation: 'babyclaw-flash 180ms ease-out' }}
         >
           {tone === 'error' && (

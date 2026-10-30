@@ -14,6 +14,59 @@
    ≤ 8.5% pass at the owner's request, and the short-lived time-of-day variant was dropped
    for this one constant, grid-matching tint. */
 @layer base {
+  /* PALETTE VALUES (TOD-136). Every tailwind.config.js color is `rgb(var(--c-<name>) / α)`, so
+     each token here is a space-separated RGB triplet. :root is the warm-paper light set (the
+     exact pre-variable hex values); html.dark is the warm-charcoal set. src/lib/theme-tokens.test.ts
+     pins that both blocks define every token, and that the dark set is at least as contrasted as
+     light for every checked text/fill pair. Token meanings: docs/STYLE.md. */
+  :root {
+    --c-bg: 244 239 230; /* #f4efe6 */
+    --c-panel: 251 248 241; /* #fbf8f1 */
+    --c-card: 255 255 255; /* #fff */
+    --c-ink: 46 42 36; /* #2e2a24 */
+    /* muted pair darkened 2026-07-08 (mobile audit §6.1) from #7a7466 / #9a9080 to clear AA on
+       `panel` while keeping the two tiers visually distinct. */
+    --c-muted: 112 106 93; /* #706a5d */
+    --c-muted-light: 128 119 104; /* #807768 */
+    --c-muted-faint: 188 176 154; /* #bcb09a */
+    --c-on-ink: 255 255 255;
+    --c-on-accent: 255 255 255;
+    --c-scrim: 46 42 36; /* = light ink, so bg-scrim/40 matches the old bg-scrim/40 exactly */
+    --c-border: 228 220 201; /* #e4dcc9 */
+    --c-border-strong: 221 212 192; /* #ddd4c0 */
+    --c-primary: 91 138 114; /* #5b8a72 */
+    --c-accent: 194 105 63; /* #c2693f */
+    --c-danger: 179 57 47; /* #b3392f — AA for white text on the fill and the glyph on paper */
+    --c-puppy: 95 138 163; /* #5f8aa3 */
+    --c-quadrant-do-now: 191 94 42; /* #bf5e2a */
+    --c-quadrant-schedule: 61 122 95; /* #3d7a5f */
+    --c-quadrant-errands: 125 107 30; /* #7d6b1e */
+    --c-quadrant-someday: 133 124 110; /* #857c6e */
+  }
+  /* Warm charcoal. Surfaces step UP in lightness bg → panel → card (the light set's elevation
+     order); fills are lifted so dark `on-*` text clears them; the scrim stays black. */
+  html.dark {
+    --c-bg: 22 20 17;
+    --c-panel: 28 25 21;
+    --c-card: 34 31 26;
+    --c-ink: 246 241 232;
+    --c-muted: 188 178 161;
+    --c-muted-light: 160 150 134;
+    --c-muted-faint: 106 98 86;
+    --c-on-ink: 22 20 17;
+    --c-on-accent: 22 20 17;
+    --c-scrim: 0 0 0;
+    --c-border: 52 47 40;
+    --c-border-strong: 66 60 51;
+    --c-primary: 132 184 156;
+    --c-accent: 226 140 98;
+    --c-danger: 240 134 122;
+    --c-puppy: 136 178 202;
+    --c-quadrant-do-now: 226 138 92;
+    --c-quadrant-schedule: 118 180 150;
+    --c-quadrant-errands: 200 178 92;
+    --c-quadrant-someday: 176 166 150;
+  }
   body {
     @apply bg-bg font-sans text-ink antialiased;
     /* Safe-area insets key on env() itself, NOT the 719px width query (ADR

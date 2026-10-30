@@ -103,7 +103,7 @@ export function ConfirmDialog({
       <div className="fixed inset-0 z-[100] flex items-end justify-center" onClick={onCancel}>
         <div
           aria-hidden
-          className="bottom-sheet-scrim absolute inset-0 bg-ink/40"
+          className="bottom-sheet-scrim absolute inset-0 bg-scrim/40"
           style={swipe.dragging ? { opacity: 1 - swipe.progress } : undefined}
         />
         <div
@@ -137,7 +137,7 @@ export function ConfirmDialog({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-scrim/40 p-4"
       onClick={onCancel}
     >
       <div

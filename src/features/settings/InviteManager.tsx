@@ -203,7 +203,7 @@ export function InviteManager() {
             <button
               type="button"
               onClick={share}
-              className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+              className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-on-ink hover:opacity-90"
             >
               Share
             </button>

@@ -441,7 +441,7 @@ function Bubble({ item }: { item: ChatItem }) {
   if (isUser) {
     return (
       <li className="flex justify-end">
-        <span className="inline-block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-ink px-3 py-2 text-sm text-white">
+        <span className="inline-block max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-ink px-3 py-2 text-sm text-on-ink">
           {body || '…'}
         </span>
       </li>
