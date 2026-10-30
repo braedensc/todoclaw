@@ -19,10 +19,24 @@ vi.mock('../../lib/supabase', () => {
     b.then = (res: (v: { data: Row[]; error: null }) => unknown) => res({ data: rows, error: null })
     return b
   }
+  // Reads now go through decrypting RPCs (content/title/pending are encrypted at rest): the history
+  // list via chat_list_sessions, a session's transcript via chat_load_messages. `from` stays for the
+  // hard-delete path (useDeleteChatSession). Both resolve like a Supabase thenable.
+  const thenable = (rows: Row[]) => ({
+    then: (res: (v: { data: Row[]; error: null }) => unknown) => res({ data: rows, error: null }),
+  })
   return {
     supabase: {
       auth: { getSession: async () => ({ data: { session: { access_token: 'tok' } } }) },
       from: (table: string) => chain(table === 'chat_sessions' ? sessionsData : messagesData),
+      rpc: (fn: string) =>
+        thenable(
+          fn === 'chat_list_sessions'
+            ? sessionsData
+            : fn === 'chat_load_messages'
+              ? messagesData
+              : [],
+        ),
     },
   }
 })
