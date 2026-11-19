@@ -245,7 +245,8 @@ person decides. This table says which is which, so a sync report can be read.
 | `.github/workflows/pr-conflict-monitor.yml` | TOD-125 | the kit's job, **this repo's header** | Only the header comment differs |
 | `.claude/hooks/stop-pr-check.py` | #59, 2026-07-03 | **adapted** | Predates TOD-122 by two months; #430 only recorded it here. Matched no kit revision checked on 2026-09-17 |
 | `.claude/skills/fix-ci/SKILL.md` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
-| `docs/SESSION-BRIEF.md` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
+| `docs/SESSION-BRIEF.md` | KIT-232 | **the kit's brief**, one word changed | Taken from the kit at bbe2000; "the kit ships" reads "this repo ships" for `/fix-ci` |
+| `scripts/gh_fallback.py`, `scripts/check_pr_base.py`, `.github/workflows/pr-base.yml` | KIT-232 | **byte-identical** to the kit at bbe2000 | The PR-base gate is not a required check, as in the kit. Its comments name a PreToolUse stacked-branch guard, `docs/SECURITY.md` and a template twin this repo lacks; the brief names `scripts/scratch_run.py`, which a later bundle adds |
 
 Not a complete list: other `scripts/` and `.claude/hooks/` files are kit-derived too and are
 not yet recorded here (no ticket yet).

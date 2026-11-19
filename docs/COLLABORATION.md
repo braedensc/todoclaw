@@ -113,6 +113,18 @@ still scanned even before you `npm install` there.)
 
 ---
 
+## Never stack a PR
+
+Every branch is cut from the base branch (`main`) and merges back into it. Never branch off
+another feature branch, never merge two feature branches into each other, never base a PR on
+one. Squash-merging a base rewrites `main`, so every PR stacked on it turns CONFLICTING at
+once, and GitHub runs no checks on a conflicted PR, so they read as "no checks reported".
+Bringing `main` *into* your branch (`git fetch origin main && git merge origin/main`) is fine.
+
+Where this is caught here: the **PR base** workflow turns a PR based on a non-base branch red
+(not a required check), and `scripts/gh_fallback.py pr-create --base` refuses such a base.
+This repo's hook suite has no stacked-branch guard yet, so the first two are the whole net.
+
 ## Avoiding conflicts (the checklist)
 
 - **Split work by feature folder, not by line.** Our `src/features/` layout (one

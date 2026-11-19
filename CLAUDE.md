@@ -13,15 +13,26 @@ TodoClaw is a standalone, multi-tenant-ready web app — a personal planner wher
 > **Maintainer note:** TodoClaw originated from an earlier planner (EisenClaw). That origin story, the gitignored `planning/` reference files, and the `npm run legacy-ui` runner are maintainer-local and documented in `CLAUDE.local.md` (gitignored) — they aren't part of a fresh clone.
 
 **If a dispatcher started this session — a ticket delegated you and nobody is watching —
-read `docs/SESSION-BRIEF.md` first.** It is the committed, generic brief: who you are
-(your ticket is your authority; the branch name is cosmetic), where you run (a sandbox
-that allows writes only in your worktree, a network allowlist, a home you cannot read),
-what you can and cannot do, what the review stage will do to your PR (a fresh reviewer; a
-possible re-prompt in your ticket's thread with fenced findings; a bounce budget), and the
-runbook for the unexpected. Its one rule to carry even into an interactive session: never
-try to ask a user who is not there — comment on the ticket and ask for the blocked label
-instead. When your PR is red or conflicted, the loop is **`/fix-ci`**
-(`.claude/skills/fix-ci/`), not an improvised one of your own.
+read `docs/SESSION-BRIEF.md` first.** It is the committed, generic brief: your ticket is
+your authority and the branch name is cosmetic; you run in a sandbox that allows writes only
+in your worktree, behind a network allowlist, with a home you cannot read; the never-do list
+(merge, approve, protected labels, moving tickets, editing guards); what the review stage
+will do to your PR (a fresh reviewer, a possible re-prompt in your ticket's thread, a bounce
+budget); and the runbook for the unexpected. Never try to ask a user who is not there —
+comment on the ticket and ask for the blocked label instead. When your PR is red or
+conflicted, the loop is **`/fix-ci`** (`.claude/skills/fix-ci/`), not an improvised one.
+
+**A session the runner started** reaches the tracker only through its five `ticket` tools
+(`read_ticket`, `comment`, `ask_question`, `file_finding`, `report_done`); the brief's §3 says
+how. Facts of that sandbox, found by measurement:
+
+- Its home is not writable, so put the npm cache in `$TMPDIR`: `npm ci --cache "$TMPDIR/npm-cache"`.
+- Its Node is Homebrew's 23.x, while CI runs 22. A result that differs from CI is a version
+  difference first.
+- It has no working `gh` (TLS fails in the sandbox): open the PR with
+  `python3 scripts/gh_fallback.py pr-create`, read checks with `pr-checks`.
+- It has no Docker and no Deno, so `supabase start`, `supabase db reset` and the Deno job
+  cannot run there. Say so in your last message; CI runs them.
 
 ---
 
@@ -146,7 +157,7 @@ git checkout -b <type>/<short-kebab-desc>
 - **Open a PR when the task is done** (`gh pr create`); never merge your own work directly to `main`. **Merging is Braeden's action only — never run `gh pr merge` in any form, including `--auto`, and never enable auto-merge.** Opening the PR is the end of Claude's involvement. *(Also enforced by hooks: a Stop hook, `.claude/hooks/stop-pr-check.py`, blocks ending a turn on a pushed branch with no PR; a PreToolUse hook blocks `gh pr merge` outright. See docs/COLLABORATION.md's "What's automatic" section.)* *(If `gh` itself fails — including with **"The token in GH_TOKEN is invalid"**, which is **not** an invalid token — open the PR with `python3 scripts/gh_fallback.py pr-create --title "…" --body-file <file> --base main`. See **When `gh` fails** below.)*
 - **After opening or updating a PR, watch CI to green before considering the task done:** `gh pr checks <n> --watch`. If a check fails, read the failing job's log (`gh run view <run-id> --job <job-id> --log`), fix it, push, and re-watch — don't hand a red PR back and call it finished. Running local checks (`npm test`/`typecheck`/`lint`) first is necessary but not sufficient — CI catches things local runs miss (e.g. `format:check`, which isn't part of `npm run lint`), so treat the PR's actual CI status as the source of truth, not your local run. *(Also enforced by the same Stop hook — it blocks ending a turn while the branch's open PR has a failing check.)* *(If `gh` fails — a **"The token in GH_TOKEN is invalid"** error is **not** an invalid token — read status with `python3 scripts/gh_fallback.py pr-checks <n>`. It has no `--watch`; it exits non-zero while any check is pending or failed, so re-run it to poll. See **When `gh` fails** below.)*
 - **Before pushing a follow-up commit to an already-open PR, confirm it's still open** (`gh pr view <n> --json state`) — a PR can merge between your last check and your next push. A commit pushed to a merged PR's branch is silently orphaned: no CI runs, GitHub stops syncing the PR's head, and the content never reaches `main`. If it's merged, branch fresh off the new `main` instead. *(Also enforced deterministically by the PreToolUse hook — it blocks the commit/push outright once a branch's PR is MERGED, not just a written reminder.)* *(If `gh` fails — again, **"The token in GH_TOKEN is invalid"** is **not** an invalid token — you have no state read: the fallback ships three operations by design and this is not one of them, **and** the merged-PR hook itself shells out to `gh pr view` and fails open when that errors, so in that environment the automatic backstop is silently absent too. Don't push follow-ups blind. `git ls-remote --heads origin <branch>` still works (git honours `SSL_CERT_FILE`); an empty result means the branch is gone, which with delete-on-merge means merged. Otherwise branch fresh off updated `main`, or ask Braeden. See **When `gh` fails** below.)*
-- **When `gh` fails, it is a TLS bug and not your token.** Inside the dispatcher's sandbox every `gh` call fails with `tls: failed to verify certificate: x509: OSStatus -26276`, and `gh auth status` reports **"The token in GH_TOKEN is invalid."** That message is a lie — the token is fine. Go on darwin ignores `SSL_CERT_FILE`/`CURL_CA_BUNDLE` and asks the macOS platform verifier instead, whose user and admin trust domains answer *"No keychain is available"* in there where outside they answer the benign *"No Trust Settings were found"* — two states that share an exit code and mean opposite things. Not fixable from configuration: the sandbox exposes filesystem and network controls only. `curl`, `git`, Python and Node all honour `SSL_CERT_FILE`, so everything that is not a Go binary keeps working. Use **`python3 scripts/gh_fallback.py`** — `pr-create`, `pr-checks`, `pr-comment`, plus `doctor` to print which path this environment will take. It tries `gh` first and reports `path: gh` or `path: rest` on every call, so neither a recovered `gh` nor a broken fallback can hide. **It has no merge operation and must never grow one:** its `ENDPOINTS` set is the only thing keeping a session-editable tool that holds the GitHub token off the merge endpoint, which is why `scripts/gh_fallback.py` sits behind the human-only `hooks-change` label in CI alongside the hooks. Cause and measurement: TOD-116, KIT-71/KIT-74.
+- **When `gh` fails, it is a TLS bug and not your token.** Inside the dispatcher's sandbox every `gh` call fails with `tls: failed to verify certificate: x509: OSStatus -26276`, and `gh auth status` reports **"The token in GH_TOKEN is invalid."** That message is a lie — the token is fine. Go on darwin ignores `SSL_CERT_FILE`/`CURL_CA_BUNDLE` and asks the macOS platform verifier instead, whose user and admin trust domains answer *"No keychain is available"* in there where outside they answer the benign *"No Trust Settings were found"* — two states that share an exit code and mean opposite things. Not fixable from configuration: the sandbox exposes filesystem and network controls only. `curl`, `git`, Python and Node all honour `SSL_CERT_FILE`, so everything that is not a Go binary keeps working. Use **`python3 scripts/gh_fallback.py`** — `pr-create`, `pr-checks`, `pr-comment`, plus `doctor` to print which path this environment will take. It tries `gh` first and reports `path: gh` or `path: rest` on every call, so neither a recovered `gh` nor a broken fallback can hide. **It has no merge operation and must never grow one, and `pr-create --base` refuses any base that is not `main`, `master` or the repository's default branch (never stack a PR):** its `ENDPOINTS` set is the only thing keeping a session-editable tool that holds the GitHub token off the merge endpoint, which is why `scripts/gh_fallback.py` sits behind the human-only `hooks-change` label in CI alongside the hooks. Cause and measurement: TOD-116, KIT-71/KIT-74.
 
 ---
 
