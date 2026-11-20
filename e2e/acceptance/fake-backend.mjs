@@ -457,7 +457,8 @@ export async function install(context, { scenario }) {
           let rows = fx.tables[table] ?? []
           if (table === 'chat_messages') {
             const sid = url.searchParams.get('session_id')
-            rows = sid === `eq.${fx.tables.chat_sessions[0].id}` ? rows : []
+            const first = fx.tables.chat_sessions[0]?.id
+            rows = first && sid === `eq.${first}` ? rows : []
           }
           if (wantsObject)
             return rows.length

@@ -1304,6 +1304,19 @@ def selftest():
         t["parentId"] = None
         expect("provenance-agent", t, [])
 
+        # PROJECT DIVERGENCE (todoclaw, .claude/kit-sync.json): this repo's own regression case,
+        # kept when the kit's file replaced it. Out of scope written as checkboxes (Linear's
+        # editor emits the same syntax as the section above) must still be read as a scope
+        # fence; `bullets()` alone dropped these.
+        t = good_ticket()
+        t["description"] = t["description"].replace(
+            "- Refresh-token rotation", "- [ ] Refresh-token rotation"
+        )
+        note()
+        errs, warns = rules(check(t))
+        if errs or warns:
+            failures.append(f"checkbox-style out-of-scope dropped: errors={errs} warnings={warns}")
+
         # 9c. Linear rewrites a bare sibling ID typed into a description into
         #     inline-mention markup and serves it back over the API. Before the
         #     markup carve-out, a body that merely CITED a sibling cost one

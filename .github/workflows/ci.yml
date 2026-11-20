@@ -50,15 +50,18 @@ jobs:
       # before there is an agent. CI is the only layer that reads a branch's contents
       # independently of who wrote them. Matched in any directory rather than only the
       # root: a file that can be moved to the root should not pass review either. The
-      # `.pem` and `.key` patterns keep key material out of the tree for the same reason.
+      # `.pem` and `.key` patterns keep key material out of the tree for the same reason. The
+      # match ignores case (`grep -i`): the dispatcher runs on macOS, whose default filesystem is
+      # case-insensitive, so `Cyrus-Setup.SH` in a worktree root answers a lookup for
+      # `cyrus-setup.sh`.
       # (The kit's docs/SECURITY.md carries the reasoning.)
       - name: Block forbidden paths (planning/, real .env, key material, setup scripts)
         run: |
           # -z, then one name a line: git quotes a name holding a non-ASCII character, and
           # a quoted `"planning/\303\251.md"` matched nothing.
           FORBIDDEN=$(git ls-files -z | tr '\0' '\n' \
-            | grep -E '^planning/|(^|/)\.env|\.pem$|\.key$|(^|/)cyrus-(setup|teardown)\.(sh|ps1|cmd|bat)$' \
-            | grep -v -E '(^|/)\.env\.example$' \
+            | grep -i -E '^planning/|(^|/)\.env|\.pem$|\.key$|(^|/)cyrus-(setup|teardown)\.(sh|ps1|cmd|bat)$' \
+            | grep -i -v -E '(^|/)\.env\.example$' \
             || true)
           if [ -n "$FORBIDDEN" ]; then
             echo "::error::Forbidden files are tracked in git:"
@@ -146,9 +149,8 @@ jobs:
         working-directory: supabase/functions
         run: deno task test
 
-  # Playwright smoke. chromium-only + dummy Supabase env (see playwright.config.ts). It passed
-  # 40 of 40 completed runs (15 Sep to 30 Oct), so it can be a required check; the owner sets
-  # that on main's branch rule, and this file only keeps the job name stable.
+  # Playwright smoke. chromium-only + dummy Supabase env (see playwright.config.ts). Which checks
+  # main's branch rule requires is the owner's setting, not this file's; keep the job name stable.
   e2e:
     name: E2E (smoke)
     runs-on: ubuntu-24.04

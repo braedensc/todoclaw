@@ -37,11 +37,13 @@ name: PR union check
 # hit says so and repeats the earlier verdict instead of going silent.
 # ══════════════════════════════════════════════════════════════════════════════
 
+# MANUAL ONLY until the owner turns it on. The kit runs it on every push to main and hourly;
+# here it is workflow_dispatch-only because the union job runs every open branch's code in the
+# default-branch context and then saves a cache, and in this repo branches are written by
+# unattended sessions. To enable the kit's triggers, add them back:
+#   push: {branches: [main]}   and   schedule: [{cron: '41 * * * *'}]
+# after PR #274 is closed or made a draft, and after reading the review of that change.
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: '41 * * * *' # hourly backstop: catches pushes to open PRs, not only merges
   workflow_dispatch:
 
 permissions: {}

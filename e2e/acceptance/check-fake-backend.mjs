@@ -44,7 +44,7 @@ const failures = []
 const fail = (msg) => failures.push(msg)
 
 /** One browser context the way the runner makes it. Returns the page and what it saw. */
-async function open(browser, scenario, viewport) {
+async function open(browser, scenario, viewport, viewportName) {
   const context = await browser.newContext({ viewport, serviceWorkers: 'block' })
   const seen = { app: 0, fake: 0, aborted: [] }
   await context.route(
@@ -64,10 +64,12 @@ async function open(browser, scenario, viewport) {
   const log = await fake.install(context, {
     scenario,
     origin: ORIGIN,
-    viewport: 'desktop',
+    viewport: viewportName,
     mode: 'default',
   })
-  // Registered after the fake's own route, so it answers only what neither of the two above took.
+  // Playwright runs the LAST-registered matching route first, so this one sees every request
+  // before the fake's route does. The predicate therefore leaves out the two origins that are
+  // answered (the app's own and the fake's): a second origin the fake answered would need adding.
   await context.route(
     (url) => url.origin !== ORIGIN && url.origin !== fake.SUPA,
     (route) => {
@@ -97,7 +99,7 @@ async function expectVisible(page, label, locator) {
 
 async function scenarioRun(browser, scenario, viewport, body) {
   console.log(`${scenario} (${viewport.width}x${viewport.height})`)
-  const run = await open(browser, scenario, viewport)
+  const run = await open(browser, scenario, viewport, viewport.width < 600 ? 'phone' : 'desktop')
   try {
     await body(run.page)
     await run.page.waitForTimeout(500) // let late requests land before they are counted
@@ -195,6 +197,12 @@ try {
       'empty: the home screen with no tasks',
       page.getByRole('heading', { name: 'TodoClaw' }),
     )
+    // A request for rows the empty account has none of must be answered, not left hanging.
+    const status = await page.evaluate(
+      async (base) => (await fetch(`${base}/rest/v1/chat_messages?session_id=eq.none`)).status,
+      fake.SUPA,
+    )
+    if (status !== 200) fail(`empty: chat_messages answered ${status}, not 200`)
     if (await page.getByText('Call the plumber about the leak').count()) {
       fail('empty: a fixture task of the signed-in scenario is on screen')
     }

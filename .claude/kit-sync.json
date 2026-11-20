@@ -7,6 +7,7 @@
     "templates/workflows/pipeline-review.yml",
     "scripts/check_schemas.py",
     "scripts/telemetry_dashboard.py",
+    "scripts/check_ticket_dor.py",
     "docs/SESSION-BRIEF.md",
     ".claude/hooks/audit.py",
     ".claude/skills/fix-ci/SKILL.md"
@@ -17,6 +18,7 @@
     "templates/workflows/pipeline-review.yml": "keeps this repo's own gate (the `chance` step): a PR that opens in conflict gets no `opened` run from GitHub, so a later push earns its one review if none was made yet. Everything else is the kit's",
     "scripts/check_schemas.py": "skips the kit's own validator-settings.example.json and pipeline-parts.json when this repo has none (it never will); the kit should skip them itself",
     "scripts/telemetry_dashboard.py": "its selftest falls back to the /work template row when this repo has no .claude/skills/work (skills are user-level here); the kit should carry that fallback",
+    "scripts/check_ticket_dor.py": "keeps this repo's own selftest case: out of scope written as checkboxes still reads as a scope fence",
     "docs/SESSION-BRIEF.md": "the kit's brief with one word changed (this repo ships /fix-ci)",
     ".claude/hooks/audit.py": "this repo's own audit log hook",
     ".claude/skills/fix-ci/SKILL.md": "this repo's own edits of the kit's skill"
