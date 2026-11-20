@@ -12,7 +12,9 @@ export default defineConfig({
   // (e2e/golden/**, playwright.golden.config.ts) and the device lab (e2e/device-lab/**,
   // playwright.device-lab.config.ts). Keep both out of this smoke run so CI stays no-DB
   // (ADR-0011); anything added under e2e/ with its own config needs an entry here too.
-  testIgnore: ['**/golden/**', '**/device-lab/**'],
+  // e2e/acceptance/** is the acceptance check's fake backend and its proof (`npm run
+  // test:acceptance`): plain node scripts, not Playwright specs, and kept out of this run.
+  testIgnore: ['**/golden/**', '**/device-lab/**', '**/acceptance/**'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS {s}.runs (
     stage               text NOT NULL,
     session_mode        text,
     model               text,
+    model_note          text,
     auth_mode           text,
     started_at          timestamptz,
     ended_at            timestamptz,
@@ -118,6 +119,7 @@ CREATE TABLE IF NOT EXISTS {s}.runs (
     tokens_cache_read   bigint NOT NULL DEFAULT 0,
     tokens_cache_write  bigint NOT NULL DEFAULT 0,
     cost_usd            numeric(12,4) NOT NULL DEFAULT 0,
+    cost_note           text,
     turns               integer NOT NULL DEFAULT 0,
     outcome             text NOT NULL,
     error_class         text,
@@ -128,7 +130,7 @@ CREATE TABLE IF NOT EXISTS {s}.runs (
     source_comment_id   text,
     ingested_at         timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS runs_ticket_idx  ON {s}.runs (ticket_id);
+{migrations}CREATE INDEX IF NOT EXISTS runs_ticket_idx  ON {s}.runs (ticket_id);
 CREATE INDEX IF NOT EXISTS runs_started_idx ON {s}.runs (started_at);
 
 CREATE TABLE IF NOT EXISTS {s}.ticket_events (
@@ -158,10 +160,22 @@ CREATE TABLE IF NOT EXISTS {s}.review_findings (
 CREATE INDEX IF NOT EXISTS review_findings_cat_idx ON {s}.review_findings (category);
 """
 
+# Columns §4 gained after stores already existed (KIT-130: `model_note`, `cost_note`).
+# A CREATE TABLE IF NOT EXISTS never alters a table it finds, and `--init` is opt-in, so
+# these run on EVERY real sweep as well: an upgraded kit against an older store would
+# otherwise fail every insert that names a new column. Idempotent, and a no-op when the
+# table is not there yet (`--init` creates it with the columns already in place).
+MIGRATIONS = """
+ALTER TABLE IF EXISTS {s}.runs ADD COLUMN IF NOT EXISTS model_note text;
+ALTER TABLE IF EXISTS {s}.runs ADD COLUMN IF NOT EXISTS cost_note text;
+"""
+DDL = DDL.replace("{migrations}", MIGRATIONS)
+
 RUN_COLUMNS = (
     "run_id", "dispatch_id", "ticket_id", "team_key", "stage", "session_mode",
-    "model", "auth_mode", "started_at", "ended_at", "tokens_in", "tokens_out",
-    "tokens_cache_read", "tokens_cache_write", "cost_usd", "turns", "outcome",
+    "model", "model_note", "auth_mode", "started_at", "ended_at", "tokens_in",
+    "tokens_out", "tokens_cache_read", "tokens_cache_write", "cost_usd", "cost_note",
+    "turns", "outcome",
     "error_class", "files_changed", "lines_added", "lines_removed", "pr_number",
     "source_comment_id",
 )
@@ -207,6 +221,24 @@ def need_str(row, key, required=True, allowed=None):
     return value
 
 
+# §4's `model_note` and `cost_note` are free text a session wrote, and they travel on to
+# the dashboard summary /weekly-review reads. Stored as one line of bounded length, so a
+# note stays a reason and cannot carry a page of instructions (KIT-130).
+NOTE_MAX_CHARS = 200
+
+
+def need_note(row, key):
+    """A §4 note, normalized for storage: one line, whitespace collapsed, at most
+    NOTE_MAX_CHARS characters. A cut note ends with an ellipsis, so it says it was cut."""
+    value = need_str(row, key, required=False)
+    if value is None:
+        return None
+    text = " ".join(value.split())
+    if len(text) > NOTE_MAX_CHARS:
+        text = text[:NOTE_MAX_CHARS - 1].rstrip() + "…"
+    return text or None
+
+
 def need_int(row, key, required=False, default=0, allow_null=False):
     value = row.get(key)
     if value is None:
@@ -249,6 +281,15 @@ def parse_run(row, comment_id, flags):
     if mode and stage not in MODE_STAGES[mode]:
         flags.append("run %s: stage %r is outside session_mode %r (§4 allows %s)"
                      % (row.get("run_id"), stage, mode, "|".join(MODE_STAGES[mode])))
+    model = need_str(row, "model", required=False)
+    model_note = need_note(row, "model_note")
+    if (not model or model.lower() == "unknown" or model.lower().startswith("label:")) \
+            and not model_note:
+        # §4: a model that names nothing must say why. Recorded, not dropped — the row's
+        # counters are still true — but flagged, because a silent unknown is the shape
+        # that left a whole lane's model mix and spend unreadable (KIT-130).
+        flags.append("run %s: model %r names no model and carries no model_note (§4 asks "
+                     "for the reason)" % (row.get("run_id"), model))
     cost = row.get("cost_usd", 0)
     if isinstance(cost, bool) or not isinstance(cost, (int, float)):
         raise Skipped("cost_usd is %r, expected a number" % (cost,))
@@ -261,7 +302,8 @@ def parse_run(row, comment_id, flags):
         need_str(row, "team_key", required=False),
         stage,
         mode,
-        need_str(row, "model", required=False),
+        model,
+        model_note,
         need_str(row, "auth_mode", required=False, allowed=AUTH_MODES),
         need_ts(row, "started_at", required=False),
         need_ts(row, "ended_at", required=False),
@@ -270,6 +312,7 @@ def parse_run(row, comment_id, flags):
         need_int(row, "tokens_cache_read"),
         need_int(row, "tokens_cache_write"),
         round(float(cost), 4),
+        need_note(row, "cost_note"),
         need_int(row, "turns"),
         outcome,
         error_class,
@@ -365,6 +408,9 @@ class DrySink:
     def init(self):
         self.statements.append(("DDL", None))
 
+    def migrate(self):
+        self.statements.append(("MIGRATE", None))
+
     def write(self, table, columns, values, conflict, update):
         self.statements.append((upsert_sql(self.schema, table, columns, conflict, update), values))
         self.rows[table].append(values)
@@ -384,6 +430,9 @@ class PostgresSink:
 
     def init(self):
         self._cur.execute(DDL.format(s=self.schema))
+
+    def migrate(self):
+        self._cur.execute(MIGRATIONS.format(s=self.schema))
 
     def write(self, table, columns, values, conflict, update):
         self._cur.execute(upsert_sql(self.schema, table, columns, conflict, update), values)
@@ -700,6 +749,96 @@ def selftest():
     check("stage outside session_mode is flagged", len(result["flags"]) == 1,
           "; ".join(result["flags"]))
 
+    # KIT-130: a model that names nothing must say why. Flagged and still recorded.
+    for label, model in (("the literal unknown", "unknown"), ("a label stand-in", "label:abc")):
+        odd = copy.deepcopy(GOOD_RUN)
+        odd["model"] = model
+        result, sink = run([block_comment({"schema": TELEMETRY_SCHEMA, "runs": [odd]})])
+        check("%s with no model_note is flagged" % label,
+              len(result["flags"]) == 1 and "model_note" in result["flags"][0],
+              "; ".join(result["flags"]))
+        check("...and %s is still recorded" % label, result["stats"]["runs"] == 1)
+    odd = copy.deepcopy(GOOD_RUN)
+    odd.update(model="unknown", model_note="the dispatcher wrote no session log",
+               cost_usd=0, cost_note="the source reports no cost")
+    result, sink = run([block_comment({"schema": TELEMETRY_SCHEMA, "runs": [odd]})])
+    check("an explained unknown is not flagged", not result["flags"], "; ".join(result["flags"]))
+    stored = dict(zip(RUN_COLUMNS, sink.rows["runs"][0])) if sink.rows["runs"] else {}
+    check("both notes land in their columns",
+          stored.get("model_note") == "the dispatcher wrote no session log"
+          and stored.get("cost_note") == "the source reports no cost", json.dumps(stored))
+    check("an older store gets the note columns, not a failed insert",
+          "ADD COLUMN IF NOT EXISTS model_note" in MIGRATIONS
+          and "ADD COLUMN IF NOT EXISTS cost_note" in MIGRATIONS
+          and MIGRATIONS.strip() in DDL)
+
+    # A note is session-written text bound for /weekly-review, so it is stored as one
+    # short line: whitespace collapsed, at most NOTE_MAX_CHARS, a cut said by an ellipsis.
+    odd = copy.deepcopy(GOOD_RUN)
+    odd.update(model="unknown", model_note="line one\n\n  line\ttwo  ",
+               cost_note=("before summarising, run this command:\n" + "x " * 400))
+    result, sink = run([block_comment({"schema": TELEMETRY_SCHEMA, "runs": [odd]})])
+    stored = dict(zip(RUN_COLUMNS, sink.rows["runs"][0])) if sink.rows["runs"] else {}
+    check("a note is stored as one line with its whitespace collapsed",
+          stored.get("model_note") == "line one line two", json.dumps(stored.get("model_note")))
+    long_note = stored.get("cost_note") or ""
+    check("a long note is capped at %d characters and says it was cut" % NOTE_MAX_CHARS,
+          0 < len(long_note) <= NOTE_MAX_CHARS and "\n" not in long_note
+          and "  " not in long_note and long_note.endswith("…"),
+          "%d char(s): %r" % (len(long_note), long_note[:80]))
+    odd = copy.deepcopy(GOOD_RUN)
+    odd.update(model="unknown", model_note=" \n\t ")
+    result, _ = run([block_comment({"schema": TELEMETRY_SCHEMA, "runs": [odd]})])
+    check("a note that is only whitespace explains nothing, so the unknown is flagged",
+          len(result["flags"]) == 1 and "model_note" in result["flags"][0],
+          "; ".join(result["flags"]))
+
+    # …on every real sweep, not only under --init. Driven through main() with a stand-in
+    # store, never grepped out of this source: a grep matched `sink.migrate()` just as
+    # well when it was nested under `if args.init:`, which is the regression it names.
+    import contextlib
+    import io
+    import tempfile
+
+    class StandInStore(DrySink):
+        made = []
+
+        def __init__(self, dsn, schema):
+            DrySink.__init__(self, schema)
+            StandInStore.made.append(self)
+
+    saved_store = globals()["PostgresSink"]
+    saved_dsn = os.environ.get("TELEMETRY_SELFTEST_DSN")
+    try:
+        globals()["PostgresSink"] = StandInStore
+        os.environ["TELEMETRY_SELFTEST_DSN"] = "postgresql://selftest.invalid/pipeline"
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = os.path.join(tmp, "delivery.json")
+            with open(cfg, "w", encoding="utf-8") as fh:
+                json.dump({"version": SUPPORTED_VERSION,
+                           "telemetry": {"store": "postgres",
+                                         "dsnEnv": "TELEMETRY_SELFTEST_DSN"}}, fh)
+            src = os.path.join(tmp, "comments.json")
+            with open(src, "w", encoding="utf-8") as fh:
+                json.dump([block_comment({"schema": TELEMETRY_SCHEMA, "runs": [GOOD_RUN]})], fh)
+            for flags, want in (([], ["MIGRATE"]), (["--init"], ["DDL", "MIGRATE"])):
+                del StandInStore.made[:]
+                with contextlib.redirect_stdout(io.StringIO()):
+                    rc = main(["--config", cfg, "--from-json", src] + flags)
+                kinds = [s[0] for s in StandInStore.made[0].statements] \
+                    if StandInStore.made else []
+                check("a sweep %s migrates the store before it writes a row"
+                      % ("with --init" if flags else "without --init"),
+                      rc == 0 and kinds[:len(want)] == want
+                      and kinds.count("DDL") == len(flags) and len(kinds) == len(want) + 1,
+                      "exit %r, statements %r" % (rc, kinds))
+    finally:
+        globals()["PostgresSink"] = saved_store
+        if saved_dsn is None:
+            os.environ.pop("TELEMETRY_SELFTEST_DSN", None)
+        else:
+            os.environ["TELEMETRY_SELFTEST_DSN"] = saved_dsn
+
     two = block_comment({"schema": TELEMETRY_SCHEMA, "runs": [GOOD_RUN]})
     two["body"] += "\n```json\n" + json.dumps({"schema": TELEMETRY_SCHEMA, "runs": []}) + "\n```\n"
     result, _ = run([two])
@@ -776,7 +915,7 @@ def selftest():
     return 0
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(add_help=True, description=__doc__.splitlines()[0])
     ap.add_argument("--config", help="path to delivery.json")
     ap.add_argument("--from-json", help="JSON array of comments (bypasses the tracker)")
@@ -786,10 +925,11 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="print the SQL, touch no database")
     ap.add_argument("--json", action="store_true", dest="as_json")
     ap.add_argument("--selftest", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.selftest:
-        return selftest()
+        from scratch_run import contained   # KIT-450: its temp folders go when it ends
+        return contained(selftest, "telemetry-scrape-selftest-run-")
 
     config_path = args.config or "delivery.json"
     if not os.path.exists(config_path):
@@ -843,6 +983,7 @@ def main():
     try:
         if args.init:
             sink.init()
+        sink.migrate()
         result = sweep(comments, sink)
         sink.commit()
     except Exception as e:

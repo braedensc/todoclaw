@@ -27,7 +27,7 @@ permissions:
 jobs:
   secrets-and-paths:
     name: Secret scan + forbidden paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -39,10 +39,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Block forbidden paths (planning/, real .env)
+      # The cyrus-setup/teardown patterns are here for a reason that is not obvious from
+      # the filename: if a worktree ROOT contains one, the dispatcher EXECUTES it on
+      # worktree creation, with the full daemon environment, OUTSIDE the OS sandbox,
+      # before the agent session exists, and with no config key to opt out. It is
+      # discovered from the checked-out BRANCH, so branch-write access to a managed
+      # repository would be arbitrary code execution with every secret the daemon holds.
+      #
+      # This cannot live in a PreToolUse hook: a hook constrains the agent, and this runs
+      # before there is an agent. CI is the only layer that reads a branch's contents
+      # independently of who wrote them. Matched in any directory rather than only the
+      # root: a file that can be moved to the root should not pass review either. The
+      # `.pem` and `.key` patterns keep key material out of the tree for the same reason.
+      # (The kit's docs/SECURITY.md carries the reasoning.)
+      - name: Block forbidden paths (planning/, real .env, key material, setup scripts)
         run: |
-          FORBIDDEN=$(git ls-files \
-            | grep -E '^planning/|(^|/)\.env' \
+          # -z, then one name a line: git quotes a name holding a non-ASCII character, and
+          # a quoted `"planning/\303\251.md"` matched nothing.
+          FORBIDDEN=$(git ls-files -z | tr '\0' '\n' \
+            | grep -E '^planning/|(^|/)\.env|\.pem$|\.key$|(^|/)cyrus-(setup|teardown)\.(sh|ps1|cmd|bat)$' \
             | grep -v -E '(^|/)\.env\.example$' \
             || true)
           if [ -n "$FORBIDDEN" ]; then
@@ -56,7 +71,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +91,7 @@ jobs:
 
   typecheck:
     name: Typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -93,7 +108,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -115,7 +130,7 @@ jobs:
   # entrypoint, and `deno task test` runs the 213-test suite. Verified locally before adding.
   deno:
     name: Deno
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -131,11 +146,12 @@ jobs:
         working-directory: supabase/functions
         run: deno task test
 
-  # Playwright smoke. NOT a required check yet (promote once it's proven stable) so a flaky
-  # browser run can't wedge main. chromium-only + dummy Supabase env (see playwright.config.ts).
+  # Playwright smoke. chromium-only + dummy Supabase env (see playwright.config.ts). It passed
+  # 40 of 40 completed runs (15 Sep to 30 Oct), so it can be a required check; the owner sets
+  # that on main's branch rule, and this file only keeps the job name stable.
   e2e:
     name: E2E (smoke)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -153,6 +169,13 @@ jobs:
       - name: Run E2E smoke
         run: npm run test:e2e
 
+      # The acceptance check's build (scripts/build-acceptance.mjs) loaded from dist-acceptance/
+      # with the fake backend (e2e/acceptance/fake-backend.mjs) and nothing else: every screen
+      # renders, the fake guesses at no request, and no request reaches a real service. The same
+      # job as the smoke because it needs the same Chromium. Not a Playwright spec (TOD-145).
+      - name: Acceptance build runs with no real services
+        run: npm run test:acceptance
+
   # Migration guard — hard, deterministic feedback on the two mistakes that wedged the prod deploy
   # on 2026-07-09: a DUPLICATE migration version (schema_migrations PK collision) or an OUT-OF-ORDER
   # one (sorts before main's latest → `supabase db push` hard-stops and applies nothing further).
@@ -160,7 +183,7 @@ jobs:
   # same/earlier timestamp fails HERE instead of silently after merge. See scripts/check-migrations.mjs.
   migration-guard:
     name: Migration guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -218,7 +241,7 @@ jobs:
   # reading the diff — not this job.
   hooks-change-guard:
     name: Hooks change guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -256,7 +279,7 @@ jobs:
   # it has reported on a few PRs.
   rls-static:
     name: RLS coverage (static)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -274,7 +297,7 @@ jobs:
   # See scripts/check-rls-live.mjs.
   rls-live:
     name: RLS coverage (live DB)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -322,7 +345,7 @@ jobs:
   # See scripts/check-write-caps.mjs and CLAUDE.md "Security Model" rule (i).
   write-caps:
     name: Volume-bound coverage (static)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -338,7 +361,7 @@ jobs:
   # See scripts/check-definer-grants.mjs and CLAUDE.md "Security Model" rule (ii).
   definer-grants:
     name: DEFINER-scope coverage (static)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -353,7 +376,7 @@ jobs:
   # DB, no deps. See scripts/check-edge-fetch.mjs.
   edge-fetch:
     name: Edge-fetch lint (static)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -374,7 +397,7 @@ jobs:
   # just as surely as a PreToolUse guard that stops matching lets one through (TOD-118).
   hook-battery:
     name: Hook battery
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -394,7 +417,7 @@ jobs:
   # are the same entry points humans use locally.
   pipeline-contract:
     name: Pipeline contract validators (static)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -450,6 +473,22 @@ jobs:
       - name: Weekly-review limits selftest (no self-raised budgets or graders)
         run: npm run test:weekly-review
 
+      # The union check (pr-union-check.yml): a check and the fixture it rejects, each green
+      # alone and red together; the PR whose addition turned the union red is named; a PR that
+      # conflicts inside the union is skipped by name; the cap skips loudly; could-not is its
+      # own verdict; no ref in the checkout moves. Report-only, as in the kit.
+      - name: Union check selftest (green alone, red together, bisected, report-only)
+        run: npm run test:union
+
+      # The helper every selftest that makes temp folders runs inside (KIT-450): one run
+      # folder, removed on a pass, a failure, Ctrl-C or a SIGTERM.
+      - name: Scratch-run helper selftest (one folder per run, gone however the run ends)
+        run: npm run test:scratch-run
+
+      # `core.hooksPath` pinned absolute, so a worktree runs the pre-commit hook (KIT-420).
+      - name: core.hooksPath pin selftest (a worktree runs the pre-commit hook)
+        run: npm run test:hooks-path
+
       # `gh` cannot verify TLS inside the dispatcher's sandbox (KIT-71/TOD-116): Go on
       # darwin ignores SSL_CERT_FILE and asks the platform verifier, whose user/admin
       # trust domains answer "No keychain is available" in there — and `gh auth status`
@@ -498,7 +537,11 @@ jobs:
               except Exception as e:
                   bad.append("%s: unparseable YAML: %s" % (f, e))
                   continue
-              for ref in sorted(set(re.findall(r"scripts/[A-Za-z0-9_.-]+\.py", text))):
+              # A script named only in a COMMENT is not a dependency: the kit's templates
+              # point at its own checkers (check_alert_pages, check_session_brief,
+              # check_workflow_calls) in comment lines, and this repo does not vendor them.
+              code = "\n".join(l for l in text.splitlines() if not re.match(r"\s*(#|//)", l))
+              for ref in sorted(set(re.findall(r"scripts/[A-Za-z0-9_.-]+\.py", code))):
                   if not pathlib.Path(ref).is_file():
                       bad.append("%s references %s, which does not exist" % (f, ref))
 

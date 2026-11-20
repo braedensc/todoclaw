@@ -187,10 +187,22 @@ red). Scheduled workflows run only from `main`.
 ### 4b. Event-driven pipelines
 | Workflow | Trigger | Does |
 |---|---|---|
-| `ci.yml` ("CI") | push to `main`, every PR | Secret-scan + forbidden-paths, Lint, Typecheck, Test (each is a required check); E2E smoke + Hooks-change guard (not required) |
+| `ci.yml` ("CI") | push to `main`, every PR | Secret-scan + forbidden-paths, Lint, Typecheck, Test (each is a required check); E2E smoke + Hooks-change guard (not required yet; the owner's branch-rule step adds them). Runs on `ubuntu-24.04`, never a moving `-latest` image (a moving image turned PRs red at an unchanged head in the kit) |
+| `pr-union-check.yml` ("PR union check") | push to `main`, hourly, manual | Merges every open non-draft same-repo PR into a throwaway tree off `main`, runs the Python selftests plus lint, typecheck and unit tests, and on red names the PR whose addition broke the union. **Report-only**: it comments on that PR, never merges, pushes or labels, and is not a required check |
 | `deploy.yml` ("Deploy (prod)") | after green CI on `main` | `migrate` (applies pending migrations via `db push`) → `deploy-functions` (deploys Edge Functions) |
 | Vercel (native Git integration) | push to `main` / any branch | Prod deploy on merge; preview deploy per branch. **Not** a GitHub Action |
 | `pr-conflict-monitor.yml` ("PR conflict monitor") | push to `main`, every 20 min, manual | On a newly conflicted PR: labels it `conflict` and **pages a person at once** — this repo runs with `--max-fix-requests 0` because nothing here answers a fix request (no waker serves this checkout, no dispatcher runs against it, and dependabot's branches have no worktree). Escalates one that stays conflicted, and clears stale labels. Never merges, pushes or rebases. A pass that could not tell is a failure, watched by `pipeline-failure-alert.yml` |
+
+**Forbidden paths (the `ci.yml` step "Block forbidden paths").** It fails a branch that tracks
+`planning/`, a real `.env` file, key material (`.pem`, `.key`) or a `cyrus-setup` or
+`cyrus-teardown` script (`.sh`, `.ps1`, `.cmd`, `.bat`), in the root or any folder. The setup
+scripts are there for a reason the filename hides: a dispatcher that finds one in a worktree's
+root runs it on worktree creation, with its full environment and outside the sandbox, before
+any session or hook exists. A hook cannot stop that, because it constrains a session and this
+runs before one; CI is the only layer that reads a branch's contents whoever wrote them. The
+kit's `docs/SECURITY.md` carries the full reasoning. The `.husky/pre-commit` hook applies the
+same `planning/` and `.env` rule to a commit, and scans every staged path but a deletion, so a
+renamed file is scanned too.
 
 **Deploy notes**
 - Edge Functions auto-deploy on merge. `deploy-functions` **derives the list from the tree** — it
@@ -247,6 +259,18 @@ person decides. This table says which is which, so a sync report can be read.
 | `.claude/skills/fix-ci/SKILL.md` | #430 (TOD-122) | **adapted** | Matched no kit revision checked on 2026-09-17 |
 | `docs/SESSION-BRIEF.md` | KIT-232 | **the kit's brief**, one word changed | Taken from the kit at bbe2000; "the kit ships" reads "this repo ships" for `/fix-ci` |
 | `scripts/gh_fallback.py`, `scripts/check_pr_base.py`, `.github/workflows/pr-base.yml` | KIT-232 | **byte-identical** to the kit at bbe2000 | The PR-base gate is not a required check, as in the kit. Its comments name a PreToolUse stacked-branch guard, `docs/SECURITY.md` and a template twin this repo lacks; the brief names `scripts/scratch_run.py`, which a later bundle adds |
+
+| `scripts/check_pr_union.py`, `scripts/scratch_run.py`, `scripts/pin_hooks_path.py` | TOD-120/124 bundle | **byte-identical** to the kit at 616c595 | The union check, the one-run-folder helper every selftest uses, and the `core.hooksPath` pin that `npm install` runs after husky. Each has a `test:*` script and a CI step |
+| `.github/workflows/pr-union-check.yml` | TOD-120/124 bundle | the kit's job, **this repo's battery** | Report-only, not required. It runs `npm ci`, lint, typecheck and the unit tests as one chain (the union tree has no `node_modules`) and leaves out `test:watch`, `test:e2e` and `test:e2e:golden` |
+| `docs/PIPELINE-CONTRACT.md`, `docs/TICKET-TEMPLATE.md`, `schemas/*`, `delivery.example.json` | TOD-126 | **byte-identical** to the kit at 616c595 | `schemas/` holds every schema the copied scripts read. This repo's `delivery.json` still validates against the kit's validator with 0 errors and the one `meta` label warning |
+| `scripts/check_delivery_config.py`, `check_ticket_dor.py`, `check_auto_approve.py`, `check_auto_merge.py`, `check_weekly_review.py`, `jsonschema_mini.py`, `telemetry_block.py`, `telemetry_scrape.py` | the kit-copies ticket | **byte-identical** to the kit at 616c595 | Their selftests run in CI as before |
+| `scripts/check_schemas.py`, `scripts/telemetry_dashboard.py` | TOD-126 / the kit-copies ticket | the kit's file, **two small guards** | `check_schemas.py` skips the kit's own `validator-settings.example.json` and `pipeline-parts.json` when this repo has none. The dashboard selftest falls back to the `/work` template row when `.claude/skills/work` is absent (skills are user-level here). Both are listed `intentional` in `.claude/kit-sync.json`, and both belong in the kit |
+| `templates/workflows/pipeline-*.yml` | the kit-copies ticket | the kit's, **`pipeline-review.yml` keeps this repo's `chance` gate** | The CI check that a staged workflow's scripts exist now ignores a script named only in a comment; the kit's templates name its own checkers there |
+| `.husky/pre-commit` | TOD-124 | the kit's `--diff-filter=d -z` list, this repo's layout | A renamed or type-changed file is scanned now. Proven in a scratch clone with the KIT-151 test plan (blocked), and a deletion-only commit still commits |
+| `e2e/acceptance/**`, `scripts/build-acceptance.mjs` | TOD-145 | **this repo's own** | The acceptance check's fake backend, its proof (`npm run test:acceptance`, in the E2E job) and the build. They are grader paths and risk paths: a session cannot change what the check sees in the pull request the check judges |
+
+`.claude/kit-sync.json` names the kit's git URL and lists what is `intentional` here, so the
+next `/sync-kit` stays quiet where it should.
 
 Not a complete list: other `scripts/` and `.claude/hooks/` files are kit-derived too and are
 not yet recorded here (no ticket yet).

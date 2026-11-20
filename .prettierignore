@@ -38,3 +38,4 @@ templates/workflows/
 # exclusion explicit and independent of that default, so `format:check` can never start
 # reformatting another branch's tree.
 .claude/worktrees/
+dist-acceptance

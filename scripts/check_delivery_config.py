@@ -9,7 +9,7 @@ TWO LAYERS, ONE DEFINITION OF SHAPE
 
     SHAPE comes from `schemas/delivery.schema.json` — a real JSON Schema, and
     the single machine-readable rendering of contract §1. This file no longer
-    re-implements "stateIds is an object with exactly five string values" in
+    re-implements "stateIds is an object with exactly six string values" in
     Python; it validates against the schema and translates each violation into
     the rule vocabulary and tier §7 uses (via the schema's own `x-rule`,
     `x-tier` and `x-fix` annotations). `scripts/check_schemas.py` fails CI if
@@ -20,7 +20,12 @@ TWO LAYERS, ONE DEFINITION OF SHAPE
     an ID that is RESOLVED rather than merely a string, a path that lands
     outside every worktree ON THIS DISK, `perEffort[e].maxTurns` compared
     against `budgets.maxTurns`, `statePath` against `backend`, the exact
-    `riskPaths` floor, and `branch.types` against the LIVE guard's own regex.
+    `riskPaths` and `labels.required` floors, and `branch.types` against the
+    LIVE guard's own regex.
+
+    A floor is the class a schema is furthest from expressing: the schema says
+    `labels.required` is an array of strings and would accept `[]`, but the
+    empty list is precisely the config that turns the parking brake off.
 
     This is defense in depth, not a handoff. A schema-valid config can still
     carry a UUID that resolves to nothing.
@@ -111,17 +116,61 @@ HOOK_STRING_RE = re.compile(r"""[rRbBuUfF]{0,2}(\"\"\"|'''|"|')(.*?)\1""", re.DO
 # `|` so it cannot latch onto `(?P<ticket>…)` or any other single-token group.
 HOOK_TYPES_RE = re.compile(r"\((?:\?:)?([a-z]+(?:\|[a-z]+)+)\)")
 
-STATE_KEYS = ("raw", "ready", "working", "review", "done")  # §1: closed, mandatory set
+STATE_KEYS = ("raw", "ready", "working", "review", "done",
+              "needsApproval")  # §1: closed, mandatory set
 COMMAND_KEYS = ("lint", "typecheck", "test", "e2e", "preview")
 AUTH_CONTEXTS = ("devSessions", "scheduled", "review")
 # §9: the only backend with a durable store of its own (the `pipeline-state`
 # Actions artifact), hence the only one whose `statePath` may be null.
 SELF_STORING_BACKENDS = ("github-actions",)
+# §6's dispatcher-owned label set, verbatim: the labels a session may never
+# write and the dispatcher reads to decide whether a ticket moves. A project may
+# require MORE keys; it may not require fewer. Validating only the keys a project
+# happens to list makes the parking brake opt-in — empty the list and
+# `agent:needs-human`, the label a person applies to STOP a ticket, degrades from
+# "dispatch refuses" to a stderr warning nobody reads.
+REQUIRED_LABEL_KEYS = (
+    "agent:queued",
+    "agent:working",
+    "agent:blocked",
+    "agent:needs-human",
+    "blocked:capacity",
+)
+# The paths every project's `autonomy.riskPaths` must declare. Two families,
+# and the second is the one that is easy to forget:
+#
+#   1. The guard machinery and the pipeline's own config.
+#   2. Their STAGING MIRRORS under `templates/`. The kit ships the inert copies
+#      that BECOME `.github/workflows/**` and `.claude/hooks/**` at bootstrap
+#      (templates/README.md is the activation table), so the staged bytes ARE
+#      the active bytes — chosen while staged, merely moved later. A floor that
+#      names only the destination protects a file from the moment it becomes
+#      visible rather than from the moment its contents are decided.
+#
+# The active and staged halves of a pair are inseparable: requiring the staged
+# workflows while leaving the active ones undeclared would be an incoherent
+# floor, so `.github/workflows/**` joins its mirror here.
+#
+# A project that deleted `templates/` at bootstrap carries two globs that match
+# nothing, which costs nothing. The project that keeps the directory — the one
+# adopting the pipeline in stages, holding `pipeline-*.yml` staged for later —
+# is exactly the at-risk case this floor is for.
 REQUIRED_RISK_PATHS = (
     ".claude/hooks/**",
+    "templates/hooks/**",
     ".claude/settings*.json",
+    ".github/workflows/**",
+    "templates/workflows/**",
     "delivery.json",
 )
+
+# The staging mirrors, and what each becomes. Used only to explain a floor
+# violation — a generic "missing glob" message does not tell a reader WHY a
+# directory of inert files is supervision-critical.
+STAGING_MIRRORS = {
+    "templates/workflows/**": ".github/workflows/**",
+    "templates/hooks/**": ".claude/hooks/**",
+}
 
 # §1 defines `telemetry`, and the schema therefore does too — but it is not a
 # §7 row and this validator says nothing about it. See the module docstring.
@@ -241,8 +290,8 @@ def account_home():
 
 def expand_path(value, repo_root):
     """§1, §3: `~` is the home the account database gives this OS account, never
-    $HOME — the reading the PreToolUse hook makes of `dispatch.pinsRoot`, so the two agree
-    on where the pins live. `~name` is that account's home, from the same database. A
+    $HOME — the reading the kit hook makes of `dispatch.pinsRoot`, so the two agree on
+    where the pins live. `~name` is that account's home, from the same database. A
     relative path is repo-relative — and therefore inside the repo, which is exactly
     what the caller tests. So is a `~` the database cannot resolve: the hook fails
     closed on it, and this check must not pass it."""
@@ -487,7 +536,7 @@ def check_shape(config, schema, r):
 def check_state_ids(config, r):
     """§7: any `linear.stateIds.*` empty or still a token.
 
-    The schema already said "five keys, string values". Whether a string is a
+    The schema already said "six keys, string values". Whether a string is a
     RESOLVED Linear ID is the part it cannot see.
     """
     state_ids = dig(config, "linear", "stateIds")
@@ -513,12 +562,30 @@ def check_state_ids(config, r):
 
 
 def check_labels(config, r):
-    """§7: required keys missing from `ids` or resolving to ""; no `track:*` key."""
+    """§7: the `labels.required` floor; required keys missing from `ids` or
+    resolving to ""; no `track:*` key."""
     labels = dig(config, "linear", "labels")
     if not isinstance(labels, dict):
         return
     ids = labels.get("ids", MISSING)
     required = labels.get("required", MISSING)
+
+    # The floor comes FIRST, and depends only on `required`: the rules below ask
+    # whether each listed key resolves, which says nothing about what must be
+    # listed. Same shape as the `autonomy.riskPaths` floor in check_autonomy.
+    if isinstance(required, list):
+        for needed in REQUIRED_LABEL_KEYS:
+            if needed not in required:
+                r.err(
+                    "linear.labels.required",
+                    f"linear.labels.required is missing '{needed}' (exact "
+                    f"canonical key). §6: the dispatcher-owned lifecycle labels "
+                    f"are the parking brake — a person applies "
+                    f"`agent:needs-human` to stop a ticket, and only membership "
+                    f"here makes a stale ID for it FAIL a read instead of "
+                    f"warning. Dropping one silently re-arms dispatch on tickets "
+                    f"somebody parked. Extend this list, never shorten it.",
+                )
 
     if isinstance(ids, dict) and isinstance(required, list):
         for key in required:
@@ -654,12 +721,22 @@ def check_autonomy(config, r):
     if isinstance(risk_paths, list):
         for needed in REQUIRED_RISK_PATHS:
             if needed not in risk_paths:
+                becomes = STAGING_MIRRORS.get(needed)
+                why = (
+                    f"'{needed}' holds the INERT COPIES that become "
+                    f"'{becomes}' at bootstrap (templates/README.md). Staged "
+                    f"workflows are the same bytes as active ones — the "
+                    f"activation is a bare `git mv` that reads in review as "
+                    f"just a move, so the bytes must be supervised where they "
+                    f"are DECIDED, not where they become visible."
+                    if becomes else
+                    "§1/§7: the guard machinery and delivery.json always need a "
+                    "human — a PR that edits supervision is not a routine edit."
+                )
                 r.err(
                     "autonomy.riskPaths",
                     f"autonomy.riskPaths is missing '{needed}' (exact glob "
-                    f"string). §1/§7: the guard machinery and delivery.json "
-                    f"always need a human — a PR that edits supervision is not a "
-                    f"routine edit.",
+                    f"string). {why}",
                 )
 
     auto_merge = autonomy.get("autoMergeMaxLines", MISSING)
@@ -783,6 +860,52 @@ def check_minor(config, r):
         )
 
 
+def glob_to_re(pat):
+    """A riskPaths glob as a regex over a '/'-separated repo-relative path: the same rule as
+    scripts/check_auto_approve.py's, held equal by the selftest. A copy, not an import, since
+    that gate imports the readiness gate, which reads this file's section."""
+    out, i = [], 0
+    while i < len(pat):
+        if pat.startswith("**/", i):
+            out.append(r"(?:[^/]+/)*"); i += 3
+        elif pat.startswith("**", i):
+            out.append(r".*"); i += 2
+        elif pat[i] == "*":
+            out.append(r"[^/]*"); i += 1
+        elif pat[i] == "?":
+            out.append(r"[^/]"); i += 1
+        else:
+            out.append(re.escape(pat[i])); i += 1
+    return "^" + "".join(out) + "$"
+
+
+def check_acceptance(config, r):
+    """§1 `acceptance`: what its schema cannot say, at the same WARNING tier (KIT-302). The
+    section gates no autonomy, it can only hold a plan's close, so a mistake here never makes
+    delivery.json broken; its consumers refuse a malformed one where they read it."""
+    acceptance = config.get("acceptance", MISSING)
+    if not isinstance(acceptance, dict):
+        return
+    serve = acceptance.get("serve") if isinstance(acceptance.get("serve"), dict) else {}
+    if "build" in acceptance and acceptance["build"] is None and serve.get("mode") != "command":
+        r.warn("acceptance",
+               "acceptance.build is null, but acceptance.serve.mode is not `command`, so "
+               "nothing would build what `serve` serves (§1 `acceptance`).")
+    fake = acceptance.get("fakeBackend")
+    if isinstance(fake, str) and fake.strip():
+        if not acceptance.get("scenarios"):
+            r.warn("acceptance",
+                   "acceptance.fakeBackend is set, but acceptance.scenarios names no data set "
+                   "for it to serve (§1 `acceptance`).")
+        risk = dig(config, "autonomy", "riskPaths")
+        globs = [g for g in risk if isinstance(g, str)] if isinstance(risk, list) else []
+        if not any(re.match(glob_to_re(g), fake) for g in globs):
+            r.warn("acceptance",
+                   f"acceptance.fakeBackend {fake} is not in autonomy.riskPaths, so a coding "
+                   f"session could change the fake it is judged against in its own pull "
+                   f"request without a person's review (§1 `acceptance`).")
+
+
 # --------------------------------------------------------------------------- #
 # Run
 # --------------------------------------------------------------------------- #
@@ -800,6 +923,7 @@ def run(config, source, repo_root, roots, schema, strict=False,
         check_commands(config, r)
         check_budgets(config, r)
         check_autonomy(config, r)
+        check_acceptance(config, r)
         check_dispatch(config, r, repo_root, roots)
         check_minor(config, r)
 
@@ -852,13 +976,22 @@ def good_config():
                     "effort:M": "lbl-m",
                     "effort:L": "lbl-l",
                     "agent:queued": "lbl-queued",
+                    "agent:working": "lbl-working",
+                    "agent:blocked": "lbl-blocked",
+                    "agent:needs-human": "lbl-needs-human",
+                    "blocked:capacity": "lbl-capacity",
                     "provenance:epic": "lbl-prov-epic",
                     "provenance:human": "lbl-prov-human",
                     "hooks-change": "lbl-hooks",
                 },
+                # Built FROM the floor, so a widened floor cannot leave the
+                # fixture quietly invalid. The floor's own contents are pinned
+                # separately in selftest(), because a fixture derived from a
+                # constant cannot notice that constant being emptied.
                 "required": [
                     "effort:S", "effort:M", "effort:L",
-                    "agent:queued", "provenance:epic", "provenance:human",
+                    *REQUIRED_LABEL_KEYS,
+                    "provenance:epic", "provenance:human",
                     "hooks-change",
                 ],
             },
@@ -948,6 +1081,13 @@ CASES = [
         ["linear.stateIds"],
     ),
     ("stateid-missing", lambda c: _drop(c, "linear.stateIds.working"), ["linear.stateIds"]),
+    # The sixth key is enforced exactly like the other five: a project that
+    # never provisioned the needs-approval lane fails the gate rather than
+    # silently losing the transition Stage E writes there (§1).
+    ("stateid-needs-approval-missing",
+     lambda c: _drop(c, "linear.stateIds.needsApproval"), ["linear.stateIds"]),
+    ("stateid-needs-approval-empty",
+     lambda c: _set(c, "linear.stateIds.needsApproval", ""), ["linear.stateIds"]),
     ("stateid-null", lambda c: _set(c, "linear.stateIds.review", None), ["linear.stateIds"]),
     ("stateids-absent", lambda c: _drop(c, "linear.stateIds"), ["linear.stateIds"]),
     # The /setup-board regression, at field granularity: a state map keyed by
@@ -956,11 +1096,42 @@ CASES = [
         "stateids-keyed-by-display-name",
         lambda c: _set(c, "linear.stateIds",
                        {"Ideas": "a", "Ready": "b", "In Progress": "c",
-                        "In Review": "d", "Done": "e"}),
+                        "In Review": "d", "Needs Approval": "e", "Done": "f"}),
         ["linear.stateIds"],
     ),
 
-    # §7 — linear.labels
+    # §7 — linear.labels: the floor. `required` is what makes a stale ID fatal
+    # rather than advisory, so shortening it is a supervision change.
+    (
+        "labels-required-drops-a-hold",
+        lambda c: c["linear"]["labels"]["required"].remove("agent:needs-human"),
+        ["linear.labels.required"],
+    ),
+    (
+        "labels-required-drops-capacity",
+        lambda c: c["linear"]["labels"]["required"].remove("blocked:capacity"),
+        ["linear.labels.required"],
+    ),
+    # The whole point of the floor: an EMPTY list resolves every key it lists
+    # (vacuously) and used to pass clean.
+    (
+        "labels-required-empty",
+        lambda c: _set(c, "linear.labels.required", []),
+        ["linear.labels.required"],
+    ),
+    # A project may require MORE than the floor — extending is not an error, and
+    # must stay silent so the floor adds no noise to a config that already meets it.
+    (
+        "labels-required-superset-is-fine",
+        lambda c: (
+            _set(c, "linear.labels.ids.provenance:monitor", "lbl-prov-monitor"),
+            c["linear"]["labels"]["required"].append("provenance:monitor"),
+        ),
+        [],
+    ),
+
+    # §7 — linear.labels: resolution. Does each key the project DID list point
+    # at a real ID?
     (
         "required-not-in-ids",
         lambda c: c["linear"]["labels"]["required"].append("effort:XL"),
@@ -1082,6 +1253,34 @@ CASES = [
         ["autonomy.riskPaths"],
     ),
     ("riskpaths-absent", lambda c: _drop(c, "autonomy.riskPaths"), ["autonomy.riskPaths"]),
+    # The staging halves, dropped ONE AT A TIME out of an otherwise-complete
+    # list. A config that declares every guarded destination and omits only the
+    # directory those files are staged in is the exact shape KIT-14 describes,
+    # and it must not validate.
+    (
+        "riskpaths-missing-staged-workflows",
+        lambda c: _set(
+            c, "autonomy.riskPaths",
+            [p for p in REQUIRED_RISK_PATHS if p != "templates/workflows/**"],
+        ),
+        ["autonomy.riskPaths"],
+    ),
+    (
+        "riskpaths-missing-staged-hooks",
+        lambda c: _set(
+            c, "autonomy.riskPaths",
+            [p for p in REQUIRED_RISK_PATHS if p != "templates/hooks/**"],
+        ),
+        ["autonomy.riskPaths"],
+    ),
+    (
+        "riskpaths-missing-active-workflows",
+        lambda c: _set(
+            c, "autonomy.riskPaths",
+            [p for p in REQUIRED_RISK_PATHS if p != ".github/workflows/**"],
+        ),
+        ["autonomy.riskPaths"],
+    ),
     (
         "automergemethod-unknown",
         lambda c: _set(c, "autonomy.autoMergeMethod", "fast-forward"),
@@ -1169,6 +1368,32 @@ def selftest():
     if schema is None:
         print("FAIL: check_delivery_config selftest")
         print(f"  - cannot read {SCHEMA_FILE}; the §1 schema is the shape layer")
+        return 1
+
+    # PRECONDITION: the label floor, pinned to literals and spelled out by hand
+    # on purpose — it must not be derivable from the thing it checks. Every case
+    # below reaches the floor THROUGH the constant (good_config() builds
+    # `required` from it), so an emptied REQUIRED_LABEL_KEYS would otherwise let
+    # the whole battery pass while the guarantee quietly vanished. Checked here,
+    # ahead of the fixtures, and fatal on its own: once the constant has drifted
+    # nothing downstream is measuring what it claims to.
+    floor = {
+        "agent:queued",
+        "agent:working",
+        "agent:blocked",
+        "agent:needs-human",
+        "blocked:capacity",
+    }
+    if set(REQUIRED_LABEL_KEYS) != floor:
+        print("FAIL: check_delivery_config selftest")
+        print(
+            f"  - REQUIRED_LABEL_KEYS drifted from §6's dispatcher-owned label "
+            f"set: missing {sorted(floor - set(REQUIRED_LABEL_KEYS))}, "
+            f"unexpected {sorted(set(REQUIRED_LABEL_KEYS) - floor)}. Shortening "
+            f"this floor downgrades the parking brake from 'dispatch refuses' to "
+            f"a warning; widening it is a §6/§7 contract amendment and must be "
+            f"made in the contract too."
+        )
         return 1
 
     # 0. The guard parser survives reformatting. Both of these have shipped in
@@ -1293,6 +1518,86 @@ def selftest():
                     f"{name}: expected a warning on [{rule}], got "
                     f"{sorted({f['rule'] for f in result['warnings']})}"
                 )
+
+        # 2b'. §1 `acceptance` (KIT-302): absent or valid is clean, and every mistake in it
+        #      WARNS and never errors, so the section can never make delivery.json broken.
+        def accepting(**over):
+            section = {"build": "npm run build",
+                       "serve": {"mode": "files", "dir": "dist", "fallback": "index.html"},
+                       "fakeBackend": "tests/look/fake-backend.mjs",
+                       "scenarios": ["signed-in", "signed-out"],
+                       "viewports": {"desktop": {"width": 1280, "height": 800},
+                                     "phone": {"width": 390, "height": 844, "mobile": True}},
+                       "modes": {"dark": {"colorScheme": "dark"}},
+                       "uiPaths": ["src/**"]}
+            section.update(over)
+            config = good_config()
+            config["acceptance"] = {k: v for k, v in section.items() if v is not MISSING}
+            config["autonomy"]["riskPaths"] = (list(config["autonomy"]["riskPaths"])
+                                               + ["tests/look/**"])
+            result = run(config, "delivery.json", repo, roots, schema,
+                         live_types=live_types, live_source=HOOK_FILE)
+            return (sorted({f["rule"] for f in result["errors"]}),
+                    " ".join(f["message"] for f in result["warnings"]))
+        for name, over, want in (
+                ("valid", {}, ""),
+                ("an-absolute-build-folder", {"serve": {"mode": "files", "dir": "/tmp/dist"}},
+                 "acceptance.serve"),
+                ("a-key-it-does-not-know", {"timeout": 5}, "acceptance"),
+                ("a-remote-server", {"serve": {"mode": "command", "command": "npm start",
+                                               "url": "http://example.com:3000"}},
+                 "acceptance.serve"),
+                ("nothing-builds-what-files-mode-serves", {"build": None},
+                 "nothing would build what `serve` serves"),
+                ("a-fake-backend-serving-no-scenario", {"scenarios": MISSING},
+                 "names no data set for it to serve"),
+                ("a-fake-backend-outside-riskpaths",
+                 {"fakeBackend": "src/fake.mjs"}, "is not in autonomy.riskPaths"),
+                ("the-built-in-default-mode-redefined", {"modes": {"default": {}}},
+                 "acceptance.modes"),
+                ("no-ui-paths", {"uiPaths": MISSING}, "uiPaths")):
+            note()
+            errors, warned = accepting(**over)
+            if errors:
+                failures.append(f"acceptance/{name}: the section must never error, got {errors}")
+            if want and want not in warned:
+                failures.append(f"acceptance/{name}: expected a warning naming {want!r}, got "
+                                f"{warned!r}")
+            if not want and warned:
+                failures.append(f"acceptance/{name}: expected a clean section, got {warned!r}")
+        note()
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import check_auto_approve as approve
+        for glob in ("tests/look/**", "src/*.mjs", "**/fake?.js", "a/**/b.mjs", "x.y"):
+            for path in ("tests/look/fake-backend.mjs", "src/fake.mjs", "src/a/fake.mjs",
+                         "deep/fake1.js", "a/b.mjs", "a/c/d/b.mjs", "x.y", "xzy"):
+                if bool(re.match(glob_to_re(glob), path)) != bool(
+                        re.match(approve.glob_to_re(glob), path)):
+                    failures.append(f"glob_to_re differs from check_auto_approve's on "
+                                    f"{glob!r} against {path!r}")
+
+        # 2c. A staging-mirror violation must SAY WHY. The rule name alone reads
+        #     as bureaucracy — "you omitted a glob" — when the actual finding is
+        #     that a directory of inert files decides what CI later runs. If the
+        #     message degrades to the generic text, the floor still holds but
+        #     nobody learns what it is for, so the explanation is asserted.
+        for name, staged in (("riskpaths-missing-staged-workflows", "templates/workflows/**"),
+                             ("riskpaths-missing-staged-hooks", "templates/hooks/**")):
+            note()
+            config = good_config()
+            dict(CASES_BY_NAME)[name](config)
+            result = run(config, "delivery.json", repo, roots, schema,
+                         live_types=live_types, live_source=HOOK_FILE)
+            said = " ".join(
+                f["message"] for f in result["errors"]
+                if f["rule"] == "autonomy.riskPaths"
+            )
+            for phrase in (staged, STAGING_MIRRORS[staged], "same bytes", "git mv"):
+                if phrase not in said:
+                    failures.append(
+                        f"{name}: the floor message must explain the staging "
+                        f"mirror; it omits {phrase!r}. Got: {said!r}"
+                    )
 
         # 3. Warnings alone do not fail; --strict promotes them.
         note()
@@ -1424,6 +1729,27 @@ def selftest():
     except (OSError, ValueError) as e:
         failures.append(f"cannot read delivery.example.json: {e}")
     else:
+        # The example must SATISFY the floor, not merely be judged by it. The
+        # rule-set assertion below cannot see this: a floor violation reports
+        # under `linear.labels.required`, which the example already expects for
+        # its unfilled placeholders, so a dropped floor key would hide in plain
+        # sight. The example seeds every project's config, so it is asked
+        # directly.
+        note()
+        example_required = dig(example_config, "linear", "labels", "required")
+        if not isinstance(example_required, list):
+            failures.append(
+                "delivery.example.json has no linear.labels.required list"
+            )
+        else:
+            missing = [k for k in REQUIRED_LABEL_KEYS if k not in example_required]
+            if missing:
+                failures.append(
+                    f"delivery.example.json's linear.labels.required omits "
+                    f"{missing} — the example seeds every project's config and "
+                    f"must meet the floor it will be validated against."
+                )
+
         result = run(
             example_config, example, root, worktree_roots(root)[0], schema,
             live_types=live_types, live_source=HOOK_FILE,
@@ -1468,7 +1794,8 @@ def main():
     args = parser.parse_args()
 
     if args.selftest:
-        return selftest()
+        from scratch_run import contained   # KIT-450: its temp folders go when it ends
+        return contained(selftest, "delivery-config-selftest-run-")
 
     repo_root = os.path.abspath(args.repo_root) if args.repo_root else find_repo_root(os.getcwd())
 
