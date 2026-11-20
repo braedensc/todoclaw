@@ -89,6 +89,7 @@ describe('HabitsView', () => {
     setHabits([])
     renderView()
     expect(screen.getByText(/No habits yet/i)).toBeInTheDocument()
+    expect(screen.getByText('No habits yet. Add your first one below.')).toBeInTheDocument()
   })
 
   it('does NOT render a daily checkbox on the setup page (habits are checked from home)', () => {

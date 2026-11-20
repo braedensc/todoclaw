@@ -114,7 +114,7 @@ export function HabitsView() {
       {active.length === 0 && queued.length === 0 ? (
         <div className="mb-3 flex flex-col items-center gap-1 py-2 text-center">
           <SleepingPuppy className="h-16 w-28 text-muted-light" />
-          <p className="text-sm text-muted">No habits yet — add one below.</p>
+          <p className="text-sm text-muted">No habits yet. Add your first one below.</p>
         </div>
       ) : (
         <>
