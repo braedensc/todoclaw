@@ -17,6 +17,21 @@ exists to prevent.
 | [Telemetry store](#10-telemetry-store) | a Postgres schema, outside the repo | the collector | dashboards, the weekly review |
 | [Autonomy tiers](#11-autonomy-tiers) | — | — | the approve and merge gates |
 | [Machine-readable schemas](#12-machine-readable-schemas) | `schemas/`, committed | this document (amend both together) | producers, validators, CI |
+| [Absence is not failure](#13-absence-is-not-failure) | — | — | every pipeline job that can legitimately do nothing |
+| [Status file](#16-status-file) | the role account's home, outside every worktree | the status job | the tech lead, the daily summaries, the heartbeat monitor |
+| [Usage file](#17-usage-file) | the role account's home, outside every worktree | the usage job | a later queue, which decides when new work may start |
+| [Day plan file](#18-day-plan-file) | the role account's home, outside every worktree | the morning planner, through `scripts/pipeline_day_plan.py` | the stand-up, the tech lead, a later app |
+| [Watcher status file](#19-watcher-status-file) | the watcher account's home, outside every worktree | the watcher | the health watch, the stand-up, the validator (later) |
+| [Hold file](#20-hold-file) | the watcher account's home, in a folder no worker can write | the watcher | every job that starts work |
+| [Acceptance result block](#21-acceptance-result-block) | the acceptance session's result | the acceptance session | the acceptance poller |
+| [Acceptance verdict comment](#22-acceptance-verdict-comment) | a comment on the plan's epic | the acceptance poller | the bridge, before it closes a plan (later) |
+| [Validator settings file](#23-validator-settings-file) | the user's own home, outside every worktree | the owner, by hand | the validator |
+| [Validator ledger](#24-validator-ledger) | the user's own home, outside every worktree | the validator, by one writer function | the stand-up, the recap, the watcher |
+| [Acceptance follow-up request](#25-acceptance-follow-up-request) | a comment on the plan's epic | the acceptance poller's live pass | the finding poller |
+| [Acceptance check request](#26-acceptance-check-request) | a comment on the plan's epic | the Slack bridge, on the owner's yes | the acceptance poller's live pass |
+| [Acceptance second look](#27-acceptance-second-look) | the acceptance session's answer, in its own thread | the acceptance session, asked by the live pass | the acceptance poller's live pass |
+| [Run record](#28-run-record) | the runner's own store, outside every worktree | requests: five pipeline jobs; records: the runner | the runner; the usage job, when its config names the store |
+| [Spend ledgers](#30-spend-ledgers) | each caller's own state folder, outside every worktree | the four callers whose model calls no dispatcher log records, by one writer function | the usage job, by one reader function |
 
 > **§8 onwards are appended rather than slotted in beside their topical neighbours.**
 > These section numbers are cited by name from `.claude/hooks/session-start.py`, the
@@ -33,6 +48,9 @@ Two rules shape all of it:
 - **Anything the session agent can write is *reporting*, never *authority*.** Config and
   pins are authority; telemetry, PR bodies and commit messages are reporting. A guard
   that reads a value the agent could have written is not a guard.
+- **Absence is not failure.** A component that can legitimately do nothing must be able
+  to tell *nothing to do* from *could not do it*, and must say which. Otherwise the
+  pipeline's most common green outcome is also its best hiding place (§13).
 
 ---
 
@@ -102,15 +120,15 @@ the reader happens to run.
 | `stateIds.raw` | string (UUID) | approval gate | Intake: proposals land here, human-gated. |
 | `stateIds.ready` | string (UUID) | dispatcher | Approved and dispatchable. |
 | `stateIds.working` | string (UUID) | dispatcher | A session holds it. Counts against `budgets.wipLimit`. |
-| `stateIds.review` | string (UUID) | dispatcher, reviewer | PR open, awaiting review/CI. |
-| `stateIds.done` | string (UUID) | dispatcher | Merged/closed. |
-| `stateIds.needsApproval` | string (UUID) | Stage E bounce driver | **Provisioned as type `unstarted` — never `started`, never `completed`.** AI review has concluded and a person should accept the work: findings were clean or below `budgets.reviewSeverityThreshold`, or the bounce budget is spent (then `agent:needs-human` is on the ticket too, and that label is what tells the two apart). Reached ONLY by the bounce driver's own move — never a session. It authorises nothing; approval is `ready`. |
+| `stateIds.review` | string (UUID) | dispatcher, reviewer | PR open, awaiting review/CI — the "waiting on a human" lane that keeps it distinguishable from `working`. Reached by the tracker's *pull request opened* git automation and/or a session's §8 `ticket-state` request; same target, so the two do not race, and on a lane with no safe-outputs executor the automation is the only mechanism. Neither authorises anything — approval is `ready` and is read specifically (§5). |
+| `stateIds.needsApproval` | string (UUID) | Stage E bounce driver | **Provisioned as type `unstarted` — never `started`, never `completed`** (see below). AI review has concluded and a person should accept the work: the findings were clean or below `budgets.reviewSeverityThreshold`, or the bounce budget is spent (then `agent:needs-human` is on the ticket too, and that label is what tells the two apart). Reached ONLY by the bounce driver's own move — no git automation, and never a session: the `ticket-state` kind (§8) excludes it, because the conclusion of a review is not something the reviewed party may report. It authorises nothing; approval is `ready` and is read specifically (§5). |
+| `stateIds.done` | string (UUID) | dispatcher | Merged/closed. Reached by the tracker's *pull request merged* git automation, seconds after the merge, or by a person. Never by a session: the `ticket-state` kind (§8) refuses `done`. **Decided (KIT-51): the automation keeps this move.** It closes tickets and starts the dispatcher's worktree clean-up with no person involved; turned off, tickets would close only by hand and worktrees would pile up. The accepted cost: Done makes the dispatcher force-remove the ticket's worktree, so a merge while that ticket's session still runs loses its uncommitted work, and any ticket id in a PR's title, branch or body moves that ticket too (`docs/OPERATIONS.md`). The tracker sets these moves per team, so each team with a repository needs them. |
 | `labels.ids` | object → string (UUID) | dispatcher, guards | Map of **canonical key → Linear label ID**. The key is the stable name used in code; the Linear display name may drift from it. |
-| `labels.required` | string[] | validator | Subset of `labels.ids` keys that must resolve before the pipeline may dispatch. |
-| `findingTicket` | object \| absent | the kit's plan executor (idea gate) | **Opt-in.** Present ⇒ machine-filed plans are on: the idea gate's executor files a plan's epic and children into `landing` and notifies `ownerUserId`. Absent ⇒ every plan is rejected. Defined in the kit's contract (§1, and §8 *Filing a plan*); this copy has not synced that section yet. |
-| `findingTicket.landing` | enum `raw` | the kit's plan executor | The state a filed ticket lands in — the backlog/intake state only. Never `ready` (self-approval), never `working`/`review`/`done` (§5). |
-| `findingTicket.notify` | enum `subscribe`\|`assign`\|`both` | the kit's plan executor | How `ownerUserId` is notified. A filed ticket is never assigned to a session's own identity. |
-| `findingTicket.ownerUserId` | string | the kit's plan executor | Linear **user ID** notified on each filed ticket. A person, never a session. |
+| `labels.required` | string[] | validator | Subset of `labels.ids` keys that must resolve before the pipeline may dispatch. **Floored at §6's dispatcher-owned set** (`agent:queued`, `agent:working`, `agent:blocked`, `agent:needs-human`, `blocked:capacity`) — a project may require more, never fewer. |
+| `findingTicket` | object \| absent | safe-outputs executor | **Opt-in.** Present ⇒ the `ticket-create` kind (§8) is available: a session may *request* a follow-up finding ticket. Absent ⇒ that kind is refused and findings stay `ticket-comment`s. |
+| `findingTicket.landing` | enum `raw` | safe-outputs executor | The state a filed finding lands in — the backlog/intake state only. Restricted to `raw`: never `ready` (self-approval), never `working`/`review`/`done` (§5, §8). |
+| `findingTicket.notify` | enum `subscribe`\|`assign`\|`both` | safe-outputs executor | How `ownerUserId` is notified. The new ticket is never assigned to the session's own identity. |
+| `findingTicket.ownerUserId` | string | safe-outputs executor | Linear **user ID** notified on each filed finding. A person, never the session. |
 
 > **States and labels are referenced by ID, never by display name.** A rename in the
 > Linear UI must not silently desync a guard — with names, a renamed "Ready" state stops
@@ -128,7 +146,12 @@ the reader happens to run.
 > *diagnostic* — an unmapped label whose name matches a canonical key means the recorded
 > ID is wrong, not that the label is somebody else's. Severity follows `labels.required`
 > (§7's dial): fatal for a required key, a warning otherwise, because `track:*` is
-> open-ended and project-named so it can never be in `required`. One implementation —
+> open-ended and project-named so it can never be in `required`. **That dial has a
+> floor** — membership in `labels.required` is what buys a key the fatal tier, so an
+> empty list would demote every hold to a warning and re-arm dispatch on parked
+> tickets. §7 therefore requires the dispatcher-owned set to be in it.
+>
+> One implementation —
 > `scripts/pipeline_labels.py` — imported by every read path, never re-derived.
 >
 > Residual gap, named so nobody assumes otherwise: a label **renamed and then
@@ -138,10 +161,24 @@ the reader happens to run.
 >
 > Corollary: `labels.ids` values are **resolved**, not authored. They ship as `""`
 > (unresolved) and a setup step fills them by looking each display name up once. The
-> five `stateIds` are placeholder tokens instead — a closed, mandatory set of exactly
-> five, where a missing value stalls the whole queue; labels are an open set
+> six `stateIds` are placeholder tokens instead — a closed, mandatory set of exactly
+> six, where a missing value stalls the whole queue; labels are an open set
 > (`track:*` grows per project) that no fixed token list can cover. §6 fixes the scope
 > those labels are created at.
+>
+> **`needsApproval` is provisioned `unstarted`. Never `started`, never `completed`.**
+> This is not cosmetic, and it is the reason the key carries a type at all:
+>
+> - The dispatcher moves every new session's issue to the **lowest-ordered `started`-type
+>   state**, unconditionally — no flag disables it and its failures are swallowed. A
+>   second `started` lane beside `working` and `review` adds a third contender to an
+>   ordering nothing in the kit pins, records or checks, and when it goes wrong there is
+>   no error anywhere to bring someone to look.
+> - A `completed` lane is worse. The dispatcher deletes a worktree when its issue reaches
+>   a terminal state, and the bounce driver skips any ticket already in one, so every
+>   subsequent bounce would become a silent no-op with the worktree already gone.
+> - `unstarted` removes the lane from that contest entirely, and matches how the kit
+>   already models `ready` — its other "waiting on a human" state.
 
 ### `github`
 
@@ -243,9 +280,10 @@ credential so a runaway queue cannot exhaust a human's session capacity.
 | Field | Type | Notes |
 |---|---|---|
 | `autoApproveProvenance` | string[] | Provenance **classes** allowed to move `raw` → `ready` without a human. Must be a subset of `["epic"]`; a validator hard-fails any other value. See §5. |
+| `epicApprovers` | string[] (optional) | KIT-161. Tracker user ids of the people whose move of an epic into `ready` approves its tree (§5 rule 2). The approve tier reads who moved the epic from the tracker's history (`readyBy`) and holds every child unless that id is on this list. Empty or absent: nothing is approved. Never the agent user or a machine account. |
 | `autoMergeMaxLines` | integer | Diff-size ceiling under which an *out-of-session* automation may merge. `0` disables. **No Claude Code session may ever act on this** — the merge command is hook-blocked in every form, including `--auto`. If this is ever non-zero, the merge is performed by CI or a GitHub App, never by an agent. The full tier is §11. |
 | `autoMergeMethod` | string (optional) | `squash` \| `merge` \| `rebase`. How the platform merges a qualifying PR. Default `squash`. Cosmetic — it decides nothing about *whether* a PR merges. |
-| `riskPaths` | string[] | Globs that force human review regardless of diff size or provenance. Ships with the guard machinery, CI, git hooks, skills (prompts and rubrics are graders), `delivery.json`, and key material. |
+| `riskPaths` | string[] | Globs that force human review regardless of diff size or provenance. Ships with the guard machinery, CI, git hooks, skills (prompts and rubrics are graders), `delivery.json`, and key material. **What it means today: paths that protect the pipeline from the agent, not paths where a mistake is expensive.** The kit's floor (`REQUIRED_RISK_PATHS` in `scripts/check_delivery_config.py`) lists only guard machinery. A database migration, an auth module or a billing file is covered only if the project adds it. The validator requires the floor and allows more, so a project extends its own list; the kit does not widen the floor for everyone. Whether to add the data layer is the project's decision, and it must be made before the auto-merge tier is turned on. |
 
 ### `dispatch`
 
@@ -282,6 +320,37 @@ exits 0 and emits nothing. A project can run the whole pipeline and never persis
 > supervision. It is validated by its own consumer, `scripts/telemetry_scrape.py`,
 > at the point of use. Adding it to the guard validator would imply the guards
 > depend on it, which is the opposite of true.
+
+### `acceptance` (optional)
+
+Absent ⇒ **the acceptance check is off**, in exactly the sense §2 gives the word: a finished
+plan closes as it does today, and the readiness gate skips its browser-check rules and names
+them as skipped. Present ⇒ the project says how a session runs its app for a browser check
+**with no real services**, and planning must write checks a machine can run (§15). The
+decision record is `docs/adr/2026-11-02-acceptance-check-before-the-last-merge.md`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `setup` | string \| null | Run once on the fresh checkout before `build`, e.g. `npm ci`. Default `null`: the checkout needs nothing. |
+| `build` | string \| null | Run from the repo root on a fresh checkout of the pull request being checked. Produces what `serve` serves. Its environment holds no secret: dummy service settings belong in the project's own script, never in an env file (the kit's secret guards will not let a session read one). `null` only when `serve.mode` is `command` and that command builds as it starts. |
+| `serve.mode` | enum `files`\|`command` | `files`: the browser's requests to `serve.origin` are answered from `serve.dir`. No port is opened and no process runs. `command`: `serve.command` starts a local server at `serve.url`. Prefer `files`; `command` is for an app that renders on a server. |
+| `serve.dir` | string | `files` only. The repo-relative folder `build` writes. Gitignored. |
+| `serve.fallback` | string \| null | `files` only. The file served for a path that has no file. Default `index.html` (a single-page app); `null` answers 404. |
+| `serve.origin` | string | `files` only. The origin the app loads at. Default `http://127.0.0.1:9`: a loopback origin is a secure context, and Chromium refuses port 9 outright, so a request that escapes interception reaches nothing. |
+| `serve.command` | string | `command` only. Starts the app with its own fakes for every service. The runner stops its whole process group when the check ends. |
+| `serve.url` | string | `command` only. Where that server answers. Loopback only: `127.0.0.1`, `localhost` or `[::1]`. |
+| `serve.readySeconds` | integer | `command` only. How long to wait for `serve.url` before the run is *could not run*. Default `120`. |
+| `fakeBackend` | string \| null | Repo-relative path of the project's own fake-backend module (§15). It answers every request the app makes to a service. `null`: no module, and every request to anything but the app's origin is aborted. Either way each aborted request is listed in the result. A coding session can edit this file in the pull request it is judged on, so list it in `autonomy.riskPaths`, which puts it behind a person's review. |
+| `scenarios` | string[] | The data sets the fake backend serves, by name: `signed-in`, `signed-out`, `empty`. A check names one; the first is the default. Required when `fakeBackend` is set. |
+| `viewports` | object → `{width, height, mobile?}` | Named screen sizes a check may name. Default `desktop` (1280×800) and `phone` (390×844, `mobile`: touch, a mobile user agent, device pixel ratio 2). |
+| `modes` | object → `{colorScheme?, reducedMotion?, locale?, timezoneId?, localStorage?}` | Named app states a check may name: a theme, a locale, reduced motion. Data only. `default` is built in (no emulation, empty storage) and cannot be redefined. A ticket may declare more in its own block (§15). |
+| `uiPaths` | string[] | Globs, in `autonomy.riskPaths` syntax. A ticket whose Pointers or acceptance criteria name a matching path is a **UI ticket**. Under `--strict` a UI ticket must carry a browser check, or say `No browser check:` and why (§15). |
+
+> **Judged at the warning tier, never the error tier.** The section gates no autonomy: an
+> acceptance check can only hold a plan's close or file a follow-up. So a typo here never
+> makes `delivery.json` broken (§2). Its consumers refuse a malformed one at the point of
+> use, loudly: the readiness gate exits 2 naming the field, and the acceptance run reports
+> *could not run* (§13).
 
 ---
 
@@ -394,7 +463,7 @@ the session starts**.
 
 ```
 <pinsRoot>/<pin_key>.json
-<pinsRoot>/ledger.jsonl        # append-only, one row per pin ever written
+<pinsRoot>/ledger.jsonl        # append-only: one row per pin written, one per release
 <pinsRoot>/dispatched-lane/<OS account>   # the OLDER lane marker (below); still counts
 /etc/claude-pipeline/dispatched-lane/<OS account>   # the lane marker (below); root's
 
@@ -509,7 +578,7 @@ The parsing rule, which every reader of a ticket description MUST share:
 | Rule | Behavior |
 |---|---|
 | Heading level | Exactly `## `. A `#` or `###` line does not open a section. |
-| Heading match | The heading text equals `Acceptance criteria` / `Out of scope`, compared case-insensitively after trimming. Not a substring test — `## Acceptance criteria (draft)` is a different section and is ignored. |
+| Heading match | Compared case-insensitively after trimming. `Out of scope` matches in full: `## Out of scope (draft)` is a different section and is ignored. `Acceptance criteria`: the exact heading wins; with none, the first heading that starts with the words `Acceptance criteria` is read, such as `## Acceptance criteria (draft)` or `## Acceptance criteria:`, never `## Acceptance criteriaX` (KIT-441). Two such headings and no exact one is a DoR error. |
 | Fenced blocks | A ```` ``` ```` or `~~~` fence suspends heading detection. A `## Acceptance criteria` line *inside* a code fence is sample text, not a section. |
 | Section end | The next `## ` heading outside a fence. |
 | Items | Lines matching `- ` or `* ` at the start (after optional indent). Acceptance criteria are task-list items (`- [ ] …` / `- [x] …`) and **the `[ ]` / `[x]` marker is stripped** — it is list syntax, not part of the criterion. Out-of-scope items are plain bullets. |
@@ -538,21 +607,32 @@ empty rather than handed something invented.
 1. Create the worktree and branch.
 2. Write the pin to a temp file in `pinsRoot`, `fsync`, `chmod 0444`, then **atomically
    `rename()`** into `<pin_key>.json` — a reader never sees a half-written pin.
-3. Append one row to `ledger.jsonl`.
+3. Append one row to `ledger.jsonl`: `dispatch_id`, `ticket`, `worktree`, `pinned_at`.
 4. Spawn the session with cwd = worktree.
-5. On session end, the **dispatcher** deletes the pin. The agent never does.
+5. On session end, the **dispatcher** deletes the pin and appends a release row (the same
+   fields, with `released_at` in place of `pinned_at`). The agent never does either. The
+   hand-run dispatcher's `--release` and the runner write that row; the GitHub Actions
+   backend's runner is ephemeral, so its whole pins root, ledger included, ends with the job.
 
 ### Read protocol (hooks, validators)
 
 1. Confirm the pipeline is configured (§2). Not configured → **exit 0, do nothing.**
-2. Read the **lane marker** (below). With one, stop here: no pin is read, and the lane
-   rules apply.
+2. Read the **lane marker** (below). With one, the lane rules apply whatever a pin says. The
+   pin is still read, for what it may add: only our own runner's, for the workspace's own
+   ticket (below, KIT-645).
 3. Derive the session root; compute `pin_key`; read the pin.
 4. Verify `pin_version`, `expires_at`, and `worktree` == derived session root.
 5. **Absence of a pin never grants autonomy.** In `ticket` mode a missing pin is
    *broken* and fails closed. With no pin and no marker, checks that would *withhold*
    something fail open (a human's ad-hoc session in a configured repo must not be
    bricked) and checks that would *grant* extra autonomy fail closed.
+6. **A pin that is gone is not one that never was (KIT-674).** Before reading an absent
+   pin as a person's session, read `ledger.jsonl`. When its last row for this worktree is
+   a pin row under a day old (no kit dispatcher lets a pin live longer), or one whose age
+   cannot be read, the pin was deleted or moved: *missing*, and broken in every mode,
+   because the row does not carry the mode. A pin row more than a day old, and a release
+   row, expect nothing. A pin or ledger that cannot be read (anything but "no such file")
+   is broken too: could not check is not absent (§13).
 
 > **Tamper-evident, not tamper-proof.** The session's shell runs as the same user, so
 > `0444` and a path outside the repo raise the cost of tampering — they do not make it
@@ -565,21 +645,29 @@ empty rather than handed something invented.
 A dispatcher that binds a session by a person's delegation writes no pin, so without
 more its sessions would read as a human's ad-hoc ones. Its OS account carries a marker
 instead: `/etc/claude-pipeline/dispatched-lane/<OS account>`, owned by root, in folders
-root owns all the way down to `/`, written once by a person (card CK-10 of
-claude-project-kit's Stage E installer, `scripts/pipeline_stage_e_setup.py`, measured by
-its `lane-marker` row, which checks every one of those folders; this repository has no
-installer of its own). A session cannot create, delete or move it.
+root owns all the way down to `/`, written once by a person (the Stage E installer's
+card CK-10, measured by its `lane-marker` row, which checks every one of those folders).
+A session cannot create, delete or move it.
 
 The marker used to live at `<pinsRoot>/dispatched-lane/<OS account>`, and that place
 still counts: **either one makes the lane.** It is not enough alone, because the role
 account created the pins root and can rename the folders under it, which takes the
 marker out of sight; it cannot rename root's `/etc`. With the system marker in place,
-removing the old one gains nothing.
+removing the old one gains nothing **for a reader that knows the system marker.** A project
+made from the kit carries its own copy of the hook, and a copy older than the system marker
+reads only the old one. While a served repository's committed hook is such a copy, the old
+marker under that repository's pins root is still required; the installer's `lane-marker`
+row reads each served hook and stops on CK-10 while one has no marker it reads.
 
-**The marker wins over a pin.** No dispatcher writes a pin for an account that carries
-the marker, so a pin found for one was forged — the pins root is that account's to write
-whenever its sandbox lets a write leave the worktree. A reader that finds the marker does
-not read the pin at all: not as a binding, and not as a broken one.
+**The marker's rules always hold, and a pin can only add to them (KIT-645).** No dispatcher but
+the runner (§28) writes a pin for an account that carries the marker, and the pins root is that
+account's to write whenever its sandbox lets a write leave the worktree. So with the marker no
+pin lifts a rule. A reader adds the pinned `ticket` rules beside the lane's for one pin only: one
+the runner wrote (`pinned_by` starts with `runner:`) for a `ticket` session on the ticket the
+workspace folder is named after. Any other pin there binds nothing, as a forged one, and neither
+does a pin store the reader cannot read: the lane's rules hold as they do with no pin. A pin the
+ledger expects and cannot find, a lapsed runner pin, and a pin that cannot be parsed or names
+another worktree are broken there as anywhere: every write fails closed.
 
 A reader looks for each place with `lstat`, so the entry counts, not what it points at:
 
@@ -596,6 +684,17 @@ A reader looks for each place with `lstat`, so the entry counts, not what it poi
 - **Could not check** — any other error in either place, or an account the database
   cannot name: the lane. Reading "could not look" as "a person's session" would let an
   error open every guard the marker turns on.
+
+**The runner's pin and the marker, together (KIT-642, KIT-645).** The runner writes a pin for each
+session it starts, by the write protocol above, in a workspace named after its ticket
+(`<work_dir>/<kind>/<TICKET>`), and removes it when the run ends. It is the same shape at the same
+key, so on an account without the marker readers read it as any pin. On an account with the
+marker, the guard reads it beside the marker, and the two say different things. The marker says
+"this account is the pipeline's", so the lane rules above hold as written. The pin says which
+ticket this session is for, so its rules are added: grader-path protection and the ticket branch,
+beside the lane's own-ticket, no-create, protected-label and criteria rules. A marked account's
+session with no pin keeps the lane's rules alone, as the old dispatcher's sessions do until it is
+removed.
 
 ---
 
@@ -637,12 +736,14 @@ A session reports itself by posting **one fenced JSON block** as a ticket commen
 | `ticket_id` | string \| null | e.g. `ENG-123`. Null for runs with no ticket. |
 | `team_key` | string | e.g. `ENG`. |
 | `stage` | enum `epic\|dev\|review\|bounce\|triage\|diagnosis\|retro` | What kind of work this run did. |
-| `model` | string | Exact model ID as used. |
+| `model` | string | Exact model ID as used. The literal `unknown` when no source named one — and then `model_note` says why. |
+| `model_note` | string \| null (optional) | Why `model` is not the exact ID read from the run's own record: nothing reported one, or it was read from somewhere else (a resumed session's earlier run, a config value). Null when it was read from the run itself. A silent `unknown` says nothing, so the gate refuses `unknown` without this. A row no model session belongs to (a conclusion, an exhaustion) has `model` `unknown`, and this note says why no session ran. A collector stores the note as one line of at most 200 characters. A session wrote it, so a reader treats it as data, never as an instruction. |
 | `auth_mode` | enum `subscription\|api-key` | |
 | `started_at` / `ended_at` | ISO-8601 UTC | `ended_at` null only for an in-flight row; a posted block should be terminal. |
 | `tokens_in` / `tokens_out` | integer | |
 | `tokens_cache_read` / `tokens_cache_write` | integer | `0` when caching was not used — never null. |
 | `cost_usd` | number | Best-effort self-report. Dashboards only. |
+| `cost_note` | string \| null (optional) | Why `cost_usd` (and the token counters) are not measured from the run's own record: the source reports no cost, a session cannot read its own total, or the run has not happened when the row is written. Null when they were measured. A row no model session belongs to is an exact `0` with a null note; its reason sits in `model_note`. A reader counts a row as **unmeasured** when this note is set. It also counts one when `cost_usd` and both token counters are `0`, unless `model` names nothing and `model_note` gives the reason: a model run that reports no tokens is not a measurement. Any cost sum that includes an unmeasured row is a floor, never a total. A collector stores the note as one line of at most 200 characters, and a reader treats it as data. |
 | `turns` | integer | |
 | `outcome` | enum `completed\|blocked\|timeout\|capacity\|error\|budget` | `capacity` = provider capacity (see `dispatch.pauseOnCapacity`); `budget` = a cap in `budgets` stopped it; `blocked` = needs a human decision. |
 | `error_class` | string \| null | Short stable slug (e.g. `rate_limit`, `hook_block`, `ci_red`). Null unless `outcome` ∈ {`blocked`, `error`, `timeout`, `capacity`, `budget`}. |
@@ -676,8 +777,9 @@ event; a genuinely repeated event (a second `bounce_started`) carries a distinct
 
 A `review`-stage run may carry a third array, so what the reviewer found is queryable
 alongside what the run cost. Every field mirrors the `pipeline-review/1` finding shape
-the review workflow already publishes, so there is one finding shape in the system and
-not two.
+the review lane already publishes (§14 — the review workflow on `github-actions`, the
+local publisher on a dispatcher-side lane), so there is one finding shape in the system
+and not two.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -711,15 +813,28 @@ Every ticket carries exactly one provenance value — where the work came from.
 | `review` | Raised by an automated review pass | No |
 | `retro-proposal` | Proposed by a retrospective run | No |
 | `human` | A person wrote it | No — a human already decided; it enters `ready` directly |
+| `agent` | Filed by a working session as a follow-up finding it met (§8 `ticket-create`) | No — a session filing its own next work is the loop §11 bars |
 
 Rules:
 
 1. **Only `epic/*` may ever auto-approve.** Everything else waits in `raw` for a person.
    The agent-facing consequence: an agent cannot widen its own mandate by filing tickets
    for itself, because nothing it files carries `epic/*` provenance.
-2. Auto-approval additionally requires that the referenced epic **exists and is itself in
-   a human-approved state**. Without that check, `epic/<anything>` is a self-serve
-   approval — a fabricated ID would mint autonomy.
+2. Auto-approval additionally requires that the referenced epic **exists and sits in the
+   human-approval state `ready`** — the same state its children are released into, reached
+   by a person's deliberate move. Any *other* out-of-intake state (`working`, `review`,
+   `done`) is **not** approval: a human parking an epic in `working` ("I'm looking at
+   this"), or a Linear board automation advancing it, must not release the child tree.
+   Without the existence check, `epic/<anything>` is a self-serve approval — a fabricated
+   ID would mint autonomy; without the *state* being specific, any forward nudge would.
+   **The move is checked by actor, not by state alone (KIT-161).** The caller reads who moved
+   the epic into `ready` from the tracker's history and supplies it as the epic's `readyBy`.
+   The epic approves its tree only when that id is on `autonomy.epicApprovers`: people, never
+   the dispatcher's agent user or a machine account's key. No list, no `readyBy`, or an id not
+   on the list is *not approved*, and says which (§13).
+   (The PreToolUse approval guard denies a session writing `ready`; this reads it. A
+   session forging the signal by writing some *other* state buys nothing, because no
+   other state approves — see `docs/adr/2026-09-06-approve-tier-epic-approval-state.md`.)
 3. `autonomy.autoApproveProvenance` must be a subset of `["epic"]`. A validator hard-fails
    any other value, so the rule is mechanically checked and not merely documented.
 4. **Two representations, one value.** Linear labels are a fixed vocabulary and cannot
@@ -742,9 +857,11 @@ compare IDs; nothing compares display text.
 | `agent:queued` | dispatcher | Ready to dispatch. Default `dispatch.labelTrigger`. |
 | `agent:working` | dispatcher | A session holds it; counts against `wipLimit`. |
 | `agent:blocked` | dispatcher | Stopped on something external. |
-| `agent:needs-human` | dispatcher | `maxBounces` or `totalAttempts` exhausted, or a `riskPaths` change. Terminal until a person acts. |
+| `agent:needs-human` | dispatcher | `maxBounces` or `totalAttempts` exhausted, or a `riskPaths` change. Terminal until a person acts. **Also: a bounce that was delivered and never answered with a push.** The Stage E bounce driver applies it when a `delivered` ledger row exists for the last bounce, the pull request's head is still the commit that bounce was delivered against, and more than `blocked_after_seconds` (default 21600) have passed — once per bounce, alongside one top-level notice on the coding ticket (the §4 telemetry row is posted there too, as for every driver action), spending no bounce and moving the ticket nowhere. The notice opens with the `fix-not-pushed` mark, which the notifier pages from `bounce_actor_ids` alone (KIT-336). Without it a session that stops mid-bounce is the pipeline's quietest state: the trigger is gone until a re-review, a re-review needs a push, and only a *spent* budget ever called a person. The condition reads the ledger, the head and the clock and never the session's reply, because a reply is a string the counted party writes. |
+| `agent:blocked` \| `agent:needs-human` | the **human-action notifier**, on a pin-less dispatcher | Same two labels, same rule, one more writer. A dispatcher that binds by delegation writes no pin and applies no lifecycle label, so a session's escalation is *requested* and nothing ever grants it — a blocked ticket reads as any other in-progress one, and the tracker's own view routing never fires. `scripts/pipeline_notify_local.py` is the dispatcher-side component that applies it, from a mark the session only ever asks for. A session asks for it with the `needs-human-session` mark (the older `agent:needs-human` mark is still read and paged, in general words); the notifier also reads `needs-human-session` (KIT-282), which the session brief tells a session to write (KIT-419), once every notifier that reads its sessions knows it. The planner job's `needs-human-routing` and the bounce driver's `fixes-spent` ask for the same label, and each names its cause only from its own key's author ids: from anyone else it still pages and still gets the label, in `agent:needs-human`'s general words. The notifier ADR's marks table has every mark. The §6 invariant is unchanged: the session still never applies its own supervision label. Its label ids come from the notifier's own config and must be re-resolved whenever `delivery.json`'s are (§1's delete-and-recreate case), or the two records drift silently. |
 | `blocked:capacity` | dispatcher | Provider capacity, paired with `agent:blocked`. Cleared on retry; does **not** consume an attempt. |
 | `provenance:epic` \| `provenance:monitor` \| `provenance:review` \| `provenance:retro-proposal` \| `provenance:human` | dispatcher / human | Origin class (§5). Exactly one per ticket. |
+| `provenance:agent` | the safe-outputs **executor** (§8) | Origin class (§5): a working session filed this as a finding. Applied by the executor on `ticket-create`, never by the session — `provenance:*` is refused in every session-facing label field. Never auto-approves. |
 | `hooks-change` | human | The change touches guard machinery. |
 | `meta` | human | The pipeline working on itself. Excluded from throughput metrics so pipeline overhead never reads as delivery. |
 
@@ -779,6 +896,7 @@ Runs only when the pipeline is configured (§2). A `delivery.json` validator MUS
 
 - [ ] `version` unrecognized
 - [ ] Any `linear.stateIds.*` empty or still a `{{…}}` token
+- [ ] `linear.labels.required` missing any of `agent:queued`, `agent:working`, `agent:blocked`, `agent:needs-human`, `blocked:capacity` — the §6 dispatcher-owned floor; membership is what makes a stale ID for a hold **fail** a read rather than warn
 - [ ] Any key in `linear.labels.required` missing from `linear.labels.ids`, or resolving to `""`
 - [ ] No `track:*` key present in `linear.labels.ids`
 - [ ] `branch.types` containing a type the live branch guard rejects
@@ -835,7 +953,8 @@ write path.
   "requests": [
     { "type": "ticket-comment", "ticket_id": "ENG-123", "body": "…markdown…" },
     { "type": "ticket-state",   "ticket_id": "ENG-123", "to": "review" },
-    { "type": "ticket-label",   "ticket_id": "ENG-123", "add": ["needs-design"], "remove": [] }
+    { "type": "ticket-label",   "ticket_id": "ENG-123", "add": ["needs-design"], "remove": [] },
+    { "type": "ticket-create",  "source_ticket_id": "ENG-123", "title": "…one line…", "body": "…markdown…", "labels": ["track:infra"] }
   ]
 }
 ```
@@ -843,12 +962,228 @@ write path.
 | Type | Fields | Notes |
 |---|---|---|
 | `ticket-comment` | `ticket_id`, `body` | `body` is non-empty markdown. The telemetry block (§4) travels as one of these. |
-| `ticket-state` | `ticket_id`, `to` | `to` is a **canonical state key** from `linear.stateIds` (`working`, `review`, …), never a UUID and never a display name. |
+| `ticket-state` | `ticket_id`, `to` | `to` is a **canonical state key** from `linear.stateIds` — only `working` or `review`, never a UUID and never a display name. `raw`, `ready`, `done` and `needsApproval` are all refused: the last of those is the conclusion of the review, and a session reporting it would be issuing a verdict on its own work (§5). |
 | `ticket-label` | `ticket_id`, `add[]`, `remove[]` | Canonical label keys from `linear.labels.ids` (§6). Either list may be empty. |
+| `ticket-create` (finding) | `source_ticket_id`, `title`, `body`, `labels[]` | **Files a follow-up finding ticket.** `source_ticket_id` is the session's OWN pinned ID (compared to the pin, never used to address anything); `title` is one line; `body` is non-empty markdown; `labels[]` is optional. The new ticket's identity, state, provenance and assignee are the **executor's** to set, never the session's — see *Filing a finding* below. Available only when `linear.findingTicket` is configured. |
+| `ticket-create` (plan) | `source_ticket_id`, `epic`, `children[]` | **Proposes an epic tree** (`epic` = `{title, body}`; each `children[]` entry = `{title, body, labels[]?, depends_on[]?}`). Same `type` as the finding, discriminated by carrying `epic`+`children` rather than `title`+`body`. The executor files the epic and every child in the backlog, forcing every authority field, and turns `depends_on` ordinals into blockedBy relations — see *Filing a plan* below. This is the idea-gate's output: a planning session holds no tracker tool, so a proposed tree is the only way it reaches the board. |
 
 An unrecognized `schema`, an unrecognized `type`, or `requests` that is not a list
 rejects the batch. A reader that does not recognize the schema refuses; it does not
 guess.
+
+### Filing a finding — the one kind that creates a ticket, and how it stays safe
+
+A session that meets a real bug outside its ticket used to have nowhere durable to put
+it: the PR body dies at merge, and a session filing its own ticket is the *agent
+producing a human's signal* defect this document is built against (§5). `ticket-create`
+resolves that without reopening it, by the same move every other write here makes — **the
+session requests, a credential-holding executor decides.** The session never holds the
+create: it names its own pinned ticket as `source_ticket_id` and writes a `title` and
+`body`; the executor creates the new ticket and **forces every field that could carry
+authority**:
+
+- **Lands in the backlog only.** `linear.findingTicket.landing` — restricted to `raw`
+  (intake). Never `ready` (that would be self-approval, §5), never `working`/`review`/`done`.
+- **Carries `provenance:agent`** (§5), applied by the executor. The session cannot request
+  a provenance label — `labelList` excludes the whole `provenance:*` class — so it cannot
+  mint `provenance:human` or any other origin. `provenance:agent` never auto-approves (§5,
+  §11): a filed finding waits in the backlog for a person exactly like `monitor` and
+  `review` do.
+- **Notifies the owner, never the session.** `linear.findingTicket.notify` subscribes
+  and/or assigns `linear.findingTicket.ownerUserId`. The new ticket is **never** assigned
+  to the session's own identity.
+- **Records where it came from.** The executor prepends a provenance line naming the
+  filing session's `source_ticket_id` to the body, so the finding always carries its origin.
+- **A finding cannot authorise the session's own next step.** A new backlog ticket moves
+  nothing; it starts no session (it is not `ready`, and `provenance:agent` bars
+  auto-approval). "File a ticket asking to approve my PR" produces a backlog item a human
+  must still act on, which is the whole point.
+- **The three-per-run cap is a hard limit, and the session must be told how to live
+  within it.** A fourth `ticket-create` fails the batch, and because §8 is all-or-nothing
+  that failure also drops the run's telemetry and its state move — a silent, confusing
+  loss for a session that did not know the cap was there. So the session-facing guidance
+  (the work skill, the kit's `CLAUDE.md`) tells a session to file the three most important
+  findings and report any others in its **summary comment**, where a person triages them.
+  The cap is a flood guard, not a limit to raise: many findings at once is itself a signal
+  a person should look, and the graceful path is the comment, never a fourth request.
+  **On a local-daemon backend the cap is per source ticket, across passes** (KIT-234):
+  `pipeline_finding_poller.py` counts what it already filed from a ticket, declines a
+  fourth request for good, and says so once on that ticket. It cannot fail a batch, since
+  each finding is its own comment.
+
+**The kind is off unless a project turns it on.** Absent `linear.findingTicket`, a
+`ticket-create` request is refused and a session reports findings as `ticket-comment`s as
+before (§5b in the kit's `CLAUDE.md`, the work skill). And it rides whatever executor holds
+the credential: the GitHub-Actions safe-outputs job here, or a local-daemon backend's
+equivalent once one ships. No executor for a backend ⇒ the kind is unavailable there ⇒
+findings stay comments. A session holding a *direct* tracker credential (a local-daemon
+MCP session) must still never create a ticket itself; that path is closed by the guard
+(§8's companion in `.claude/hooks/pre-tool-use.py`), not by this file.
+
+### Filing a plan — the tree shape of `ticket-create`
+
+A **planning session** (the idea gate: the owner moves an idea to Plan it on the project's
+own work team, and a planner job files a clean planning ticket on that team and delegates it;
+the dispatcher runs it sandboxed. Where the project's `lanes.plan` is on, the planner instead
+asks our own runner for a plan run on the idea itself, §28, KIT-705) does not file findings — it
+proposes a whole **epic tree**.
+It holds no tracker tool and no tool that writes a file — its entry's deny list removes
+both — so it cannot write to the board or to its own supervision; its only output is a
+proposed tree, in its final message, which a credential-holding executor validates and
+materialises. The executor neutralizes every dispatcher routing directive (`[repo=…]`,
+`repo=`, `[model=…]`, `[agent=…]`) in every title and body the session wrote before the
+readiness gate reads them, because a filed child is text a person may later delegate. A
+directive spelt with a backslash escape or a character reference counts too: Linear decodes
+those when it stores the text (`scripts/pipeline_routing_tags.py`). The
+tree is the *same* `ticket-create` type, carrying `epic` and `children` instead of a flat
+`title`/`body`:
+
+```json
+{
+  "schema": "pipeline-safe-outputs/1",
+  "requests": [
+    {
+      "type": "ticket-create",
+      "source_ticket_id": "KIT-777",
+      "epic": { "title": "…one line…", "body": "…the PRD/epic markdown…" },
+      "children": [
+        { "title": "child A — the prerequisite", "body": "…## Acceptance criteria …",
+          "labels": ["track:meta", "effort:M"] },
+        { "title": "child B — depends on A", "body": "…",
+          "labels": ["track:meta", "effort:S"], "depends_on": [0] }
+      ]
+    }
+  ]
+}
+```
+
+`depends_on` holds **0-indexed ordinals into this request's `children` array** (child B at
+index 1 depends on child A at index 0); the executor turns them into Linear `blockedBy`
+relations. Every finding-shape guarantee above is **kept verbatim** — `source_ticket_id`
+equals the pinned ID, the session sets no authority field, nothing lands outside the
+backlog — and the tree shape adds these:
+
+- **The epic carries `provenance:agent`.** An epic a session drafted is agent-authored, and
+  by §5 rule 1 `provenance:agent` never auto-approves, so the epic cannot approve itself; it
+  waits for the human to move it to exactly `ready` (§5 rule 2 — any other out-of-intake
+  state releases nothing). A human-written epic (manual
+  `/plan-epic`) stays `provenance:human`; an idea-triggered one is `provenance:agent`.
+- **The executor sets each child's parent**, forced to the epic it created in this same
+  batch. The session cannot supply a parent id — which would otherwise let it name an
+  *already-approved* epic and have its children auto-approve. Each child carries
+  `provenance:epic` pointing at that just-created, unapproved epic (§5 rule 4).
+  One narrow path no session can select files under an approved epic (KIT-611): the
+  executor's `--prerequisite` mode, which only the Slack bridge runs. It files one
+  `provenance:agent` ticket in the backlog under an epic the bridge's own approval record
+  holds, blocking the piece whose plan note asked, at most 15 a plan a day. The parent
+  comes from that record, never from text (`docs/adr/2026-11-12-a-prerequisite-filed-under-an-approved-plan.md`).
+- **The executor runs the Definition-of-Ready gate** (`check_ticket_dor.py --strict`) on
+  every proposed child and **refuses the whole tree if any child fails** — a partial epic
+  looks decomposed and is not. Nothing is created; the executor reports each failing child
+  and its errors back on the idea ticket for a re-plan.
+- **The per-run cap is one epic and a bounded number of children** (`MAX_PLAN_CHILDREN`, an
+  executor constant like the flat kind's cap-of-3 — not a `delivery.json` budget), still
+  all-or-nothing: one malformed or DoR-failing child rejects the whole tree.
+- **The executor posts a summary comment** on the idea ticket so the owner can read the plan
+  and approve the epic — the one human gate that releases the tree. Approval makes children
+  *eligible*; each reaches `ready` only through the approve tier (§11, which re-runs the
+  gate and is off unless a project switches it on) or a person, and starts only when
+  delegated.
+- **It compares the proposed children with the work team's recent tickets** and lists what
+  looks alike in its summary, deterministically and by title — the rubric pass the fence
+  took away from the planner. It never refuses a plan for a likeness: that judgement
+  belongs to the person approving the epic. Nothing alike, and a lookup that failed, are
+  both said out loud, because an absent section would read as "nothing looked alike" (§13).
+- **It is safe to retry, and never silent about a report it could not post** (KIT-170).
+  The epic carries a plain-text receipt, `Plan id: <pinned>/<digest>`, over the pinned
+  ticket and the proposal as filed. Before creating anything the executor asks the work
+  team for that receipt; a second run on the same proposal files no second tree. When the
+  tree is whole, it makes what an earlier attempt left out (KIT-393): each blocked-by
+  relation the plan's `depends_on` needs and the tracker lacks, then the summary if none for
+  that receipt reached the ticket, then each note not already there, each judged against what
+  the tracker holds so nothing is made or posted twice. A filed child is matched to the plan by the place the
+  executor wrote in its opening lines ("child 2 of 5 in its plan"), else by a unique title. One
+  that cannot be matched is never linked on a guess: the summary and notes are still posted, the
+  run ends `filed`, and its reasons say the links could not be checked. A link that fails to be
+  made is `errored`. A search that fails is
+  `errored`, never "nothing there". A run that fails partway posts exactly what it created.
+  A rejection or no-output note that cannot be posted is `errored`, so the caller retries.
+- **A retry reuses the project an earlier attempt made** (KIT-395). The project's description
+  carries the same plan id. Before making one the executor looks for a project of that name
+  holding the receipt and files into it; a search that fails is `errored`, never "none there".
+  A newer answer has a new plan id, so it starts over with a project of its own.
+- **A pointer a sibling creates is excused, and only that** (KIT-319). The executor tells the
+  readiness gate, for each child, the paths the children it depends on (directly or through
+  others) name in backticks in their Context or Acceptance criteria (`sibling_paths`, at most
+  100, relative and inside the repo). The gate excuses a missing Pointers path only if it is
+  exactly one of them. A path nobody names, a typo, and a path a
+  sibling only points at (under its own Pointers) are still refused.
+- **Session text is scanned for credential shapes before anything is filed or quoted**,
+  with the review publisher's own scan (`pipeline_review_local.secret_hits`). A hit rejects
+  the whole batch with a fixed reason and quotes nothing. A §4 telemetry block in a
+  planning batch is set aside and never delivered as a question.
+- **Where its inputs come from.** The executor's only config is the **planned repository's
+  committed `delivery.json`**: the work team the tree is filed into (`linear.teamKey`), that
+  team's state and label ids, and `linear.findingTicket`. It resolves the pinned ticket **in its
+  own team** — the prefix of the pinned id — and **refuses when that is not the work team the
+  config names**: a plan is filed on the team its idea is on (KIT-184). Its duplicate check
+  leaves out the pinned ticket, the idea a planning run was made from (`--idea`), and every
+  planning ticket. The pinned id comes from whatever started the session,
+  never from the tree: a run that can write refuses without it, because a pin defaulted from
+  `source_ticket_id` would compare the session's claim with itself. The **planner job**
+  (`scripts/pipeline_plan_poller.py`) supplies it: it writes the planning ticket the session is
+  delegated, so the pinned id is a value the session never chose. On our own runner's lane
+  (KIT-705) the pinned id is the idea itself, the ticket the planner asked the runner to run:
+  still never the session's choice. The receipt then names the idea, and so does every note.
+
+**The planning session's only channel is this document, so a QUESTION rides it too.** Because the
+session holds no tracker tool, every way it reaches the owner travels through the executor. A
+session that needs a design decision it cannot resolve from the code emits a `ticket-comment`
+(§8's ordinary kind) in the same batch, naming its own pinned ticket. The executor posts it on
+the idea ticket:
+
+- **A plan plus questions** — the plan is filed and the questions ride along as notes (the
+  session's open questions also belong in the epic PRD; these are top-level asides).
+- **Questions and no plan** — the executor surfaces them as a **needs-input escalation**: the
+  planner could not decompose the idea and is asking. A legitimate terminal, not a failure —
+  but a question the executor *cannot deliver* (no credential, tracker down) is a loud
+  `errored`, because a question nobody sees is worse than none.
+- **Nothing at all** — a session that produces no file is not left **silent** on the board
+  (§13): when the pinned ticket is known, the executor leaves a visible *no-output* note so the
+  owner sees the miss rather than a plan that never arrives.
+
+Every comment the executor posts — summary, rejection, escalation, no-output — carries an
+invisible `<!-- pipeline-escalation: <label> -->` mark, the same shape a stopped session's
+comment uses, so the **human-action notifier** (`docs/adr/2026-09-06-human-action-notifier-and-reply-relay.md`)
+can grep the tracker and page the owner. One exception: with `--defer-mark`, a no-output or
+a rejection report is posted without its mark, so the job that started the run can page
+after it decides what to do (KIT-373). A summary, a question and a partial filing's report
+always keep theirs. The planner job passes the flag on every run, with automatic re-runs on
+or off (KIT-338), and pages for itself: once, when a move ends without a plan, on the last
+run's planning ticket (on the idea itself, on our own runner's lane, KIT-705), naming every run
+of the move and how each ended; and once, on the idea, for each refusal before a run. Each such page carries the planner job's own
+`planning-failed` mark, and its line 2 is the exact-shape line
+`Ended: <how>[; runs: <n>]; filed: nothing|not certain[; replan: <idea>]` the notifier
+builds its page from. A plan's summary carries the executor's own exact-shape line on its
+line 2, under its `epic-awaiting-approval` mark: `Plan: <epic>; pieces: <n>[; open
+questions: <m>]`, where `m` counts the questions filed with the plan as its notes, and a
+refiled summary leaves it out (KIT-274). The notifier builds the plan-ready page from it,
+and keeps it in its DM ledger for the Slack bridge's approve question. The idea gate is the
+*producer* of those marks for the planning lane;
+the notifier is the *consumer*. The executor **neutralizes any `<!--` sequence
+in the session's own text** (question bodies, notes, titles) before embedding it, so a session
+cannot forge a mark inside content it supplies — only executor-authored marks survive the grep.
+A `ticket-comment` in a planning batch obeys the same §8 rules as anywhere else (its
+`ticket_id` is compared to the pin — §6/§8 still bar it from touching a `provenance:*`/`agent:*`
+label or state) and is capped at a few per run — a planner asks the questions that block it,
+not a wall.
+
+The executor is `scripts/pipeline_plan_executor.py` — deterministic, model-free, the direct
+analog of the review publisher (§14). It runs on the dispatcher host as an owner-scoped role
+account holding the tracker credential; the planning session never does. Reuses
+`linear.findingTicket` for its landing state, owner and notification, so the plan kind is
+off on the same discriminator the finding kind is: absent `linear.findingTicket`, a
+`ticket-create` (plan) request is refused exactly as the flat kind is.
 
 ### Validation rules
 
@@ -856,22 +1191,32 @@ Every rule is a MUST, and all of them run **before any request executes**.
 
 | Rule | Rationale |
 |---|---|
-| Every `ticket_id` equals the **dispatcher-supplied** pinned ID | The central check. The agent *names* a ticket and the validator *compares* it — the value is never used to address anything. A mismatch is an attempted retarget, not a typo. |
+| Every `ticket_id` — and a `ticket-create`'s `source_ticket_id` — equals the **dispatcher-supplied** pinned ID | The central check. The agent *names* a ticket and the validator *compares* it — the value is never used to address anything. A mismatch is an attempted retarget, not a typo. A finding is provably *from this session* before it is filed. |
 | At most **one** `ticket-state` per run | A run advances the ticket once. Several transitions in one batch is either confusion or an attempt to land somewhere by way of somewhere else. |
+| At most **3** flat `ticket-create` (finding) per run, and only if `linear.findingTicket` is configured | A session reports the findings it happened to meet, not a backlog. The cap bounds a runaway or hostile session; the config gate keeps the kind off until a project opts in. |
+| A `ticket-create` lands in `linear.findingTicket.landing` (backlog only), carries executor-applied `provenance:agent`, and is refused any `provenance:*`/`agent:*`/`blocked:*`/`hooks-change` in its `labels` | The session sets none of the fields that carry authority — state, provenance, assignee. The executor forces them, so the invariant is structural, not a prompt (see *Filing a finding*). |
+| At most **one** `ticket-create` (plan) tree per run; its `children` are capped at `MAX_PLAN_CHILDREN` and each child's `labels` are refused any `provenance:*`/`agent:*`/`blocked:*`/`hooks-change` | A run proposes one decomposition, not many. The executor forces the epic's `provenance:agent`, each child's `provenance:epic`, and each child's parent — see *Filing a plan*. |
+| Every `depends_on` ordinal is in range for the tree's `children`, not self-referential, and forms no cycle | The executor turns them into blockedBy relations; a dangling or circular edge is a malformed tree, not a relation. |
+| A `ticket-create` (plan) child that fails `check_ticket_dor.py --strict` rejects the **whole tree** | A partial epic reads as decomposed and is not; the executor creates nothing and reports the failing children back for a re-plan (§5, §13). |
 | `raw`, `ready` and `done` are **never** valid targets | `ready` would be self-approval (§5); `done` would be a session claiming its own merge (§5, §6). Refused **even when a caller passes them in `allowed_to_states`** — a belt the caller cannot unbuckle. |
 | Targets are otherwise limited to the caller's `allowed_to_states` | Default `review`. The stage decides what a session may do, not the session. |
 | `agent:*`, `blocked:capacity`, `provenance:*` and `hooks-change` labels are refused, in `add` **and** `remove` | Dispatcher- and human-owned (§5, §6). A session setting `agent:needs-human` — or clearing `agent:blocked` — is a session editing its own supervision. `remove` matters as much as `add`. |
 | Unknown label keys are refused | Only keys present in `linear.labels.ids` resolve to an ID. |
 | Exactly **one** telemetry block across all comments, when the caller requires it | §4. Counted by the `"schema": "pipeline-telemetry/1"` marker, matched with whitespace tolerance so nothing hinges on a JSON writer's spacing. Zero blocks is a `telemetry-required` violation (§2); two is a double-count. |
-| A missing requests file with telemetry required is a **rejection**, not a skip | A session that reports nothing is indistinguishable from one that silently failed, and silence must not be the quiet path. |
+| A missing requests file with telemetry required is a **rejection**, not a skip | A session that reports nothing is indistinguishable from one that silently failed, and silence must not be the quiet path (§13). |
+| An artifact that downloads but holds no `requests.json` is a **rejection**, not a skip | The artifact *was* read, so this is a malformed batch rather than an absent one — a different fact about a different party, and it must not report as the session having written nothing. |
 
 ### Caps
 
 | Cap | Value | Why |
 |---|---|---|
 | Requests per batch | 20 | A runaway or hostile session must not spray the tracker. |
-| Comment body | 16 000 chars | Bounded cost, bounded blast radius. |
-| Label ops per request | 10 | `add` + `remove` combined. |
+| Comment body, and a finding's `body` | 16 000 chars | Bounded cost, bounded blast radius. |
+| Finding `title`, an epic's or child's `title` | 200 chars (schema); the DoR gate enforces its own tighter title limit on plan children | A title is one line, not a report. |
+| flat `ticket-create` (finding) per run | 3 | A session reports what it met; it does not generate a backlog. |
+| `ticket-create` (plan) trees per run | 1 | A run proposes one decomposition. |
+| Plan `children` per tree | `MAX_PLAN_CHILDREN` (executor constant; schema hard-ceiling 20) | A plan is a tree, not a backlog; the executor's constant is the operative flood guard. |
+| Label ops per request | 10 | `add` + `remove` combined, and a finding's or child's `labels`. |
 
 ### All-or-nothing
 
@@ -886,8 +1231,27 @@ and both matter:
    moved but the explaining comment missing, or labels changed with no telemetry to say
    why.
 
-The job reports a single verdict: `ok` (validated, executed), `rejected` (batch
-refused, nothing applied), or `skipped` (nothing to apply and none required).
+The job reports a single verdict: `ok` (validated, executed), `rejected` (batch read and
+refused, nothing applied), `skipped` (nothing to apply and none required), or `errored`
+(**this job** failed — it could not read the requests, or could not reach the tracker to
+apply them).
+
+**`skipped` is the only clean way to have applied nothing, and it is only reachable by
+asking.** The validator queries the artifacts API for the collected artifact name
+*before* downloading it, because `download-artifact` fails on absence as well as on
+failure and so its own outcome can never tell the two apart. No artifact ⇒ `skipped`.
+An artifact that exists ⇒ the download must succeed, and anything else is `errored`.
+
+**`errored` is deliberately wider than "could not read".** A missing credential and a
+tracker that stops answering halfway through a plan are the same fact to a caller: the
+requests may exist and have gone unapplied, or been applied only in part, and none of
+that is a statement about what the session wrote. One token that covers the class is
+what stops a fifth being invented for the next cause. A caller MUST treat `errored` as a
+failure, never as an empty batch, and never as a verdict on the batch's contents (§13).
+
+**All-or-nothing covers validation, not the network.** Nothing executes until every
+request has passed, so a *rejected* batch applies nothing. An `errored` batch may be
+partly applied, and the job says how far it got rather than implying it got nowhere.
 
 ### What is authority here, and what is not
 
@@ -901,6 +1265,20 @@ refused, nothing applied), or `skipped` (nothing to apply and none required).
 > path here points at agent-authored output: repointing it only costs the session its
 > own reporting channel. What the agent cannot influence is the artifact name the
 > dispatcher collects and the pinned ID the validator compares against.
+
+### On the runner's lane: tool calls in place of the file
+
+A session our own runner starts (§28) holds no tracker credential and writes no requests file.
+It has five tools tied to its run instead (`scripts/pipeline_session_tools.py`, KIT-706). This
+section's rule holds, checked at each call in place of a batch:
+
+- Every write goes to the run's own ticket. No tool takes a ticket as an argument.
+- A finding is a `pipeline-finding/1` comment, which the finding filer files into the backlog
+  (`docs/FINDING-POLLER.md`). Three a run.
+- No tool sets a state, a label or an approval.
+- The caps are the table above's: 20 writes a run, bodies of 16 000 characters, titles of 200.
+
+A refused call writes nothing, and a call the tracker did not confirm is not counted.
 
 ---
 
@@ -982,6 +1360,11 @@ The property that actually holds is: *a ticket never dispatches while carrying
 `agent:needs-human`*, and the attempt count is the mechanism that **applies** that
 label. A project that needs exact attempt accounting must supply a store that does not
 expire; the contract does not require a database to run a queue.
+
+**On our own runner (KIT-645)** the count is its own run records (§28): each start of a
+ticket's code session counts, and a start past `totalAttempts` is refused before anything is
+made. They live in the runner's store, outside every worktree, which the runner alone writes.
+The queue's pacing stands in for `spend`, and the runner applies no label.
 
 ### Rejected: a dispatcher-authored ticket comment
 
@@ -1094,8 +1477,9 @@ every rung above the first is off by default.
 ### The approve tier
 
 Every gate must pass, and each is recomputed from a source the session cannot write:
-provenance resolves to `epic/<ID>` (§5 rule 4); that epic exists and is itself out of
-intake (§5 rule 2); the ticket is in `raw`; it carries no dispatcher-owned `agent:*` /
+provenance resolves to `epic/<ID>` (§5 rule 4); that epic exists and sits in the
+human-approval state `ready` — not merely any state out of intake (§5 rule 2); the ticket
+is in `raw`; it carries no dispatcher-owned `agent:*` /
 `blocked:*` label and no human-applied `hooks-change`; the Definition-of-Ready gate
 passes in `--strict`; and nothing the ticket names matches `autonomy.riskPaths`.
 
@@ -1121,7 +1505,7 @@ auto-merge" enabled. **Without required checks, auto-merge merges the instant it
 enabled** and the gates below become the only gates, which is exactly what they are not
 designed to be. `docs/AUTONOMY.md` carries the copy-paste setup.
 
-Eight conditions, all required:
+Nine conditions, all required:
 
 | Condition | Read from (never from) |
 |---|---|
@@ -1129,6 +1513,7 @@ Eight conditions, all required:
 | The ticket still passes the approve tier, **recomputed** | a live re-run (a stored "was approved" flag) |
 | **Zero bounces** | Actions run history (`pipeline:bounce-N` PR labels — the fix session's token can edit PR labels) |
 | Review findings usable, none at or above `reviewSeverityThreshold` | the review artifact (a PR comment — the author can edit it) |
+| The review covered the **whole** change — `coverage` is not `partial` | the review artifact's own coverage (the findings list's length: a partial review is clean about the files it saw) |
 | Every check run terminal and green | the check-runs API ("CI passed" asserted in a commit message) |
 | `mergeStateStatus` is not `DIRTY` / `UNSTABLE` / `UNKNOWN` | the PR API |
 | The diff touches no `riskPaths` | `git diff base...head` (the PR body's description of its own size) |
@@ -1161,8 +1546,8 @@ should be allowed to spend more, and then allows itself, does not have a budget.
 
 ## 12. Machine-readable schemas
 
-Every structure above is prose, and prose is what agents *read and try to follow*. Four
-of them are also **JSON Schema (draft 2020-12) files under `schemas/`**, and those files
+Every structure in this document is prose, and prose is what agents *read and try to follow*.
+Nine of them are also **JSON Schema (draft 2020-12) files under `schemas/`**, and those files
 are not a second source of truth — they are this document in a form a machine can
 enforce. `scripts/check_schemas.py` fails CI if the two disagree about which fields
 exist.
@@ -1173,6 +1558,11 @@ exist.
 | §3 pin file | `schemas/pin.schema.json` | bidirectional by field name |
 | §4 telemetry block | `schemas/telemetry-block.schema.json` | bidirectional by field name |
 | §8 safe-outputs request file | `schemas/safe-outputs.schema.json` | bidirectional by field name |
+| §14 review findings file | `schemas/review-findings.schema.json` | bidirectional by field name |
+| §15 browser check block | `schemas/browser-check.schema.json` | bidirectional by field name |
+| §16 status file | `schemas/pipeline-status.schema.json` | bidirectional by field name |
+| §17 usage file | `schemas/pipeline-usage.schema.json` | bidirectional by field name |
+| §18 day plan file | `schemas/pipeline-day-plan.schema.json` | bidirectional by field name |
 
 **Amending one of those sections means amending its schema in the same PR.** That is not
 a convention here — CI names the missing half.
@@ -1202,14 +1592,36 @@ reporting, never authority** — including a document that validates.
 
 ### Generating, rather than requesting, the right shape
 
-Where a **model** produces one of these documents, the schema is passed at generation:
-Claude Code headless takes `--json-schema <file>`, and the Agent SDK takes
-`outputFormat: { type: 'json_schema', schema }`. Where a **shell step or workflow**
-produces one, its output is validated before anything consumes it:
+**A document is validated before it is written, never after.** A check that runs after
+the write is a diagnosis: the malformed `delivery.json` is already on disk and already
+failing the hook closed; the malformed request is already in the batch that §8 will
+reject whole. `scripts/emit_document.py` is the gate — it validates a candidate and
+writes the destination **only if the candidate conforms**, so a refused document is not
+a file anyone has to find.
 
 ```bash
-python3 scripts/check_schemas.py --instance "$FILE" --schema safe-outputs || exit 1
+# a whole document: validated, then installed — or nothing is written at all
+python3 scripts/emit_document.py --schema delivery \
+  --candidate cand.json --install delivery.json
+
+# one §8 request: the RESULTING batch is validated before it replaces the old one,
+# so a malformed request costs that request and not the batch around it
+python3 scripts/emit_document.py --append "$REQ"
 ```
+
+Which mechanism fits depends on what produces the document, and they are not
+interchangeable:
+
+| Producer | Mechanism |
+|---|---|
+| A skill or script that writes a file | `emit_document.py`, above. |
+| A step that builds a document in memory | `check_schemas.document_problems(doc, name)` before the write — one definition of "conforms", shared by both dispatchers and the review emitter. |
+| A model whose **final message** is the document | The schema at generation: Claude Code headless takes `--json-schema <file>`, the Agent SDK takes `outputFormat: { type: 'json_schema', schema }`. |
+| A model that writes a **file** with a tool | Neither of those constrains a tool call, so the file is refused at the boundary that reads it — see §14. |
+
+Where the boundary reads a document produced under a ref an agent could have written,
+**the schema and the validator are staged from the default branch**, exactly as a rubric
+is: a PR that could loosen the schema its own review is held to has not been reviewed.
 
 Asking for a shape in a prompt is a request. Constraining it at generation, or refusing
 it at the boundary, is a guarantee — of shape only, which is the whole point of the
@@ -1223,3 +1635,2145 @@ decides whether the pipeline may run is the last place to add a dependency. Its
 guarantee: **an unrecognized keyword is an error, never a silent no-op** — a schema
 keyword that nothing enforces reads as protection while giving none, so `check_schema()`
 rejects any keyword the validator cannot enforce, over every shipped schema, in CI.
+
+---
+
+## 13. Absence is not failure
+
+**A component that can legitimately do nothing MUST be able to distinguish "nothing to
+do" from "could not do it" — and MUST say which.**
+
+Most of this pipeline is built out of jobs whose ordinary answer is *nothing happened*.
+A session dies before writing its requests. A review finds no findings. A poll finds an
+empty queue. Every one of those is a correct, quiet, green outcome — and every one of
+them is one bad day away from being indistinguishable from a denied API call, an expired
+artifact, or a script that crashed before it reached its first line of work.
+
+The two states have opposite meanings and identical symptoms, which is why they get
+conflated: **no output, no error, no red check.** And the conflation is self-concealing.
+A component that reports "nothing to do" when it actually failed removes the only signal
+that would have brought anyone to look at it.
+
+### The three states, and what each owes the reader
+
+| State | What happened | How it must report |
+|---|---|---|
+| **Did the work** | The component ran and acted | Its normal success output |
+| **Nothing to do** | The component ran, *asked*, and the answer was genuinely nothing | Green — and it **says what it asked and what the answer was**. A silent green is not this state, it is an unlabelled one |
+| **Could not do it** | The component could not establish the answer, or could not act on it | **Loud.** Non-zero, or a distinct verdict a caller must treat as failure. Never the same token as *nothing to do* |
+
+### The test to apply
+
+> **If this component failed completely right now, would anything anywhere go red?**
+
+If the answer is no, the component is not reporting — it is being trusted. Ask the
+follow-up: *what tells absence from failure here, and could the agent or the failure
+itself have written that thing?* An inference drawn from the failure ("the download
+failed, so there must be no artifact") is not an answer, because the failure is exactly
+what makes it unreliable. Ask something that can answer independently.
+
+### Where this shows up in a workflow
+
+Three mechanical shapes, all fine in the right place and all worth a second look:
+
+- `continue-on-error: true` — asks the reader to believe every way this step can fail is
+  benign. Legitimate when a **later step evaluates the outcome** (`steps.<id>.outcome` is
+  computed *before* `continue-on-error` is applied) and fails on it. A defect when nothing
+  downstream reads it.
+- `|| true` — collapses "the command said no" into "the command could not run". Fine for
+  `grep` (exit 1 *is* the answer) and for cleanup. A defect when the empty result then
+  flows into a gate, where empty reads as *permitted*.
+- an early `exit 0` — correct for §2's *off* discriminator, which is a real answer to a
+  real question. A defect when it is reachable by something **going wrong** rather than by
+  something being **absent**.
+
+**A deliberate no-op that announces itself is not a defect.** The rule is not "never do
+nothing quietly"; it is "never let *doing nothing* and *failing* look the same".
+
+### Instances of this rule elsewhere in this document
+
+It is not a new idea here — it is the general form of rules this contract already states
+one case at a time, which is precisely why it earns a section of its own:
+
+- §2 — `delivery.json` absent is **off**; present-but-unreadable is **broken**. One
+  discriminator, three states, and *off* is never allowed to mean *broken*.
+- §8 — a missing requests file with telemetry required is a **rejection, not a skip**,
+  because "a session that reports nothing is indistinguishable from one that silently
+  failed".
+- §8 — the safe-outputs verdicts are `ok`, `skipped`, `rejected` and **`errored`**. The
+  fourth exists because collapsing it into `skipped` reads as a clean run, and collapsing
+  it into `rejected` asserts two things that are false: that the batch was refused, and
+  that nothing was applied.
+- §12 — an unrecognized schema keyword is **an error, never a silent no-op**.
+
+### What enforces it
+
+Partly a check, mostly a convention — stated rather than implied.
+
+`scripts/pipeline_safe_outputs_probe.py --selftest` (`npm run test:safe-outputs`, in CI's *Kit
+checks*) pins the §8 instance: the classification rows, the exit codes, and the step
+graph that carries them — that the probe runs **before** the download, that the download
+no longer wears `continue-on-error`, and that the verdict is computed from both outcomes.
+A perfect classifier wired behind `continue-on-error` would still report success for a
+failure, so the wiring is asserted, not assumed.
+
+The general rule is a **convention**, in the same sense as the source-agnostic rule in
+`CLAUDE.md`: no check can tell a benign `|| true` from a load-bearing one. What is
+mechanical is the reviewer's question, and it is short enough to actually get asked —
+*if this failed, what would go red?*
+
+---
+
+## 14. Review findings file
+
+A review session's **entire deliverable is one file**, `REVIEW-FINDINGS.json` in the
+repository root. The reviewer has no tools to comment, approve, push or reach the
+tracker; everything that gates money downstream — whether the review is usable, what its
+worst severity was, whether that meets the rubric's threshold — is computed **from** this
+file by a deterministic publisher, never reported **in** it.
+
+> **Which publisher depends on the backend, and the separation is what matters, not the
+> location.** On `github-actions` it is the review workflow's normalize step; on a
+> dispatcher-side lane it is `scripts/pipeline_review_local.py`'s publisher. Both are
+> deterministic code rather than the reviewing model, which is the one piece of the cloud
+> design that survives the move unchanged
+> ([ADR 2026-09-05](adr/2026-09-05-stage-e-under-a-delegation-bound-dispatcher.md) § 4).
+> The shape below is unchanged by either.
+
+### Shape
+
+```json
+{
+  "schema": "pipeline-review/1",
+  "summary": "two or three sentences a human can read in ten seconds",
+  "findings": [
+    {
+      "severity": "high",
+      "category": "security",
+      "file": "src/x.ts",
+      "line": 42,
+      "summary": "one line — the claim",
+      "detail": "why it is wrong and what would fix it"
+    }
+  ],
+  "blocked": null
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | const `pipeline-review/1` | The marker. An unrecognized value makes the review **unusable**, which is reported as *treat this PR as unreviewed* — never as clean. |
+| `summary` | string | Two or three sentences. May be empty: an empty findings list with an empty summary is still a verdict. |
+| `findings` | array | Empty means the change is clean, and saying so with an empty list is the correct output — **unless `blocked` is set**. |
+| `blocked` | string \| boolean \| null, optional | Omitted unless the reviewer could not judge the change at all. One line saying what was missing. A set `blocked` means *could not review*, and the publisher declines: the PR is reported unreviewed, never clean. Absent, `null`, `false` and the negative spellings a model reaches for (`no`, `none`, `n/a`, `no blockers`, and any of them followed by a dash and an explanation) all mean not blocked — tolerant in that direction only, because a false decline discards a review that was done. A **partial** review (§11, files withheld over the size cap) is not a blocker and must not set it. Findings listed beside a set `blocked` are **not acted on**, so both publishers say how many there were: silence about them reads as *there were none* (§13). |
+
+Each finding:
+
+| Field | Type | Notes |
+|---|---|---|
+| `severity` | enum `low\|medium\|high\|critical` | The field that spends money — everything at or above the rubric's threshold starts a paid fix session. |
+| `category` | string | `correctness`, `security`, `tests`, `scope`. Free-form beyond those. |
+| `file` / `line` | string \| null, integer \| null | Where, when the reviewer could say. `line` is omitted when it does not apply. |
+| `summary` | string | One line: the claim. |
+| `detail` | string | Why it is wrong and what would fix it. Read by the humans on the PR and by the fix session that may follow. |
+
+The first five mirror §4's `review_findings` row exactly, so there is **one finding shape
+in the system, not two**. `detail` is the one field §4 does not carry: it is prose for a
+human, not a column to group by.
+
+### Malformed is unusable — never quietly smaller
+
+**A finding this document cannot express is a finding the review did not report.** The
+normalize step used to keep the findings whose `severity` it recognized and drop the
+rest, so a reviewer that wrote `Critical` produced a run that had found something and
+reported that it had not — the one failure mode a review must never have. The whole
+document is now held to the schema: it conforms and every finding survives, or the
+review is **unusable** and the PR is reported as unreviewed. Fail-closed on shape,
+fail-open on outcome — an unusable review must not read as clean, and must not wedge the
+PR either.
+
+**And a well-formed document can still be a non-review.** A reviewer handed a description
+with no diff in it conforms perfectly and finds nothing, because there was nothing to
+find. Read as a clean bill that is a lie, and it was one that nothing downstream could
+detect: the runbook asked the reviewer to explain itself in `summary`, which is prose no
+consumer parses. `blocked` is the machine-readable half of that sentence. Set, it makes
+the publisher decline exactly as a malformed document does — same loud comment, same
+`usable: false` — so the two ways of not-reviewing arrive as one. It rests on the reviewer
+being honest about being stuck, which is reporting and not authority (§14's `$comment`); a
+reviewer that is blocked and stays silent is unchanged by this field.
+
+### Why the boundary, and not `--json-schema`
+
+The reviewer writes a **file**, and neither `--json-schema` nor `outputFormat` constrains
+a tool call — both bind the final assistant message. So this document is refused at the
+boundary that reads it instead, in the workflow step that normalizes it, before anything
+downstream treats it as a review. The schema and the vendored validator are staged from
+the **default branch**, like the rubric beside them: read out of the checked-out head,
+they would let a PR loosen the schema its own review is held to.
+
+The published artifact is this document **enriched by CI** with the computed fields the
+bounce tier reads. Those fields are workflow-authored; none of them is read from the
+model's file, and a model that writes one gains nothing by it.
+
+### Shape is not a review
+
+Conforming here earns a review nothing. A schema-valid findings file can be wrong about
+every one of them, and no tier treats "the reviewer produced a well-formed document" as
+"the change is good". **Agent-authored ⇒ reporting, never authority**, exactly as
+everywhere else in this document.
+
+### The coverage marker on Stage E's comment
+
+Every comment Stage E posts on a pull request says what it did with it, for a script to
+read. The comment's **second line**, under its heading, is one HTML comment:
+
+```
+<!-- stage-e-coverage {"coverage": "partial", "head": "<sha>", "withheld": ["path"]} -->
+```
+
+| `coverage` | Meaning | Extra key |
+|---|---|---|
+| `full` | the reviewer saw the whole change | — |
+| `partial` | whole files, or pieces of one, were withheld over the size cap | `withheld`: the paths or pieces, up to a fixed budget, in order (one name is cut at 300 characters); `withheld_more`: how many more there were, only when the list was cut |
+| `declined` | no review was made | `reason` |
+| `skipped` | Stage E will not review it: its branch names no ticket | `reason` |
+
+`head` is the commit the comment speaks for. The JSON never holds `--`: each `--` is
+written `-\u002d`, so no path can close the comment early. **Read the second line only.**
+The rest of the comment carries reviewer text, and a marker there is not Stage E's.
+`pipeline_review_local.coverage_marker()` is the reader. Only `full` says the change was
+reviewed, and only at `head`. A `withheld` list that was cut is still `partial`: a reader
+takes `coverage`, never the list, and the PR's outcome file holds every name (KIT-618).
+
+---
+
+## 15. Browser check block
+
+A plan's checks that a machine can run in a browser (KIT-302). One fenced `json` block,
+`"schema": "pipeline-browser-check/1"`, in a ticket's `## Test plan`, or in an epic's
+`## How we will know it works` for checks that span the whole feature. The acceptance session
+runs each check through the look tool, in the kit's own sandbox, against the app built the
+way `delivery.json` `acceptance` says (§1). Machine-readable: `schemas/browser-check.schema.json`.
+
+**Data only.** Every step is one verb from a closed list, read by the acceptance runner.
+Nothing in a block is evaluated as code, a path is never a URL, and a verb outside the list
+refuses the whole block. Conforming earns a plan nothing: a block says what to look at, and
+the session and its skeptic pass decide what they saw.
+
+### The block
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-browser-check/1"` | An unrecognized value refuses the block. |
+| `modes` | object → mode | App states this ticket's checks may name, beyond `acceptance.modes`. A name may not repeat one `delivery.json` declares. At most 6. |
+| `checks` | check[] | 1 to 12. |
+
+### A check
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Lowercase, digits and `-`. Unique in the block. |
+| `criteria` | integer[] | 1-based positions of the ticket's acceptance criteria this check proves. Child tickets only. |
+| `scenario` | string | A name from `acceptance.scenarios`. Default: its first. |
+| `viewports` | string[] | Names from `acceptance.viewports` (default `desktop`, `phone`). Every check runs once per viewport and mode. |
+| `modes` | string[] | `default`, a name from `acceptance.modes`, or one this block declares. |
+| `open` | string | A path on the app's own origin, starting `/`. Never a URL, never `//`. |
+| `steps` | step[] | 1 to 25, run in order. |
+| `look` | string | What a person would judge in this check's screenshots, in plain words. The acceptance session judges it; the runner never does. |
+
+### A target
+
+What a step acts on, found the way a person would find it. At least one field.
+
+| Field | Type | Notes |
+|---|---|---|
+| `role` | string | An accessibility role: `button`, `heading`, `tab`, `switch`. |
+| `name` | string | The accessible name, with `role`. |
+| `text` | string | Visible text. |
+| `label` | string | A form field's label. |
+| `placeholder` | string | A form field's placeholder. |
+| `testId` | string | A `data-testid`, when nothing a person sees is unique. |
+| `css` | string | A CSS selector, the last resort. |
+| `exact` | boolean | Match `name` or `text` exactly. |
+| `nth` | integer | Which match, from 0; `-1` is the last. |
+| `within` | target | Search inside this target only. |
+
+### Steps
+
+Each step is `{"do": <verb>, …}`. The verbs: `click`, `hover`, `fill`, `press`, `reload`,
+`goto`, `wait`, `emulate`, `addClass`, `removeClass`, `setStorage`, `screenshot` and
+`expect`. Any step may carry `only`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `do` | string | The verb. |
+| `on` | target | What `click`, `hover`, `fill`, `addClass`, `removeClass`, `screenshot` and `expect` act on. Required for all but `screenshot`. |
+| `only` | string[] | Run this step only on these viewports: a phone menu a desktop does not have. |
+| `text` | string | `fill`: what to type. `expect`: the text the target holds. |
+| `key` | string | `press`: a key, such as `Enter` or `Shift+Tab`. |
+| `path` | string | `goto`: a path on the app's origin, as `open`. |
+| `for` | target | `wait`: until this target is visible. A `wait` names `for` or `ms`, not both. |
+| `ms` | integer | `wait`: a pause, at most 2000. |
+| `colorScheme` | string | `emulate`: `light`, `dark` or `no-preference`. An `emulate` names this, `reducedMotion`, or both. |
+| `reducedMotion` | string | `emulate`: `reduce` or `no-preference`. |
+| `class` | string | `addClass`, `removeClass`: one class name. |
+| `values` | object | `setStorage`: localStorage keys and string values, then a reload. |
+| `name` | string | `screenshot`: its name in the result. |
+| `full` | boolean | `screenshot`: the full page, not the viewport. |
+| `at` | string | `expect`: `first-paint` judges the page before its scripts run, the moment a flash would show. |
+| `part` | string | `expect`: `placeholder`, `before`, `after` or `marker`, a part of the target. |
+| `visible` | boolean | `expect`: shown or not. |
+| `count` | integer | `expect`: how many match. |
+| `hasClass` | string | `expect`: the target carries this class. |
+| `lacksClass` | string | `expect`: it does not. |
+| `attr` | object | `expect`: attribute values, at most 4. |
+| `css` | object | `expect`: computed style values, at most 4, such as `{"background-color": "rgb(18 18 18)"}`. |
+| `contrast` | object | `expect`: `{"min": <ratio>}`, the text-to-background contrast ratio, 1 to 21. |
+| `min` | number | The ratio `contrast` asks for. |
+
+### A mode
+
+The same shape as `acceptance.modes` in §1, and `scripts/check_schemas.py` holds the two
+equal: `colorScheme` (`light`, `dark` or `no-preference`), `reducedMotion` (`reduce` or
+`no-preference`), `locale` (such as `en-GB`), `timezoneId` (such as `Europe/London`), and
+`localStorage` (keys and string values set before the page loads). Every field is optional.
+
+An example, the shape the dark-mode plan's epic would have carried:
+
+```json
+{"schema": "pipeline-browser-check/1", "checks": [
+  {"id": "home", "scenario": "signed-in", "viewports": ["desktop", "phone"],
+   "modes": ["light", "dark"], "open": "/",
+   "steps": [{"do": "expect", "on": {"css": "body"}, "at": "first-paint",
+              "css": {"background-color": "rgb(var(--c-bg))"}},
+             {"do": "screenshot", "name": "home"}],
+   "look": "Dark: no white or cream surface; cards lift off the board."}
+]}
+```
+
+Which names exist (viewports, modes, scenarios), which criteria a check may point at, and when
+a UI ticket must carry a block are the readiness gate's rules (`scripts/check_ticket_dor.py`),
+not shape.
+
+---
+
+## 16. Status file
+
+One file says where every plan stands: its pieces, their pull requests, each pull request's
+merge state, the required checks named in the job's config, and the newest Stage E review
+(KIT-335). The status job, `scripts/pipeline_status_local.py`, writes it each pass. It runs
+with no AI, as the role account, like the Stage E jobs. The tech lead, the daily summaries
+and the GitHub-only pages read this file. None of them holds a GitHub token (owner decision
+5, KIT-306 path A). Machine-readable: `schemas/pipeline-status.schema.json`. The job checks
+its document against that schema before it writes, and writes nothing that does not conform.
+
+**Fields only.** Every value is an id, a cleaned title, a state from a closed list, a count,
+a time or a link. No pull request, comment or review text reaches the file, and no pull
+request title: the ticket's own title names the piece. A cleaned title is one line, at most
+120 characters, with no angle bracket, ampersand, pipe or backtick, and no control, format
+or other hidden character (Unicode categories Cc, Cf, Co and Cs, and variation selectors):
+a title a session wrote cannot carry text only a model would read. A reader can quote it as
+data.
+
+**Reporting, never authority.** A session can write a ticket's title and labels and a pull
+request's branch. Nothing may read this file to decide what to run, merge or approve.
+
+### Where the facts come from
+
+| Source | What it gives | Read how |
+|---|---|---|
+| `tracker` | Each plan the idea gate filed: an issue labelled `provenance:agent`, with no parent and at least one child. Its children are the pieces. Each piece's pull requests are the links the GitHub integration attached, the bridge's own rule (KIT-299). A link of any other source is passed over, since a session can attach any link to its own ticket. | Linear, with the role account's key |
+| `github` | Each linked pull request's state, merge state, labels and head commit, and the check runs on that commit. Then the open pull requests of each repository `required_checks` names by key, two pages of 100 at most, each read the same way (KIT-487). | GitHub REST, with the role account's token |
+| `reviews` | The review poller's outcome record for each pull request: `<review_state_dir>/outcomes/<owner>__<repo>__pr-<n>.json`. | The file system, as the role account |
+
+A plan is listed while it is open, and for `lookback_hours` (default 72) after it finishes.
+So a summary can say what shipped since the day before.
+
+### Shape
+
+```json
+{
+  "schema": "pipeline-status/1",
+  "written_at": "2026-11-03T18:05:00Z",
+  "started_at": "2026-11-03T18:04:31Z",
+  "result": "partial",
+  "error": null,
+  "lookback_hours": 72,
+  "sources": {
+    "tracker": {"state": "read", "asked": 3, "answered": 3, "reason": null, "read_at": "2026-11-03T18:04:40Z"},
+    "github": {"state": "partly-read", "asked": 4, "answered": 3, "reason": "acme/app#41: GitHub answered HTTP 404", "read_at": "2026-11-03T18:04:52Z"},
+    "reviews": {"state": "read", "asked": 2, "answered": 2, "reason": null, "read_at": "2026-11-03T18:04:52Z"}
+  },
+  "counts": {"plans": 1, "pieces": 2, "pull_requests": 2, "open": 1, "merged": 1, "closed": 0, "unknown": 0, "conflicting": 1},
+  "plans": [{
+    "id": "ENG-300", "title": "Dark mode", "url": "https://linear.app/acme/issue/ENG-300",
+    "team": "ENG", "state": "In Progress", "state_type": "started",
+    "created_at": "2026-11-01T09:00:00Z", "updated_at": "2026-11-03T17:00:00Z",
+    "completed_at": null, "canceled_at": null, "pieces_complete": true,
+    "pieces": [{
+      "id": "ENG-301", "title": "Back the palette with CSS variables",
+      "url": "https://linear.app/acme/issue/ENG-301", "state": "Needs Approval",
+      "state_type": "unstarted", "started_at": "2026-11-02T10:00:00Z", "completed_at": null,
+      "canceled_at": null, "updated_at": "2026-11-03T16:30:00Z", "flags": [],
+      "prs_complete": true,
+      "prs": [{
+        "repo": "acme/app", "number": 40, "url": "https://github.com/acme/app/pull/40",
+        "source": "github", "error": null, "state": "open", "draft": false,
+        "opened_at": "2026-11-02T11:00:00Z", "updated_at": "2026-11-03T16:00:00Z",
+        "merged_at": null, "closed_at": null, "head_sha": "0123456789ab", "base": "main",
+        "mergeable": "conflicting", "merge_state": "dirty", "labels": ["conflict"],
+        "checks": {"result": "waiting", "required": [
+          {"name": "Kit checks", "state": "passing", "waits_on_person": false},
+          {"name": "Hooks change guard", "state": "failing", "waits_on_person": true}]},
+        "review": {"state": "notes", "at": "2026-11-03T15:00:00Z", "max_severity": "low",
+                   "findings": 2, "current": true}
+      }]
+    }]
+  }],
+  "findings": [{"kind": "github", "state": "unknown", "summary": "partly-read: acme/app#41: GitHub answered HTTP 404"}],
+  "firing": []
+}
+```
+
+The example leaves out the plan's second piece for room. Its pull request, #41, is the one
+GitHub answered 404 for, and the tracker's link says it is merged. `counts` and `sources` cover
+both pieces.
+
+### The file
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-status/1"` | A reader that does not know the value refuses the file. |
+| `written_at` | time | When this pass wrote it. Its age is the answer to "how old is this?". The heartbeat monitor judges the job stale by it. |
+| `started_at` | time | When this pass began reading. |
+| `result` | `ok` \| `partial` \| `failed` | `ok`: every source was read. `partial`: at least one was not read whole (exit 3). `failed`: no source that is on could be read (exit 1). See *Exit codes and the heartbeat* for a pass with no network. |
+| `error` | string \| null | Null, unless the pass stopped on an unexpected error: then one line saying why, with both credentials scrubbed, and every source that is on is `could-not-read`. A pass cut short by its clock or a cap is `partial`, and that source's `reason` says so. |
+| `lookback_hours` | integer | How long a finished plan stays listed. |
+| `sources` | object | `tracker`, `github` and `reviews`, each a source below. |
+| `counts` | object | `plans`, `pieces`, `pull_requests`, and the pull requests that are `open`, `merged`, `closed`, `unknown` and `conflicting`. A quiet day says what was checked from these. |
+| `plans` | plan[] | At most 100. Empty when the tracker could not be read: `sources.tracker` says so. |
+| `other_pull_requests` | pull request[] (optional) | KIT-487. Each open pull request in a repository `required_checks` names by key that no listed plan's piece links to, read the same way, in repository and number order. At most 200. A file from before KIT-487 has none. |
+| `other_pull_requests_complete` | boolean \| null (optional) | KIT-487. `true`: every such repository's open pull requests were listed. `false`: at least one was not, or there were more than 200, and `sources.github` says why. `null`: `required_checks` is a list, so it names no repository and none was looked for. An empty list means "none open" only when this is `true`. |
+| `queue_room` | object \| null (optional) | KIT-474. The queue's room hold, from the bridge's record (the `room_file` setting; empty turns it off). `null`: the job is told not to look, or the queue has not yet read the machine. See *The queue's room*. |
+| `kit_clone` | object \| null (optional) | KIT-581. Whether the checkout these jobs run from, the role account's copy of the kit, is behind main. `null`: the job is not told a repository (`kit_repo`). See *The kit copy*. |
+| `findings` | finding[] | The heartbeat monitor's view of `sources`, in the health watch's words. |
+| `firing` | string[] | Empty unless `result` is `failed`: then the sources that failed, which the monitor pages on. |
+
+Times are UTC to the second (`2026-11-03T18:05:00Z`), or null where the source gave none.
+
+### A source
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | `read` \| `partly-read` \| `could-not-read` \| `off` | `read`: every question was answered. `partly-read`: some were not. `could-not-read`: none was, or none could be asked. `off`: the config turns it off (`reviews` only). |
+| `asked` | integer | Questions put to it this pass: tracker queries; GitHub requests (a probe, then each pull request, each check-run listing, each comment page and each page of a repository's open pull requests); review records looked for. |
+| `answered` | integer | How many it answered. A review record that does not exist is an answer: no review yet. |
+| `reason` | string \| null | Why it was not read whole: a missing key, an HTTP status, a timeout. Null when it was, or when it is off. |
+| `read_at` | time \| null | When this pass last had an answer from it. |
+
+A reader says "I couldn't check" for a source that is not `read`. It never guesses (KIT-348).
+
+### The kit copy
+
+A merged fix runs nowhere until the role account's clone moves, and only the one command moves it (KIT-309). The status job runs from that clone, so it can say when the clone is behind. It reads the clone's head from the files in `.git` (no process), reads which files the jobs run out of the clone's own copy of the installer's lists (`REQUIRED_SCRIPTS`, the sibling jobs' files and their own data, and `RUNTIME_DATA_DIRS`, with `ast.literal_eval` and no import), and asks GitHub one read-only question: compare the head with the branch (`kit_repo`, `kit_branch`; `kit_clone` names another checkout). It does not count against `sources`, and a question it cannot answer never fails the pass.
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | `current` \| `behind` \| `unknown` | `behind`: a file the jobs run, or data they read (a schema, or a session kind the runner starts, KIT-880), changed between the head and the branch. A job's own data counts only where that job is installed (KIT-889): the kit's guards, `.claude/hooks/`, where the runner's job is, and the look tool's profile, `templates/sandbox/look.sb`, where the acceptance job is. Which jobs are installed is read from their LaunchDaemon files, as the installer reads them; when it cannot be told, every job's data counts. `current`: none did (a document or a test may have): the same rule `verify` in the Stage E installer uses, so it does not cry wolf on every merge. `unknown`: the question could not be answered, or GitHub listed too few of the changed files to say none was a job file; never read as current. |
+| `head` | string \| null | The checkout's head commit, twelve characters. |
+| `merges_behind` | integer \| null | How many commits the branch is ahead. |
+| `files` | string[] | At most ten of the changed job files. A name is kept only when it is one of the jobs' own files under `scripts/`, `schemas/`, `session-kinds/`, `.claude/hooks/` or `templates/sandbox/`. |
+| `files_total` | integer \| null | How many changed job files there were. Null when GitHub listed too few to say. |
+| `checked_at` | time \| null | When this pass asked. |
+| `reason` | string \| null | Why it is `unknown`, in fixed words (no .git, a HEAD it does not read, an installer it cannot read, GitHub not knowing the head, no token, a checkout holding commits the branch lacks, more files changed than GitHub lists); also on a `behind` that GitHub's cut-off list shows is true but whose count is only a floor (`files_total` is then null). |
+
+The stand-up says `behind` in one plain line in both rundowns while it stands, and `unknown` as not known. It says nothing when the copy is current or the field is absent. A clone with local edits is not seen here, and nor is a job not installed on this machine: the line counts every job's scripts. A job's own data counts only where the job is installed (KIT-889).
+
+### The queue's room
+
+While the machine is short of memory, free disk or swap, the queue starts nothing new (KIT-457). The bridge writes what its queue pass found as a small record beside its heartbeat (`queue-room.json`, `pipeline-queue-room/1`), and the status job copies it into `queue_room` as fields only, so the file and the stand-up can say it in their own fixed words.
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | `held` \| `clear` \| `unread` | `held`: nothing new starts for want of room. `clear`: the machine was read and has room. `unread`: the record is there and cannot be read or is not a room record, with `reason`; never taken as room. |
+| `since` | time \| null | When this hold began (`held` only). |
+| `resumed_at` | time \| null | When the last hold ended (`clear` only; null until one has). |
+| `checked_at` | time \| null | When the bridge last read the machine. A closed working window or the watcher's hold leaves it as it was, so a reader judges its age. |
+| `lines` | line[] | `held` only: each line the machine is over, at most three. |
+| `reason` | string \| null | `unread` only, in fixed words. |
+
+A line is `{"line", "reading", "limit", "unit"}`: `line` is `pressure`, `disk` or `swap`; `reading` is the number read, or `null` when it could not be taken (a line that could not be read is over, never room); `limit` is the line it is held to; `unit` is `level` (memory pressure: 1 normal, 2 warn, 4 critical) or `GB`.
+
+### A plan
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The epic's ticket id. |
+| `title` | string | Cleaned. |
+| `url` | string \| null | The ticket's link in the tracker. |
+| `team` | string | The team key. |
+| `state` | string | The state's name, cleaned. |
+| `state_type` | enum | The tracker's own kind: `triage`, `backlog`, `unstarted`, `started`, `completed` or `canceled`; `unknown` for any other. |
+| `created_at`, `updated_at`, `completed_at`, `canceled_at` | time \| null | From the tracker. |
+| `pieces_complete` | boolean | False when the plan has more children than one read holds (50). |
+| `pieces` | piece[] | In ticket-number order. |
+
+### A piece
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `title`, `url`, `state`, `state_type` | as a plan's | |
+| `started_at`, `completed_at`, `canceled_at`, `updated_at` | time \| null | A piece's start and finish, for the evening wrap (KIT-349). |
+| `flags` | string[] | The lifecycle labels on it, from a closed list: `agent:blocked`, `agent:needs-human`, `blocked:capacity`, `hooks-change` (§6). |
+| `prs_complete` | boolean | False when it has more links than one read holds (25). |
+| `prs` | pull request[] | Empty when no pull request is linked yet. |
+| `session` | object \| null (optional) | KIT-449, open pieces only. The piece's newest agent session: `id`, `status` (`pending`, `active`, `awaitingInput`, `error`, `complete`, `stale`), `created_at`, `started_at`, `ended_at`. Null when it has none. One listing a pass, capped at 500 sessions; a listing it could not finish makes a piece it did not reach `unknown` (id null), never null, and the tracker `partly-read`. |
+
+### A pull request
+
+| Field | Type | Notes |
+|---|---|---|
+| `repo` | string | `owner/name`. |
+| `number` | integer | |
+| `url` | string | Its GitHub link. |
+| `source` | `github` \| `tracker` | `github`: GitHub answered this pass. `tracker`: it did not, so `state` is what the tracker's link says, and `error` says why. |
+| `error` | string \| null | Why GitHub was not read for it, or for its check runs. Null when both were. |
+| `state` | `open` \| `merged` \| `closed` \| `unknown` | |
+| `draft` | boolean \| null | |
+| `opened_at`, `updated_at`, `merged_at`, `closed_at` | time \| null | From GitHub. |
+| `head_sha` | string \| null | The head commit, cut to 12 characters. |
+| `base` | string \| null | The branch it merges into. |
+| `mergeable` | `mergeable` \| `conflicting` \| `unknown` | A conflict that waits on a person (KIT-350). `unknown` until GitHub has worked it out. |
+| `merge_state` | string \| null | GitHub's own word: `clean`, `dirty`, `blocked`, `behind`, `unstable`, `draft`, `has_hooks` or `unknown`. |
+| `labels` | string[] | Pipeline labels from a closed list: `conflict` (the conflict loop's) and `hooks-change`. |
+| `checks` | object | `result`, and `required`: one check below per name the config lists for this repository, in its order. |
+| `review` | object | The newest Stage E review, below. |
+| `conflict_gave_up` | object \| null (optional) | KIT-448. The `episode` the conflict loop gave up on, and `at` when, read from its `escalated` or `page` marker; only while the PR still conflicts. Null otherwise. |
+| `union_red` | object \| null (optional) | KIT-448. The `key` of the newest red union verdict that names this PR and judged its current head, and `at` when, read from its `pr-union:red` marker and the `pr-union:head` line under it (KIT-350). A verdict on an earlier head, or one that names no head, is not it, so a push that fixed the PR leaves no red behind. A later green verdict posts nothing, so at the same head this can outlive the red. Null when none. |
+
+Both markers count only when `github-actions[bot]` wrote them. Sessions post as the owner, so a
+look-alike under any other login is never read. Comments that cannot be read leave both null
+and make the GitHub source `partly-read`.
+
+`checks.result` is `passing` when every named check passed, and `failing` when one that does
+not wait on a person failed. It is `pending` when one that does not wait on a person is
+running or has not started, and `waiting` when only checks that wait on a person are not
+passing. `none` means the config
+names no check for this repository, and `unknown` means the checks were not read.
+
+### A check
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string | The check's name from `required_checks` in the job's config, cleaned like a title. Runs are matched on the name as configured. |
+| `state` | `passing` \| `failing` \| `pending` \| `missing` \| `unknown` | The newest run of that name on the head commit. `missing`: no run of that name. `unknown`: the runs were not read, or GitHub listed only some and this name was not among them; the pull request's `error` says which. |
+| `waits_on_person` | boolean | True for a check only a person turns green, such as the `hooks-change` label's guard (`human_pending_checks` in the config). |
+
+### A review
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | enum | `none`: no review on record. `clean`: reviewed, nothing found. `notes`: findings below the threshold. `findings`: findings at or above it, so Stage E sends it back. `partial`: whole files were withheld from the reviewer and nothing it saw met the threshold, so a person reviews the rest; never `clean` (KIT-138). `not-reviewed`: the reviewer could not judge it. `unknown`: the record could not be read, or reviews are off. |
+| `at` | time \| null | When the review was recorded. |
+| `max_severity` | `low` \| `medium` \| `high` \| `critical` \| null | |
+| `findings` | integer \| null | How many findings. Never what they say. |
+| `current` | boolean \| null | True when the review judged the pull request's current head. Null when either head is unknown. |
+
+### A finding
+
+| Field | Type | Notes |
+|---|---|---|
+| `kind` | `tracker` \| `github` \| `reviews` | The source. |
+| `state` | `unknown` \| `firing` | `unknown` never pages. `firing` pages, and only on a `failed` pass. |
+| `summary` | string | The source's state and reason, on one line. |
+
+### Exit codes and the heartbeat
+
+The file is the job's heartbeat, in the health watch's words (`findings`, `firing`), so the
+heartbeat monitor can read it the way it reads the health watch's file. Its row is KIT-411's,
+with the step that installs the job. `ok` and `partial` are good results, and a source not
+read whole is a finding that does not page: one source down for a pass is a network blip or a
+dark wake, and the jobs that use that source page it if it stays down. `failed` fires its
+sources, a pass that stopped on an error carries `error`, and a file that stops being written
+is stale.
+
+**A pass with no network is `partial`, not `failed`, when reviews are on.** The tracker and
+GitHub are `could-not-read`, and the review records are still `read`, with nothing to look
+up. That is deliberate: a laptop makes dark wakes with no network all night, and a page must
+mean something is broken. The review poller, the bounce driver and the catch-up poller use the
+same tracker key and GitHub token, and they page an outage that lasts. `failed` is reached
+when the review records cannot be read either, or reviews are off, or the pass crashes.
+
+**A source unread for two awake hours fires (KIT-415).** Relying on the other jobs to page a long
+outage left this job quiet for a day with no network, or after an env file stopped loading. So the
+job keeps a count, in `blind_state_file` (default `~/.stage-e/state/status-blind.json`, mode 600,
+outside every git working tree). For each of the tracker and GitHub, a pass that could not read it
+adds that pass's awake time to the count, and a pass that read it clears the count. Once a source has
+been unread for two awake hours over at least two passes, its finding is `firing`, with a summary
+naming how many awake minutes, so the heartbeat monitor pages it once. The time is awake time, summed
+pass by pass from a clock that stops while the Mac sleeps, as the catch-up poller counts it, so a
+night of dark wakes adds up to nothing and a reboot restarts the count. A dry run counts nothing.
+The result stays `partial` and the exit stays 3. An empty `blind_state_file` turns the count off.
+
+| Exit | Meaning |
+|---|---|
+| 0 | Every source was read, and the file was written. |
+| 3 | The file was written, and at least one source was not read whole. It names which. A pass with no network lands here when reviews are on. |
+| 1 | No source that is on could be read, the pass crashed, or the file could not be written or did not conform. A file that did not conform is not written at all. |
+| 2 | Usage or config: nothing was read or written. |
+
+A `--dry-run` reads everything, checks the document, prints its summary and where it would
+write, and writes nothing. `--print` also prints the document.
+
+---
+
+## 17. Usage file
+
+One file says what the pipeline spent: the dollars each local day, the dollars since the plan's
+weekly reset by kind of work and by piece, how long its sessions ran, Anthropic's newest word on
+each usage window, how each session signed in, the runs that never reached the model, and
+the runs the plan's limit cut off (KIT-422, KIT-470). It also counts the model calls no dispatcher
+log records, from their callers' spend ledgers (§30, KIT-844), and the runs our own runner started,
+from its run records (§28, KIT-860). The usage job, `scripts/pipeline_usage_local.py`, writes it each pass. It runs with
+no AI, no network and no credential, as the role account, like the status job. It reads files
+and writes one file. It starts nothing and stops nothing. Machine-readable:
+`schemas/pipeline-usage.schema.json`. The job checks its document against that schema before it
+writes, and writes nothing that does not conform.
+
+**Fields only.** Every value is a number, a ticket id, a model name that matches a strict
+pattern, a word from a closed list, a local date, or a time to the second in UTC. No prompt,
+reply, comment or ticket title reaches the file, and nothing the job prints quotes one. A model
+name starts with a lower-case letter or digit, has at most 64 characters, and uses only
+letters, digits and `.`, `_`, `-`, `[` and `]`. Any other name is `other`, and its spend still
+counts. An `error` line names the error's class and the line it came from, never the error's own
+words, because a log's text can ride in one.
+
+**An estimate, not a bill.** A dollar figure is the SDK's own estimate at API prices, as its
+`result` lines report it. Under a plan sign-in no money moves: the figure says how much work was
+done. A session that signs in with a key is billed by the token, and `sign_in` lists those runs.
+
+**Reporting, never authority.** A later queue reads this file to decide when new work may start.
+Nothing reads it to approve a ticket or to merge. The files the job reads belong to the
+dispatcher and the role account and sit outside every worktree, so a session cannot write them.
+
+### Where the facts come from
+
+| Source | What it gives | Read how |
+|---|---|---|
+| `logs` | Every run: `<dispatcher_home>/logs/<workspace>/session-<session id>-<UTC start>.jsonl`, for each file modified within `lookback_days` plus one day. From its `sdk-message` lines: the last `result` line's running totals, the first and last timestamped line, the `init` line's sign-in source, the kind of the first prompt, and the `rate_limit_event` lines. From its first `session-metadata` line: when it started. A `session-pending-<UTC start>.jsonl` file is a run's placeholder. | The file system, as the role account |
+| `ledger` | Stage E's `<stage_e_state_dir>/bounce-ledger.jsonl`, the rows whose outcome is `delivered` or `conflict-delivered`, and `<stage_e_state_dir>/outcomes/*.json`, which say each pull request's ticket. | The file system, as the role account |
+| `planner` | The idea gate's `<stage_a_state_dir>/seen.json`. Each trigger's `run_ticket` is a planning run, except on our own runner's lane, where it names the idea and the run is the runner's own record (KIT-705). | The file system, as the role account |
+| `runner` | The runner's run records, `<runner_store>/runs/<run>/run.json` (§28), each one run: its kind, ticket, session, times, length and cost. Read only when the config names the store (KIT-860). | The store's one reader, `read_runs()`, as the role account |
+
+A line that is not JSON, or is longer than 8 MiB, is passed over. A workspace is a folder under
+`logs/`: a ticket's id, or `slack-` and a thread's id for a chat. A *run* is one log file in it:
+a session's start, or one of its resumes.
+
+### What a run was
+
+A run is the first of these that fits:
+
+| Kind | A run is this when | Told from |
+|---|---|---|
+| `tech_lead` | its folder starts with `slack-`; or it is a call in the tech lead's spend ledger: a turn for a DM or a plan note (§30) | the folder, or the ledger |
+| `review` | its ticket is in the review poller's own record (`<stage_e_state_dir>/review-tickets.json`), or, for an old Reviews team, its folder starts with `reviews_team_key` and a `-` (KIT-596) | `record`, or the folder |
+| `planner` | its folder is a planning run's ticket in the idea gate's record | the idea gate's record |
+| `coding` | it is the first run in its folder, by the log file names: an older log outside the window still counts as the first | the file names |
+| `bounce_fix`, `conflict_fix` | it starts from 60 seconds before to 30 minutes after a `delivered` (or `conflict-delivered`) ledger row for that ticket; failing that, its first prompt carries the bounce driver's fixed line for a bounce (or a conflict fix). A call in the conflict waker's spend ledger is a `conflict_fix` too (§30) | the ledger, then the prompt; or the spend ledger |
+| `catch_up` | its first prompt carries the catch-up job's fixed line | the prompt |
+| `other_later` | any other later run: a person's reply, or a mention | nothing marks it |
+| `judge` | not a dispatcher run at all: a model call the watcher's judge made (KIT-569) | the judge's calls file, `judge-calls.json` (`judge_file`) |
+| `morning` | not a dispatcher run: the morning job's planner call (KIT-844) | its spend ledger (§30) |
+| `standup` | not a dispatcher run: the stand-up's turn (KIT-844) | its spend ledger (§30) |
+
+A run of the runner's is the kind its record names, through the store's `USAGE_KINDS` (§28):
+`code` is `coding`, `fix` is `bounce_fix`, `conflict` is `conflict_fix`, `review` is `review`,
+`plan` is `planner` and `acceptance` is `other_later`. Its record is the runner's own, so nothing
+above is needed to tell it.
+
+**The judge's calls (KIT-569).** The dispatcher's logs hold no judge call, so the judge keeps its own record: each call's time and
+cost, fields only. When the usage job's config names it (`judge_file`), every call counts as one run of kind `judge`, in the local
+day it was made and, when the week is known, in the week from the plan's reset: its dollars are in the day's and the week's `usd`
+and in `by_kind.judge`, so the watcher's day limit sees them. A call before the lookback is not counted. The top-level `judge` says
+whether the record was read: `read`; `off` (none is named); or `could-not-read`, when the file is not there (a `judge_file` naming a file the judge has not written yet), or is unreadable, or not a record
+the job knows, or held a call row it does not know. Then **no call is counted, and the file says so, never zero**, and `result` is
+`partial`. The job reads only the times and the dollars; it never reads the judge's words.
+
+The record is `{"schema": "pipeline-watcher-judge-calls/1", "calls": [{"at": "<UTC, to the second>", "usd": <dollars, 0 or more, or null when
+the call could not be priced>}, ...], ...}`. A call row holds those two keys and no others; a null cost counts as an unpriced run,
+never as zero dollars. More than 20000 rows, or a record over 4 MiB, is `could-not-read`.
+
+**The spend ledgers (KIT-844).** Four callers start the claude CLI themselves, and no dispatcher log
+holds their calls: the morning job's planner call, the stand-up's turn, the tech lead's turns and the
+conflict waker's fix sessions. Each keeps its own spend ledger, one row per call (§30), and the job
+reads every ledger its config names (`spend_ledgers`) through the ledgers' one reader. A call counts
+as one run of its caller's kind, as a judge call does: in the local day it ended, and in the week from
+the plan's reset. Its dollars are in the day's and the week's `usd`, and under its model in
+`by_model`. A call whose cost is unknown is unpriced: counted in `runs` and `unpriced`, never in
+`usd`. A call has no length, so it adds nothing to `seconds`, and no ticket, so it is never a piece.
+The tech lead's turns count as `tech_lead` and the waker's fixes as `conflict_fix`, the work those
+kinds already name. The morning job's and the stand-up's calls are kinds of their own.
+
+The top-level `spend` names each ledger, with what was read: its state, why it was not read whole,
+and its calls, unpriced calls, dollars, models and billing in the lookback's days. A ledger that is
+`could-not-read` (its folder is missing, this account may not read it, or no line is a row) has no
+calls counted, and **no figure: null, never zero**, and `result` is `partial`. A `partly-read`
+ledger makes it `partial` too: some of its lines were not rows, and only the rows it read are
+counted. A ledger not written yet, in a folder that exists, is `read` with no calls, unless its
+mark says a call lost its row (§30). A missing folder's reason names the config key to check. Each
+caller writes its own ledger (KIT-687), so the config's defaults read the three in the role
+account's home, each where its writer puts it, and leave the waker's off.
+
+**The runner's runs (KIT-860).** Our own runner (§28) keeps one record for each run it starts, and
+no dispatcher log holds those runs. When the config names its store (`runner_store`), the job reads
+every record through the store's one reader, so a lane moved to the runner still counts against the
+day and the week. Each record is one run, as a log's run is: in the local day it ended (a run still
+going, in the day it started), in the week from the plan's reset, under its kind, and under its
+ticket's piece. A ticket the runner reviewed or planned is a review's or a planning run's piece.
+
+- **What it cost.** A record's `cost_usd` is the program's result total. For a run that resumed a
+  session it is the session's running total, as a log's `result` line is (*What a run cost*), so a
+  run's spend is its share, priced the same way: its total less the total of the session's previous
+  run that gave one, from every record of that session the store holds, older ones included. A
+  smaller total means the session started again, so the whole total is the share. A record that
+  gives no cost is unpriced, and so is a zero from a run that did not end with exit 0, as a
+  crash's zeroed total is: counted in `runs` and `unpriced`, never as zero, and never the next
+  run's base (Stage E on #636).
+- **How long it ran.** Its `seconds`; a run still going counts the time since it started.
+- **No run at all.** A run whose program could not start (`could-not-start`) spent nothing, and is
+  not counted.
+- **Counted once.** A runner run whose session the logs hold too, in a run that started within 60
+  seconds of it, is that one run. It is counted once, from its log, which says more of it (its
+  models, tokens, sign-in and usage events), and the log's run takes the kind the record gives.
+- **What a record does not say.** It names no model, no sign-in and no usage event. So a runner run
+  adds nothing to `by_model`, `sign_in`, `status` or `limit_stops`. The runner starts no session
+  without a `claude setup-token` token (§28).
+- **A store it cannot read.** `sources.runner` says why, no run of it is counted, never as zero,
+  and `result` is `partial`. A record it cannot read is named there, and the others are counted.
+
+The fixed lines are `Stage E bounce`, `Stage E conflict fix` and `Catch-up`, as the bounce driver
+and the catch-up job write them; the selftest reads their source to keep this true. The kind of
+a first prompt is kept, and its words never are. A conflict fix's own record line says "sent by
+the Stage E bounce driver", so the conflict marks are looked for before the bounce marks. A
+ledger row outranks a prompt. A source that is `off` or was not read leaves its kinds to be
+told from what is left: a planning run then shows as `coding`, and a bounce fix as what its
+prompt says. The file says so in `sources`.
+
+### What a run cost
+
+A `result` line reports the session's running totals: `total_cost_usd`, and for each model in
+`modelUsage` its cost and its input, output, cache read and cache write tokens. A run's spend is
+its own share of those totals:
+
+- It is the last `result` line in the run's file, less the same figure from the session's
+  previous run: the log file of the same session id that started before it.
+- A figure smaller than the previous one means the session started again, so the whole figure is
+  the share.
+- A crash's `result` (`is_error` true, and a total of zero or none) and a run with no `result`
+  yet have no usable total. They are *unpriced*: counted in `runs` and `unpriced`, left out of
+  `usd`, never counted as zero. They are never the next run's base, so their spend lands in the
+  next priced run. An error `result` that does carry a total is priced like any other.
+- A session's total holds every turn before the window. So for the first run of a session that
+  the window holds, the job reads the nearest older logs of that session in its folder (at most
+  3, newest first) for their last total only, and uses it as the base. They are not counted as
+  runs. If none gives a total, the run's share is its own total. A long chat thread would
+  otherwise count the whole thread again each day.
+- A reply's own `usage` line is never used: it is logged as the reply starts, and it undercounts
+  the output.
+
+A run's duration is the seconds from its first to its last timestamped line.
+
+### Days, the week and the pieces
+
+A run counts on the local date of its last line, on the clock of the machine that ran the job.
+`days` has one entry for each local date in the lookback, today last: `lookback_days` (default
+8, from 1 to 31) dates. Eight is the least that always reaches back to a week's start.
+
+The plan's week starts at the reset the newest `seven_day` event names, less seven days. The
+week is *unknown* (`known` is false and every other field of `week` is null) when no `seven_day`
+event names a reset, when the newest one's week is over or has not begun, or when the lookback
+stops short of the week's start. In the last case `sources.logs` says so, and the exit code is 3.
+An unknown week is never zero and never a guess.
+
+`pieces` lists each ticket that spent anything since the week began. A chat run counts in
+`tech_lead` and in the totals, and is never listed one by one.
+
+Each day and the week say where their runs were counted from, in `by_source` (KIT-860): `logs`
+(the old dispatcher's session logs), `runner` (the runner's run records), `spend` (the spend
+ledgers) and `judge` (the judge's record). Each has its runs, unpriced runs and dollars. Every
+counted run is under exactly one, so the four add up to the day's or the week's `runs`,
+`unpriced` and `usd`. A source that is off or could not be read shows zeros there, and `sources`,
+`spend` or `judge` says which.
+
+### Runs the plan's limit cut off
+
+When the plan's five-hour or weekly window is at its limit, a running session is cut off. The
+log shows it as a `rate_limit_event` whose status is `rejected`, then a `result` with `is_error`
+true. A run is *limit-stopped* when it heard a `rejected` event and the first `result` after the
+newest one is an error, or no `result` follows at all. A rejection followed by a success is a
+run that went on. A warning (`allowed_warning`) is not a rejection. An event with no timestamp
+is not counted, as no event without one is.
+
+`limit_stops` lists each limit-stopped run in the lookback, newest first, by its last line:
+`ticket` (its id; null for a chat thread), `kind`, `source` (where it was counted from: `logs` or
+`runner`, KIT-860), `ended_at`, `window` (the rejected window's
+word, `other` for one the list lacks) and `resets_at` (null when the rejection named no reset,
+or one that is not a time). The queue's pass reads it (KIT-472) to hand a stopped coding piece over once
+more after `resets_at`, once for each stop. It is a runaway cap, not a limit: at most 200 are listed, and
+`limit_stops_over_cap` says how many the cap left out (0 when none). When the logs could not be
+read both are unknown: `limit_stops` is empty and `limit_stops_over_cap` is null, never 0.
+Words from the closed lists and numbers only: nothing a run said is kept.
+
+### Shape
+
+```json
+{
+  "schema": "pipeline-usage/1",
+  "written_at": "2026-11-03T18:05:00Z",
+  "started_at": "2026-11-03T18:04:31Z",
+  "result": "partial",
+  "error": null,
+  "sources": {
+    "logs": {"state": "read", "asked": 212, "answered": 212, "reason": null, "read_at": "2026-11-03T18:04:58Z"},
+    "ledger": {"state": "partly-read", "asked": 7, "answered": 6, "reason": "a review record could not be read", "read_at": "2026-11-03T18:04:59Z"},
+    "planner": {"state": "read", "asked": 1, "answered": 1, "reason": null, "read_at": "2026-11-03T18:04:59Z"},
+    "runner": {"state": "read", "asked": 1, "answered": 1, "reason": null, "read_at": "2026-11-03T18:04:59Z"}
+  },
+  "judge": {"state": "read", "reason": null},
+  "spend": {
+    "morning": {"state": "read", "reason": null, "calls": 4, "unpriced": 0, "usd": 0.6,
+                "models": {"claude-sonnet-5-5": 4}, "billing": {"plan": 4}},
+    "standup": {"state": "read", "reason": null, "calls": 8, "unpriced": 1, "usd": 0.4,
+                "models": {"claude-sonnet-5-5": 7}, "billing": {"plan": 8}},
+    "tech_lead": {"state": "read", "reason": null, "calls": 20, "unpriced": 0, "usd": 3.1,
+                  "models": {"claude-sonnet-5-5": 20}, "billing": {"plan": 20}},
+    "conflict_waker": {"state": "off", "reason": null, "calls": null, "unpriced": null, "usd": null,
+                       "models": null, "billing": null}
+  },
+  "week": {
+    "known": true,
+    "starts_at": "2026-10-30T09:00:00Z",
+    "resets_at": "2026-11-06T09:00:00Z",
+    "usd": 42.337,
+    "runs": 142,
+    "unpriced": 3,
+    "seconds": 51234,
+    "by_kind": {
+      "tech_lead": {"runs": 20, "usd": 3.1}, "review": {"runs": 18, "usd": 6.5},
+      "planner": {"runs": 4, "usd": 2.4}, "coding": {"runs": 52, "usd": 21.3},
+      "bounce_fix": {"runs": 14, "usd": 4.2}, "conflict_fix": {"runs": 3, "usd": 0.9},
+      "catch_up": {"runs": 1, "usd": 0.15}, "other_later": {"runs": 18, "usd": 2.787},
+      "judge": {"runs": 0, "usd": 0}, "morning": {"runs": 4, "usd": 0.6},
+      "standup": {"runs": 8, "usd": 0.4}
+    },
+    "by_source": {
+      "logs": {"runs": 100, "unpriced": 2, "usd": 33.037}, "runner": {"runs": 10, "unpriced": 0, "usd": 5.2},
+      "spend": {"runs": 32, "unpriced": 1, "usd": 4.1}, "judge": {"runs": 0, "unpriced": 0, "usd": 0}
+    },
+    "by_model": {"claude-opus-5-5": 25.0, "claude-sonnet-5-5": 12.137}
+  },
+  "days": [
+    {"date": "2026-11-02", "usd": 9.75, "runs": 34, "unpriced": 1, "seconds": 11800, "by_kind": {
+      "tech_lead": {"runs": 4, "usd": 0.8}, "review": {"runs": 5, "usd": 1.9},
+      "planner": {"runs": 1, "usd": 0.6}, "coding": {"runs": 10, "usd": 4.1},
+      "bounce_fix": {"runs": 4, "usd": 1.2}, "conflict_fix": {"runs": 1, "usd": 0.3},
+      "catch_up": {"runs": 0, "usd": 0}, "other_later": {"runs": 6, "usd": 0.6},
+      "judge": {"runs": 0, "usd": 0}, "morning": {"runs": 1, "usd": 0.15},
+      "standup": {"runs": 2, "usd": 0.1}}, "by_source": {
+      "logs": {"runs": 23, "unpriced": 0, "usd": 6.7}, "runner": {"runs": 4, "unpriced": 0, "usd": 2.0},
+      "spend": {"runs": 7, "unpriced": 1, "usd": 1.05}, "judge": {"runs": 0, "unpriced": 0, "usd": 0}}},
+    {"date": "2026-11-03", "usd": 7.45, "runs": 26, "unpriced": 2, "seconds": 9100, "by_kind": {
+      "tech_lead": {"runs": 6, "usd": 0.9}, "review": {"runs": 4, "usd": 1.4},
+      "planner": {"runs": 0, "usd": 0}, "coding": {"runs": 9, "usd": 3.55},
+      "bounce_fix": {"runs": 2, "usd": 0.5}, "conflict_fix": {"runs": 0, "usd": 0},
+      "catch_up": {"runs": 1, "usd": 0.15}, "other_later": {"runs": 2, "usd": 0.75},
+      "judge": {"runs": 0, "usd": 0}, "morning": {"runs": 1, "usd": 0.15},
+      "standup": {"runs": 1, "usd": 0.05}}, "by_source": {
+      "logs": {"runs": 15, "unpriced": 2, "usd": 5.15}, "runner": {"runs": 3, "unpriced": 0, "usd": 1.2},
+      "spend": {"runs": 8, "unpriced": 0, "usd": 1.1}, "judge": {"runs": 0, "unpriced": 0, "usd": 0}}}
+  ],
+  "pieces": [
+    {"id": "ENG-301", "kind": "coding", "usd": 7.25, "runs": 6, "last_at": "2026-11-03T16:40:12Z"},
+    {"id": "REV-88", "kind": "review", "usd": 1.1, "runs": 2, "last_at": "2026-11-03T15:20:41Z"}
+  ],
+  "status": {
+    "windows": {
+      "five_hour": {"status": "allowed", "utilization": 0.42, "surpassed": null, "resets_at": "2026-11-03T21:00:00Z", "seen_at": "2026-11-03T18:03:12Z"},
+      "seven_day": {"status": "allowed_warning", "utilization": 0.77, "surpassed": 0.75, "resets_at": "2026-11-06T09:00:00Z", "seen_at": "2026-11-03T18:03:12Z"}
+    },
+    "events_per_day": 38.5
+  },
+  "sign_in": {
+    "counts": {"none": 150, "ANTHROPIC_API_KEY": 2},
+    "api_key_runs": [{"id": "ENG-307", "at": "2026-11-03T09:12:00Z", "source": "logs"}]
+  },
+  "never_reached_model": 1,
+  "limit_stops": [
+    {"ticket": "ENG-312", "kind": "coding", "source": "logs", "ended_at": "2026-11-03T17:41:09Z", "window": "five_hour", "resets_at": "2026-11-03T19:00:00Z"}
+  ],
+  "limit_stops_over_cap": 0
+}
+```
+
+The example leaves out six of the lookback's eight days, and five of the week's pieces, for
+room. The ledger's review record that could not be read makes the pass `partial`. Two runs
+signed in with a key, and one of them was a chat, so one is listed. Three spend ledgers were
+read, and every call in them falls inside the week, so each ledger's figures are its kind's for the
+week: the tech lead's 20 runs are all its turns. One stand-up call, on 2 November, could not be
+priced and named no model: it is one of the week's three unpriced runs. The waker's ledger is off.
+The runner's store was read: ten of the week's runs came from its records. They name no model, so
+`by_model` falls short of `usd` by their $5.20. Each `by_source` adds up to its day's or the week's
+`runs`, `unpriced` and `usd`, and the stopped run and the key run were counted from the logs.
+
+### The file
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-usage/1"` | A reader that does not know the value refuses the file. |
+| `written_at` | time | When this pass wrote it. Its age is the answer to "how old is this?". |
+| `started_at` | time | When this pass began reading. |
+| `result` | `ok` \| `partial` \| `failed` | `ok`: every source that is on was read whole. `partial`: at least one was not (exit 3), and `sources`, `judge` or `spend` says which and why. `failed`: the logs could not be read, no source could be, or the pass stopped on an error (exit 1). |
+| `error` | string \| null | Null, unless the pass stopped on an unexpected error: then one line with the error's class and where it came from, and every source that is on is `could-not-read`, as is every spend ledger the config names. |
+| `sources` | object | `logs`, `ledger`, `planner` and `runner`, each a source below. |
+| `spend` | object | `morning`, `standup`, `tech_lead` and `conflict_waker`, each a spend ledger below (KIT-844). |
+| `week` | object | Since the plan's weekly reset, below. |
+| `days` | day[] | One for each local date in the lookback, oldest first. Empty when the logs could not be read. |
+| `pieces` | piece[] | At most 1000, the costliest first. Empty when the week is unknown. |
+| `status` | object | What Anthropic last said about each usage window, below. |
+| `sign_in` | object | How each run signed in, below. |
+| `never_reached_model` | integer \| null | Runs in the lookback that left only a placeholder log: they started and never heard from the model. A placeholder counts only when no run's start matches it. Null when the logs could not be read. |
+
+Times are UTC to the second (`2026-11-03T18:05:00Z`), or null where the source gave none.
+
+### A source
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | `read` \| `partly-read` \| `could-not-read` \| `off` | `read`: every question was answered. `partly-read`: some were not. `could-not-read`: none was, or none could be asked. `off`: the config turns it off (`ledger`, `planner` and `runner` only). |
+| `asked` | integer | Questions put to it this pass: run files, placeholders and older logs read, and folders that could not be listed; the ledger, the review records' folder and each record; the idea gate's record; the runner's store, read whole by its one reader. |
+| `answered` | integer | How many it answered. A ledger or record that does not exist yet is an answer: nothing yet. |
+| `reason` | string \| null | Why it was not read whole, in the job's own words. Null when it was, or when it is off. |
+| `read_at` | time \| null | When this pass last had an answer from it. |
+
+A reader says "I couldn't check" for a source that is not `read`. It never guesses. A state
+folder that does not exist is `could-not-read` and says which config key to check, or to set to
+an empty string to turn the source off.
+
+### A spend ledger
+
+What the job read of one caller's spend ledger (§30), and its calls in the lookback's days.
+
+| Field | Type | Notes |
+|---|---|---|
+| `state` | `read` \| `partly-read` \| `could-not-read` \| `off` | `read`: every line is a row of the ledger, and a ledger not written yet, in a folder that exists, is read with no calls. `partly-read`: some lines were not rows, or its end did not reach back to the lookback; the rows it read are counted. `could-not-read`: no row could be trusted, so none is counted. `off`: `spend_ledgers` names no ledger for it. |
+| `reason` | string \| null | Why it was not read whole, in the job's own words, never a line of the ledger. Null when it was, or when it is off. |
+| `calls` | integer \| null | Its calls in the lookback's days, priced or not. |
+| `unpriced` | integer \| null | Its calls whose cost the caller could not read: counted in `calls`, never in `usd`. |
+| `usd` | number \| null | The sum of its priced calls. |
+| `models` | object \| null | Its calls by the model that carried them, at most 64. A call that named no model is left out, so the counts can fall short of `calls`. |
+| `billing` | object \| null | Its calls by how they were paid for: `plan`, `key` or `unknown` (§30). |
+
+When `state` is `could-not-read` or `off`, every figure is null: the calls are unknown, never zero.
+
+### The week
+
+| Field | Type | Notes |
+|---|---|---|
+| `known` | boolean | True when the newest weekly event names a reset still ahead and the lookback reaches the week's start. False otherwise, and then every field below is null. |
+| `starts_at` | time \| null | The weekly reset less seven days. |
+| `resets_at` | time \| null | The reset the newest `seven_day` event that names one gives. |
+| `usd` | number \| null | The week's spend, to a millionth of a dollar. |
+| `runs` | integer \| null | Runs in the week, priced or not. |
+| `unpriced` | integer \| null | Runs with no usable total, counted in `runs` and never in `usd`. |
+| `seconds` | integer \| null | How long the week's sessions ran, summed over runs. |
+| `by_kind` | object \| null | Runs and spend for each kind in the table above. Every kind is present, with zeros for one that did not run. |
+| `by_source` | object \| null | Runs, unpriced runs and spend by where they were counted from, below (KIT-860). They add up to `runs`, `unpriced` and `usd`. |
+| `by_model` | object \| null | Spend by the model that ran it, from `modelUsage`, and from the spend ledgers' rows. It can fall short of `usd` when a result or a call named no model, as a runner run never does. At most 64 models: past that the cheapest are folded into `other`, and the spend still adds up. |
+
+### A day
+
+| Field | Type | Notes |
+|---|---|---|
+| `date` | string | A local date, `YYYY-MM-DD`. |
+| `usd`, `runs`, `unpriced`, `seconds` | | As the week's. |
+| `by_kind` | object | As the week's. |
+| `by_source` | object | As the week's, and it adds up to the day's `runs`, `unpriced` and `usd`. |
+
+### By source
+
+Where a day's or the week's runs were counted from (KIT-860). Each of the four is always present,
+with zeros for one that counted nothing, and every counted run is under exactly one.
+
+| Source | Its runs |
+|---|---|
+| `logs` | The old dispatcher's runs, from its session logs, a runner run its logs hold too among them. |
+| `runner` | The runner's runs that no log holds, from its run records (§28). |
+| `spend` | The model calls in the spend ledgers (§30). |
+| `judge` | The watcher judge's calls, from its record. |
+
+Each holds `runs`, `unpriced` (counted in `runs`, never in `usd`) and `usd`.
+
+### A piece
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The ticket's id: the workspace's folder name, when it is one. |
+| `kind` | `review` \| `planner` \| `coding` | The kind of the ticket's workspace. Every run in it counts toward the piece, whatever its own kind. |
+| `usd` | number | The sum of its priced runs this week. |
+| `runs` | integer | All its runs this week. |
+| `last_at` | time | The last line of its newest run. |
+
+### The usage windows
+
+`status` is what Anthropic last said about the plan's usage windows, as the dispatcher heard it.
+
+| Field | Type | Notes |
+|---|---|---|
+| `windows` | object | The newest event for each window heard, below. A window never heard is absent. |
+| `events_per_day` | number \| null | Usage events heard in the lookback, divided by its days: a sign of how fresh the newest word is. An event that names no window counts here and is not listed. Null when the logs could not be read. |
+
+The windows are named as the SDK names them:
+
+| Window | What it is |
+|---|---|
+| `five_hour` | The five-hour window. |
+| `seven_day` | The weekly window. Its reset sets the week. |
+| `seven_day_opus`, `seven_day_sonnet` | The weekly windows kept for one model. |
+| `seven_day_overage_included`, `overage` | The SDK's words for the plan's extra usage. |
+| `other` | An event whose window is not one of these. |
+
+### A window's entry
+
+| Field | Type | Notes |
+|---|---|---|
+| `status` | `allowed` \| `allowed_warning` \| `rejected` \| `other` | Anthropic's word for the window. `other`: a word this list does not have. |
+| `utilization` | number \| null | How much of the window is used, as a fraction, or null when the event gave none. |
+| `surpassed` | number \| null | The warning threshold the window has passed, or null. |
+| `resets_at` | time \| null | When the window resets, or null. |
+| `seen_at` | time | When the dispatcher heard it. |
+
+### Sign-in
+
+| Field | Type | Notes |
+|---|---|---|
+| `counts` | object | Runs in the lookback by the SDK's own word for how they signed in: `ANTHROPIC_API_KEY`, `apiKeyHelper`, `/login managed key`, `none`, `user`, `project`, `org`, `temporary` or `oauth`. `other`: a word that list does not have. `not seen`: a run with no `init` line, or one that names no source. |
+| `api_key_runs` | object[] | Each run on a ticket that signed in any way but the plan's own (`none` or `oauth`): a key, a key helper, another source the SDK names, or `other`. The newest first, at most 500: its ticket `id`, the time it started, `at`, and where it was counted from, `source` (`logs` or `runner`, KIT-860). A chat run is counted in `counts` and never listed. A run whose source was `not seen` is counted, never listed. A runner run names no sign-in, so it is in neither: the runner starts no session without a setup token (§28). |
+
+A plan sign-in draws on the plan's windows. A key is billed by the token, and a worktree `.env`
+can put one in a session without anyone choosing it (`docs/AUTONOMY.md`). `api_key_runs` is how
+that shows.
+
+### The job's config
+
+| Key | Default | Meaning |
+|---|---|---|
+| `dispatcher_home` | `~/.cyrus` | The dispatcher's folder, whose `logs/` holds every session's log. |
+| `stage_e_state_dir` | `~/.stage-e/state` | Stage E's state folder. An empty string turns the `ledger` source off. |
+| `stage_a_state_dir` | `~/.stage-a/state` | The idea gate's state folder. An empty string turns the `planner` source off. |
+| `judge_file` | empty: off | The watcher judge's `judge-calls.json` (KIT-569): each call's time and dollars, no words. Empty turns the judge's cost off, and the file's `judge` says `off`. |
+| `runner_store` | empty: off | The runner's `store_dir` (§28, KIT-860), whose run records the job counts beside the logs. Empty turns the `runner` source off. The queue's installer names it from `RUNNER_STORE` in `queue.conf`; set it when a lane moves to the runner. A store that is not there, or fails the store's walls, is `could-not-read`, never no runs. |
+| `spend_ledgers` | the three in the role account's home; the waker's off | For each caller, its spend ledger's path (§30, KIT-844), where its job writes it. The defaults are where each writer puts its ledger with its own defaults (KIT-687), and the selftest pins each: `morning` `~/.stage-e/queue/morning-spend.jsonl`, `standup` `~/.stage-e/state/standup-spend.jsonl`, `tech_lead` `~/.stage-e/state/tech-lead-spend.jsonl`. The queue's installer names them from its own paths: the morning job's beside the day plan, and the stand-up's and the tech lead's beside the bridge's state file, or none when that record is off. An empty path turns a ledger off, and a caller left out takes its default. The waker's ledger is in the owner's home, which the role account cannot read, so it is off unless named where this account can read it. A path inside a git working tree is a config error. |
+| `reviews_team_key` | empty | Optional (KIT-596): the key of an old separate Reviews team, such as `REV`. A review on a work team is told by the review poller's record, and a record that cannot be read is said in the Stage E source. |
+| `out` | `~/.stage-e/usage/usage.json` | Where the file is written, outside every git working tree. |
+| `lookback_days` | 8 | How many local dates the file covers, from 1 to 31. |
+
+`~` is the account's home from the account database, never `$HOME`. An unknown key is a usage
+error.
+
+### Exit codes and the heartbeat
+
+The file's `written_at` is the job's heartbeat. Installing the job and watching that heartbeat
+are not part of this section. A pass that crashes still writes a `failed` file whose `error` says
+where, and a file that stops being written is stale.
+
+| Exit | Meaning |
+|---|---|
+| 0 | Every source that is on was read whole, and the file was written. |
+| 3 | The file was written, and at least one source (the runner's store among them), the judge's record or a spend ledger was not read whole. It names which. |
+| 1 | The logs could not be read, no source that is on could be, the pass crashed, or the file could not be written or did not conform. A file that did not conform is not written at all. |
+| 2 | Usage or config: nothing was read or written. |
+
+A `--dry-run` reads everything, checks the document, prints its summary and where it would
+write, and writes nothing. `--print` also prints the document.
+
+### Limits worth knowing
+
+- A restart of a session is seen only when its new total is smaller than the old one.
+- A run still going has no `result` yet, so it is unpriced until a later pass.
+- `coding` is told by the log file names. A folder whose oldest logs were deleted shows the
+  oldest one left as its first run.
+- A runner run's spend is its share of its session's running total, as a log's run's is. A runner
+  run still going is unpriced, as a log's is, until a later pass.
+- A piece is a folder named as a ticket id. A folder with any other name counts in the totals and
+  is never listed.
+
+---
+
+## 18. Day plan file
+
+One file says what is planned for today: who planned the day, the working window, the day's budget,
+each lane and its pieces, what waits on the owner and the exact reply that clears it, the
+agent-filed tickets that start by themselves, the picks the checks dropped, and what holds new
+starts (KIT-438). The morning planner writes it from the queue's decision
+(`scripts/pipeline_queue_order.py`), through `scripts/pipeline_day_plan.py`, and again as the day
+goes. The stand-up's morning message reads today's plan and its "needs your OK" items from it, its
+afternoon message reads the day's spend, and the tech lead and a later app read it the same way,
+with no model between. Machine-readable: `schemas/pipeline-day-plan.schema.json`. The writer checks
+its document against that schema before it writes, and writes nothing that does not conform.
+
+**Fields only.** Every value is an id, a cleaned title, a number, a word from a closed list, a time,
+or a reply built by code from one of two fixed patterns. A cleaned title is the status file's
+(§16): one line, at most 120 characters, with no angle bracket, ampersand, pipe or backtick, and no
+hidden character. It is the only text from a ticket that reaches the file. A reply is built, never
+copied: `reply` is null, or exactly `start <ID>` or `approve <ID>`, built from the item's kind and
+ref, and only when the queue named a reply for that same ticket.
+
+**Reporting, never authority.** Nothing reads this file to decide what to start, approve or merge.
+The writer refuses a folder inside a git working tree.
+
+### Shape
+
+```json
+{
+  "schema": "pipeline-day-plan/1",
+  "written_at": "2026-11-04T14:05:00Z",
+  "date": "2026-11-04",
+  "planned_by": {"who": "agent", "why": null},
+  "window": {"state": "open", "opens_at": "2026-11-04T14:00:00Z", "closes_at": "2026-11-04T20:00:00Z"},
+  "budget": {"planned": 40, "stop": 60, "spent": 6.5, "estimated": 4},
+  "lanes": [
+    {"id": "acme/app:1", "repo": "acme/app", "pieces": [
+      {"id": "ENG-301", "title": "Back the palette with CSS variables", "estimate": 2, "state": "started", "held": null},
+      {"id": "ENG-302", "title": "Add the dark theme", "estimate": 4, "state": "held", "held": "blocked"}]},
+    {"id": "acme/app:2", "repo": "acme/app", "pieces": [
+      {"id": "ENG-311", "title": "Fix the login redirect", "estimate": 2, "state": "planned", "held": null}]}
+  ],
+  "needs_ok": [
+    {"kind": "plan", "ref": "ENG-320", "title": "Offline mode", "holds_up": {"pieces": 3, "usd": 14}, "reply": "approve ENG-320", "urgent": true},
+    {"kind": "merge", "ref": "acme/app#40", "title": null, "holds_up": {"pieces": 1, "usd": 4}, "reply": null, "urgent": false}
+  ],
+  "agent_filed": [{"id": "ENG-311", "source": "ENG-290"}],
+  "dropped": [{"id": "ENG-330", "reason": "over-load"}],
+  "stops": [],
+  "counts": {"lanes": 2, "pieces": 3, "planned": 1, "started": 1, "done": 0, "held": 1, "unplaced": 0, "needs_ok": 2, "agent_filed": 1, "stops": 0, "dropped": 1}
+}
+```
+
+### The file
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-day-plan/1"` | A reader that does not know the value refuses the file. |
+| `written_at` | time | When this write was made. |
+| `date` | string | The local date the plan is for, `YYYY-MM-DD`: the usage file's day. |
+| `planned_by` | object | Who planned the day, below. |
+| `window` | object | The working window the plan is for, below. |
+| `budget` | object | The day's load, its hard stop and the spend, below. |
+| `lanes` | lane[] | At most 100, by repository and then slot. |
+| `needs_ok` | item[] | What only the owner can clear: the most urgent first, then the most that waits on it. At most 200. |
+| `agent_filed` | start[] | The agent-filed tickets in today's plan, each with the ticket it came from. At most 200. |
+| `dropped` | drop[] | The picks the checks dropped from the planner's answer. At most 500. |
+| `stops` | stop[] | What holds every new start, as the queue names it. Empty when nothing does. |
+| `counts` | object | How many of each, below. |
+
+Times are UTC to the second, or null where the source gave none. Dollars are the SDK's own estimate
+at API prices (§17): a measure of plan use, never a bill.
+
+### Planned by, the window and the budget
+
+| Field | Type | Notes |
+|---|---|---|
+| `who` | `agent` \| `queue` | `agent`: its picks, checked by code, made the lanes. `queue`: the plain queue planned the day, by priority. |
+| `why` | word \| null | Null when the agent planned. Else why not: its answer was not used (`no-answer`, `too-long`, `no-block` (no fenced json block), `several-blocks`, `unreadable` (the block is not the answer's shape) or `nothing-valid` (every pick failed a check)), or it was not asked (`nothing-admitted`: no piece was admitted; `off`: the planner is switched off). |
+| `state` | `open` \| `closed` \| `unknown` | `closed`: `opens_at` is the next opening. `unknown`: the window could not be read, and nothing is guessed. |
+| `opens_at`, `closes_at` | time \| null | The window the state speaks of. |
+| `planned`, `stop` | number | The day's planned load, and its hard stop: spend at or over it holds every new start. |
+| `spent` | number \| null | Today's spend from the usage file. Null when it could not be read, never zero. |
+| `estimated` | number | The estimates of today's pieces that are planned or started. A piece with no effort counts at the largest. |
+
+### A lane and a piece
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | A lane's id is its repository and a slot number, `owner/name:1`, the queue's own: the same tomorrow as today. A piece's is its ticket. |
+| `repo` | string | `owner/name`. |
+| `pieces` | piece[] | In queue order, finished and started pieces first. At most 500. |
+| `title` | string \| null | Cleaned. Null when the ticket has none. |
+| `estimate` | number \| null | The queue's estimate for its effort, or null when it names none. |
+| `state` | enum | `planned`: the queue may start it now. `held`: it cannot. `started` and `done`: the caller said so. |
+| `held` | word \| null | Why, when `state` is `held`, in the queue's words: `malformed`, `no-repo`, `no-estimate`, `blockers-unreadable`, `blocked`, `stopped`, `no-lane`, `running-cap`, `starts-cap`, `agent-filed-cap` or `over-load`. Null otherwise. |
+
+A held piece sits in its repository's first lane, because the queue gives a piece a slot only when
+it starts it. The queue's decision alone says `planned` and `held`: `started` and `done` come from
+what the caller knows of the day's sessions.
+
+### Needs your OK
+
+| Field | Type | Notes |
+|---|---|---|
+| `kind` | enum | `plan`: a plan to approve. `agent_filed`: an agent-filed ticket over its limits. `changed`: a ticket someone else edited. `approval`: a ticket that needs the owner's yes. `merge`: a pull request that holds a lane or a piece. `question`: a piece stuck on a question. |
+| `ref` | string | What waits: a ticket, a plan's ticket, or a pull request as `owner/name#N`. |
+| `title` | string \| null | Cleaned. Null for a pull request. |
+| `holds_up.pieces`, `holds_up.usd` | integer, number | How many of today's pieces wait on it, and their estimates in dollars. |
+| `reply` | string \| null | `approve <plan>` for a `plan`; `start <ticket>` for `agent_filed`, `changed` and `approval`. Null for `merge` and `question`: a merge is done on GitHub, a question is answered in its thread. |
+| `urgent` | boolean | True when the top of the queue is Urgent or High and waits on it. |
+
+### Agent-filed starts, drops, stops and counts
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `source` | string, string \| null | An agent-filed ticket in today's plan, and the ticket its finding came from. |
+| `id`, `reason` | string \| null, word | A piece the checks dropped, or null for something that was not a ticket id. The reason is `not-in-pool`, `duplicate`, `wrong-repo`, `blocker-order` (a blocker neither done nor earlier in the same lane), `lane-cap`, `overlap` (footprints that share files where the merge gate cannot yet test pull requests together), `bad-footprint` or `over-load`. |
+| `stop`, `ref`, `value`, `limit` | word, string \| null, number \| null, number \| null | A runaway stop: `usage-missing`, `usage-failed`, `usage-stale`, `ledger-unknown`, `plan-near-limit`, `plan-at-limit`, `day-hard-stop`, `piece-cost`, `too-many-running`, `too-many-starts` or `api-key`; what it is about, what the queue saw, and the limit it was held to. |
+| `lanes`, `needs_ok`, `agent_filed`, `stops`, `dropped` | integer | The length of each list. |
+| `pieces` | integer | The pieces in the lanes: `planned`, `started`, `done` and `held` add up to it. |
+| `unplaced` | integer | Held pieces that name no repository, so no lane holds them. |
+
+A word the writer does not know, a held reason, a kind or a stop, is refused, not guessed: a queue
+newer than the writer is an error, not a quiet gap in the file.
+
+
+---
+
+### The sprint plan file
+
+`pipeline-sprint-plan/1`, written by the morning job (the proposal) and by the bridge (the owner's yes), whole by a rename (KIT-575). One JSON object with exactly these keys: `schema`; `sprint` (the usage file's `week.starts_at`, the sprint's id); `first_day` (its first working day, a local date, which the owner's reply names); `resets_at`; `proposed_at`; `announced_at` (null until the stand-up has sent it); `budget_usd`, `spent_usd` and `planned_usd`; `planned` (pieces: `ticket`, `effort`, `usd`, `title`); `not_planned` (`ticket`, `why`, `reply`); and `plan` (null, or `recorded_at` and `tickets`). A file that is not exactly this is never used and never written over. The queue reads only `plan.tickets`, for the sprint that is current, to put those pieces first; it is not read as an approval to start anything.
+
+## 19. Watcher status file
+
+One file says what the watcher saw this pass: for each of its ten monitors, whether it was clear, flagged, blind or off, what it asked and what the answer was, and each finding as fields (KIT-514). The watcher, `scripts/pipeline_watcher_local.py`, writes it each pass. It runs with no AI, as its own account, from files the workers cannot edit (`docs/adr/2026-11-05-the-watcher-an-independent-auditor.md`, status Proposed). It reads files and GitHub, sends nothing but a GET, and writes one file. It stops nothing and changes nothing: the hold that would stop the system is a later piece (KIT-515). Machine-readable: `schemas/pipeline-watcher.schema.json`. The job checks its document against that schema before it writes, and writes nothing that does not conform.
+
+**Fields only.** Every value is an id, a count, a number, a word from a closed list, a time, a GitHub login, or a GitHub link the job builds from a repository and a number. No ticket, comment, pull request or review text reaches the file, and no excerpt of a match: a finding says which shape matched, in what, how many times, and nothing it said.
+
+**Reporting, never authority.** The file says what a hold would be for. Nothing reads it to approve, merge or start anything. A reader that does not know `pipeline-watcher/1` refuses the file.
+
+**Off by default.** With no config file, or `"on": false` in a safe one, a pass reads nothing, writes nothing and says so. A watcher that is on but has nothing to watch is a usage error, never a quiet pass. A config file that exists and is unsafe (below) is never off: it is judged first and obeyed never.
+
+### The monitors
+
+Ten, in this order. The file always lists all ten, so it never claims cover it lacks.
+
+| Monitor | What it watches | Kind |
+|---|---|---|
+| `spend` | Today's dollars, each piece's dollars, and any run that signed in with a billed key, against limits in the watcher's own rules. From the usage file (§17). | second-hand |
+| `runs` | Runs today and runs per piece against the watcher's own caps. The same file. | second-hand |
+| `labels` | A protected label (`hooks-change`, and `agent:`, `blocked:` and `provenance:` labels) applied or removed by a login not on the watcher's list. GitHub's issue-events feed. | first-hand |
+| `markers` | A pipeline marker on a comment's first line, by an author its readers would refuse: a marker only the workflow bot writes, from anyone else, or any other marker from an author whose association is not trusted. The workflow bot's own comments are always real. GitHub's comment feed. | first-hand |
+| `injection` | Prompt-injection shapes in pull request and comment text: an attempt to close the kit's fence, an instruction to ignore earlier instructions, a system-role tag, a request to print a secret, and characters a reader cannot see. A tripwire, not a filter. | first-hand |
+| `tracker-text` | The same shapes as `injection`, in ticket and comment text, and a pipeline marker on a comment's first line from an author who is not trusted. The tracker's newest 100 tickets and 100 comments, by one fixed read-only query in `scripts/pipeline_watcher_tracker.py` (KIT-556): the one request the watcher sends that is not a GET. A page that is all inside the lookback, in the wrong order, or a query that fails, makes it `blind`. A ticket's description is judged by who created it, not by who last edited it. | first-hand |
+| `approval-rate` | The validator's ledger (§24, KIT-546). Each pull request merged into a watched repository's default branch inside the lookback needs an `approved` row for its head, unless a login in the rules' `owner_logins` merged it: GitHub's own `merged_by` says who. An `approved` row still open a day later, with no newer row for it. The approvals of the last 24 hours against the rules' `day_approvals`. A run of approvals in a row (the validator's newest decisions, back to its last one that was not an approval) longer than the rules' `approvals_in_a_row`, while its newest is inside the lookback, read through the ledger's own reader (KIT-518). Each `escalated-urgent` row, which is how the validator's urgent page reaches the owner. On only when the rules name `validator_ledger` and `repos`. A ledger it cannot read or trust, or a merge list cut short, is `blind`. | second-hand |
+| `outside-files` | A pull request updated in the lookback that changes files its ticket does not name or imply (KIT-831). The ticket is the one the branch name claims (a branch is the worker's word, so this is a tripwire). The files and areas a ticket names are the path-like words in its title and description, read only from a ticket a trusted user wrote. A file is named when it is one of them, is under a named folder, matches a named glob, shares a bare file name, or is a test companion of a named file (`test_<name>`, `<name>_test`). More than three files outside is `page`, one to three is `record`. A ticket that names no files or areas, or one a stranger wrote, is `no-scope` at `record`: never read as clear, and when no ticketed pull request could be judged the monitor is blind. A pull request that names no ticket (a person's branch, a bot's) is `no-scope` too, counted in `said`; that alone never makes the monitor blind. A file list that could not be read, with a ticket or without, or a ticket the tracker's newest page did not hold, makes it blind. **Guarded paths (KIT-518):** the changed files of every pull request in the lookback, with a ticket or without, against the Hooks change guard's own list: `FLOOR` from `scripts/check_grader_paths.py`, imported, and the `autonomy.riskPaths` of the repository's own `delivery.json` on its default branch, by one GET. A guarded file the ticket does not name (or any, when there is no ticket or it names nothing) is `page`, whatever the count; guarded files the ticket names are `record`. A guarded file is named only by its exact path, or by a glob in its own folder written out in full; a bare name, a folder or a looser glob never names one. No `delivery.json` (a 404) is the floor alone, and `said` counts those repositories; one that cannot be read or does not parse makes it blind. Needs `repos`, the tracker settings of `tracker-text` and the GitHub token. | first-hand |
+| `guard-blocks`, `egress` | Off, each with its reason: a producer does not exist yet (KIT-848, KIT-849). | none |
+
+A *first-hand* signal comes from a platform the watcher reads with its own key. A *second-hand* signal is a file a worker-side job wrote: whoever controls that job could falsify it, so it can only under-report.
+
+### The four states, and the three levels
+
+| State | What happened | How it reports |
+|---|---|---|
+| `clear` | It asked, read the answer, and found nothing at `page` or `pause`. | `said` says what it asked and what the answer was. A silent green is not this. |
+| `flagged` | At least one finding at `page` or `pause`. | The findings, and `firing`. A reading that was also incomplete keeps its `reason`. |
+| `blind` | It could not establish the answer: a missing key, a stale or unreadable file, a feed cut short, a cap reached, an unsafe rules file. | `reason`, and a non-zero exit. A blind monitor is never `clear`. |
+| `off` | Not configured, or nothing writes its signal yet. | `reason` says which. Off is not broken. |
+
+| Level | Meaning |
+|---|---|
+| `pause` | Something got through, or money is moving: a protected label by a login not trusted, a billed run, spend or runs over the watcher's own limits, a merge with no approval from the validator and not by the owner, the validator's approvals over the watcher's own limit. |
+| `page` | An attempt the readers ignored: a forged marker, a shape in text from an author not trusted. Or something the owner must look at: an approval unmerged a day later, a run of approvals past the watcher's own limit, an urgent escalation from the validator, a guarded path a pull request's ticket does not name. |
+| `record` | Noted, never paged: a shape in text from a trusted author, guarded files a pull request's ticket names. |
+
+This piece writes the level and nothing acts on it. A finding at `record` alone leaves its monitor `clear`.
+
+### The rules file
+
+The watcher's limits and lists live only in the rules file its config names. Nothing else sets them. A pass judges the rules file before it obeys anything in it. A rules file that is inside a git working tree, is a link, is writable by group or other, is owned by another account, or sits in a folder others can write is not trusted, and nothing in it is obeyed: not its `on`, not what it names to watch, not whether it can be read. The seven monitors that could be on are `blind`, by name, and the pass exits 4, so the cheapest way to switch the watcher off is not to edit its rules. Such a file also names where the output goes, so it may only replace a status file the watcher already wrote. A monitor whose limits the owner has not set is `off`, not `blind`: the limits are the owner's decision.
+
+### The file
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-watcher/1"` | A reader that does not know the value refuses the file. |
+| `written_at` | time | When this pass wrote it. A file that stops being written is the dead-man signal. |
+| `started_at` | time | When this pass began reading. |
+| `result` | `clear` \| `flagged` \| `blind` | `flagged` if any monitor is, whatever else is blind. `blind` if none is flagged and one that is on is blind. A pass with nothing on writes no file. |
+| `error` | string \| null | Null, unless the pass stopped on an unexpected error: then the error's class and nothing of its words, and every monitor that is on is `blind`. |
+| `lookback_hours` | integer | How far back the first-hand feeds were read. |
+| `monitors` | monitor[] | All ten, in order. |
+| `counts` | object | Totals over `monitors`, below. |
+| `findings` | heartbeat finding[] | The heartbeat monitor's view, in the health watch's words: one per monitor that is flagged or blind. |
+| `firing` | string[] | The monitors flagged at `page` or `pause`. |
+
+Times are UTC to the second, or null where the source gave none.
+
+### The install
+
+With `install_manifest` named, every pass first checks the watcher's own files (KIT-517): `manifest.json`, `pipeline-watcher-manifest/1`, lists each file under `scripts/` and `schemas/` by the SHA-256 of its content, and the commit it came from. A file that differs, is a link, is not a plain file, is writable by group or other, or is owned by an account but root and the one running; a module in those folders the manifest does not list; and a manifest that is itself any of these, makes every monitor that could be on `blind`, by name, and the pass exits 4. The installer is `scripts/pipeline_watcher_setup.py`.
+
+### The copy
+
+The usage file is written by the workers' account, so the watcher reads a copy of it that only root writes (KIT-573). With `usage_copy_status` named, `usage_file` is that copy, and the usage file counts only if the copier's status says so. `scripts/pipeline_watcher_copy.py` runs as root from the install folder, reads its own rules (`pipeline-watcher-copier/1`: `status_file` and up to eight `copies` of `source`, `owner`, `dest` and `max_bytes`) and nothing else, and for each copy opens the source's last name without following a link, then requires a plain file owned by `owner`, with one link, no larger than the cap. It writes the copy `root:wheel` 0644 to a temp file and renames it over the old one, and writes a status file beside it, `pipeline-watcher-copy-status/1`:
+
+- `schema`: `"pipeline-watcher-copy-status/1"`. A reader that does not know the value refuses the file.
+- `written_at`: when the copier last ran. Older than `usage_max_age_minutes` makes the monitor `blind`.
+- `result`: `copied`, or `refused` if any copy was.
+- `copies`: one row per copy, holding `dest`, `state` (`copied` or `refused`), `reason` (null, or fixed words, when refused), `bytes`, `sha256` and `copied_at` (null when refused).
+
+A refused source removes the old copy, so a reader sees it missing and never stale good figures. The watcher is `blind`, in the copier's own words, when the status is missing, old, unreadable, not this schema, has no row for the usage file, says `refused`, carries no hash, or when the copy it reads does not have the row's hash. Exit 4 when any copy was refused; 2 when its rules are wrong; 1 when it could not write its status. It cannot tell a true figure from a false one the workers' account wrote on purpose.
+
+### The page
+
+The watcher sends nothing but GETs, so it does not page. `scripts/pipeline_watcher_page.py` (KIT-519) reads this file and tells the owner by its own routes, a Slack app to his DM and a GitHub issue in a private alert repository, never through the bridge or the notifier. It pages once per change of answer, from fields only: which monitor, how many findings, since when, which ids, and a closed sentence of what the owner can do. A page that could not be sent is sent again and is not recorded as sent (§13); its heartbeat file, `pipeline-watcher-page-heartbeat/1`, says `could-not-page` and which route. A status file that is missing, unreadable, not a status file, stale or written by a failed pass is itself a page. With `judge_file` named, a judgment from the judge (`scripts/pipeline_watcher_judge.py`, KIT-516, `pipeline-watcher-judgments/1`) for the findings a page was sent about is sent once as a note after the page, and a judgment that failed is a note that says so. Nothing reads a judgment to set a level, clear a flag or clear a hold.
+
+### A monitor
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | enum | One of the ten above. |
+| `state` | `clear` \| `flagged` \| `blind` \| `off` | As above. |
+| `kind` | `first-hand` \| `second-hand` \| `none` | Where its signal comes from. |
+| `level` | `record` \| `page` \| `pause` \| null | The highest level among its findings. |
+| `asked` | integer | Questions its feeds put to the source this pass: file reads, or GitHub requests. A feed two monitors share is asked once and counts for each. |
+| `answered` | integer | How many it answered. |
+| `said` | string | What it asked and what the answer was, in fixed words and numbers, as one plain line: no angle bracket, ampersand, bar, backtick or line break. |
+| `reason` | string \| null | Why it is blind or off, or why a flagged reading was also incomplete. |
+| `read_at` | time \| null | When this pass last had an answer from its source. |
+| `findings` | finding[] | At most 50. More is said in `said`, never dropped silently. |
+
+### A finding
+
+| Field | Type | Notes |
+|---|---|---|
+| `level` | `record` \| `page` \| `pause` | As above. |
+| `what` | enum | A word from a closed list: `spend-day`, `spend-piece`, `key-run`, `runs-day`, `runs-piece`, `protected-label`, `forged-marker`, `merge-without-approval`, `approval-without-merge`, `approval-rate`, `approvals-in-a-row` (`ref` the run's first approval), `urgent-escalation`, or a shape: `shape-fence-tag`, `shape-ignore-instructions`, `shape-system-tag`, `shape-secret-ask`, `shape-hidden-char`. For `outside-files`: `outside-files` (a pull request, `count` the files outside), `outside-file` (one such file, its path in `ref` after a colon, only when the path holds nothing but letters, digits and `_ . : / # -`) and `no-scope` (a pull request that could not be judged); `guarded-path` (a pull request that changes guarded files, `count` how many) and `guarded-file` (one guarded file its ticket does not name, its path in `ref` after a colon, by the same rule as `outside-file`). |
+| `ref` | string | What it is about: a local date, a ticket id, or `owner/name#N`. |
+| `actor` | string \| null | A GitHub login: who applied the label or wrote the text. |
+| `at` | time \| null | When. |
+| `url` | string \| null | A GitHub link the job built from a repository and a number, never one taken from text. |
+| `count` | integer | How many times a shape matched in that text, or 1. |
+| `value`, `limit` | number \| null | For a spend, runs or approvals finding: the figure the watcher saw and the limit from its own rules. |
+
+### Counts, and a heartbeat finding
+
+| Field | Type | Notes |
+|---|---|---|
+| `monitors`, `on`, `clear`, `flagged`, `blind`, `off` | integer | How many monitors there are, are on, and ended in each state. A quiet pass says `on` of `monitors`. |
+| `findings`, `pause`, `page`, `record` | integer | How many findings in all, and at each level. |
+| `kind`, `state`, `summary` | string | A heartbeat finding: the monitor's name; `firing` if it is flagged and `unknown` if it is blind; and its state and reason on one line. |
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Every monitor that is on is clear, or the watcher is off (it says which). |
+| 4 | None is flagged, and at least one that is on is blind. |
+| 10 | At least one monitor is flagged at `page` or `pause`, whatever else is blind. |
+| 1 | The pass crashed, or the file could not be written or did not conform. |
+| 2 | Usage or config, including "on" with nothing to watch: nothing was read or written. |
+
+
+---
+
+## 20. Hold file
+
+One small file says that new starts are held, and why (KIT-515). The watcher (§19) sets it when a monitor flags something at level `pause`. While it exists, nothing that starts work may start: each job that does calls `scripts/pipeline_hold.py`'s `gate()` before it starts anything. It holds new starts and nothing else. Nothing running is touched, and nothing is reverted, closed, relabelled or merged. Only the owner clears it. Machine-readable: `schemas/pipeline-hold.schema.json`.
+
+**Absent is no hold. Anything else that is not a valid hold holds.** A file that does not parse, names another schema, lists no hold, is larger than a hold, or cannot be read is a hold, with that reason said. A reader that cannot tell never starts work.
+
+**No expiry.** Nothing clears a hold by the passage of time, by a later clean pass, or by the watcher: the watcher only adds to it and never empties it. The owner clears it with `scripts/pipeline_hold.py clear`, in a terminal. It is refused inside an agent's environment, shows what is held, asks for a typed `yes`, removes the file and reads it back.
+
+**Fields only.** A hold names a monitor, a word from a closed list, a ticket or `owner/name#N`, and a time. No ticket, comment or pull request text is ever in it.
+
+**Whose file it is.** The watcher account's, in a folder no worker can write: a worker that could delete it could lift its own pause. That is the install's job (KIT-517). The writer refuses a path that is not absolute or is inside a git working tree.
+
+### The file
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-hold/1"` | A reader that does not know the value holds. |
+| `set_at` | time | When the watcher last wrote it. |
+| `holds` | hold[] | At least one and at most 50. Never empty: clearing is removing the file. |
+
+### A hold
+
+| Field | Type | Notes |
+|---|---|---|
+| `monitor` | `spend` \| `runs` \| `labels` \| `approval-rate` | The monitor that flagged it at level `pause`. |
+| `what` | enum | The watcher's closed word: `spend-day`, `spend-piece`, `key-run`, `runs-day`, `runs-piece`, `protected-label`, `merge-without-approval` or `approval-rate`. |
+| `ref` | string | What it is about: a local date, a ticket id, or `owner/name#N`. |
+| `since` | time | When this hold was first set. A later pass never moves it. |
+
+### Who reads it
+
+A reader calls `gate(path)`, which returns whether to block and why, in words and numbers. Today: the queue's starter (`scripts/pipeline_queue_start.py`), the idea gate's planner (`scripts/pipeline_plan_poller.py`: no planning run starts, new or again), the bounce driver (`scripts/pipeline_bounce_local.py`: no bounce and no conflict fix is sent; a conclusion, a notice and an escalation still are, since they only say something) and the catch-up job (`scripts/pipeline_catchup_poller.py`: no re-prompt; a delegation held back stays owed), each by a `hold` setting, `{"file": "/path/to/hold.json"}`, which `pipeline_hold.setting()` reads. With no file named a job says so on every pass. The bridge's direct asks follow, with their own case that fails if they stop reading the hold.
+
+---
+
+## 21. Acceptance result block
+
+When every piece of an approved plan is coded and reviewed, an acceptance session builds the app at the last piece's pull-request head and looks at it through the look tool (§15's checks, `scripts/pipeline_look.py`). It ends by reporting what it found as one JSON block (KIT-531). The acceptance poller reads the block (KIT-324). Machine-readable: `schemas/pipeline-acceptance.schema.json`.
+
+**Data, never authority.** A model writes the block. It can name a problem. It cannot grant a pass, a budget, an approval or a merge, and nothing in it is run. The poller trusts the look tool's own record for what ran and what failed mechanically, and this block only for what the session judged on screen. A check the block says it `ran` that the record does not hold is a disagreement, said aloud.
+
+**The result and the problems must agree.** The block says one of three things, and each is held to its list:
+
+- `found-nothing`: it ran at least one check, every check it ran `passed`, and it lists no problem.
+- `found-problems`: it lists at least one.
+- `could-not-check`: it lists none and gives a `reason`. It is never read as a pass.
+
+A block that says `found-nothing` and lists a problem or a check that did not pass, `found-problems` and lists none, or `could-not-check` with no `reason`, or carries a `reason` on any other outcome, is refused. A block that is missing, does not parse, or names another marker is `could-not-check` too, said so: the plan stays held, and nothing reads it as passed.
+
+**Bounded text.** Every free-text field is one line of at most 300 characters. The poller still neutralizes markers, fences and @-names before it writes any of it into a comment, a page or a ticket.
+
+### The block
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-acceptance/1"` | A reader that does not know the value holds the plan. |
+| `plan` | ticket id | The epic this is about. |
+| `head` | 40 hex characters | The pull-request head the session built, in full. |
+| `outcome` | `found-nothing` \| `found-problems` \| `could-not-check` | Held to `problems` and `reason`, above. |
+| `ran` | run[] | At most 60. Each check, viewport and mode the session says it ran. |
+| `problems` | problem[] | At most 20. |
+| `reason` | text | Why it could not check. Present for `could-not-check`, and only then. |
+
+### A run
+
+| Field | Type | Notes |
+|---|---|---|
+| `check` | name | A check `id` from §15's block. |
+| `viewport` | name | A viewport the project's `acceptance` section names. |
+| `mode` | name | A mode it names, or `default`. |
+| `result` | `passed` \| `failed` \| `could-not-run` | As the look tool reported it. `could-not-run` is never a pass. |
+
+### A problem
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | name | A short name. The poller refuses or merges a repeated one; the schema cannot check uniqueness. |
+| `severity` | `high` \| `medium` \| `low` | Only `high` holds the plan open. Every confirmed problem is filed as a follow-up. |
+| `check` | name | The check that showed it. |
+| `viewport` | name | Where. |
+| `mode` | name | In which mode. |
+| `screenshot` | name | The screenshot that shows it, by the name its `screenshot` step gave. |
+| `what` | text | One plain sentence. |
+
+### Who reads it
+
+The acceptance poller (KIT-324) reads the block, runs a second pass that tries to disprove each problem, and files what survives as follow-ups. It decides what is `high` for the hold only after that pass; the session's word on severity is a proposal.
+
+---
+
+## 22. Acceptance verdict comment
+
+After a check, the acceptance poller writes **one comment on the plan's epic** that says what it concluded from §21's block, the look tool's record and its second pass (KIT-554). It is for people, and for the bridge, which reads it before it closes a plan (that gate is a later piece). The comment's **first line** is the mark, and nothing else:
+
+```
+<!-- pipeline-acceptance:verdict <verdict> plan=<ticket id> head=<40 hex> mechanical=<yes|no> -->
+```
+
+| Field | Values | Notes |
+|---|---|---|
+| *(the word)* | `passed` \| `held` \| `could-not-check` | Only `passed` is a pass. |
+| `plan` | ticket id | The epic the comment is on. A reader that finds another id refuses the mark. |
+| `head` | 40 lower-case hex characters | The pull-request head the check judged. The verdict speaks for that head only. |
+| `mechanical` | `yes` \| `no` | `yes` only when every look-tool record the poller read is the runner's alone or a base copy (the look tool's `outcome_trust`, `docs/LOOK-TOOL.md`). `no` otherwise, including when it read none: the outcome then rests partly on code the session could change. |
+
+The verdict is the first of these that matches:
+
+1. `could-not-check`: the result block or the look tool's record could not be read or trusted, or a problem is not §21's shape.
+2. `held`: a problem the second pass did not disprove is still `high`, or a run failed in the look tool's record.
+3. `could-not-check`: a run could not run, or the session and the record disagree about what ran.
+4. `passed`: anything else, including problems that are all filed as follow-ups and none still `high`.
+
+**How to read it.**
+
+- Read the **first line only**, and match the whole line exactly (spaces around it may be trimmed). The rest of the comment is for people. It carries the session's words, neutralized: no `<!--` but the mark's own, no line break, no fence, no @-name. Session text never starts a line.
+- Accept the mark only from the poller's tracker author. The same mark from anyone else is forged: ignore it, and say so. The watcher's `tracker-text` monitor (§19) already flags a `<!-- pipeline-` first line from an author it does not trust.
+- One verdict per plan and head. The poller records it before it posts and never writes a second one for the same head, whatever a later pass concludes. A push is a new head, so compare the mark's `head` with the head you are about to act on: a verdict on another head is not this one's.
+- No verdict is not a pass. Neither is `held` or `could-not-check`.
+
+`scripts/pipeline_acceptance_poller.py`'s `read_verdict_mark()` is the reference reader, and its selftest holds the shape.
+
+---
+
+## 23. Validator settings file
+
+What the validator may approve, as plain on/off switches (KIT-533). The owner decided there is no trust ladder: nothing gains or loses trust by itself, and a switch changes only when a person changes it. Every part of the validator reads the file through `scripts/pipeline_validator_settings.py`'s `load()`, which has no write path. Machine-readable: `schemas/pipeline-validator-settings.schema.json`. Design: `docs/adr/2026-11-05-the-validator-approves-inside-limits-that-code-enforces.md`. The operator guide is `docs/VALIDATOR-OPERATOR.md`.
+
+**Absent is every switch off. So is anything that is not a valid, trusted settings file.** A file that does not parse, names another schema or the first version (`/1`, from before `merge_repos`), gives a key twice, misses a key or adds one, lists a repository that is not `owner/name` in lower case, names one twice or more than 100, is larger than a settings file, or cannot be read means every switch off, every limit 0, no login and no repository, with that reason said. So does a file a session could have written: one inside a git working tree, a link, one writable by group or other, one owned by another account, or one in or under a folder others can write without the sticky bit. It never means on. Absent, invalid and unreadable are decided the same way, toward the safe side, as the hold's are (§20).
+
+**No switch for the safety system.** Changes to hooks, guards, CI and workflows, branch protection and rulesets, settings, the watcher and the validator's own limits stay human, fixed in code. A file that names one as a key, anywhere, on or off, is refused: every switch off, said in words.
+
+**Fields only.** Switches, two whole numbers, one bot login and a list of repository names, each of a fixed shape. No free text.
+
+**Whose file it is.** The owner's, under the user's own login, outside every git working tree. Only a person edits it. The example, `validator-settings.example.json`, has every switch off, every limit 0, no login and no repository listed.
+
+### The file
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-validator-settings/2"` | A reader that does not know the value treats every switch as off. The first version, `/1`, has no `merge_repos`, and is read as every switch off, said. |
+| `approve` | approve | What it may approve in the owner's place. |
+| `limits` | limits | How big a change it may approve. |
+| `allow` | allow | Which human-only classes the owner lets it approve. |
+| `stage_e_login` | bot login, or `null` | Stage E's own bot login: the one login whose reviews the evidence trusts. `null`: none yet, so no review is trusted. |
+| `merge_repos` | list of `owner/name` | The repositories where a merge may be approved. Empty: none. |
+
+### Approve
+
+| Field | Type | Notes |
+|---|---|---|
+| `plans` | boolean | A plan, in place of the owner's `approve <plan>`. |
+| `pieces` | boolean | A ready piece of an approved plan starting. |
+| `merges` | boolean | A pull request merging. A job asks GitHub to enable its own auto-merge; no agent merges. |
+
+### Limits
+
+| Field | Type | Notes |
+|---|---|---|
+| `max_changed_lines` | 0 to 100000 | Most lines added plus removed. 0: nothing passes. |
+| `max_files` | 0 to 10000 | Most files changed. 0: nothing passes. |
+
+### Allow
+
+Off keeps a change in that class for the owner, whatever else is on.
+
+| Field | Type | Notes |
+|---|---|---|
+| `credentials` | boolean | Env files, keys, tokens, secrets stores. |
+| `billing_and_accounts` | boolean | Billing, accounts, the plan or subscription. |
+| `production_deploy` | boolean | The deploy workflow and its config. |
+| `deleting_data` | boolean | Migrations that drop, bulk deletes, branch or release removal. |
+
+### Stage E's login
+
+`stage_e_login` is the login Stage E's own GitHub App posts its reviews under: the app's slug, then `[bot]`, as GitHub's REST API and its pages name it and as `scripts/pipeline_github_app.py`'s `bot_login()` makes it (`^[a-z0-9][a-z0-9-]{0,62}\[bot\]$`). No person's login has the `[bot]` suffix, so no person's login fits. A value of any other shape is a file that is not a settings file: every switch off.
+
+The validator's evidence (`scripts/pipeline_validator_evidence.py`, KIT-580) takes the login from what `load()` returns, never from its own code or a flag, and counts a review comment only when its author is exactly that login and a bot. GitHub's GraphQL API names a bot without the suffix, so the evidence gives a bot's login the suffix before it compares. No login, or settings that were not read, means no review is trusted (`review-login-unset`).
+
+### Repositories for merges
+
+`merge_repos` makes the merges switch per project (KIT-604). A merge may be approved only when `approve.merges` is on **and** the pull request's repository is listed. Any other combination is a closed reason, never a pass: the switch off is `switch-off`, and a repository not listed is `repo-not-listed`.
+
+Each entry is `owner/name` as GitHub shapes it, in lower case: an owner of 1 to 39 letters, digits and hyphens that starts with a letter or digit, then a name of 1 to 100 letters, digits, `.`, `_` and `-` that is not `.` or `..` (`^[a-z0-9][a-z0-9-]{0,38}/(?!\.\.?$)[a-z0-9._-]{1,100}$`). Each is listed once, and at most 100. A list that breaks any of these is a file that is not a settings file: every switch off, said in words, and the entry is never quoted back.
+
+One helper gives the answer: `scripts/pipeline_validator_settings.py`'s `merge_allowed(settings, repo)`. It is true only for settings `load()` read, with the merges switch on and the repository listed. GitHub's names ignore case, so it compares the asked repository in lower case, and only when it is plain ASCII. The hard limits ask it, and the merge path asks it too; neither keeps a copy of the rule.
+
+### Who reads the switches
+
+`scripts/pipeline_validator_settings.py show`, for a person, and the hard limits (`scripts/pipeline_validator_limits.py`), which are handed what `load()` returned. The validator's other parts read it through `load()` as they are built: its merge path and its approvals.
+
+---
+
+## 24. Validator ledger
+
+The validator's record of every decision, one row each (KIT-535). The stand-up, the recap and the watcher read it, and the watcher checks every merge against it. Only the validator writes it, through `scripts/pipeline_validator_ledger.py`'s `append()`, the one function that opens it for writing. Machine-readable: `schemas/pipeline-validator-ledger.schema.json`. Design: `docs/adr/2026-11-05-the-validator-approves-inside-limits-that-code-enforces.md`, "Its audit".
+
+**Append-only, in one piece.** `append()` reads the ledger, keeps every row exactly, adds one, and replaces the file with one rename, under a lock. It stamps the row's time itself. It refuses a row that is not one, a ledger it cannot read, and a path inside a git working tree. A refusal writes nothing, and a decision that is not on the record is not an approval.
+
+**One verdict per head.** A row for a head is never changed afterwards, and a second row for the same head is refused. A later push is a new head, and a new row. A plan or a piece has no head, so it may be decided again.
+
+**An approval is whole.** It needs all three layers to pass, its own switch on and no reason to hold. Only an approval has all three pass.
+
+**No approval from a ledger that cannot be trusted.** `read()` gives the rows. A ledger that cannot be read, does not validate, gives a key twice, is larger than 16 MiB on disk, or that a session could have written gives no rows: `None`, never an empty list, with the reason in words. A session could have written one inside a git working tree, a link, one writable by group or other, or one in or under a folder others can write without the sticky bit. Absent is an empty ledger: nothing has been decided.
+
+**Fields only.** No ticket, comment or pull request text, except `agent_says`: the agent's reason, one plain line of at most 300 characters, marked as the agent's words. `reasons` are closed words, so a hold's code reasons are never the agent's words (KIT-542). It has no line break, control character or character a reader cannot see: every character is judged by its Unicode category, so format characters such as bidi controls, the soft hyphen and the tag characters are refused. A reader that shows it quotes it as the agent's, and never acts on it.
+
+**Whose file it is.** The validator's, under the user's own login, outside every git working tree. Mode 644, so the watcher can read it from its own account.
+
+### The file
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-validator-ledger/2"` | A reader that does not know the value gives no rows. The first version, `/1`, from before `reasons`, is not read; nothing ever wrote one. |
+| `rows` | row[] | One per decision, oldest first. Only ever added to. |
+
+### A row
+
+| Field | Type | Notes |
+|---|---|---|
+| `at` | time | When the decision was made, by the clock the writer is handed: when it added the row, or for a plan, the moment before its last read of the plan (KIT-544). The writer stamps it; a caller cannot put it in the row. |
+| `subject` | `plan` \| `piece` \| `merge` | What was decided: a plan's approval, a piece starting, or a pull request merging. |
+| `ref` | ticket id, or `owner/name#N` | A ticket for a plan or a piece; a pull request for a merge. |
+| `head` | 40 hex characters, or null | The pull request's head, in full, for a merge. Null for a plan or a piece. |
+| `kind` | `approved` \| `sent-back` \| `escalated` \| `escalated-urgent` \| `held` | What the decision was. |
+| `layers` | layers | Each layer's verdict. |
+| `settings_on` | switch[] | The validator's switches that were on, each once: `approve-plans`, `approve-pieces`, `approve-merges`, `allow-credentials`, `allow-billing-and-accounts`, `allow-production-deploy`, `allow-deleting-data`. |
+| `size_limits` | size limits | The size limits in force. |
+| `reasons` | closed word[] | Why code held, escalated or sent back, each once and at most 40: the hard limits' reasons, the evidence's, the agent's hold, or the send-back's own (`send-back-budget-spent`, `send-back-budget-unknown`, `send-back-no-session`). Each is lower-case letters, digits and hyphens. Empty for an approval, and for a decision that was the agent's alone. |
+| `agent_says` | text, or null | The agent's reason, in its own words. Null when it said nothing, and always null when it did not run. |
+
+### Layers
+
+Each is `pass`, `fail`, `unsure` or `not-run`. `unsure` holds, as `fail` does. `not-run`: an earlier layer held, so this one was not asked.
+
+| Field | Type | Notes |
+|---|---|---|
+| `hard_limits` | verdict | Layer 1: the limits code enforces. |
+| `evidence` | verdict | Layer 2: the checks, the review, the acceptance check, the merge state. |
+| `agent` | verdict | Layer 3: the independent read-only agent. |
+
+### Size limits
+
+| Field | Type | Notes |
+|---|---|---|
+| `max_changed_lines` | 0 to 100000 | Most lines added plus removed. |
+| `max_files` | 0 to 10000 | Most files changed. |
+
+### Who reads it
+
+Stage E's bounce driver reads a `sent-back` row for a pull request at its current head, when its config names the ledger (`validator_ledger_file`, KIT-542). It re-prompts the dev session from its own ledger and budget. The watcher's `approval-rate` monitor (§19, KIT-546) reads it through `read()`: every merge against the `approved` rows, an approval still unmerged a day later, the day's approvals, and each urgent escalation. The queue's reader reads the latest `piece` row for each ticket while the validator's pieces switch is on (`reader.validator_settings_file` and `reader.validator_ledger_file`, KIT-543), and its pool admits a held piece of an approved plan `via` "validator" when an `approved` row is newer than the piece's last change. The Slack bridge reads the latest `plan` row for each plan with an open approve question, from the same two files, while the plans switch is on (KIT-544). An `approved` row newer than the plan's last change and than the question, whose `settings_on` are the switches on now, approves the plan in the owner's place, on every check his own yes gets, and the bridge records `approved_by` as `validator`, never a person. The plan pass stamps a `plan` row with the moment before its last read of the plan, after the agent's run, so a change to the plan, a piece or its idea after that moment makes the row stale. The pool then counts that plan as approved, `via` "validator".
+
+The stand-up reads it when its settings name it (`validator_ledger_file`, KIT-545), with `read()` and no model between. Each `approved` row since the last rundown is one line in code's words. The latest row for each plan, piece or pull request that is an escalation or a hold, while the status file shows it still waiting, is a blocker in the ledger's own words (`blocker()`), an urgent one first and marked urgent. With no status file to check against (none can be read, or Linear could not be read), each such row since the last rundown is listed instead, urgent first, said as not checked. The agent's reason is only its own marked line, with links made plain, and never in the facts the tech lead's turn reads. A ledger `read()` gives no rows for is said ("no approval is claimed"), never shown as none. Absent, or the setting empty, nothing is said. The sprint recap lists the period's rows from the same reader.
+
+---
+
+## 25. Acceptance follow-up request
+
+After a check, the acceptance poller's live pass asks the finding path to file each problem that survived the second
+pass (§21, KIT-553), at most three a check. It posts **one comment per request on the plan's epic** (KIT-571):
+
+````
+<!-- pipeline-acceptance:finding plan=<ticket id> head=<40 hex> run=<ticket id> -->
+A follow-up the acceptance check asks the finding path to file.
+
+```json
+{"schema": "pipeline-finding/1", "title": "...", "body": "..."}
+```
+````
+
+| Part | Notes |
+|---|---|
+| The mark | Line 1, alone. `plan` is the epic the comment is on; `head` the pull-request head the check judged; `run` the check's own acceptance ticket, so two checks of one head are two runs (KIT-607). On the runner's lane (KIT-708), `run` is the check's start request to the runner, `rq-` and 32 hex characters. |
+| The block | One `pipeline-finding/1` request, the shape the finding poller reads (`docs/FINDING-POLLER.md`): a `title` and a `body`, nothing else, in a three-backtick `json` fence. It asks for no size, no track and no label, so the ticket it becomes waits for a person. |
+
+**How to read it.**
+
+- Read the mark from the **first line only**, whole, and only from the finding poller's own tracker user: the live pass
+  writes with that key, as it does on a one-key install. The same mark from anyone else is forged.
+- The plan in the mark must be the ticket the comment is on.
+- Every word in the request that came from a session was neutralized first (§21): no comment opener, no fence, no
+  @-name, no routing tag. The mark's own `<!--` is the only one in the comment.
+- At most three requests per check run. A new head, or a head checked again (§26), is a new run. Each is posted once:
+  the pass records it before it posts, and one it may have posted is never posted again, but said.
+- One problem is filed once per plan and head. A request whose title, its case and spacing set aside, was already filed
+  for that plan and head is not filed again.
+
+The finding poller files each one as it files a finding (`docs/FINDING-POLLER.md`): in the backlog, `provenance:agent`,
+the epic's project, a `related` link to the epic. The comment it leaves on the new ticket opens with the
+`acceptance-finding-filed` mark, so the owner's page says the acceptance check asked (KIT-607). A comment whose first
+line opens with this mark, or that carries it and is not the dispatcher's agent's, is judged only as a request: if it
+breaks any rule above it is never filed by any path, and the pass names it. An agent's finding that only mentions the
+mark below its first line is filed as any finding is.
+
+---
+
+## 26. Acceptance check request
+
+A request to check a plan again. The Slack bridge posts it on the plan's epic when the owner sends `check <epic>` and
+answers yes (KIT-325). The acceptance poller's live pass reads it (KIT-571).
+
+```
+<!-- pipeline-acceptance:check-request plan=<ticket id> -->
+```
+
+The rest of the comment is for people.
+
+**How to read it.**
+
+- Read the **first line only**, whole. The plan it names must be the epic the comment is on.
+- Accept it only from `request_author_ids` in the live pass's config. Absent, that is the user of the pass's own
+  tracker key, which the bridge shares on a one-key install. The same mark from anyone else is ignored.
+- The newest request, if it is newer than the plan's newest check, starts **one** check, even at a head already
+  checked. After the plan's pieces merged, it checks the repository's default branch at the head it is at now. Before,
+  it checks the last piece's pull-request head again, once the poller's own rule has checked that head; a head not
+  checked yet starts by that rule, and the request starts nothing of its own.
+- A check run again takes the place of the earlier check's ledger row, once that check has its verdict (or its start
+  failed) and its ticket is closed. So the ledger still holds one row per plan and head: the newest check of it.
+- A request is acted on once: when its check starts, or its start fails. One that has to wait (the starts a pass may
+  make, the ledger's lock, a head GitHub can't name, an earlier ticket not closed yet) is acted on at a later pass.
+- Never while one of the plan's checks is running.
+- A plan whose pieces all merged before any check of it ran is checked the same way, with no request: the bridge waits
+  for a verdict before it closes a plan, so one must come.
+
+
+---
+
+## 27. Acceptance second look
+
+Before a problem is filed or holds a plan, the acceptance poller's live pass asks the same session to look again
+(KIT-608). It replies in the session's own thread on the acceptance ticket, the route the bounce driver uses. On the
+runner's lane (KIT-708) it asks the runner to resume the check's own run instead, and reads the answer from that
+resume's final message. The reply names each problem, its screenshot, and the block to send back for it. The session
+answers with **one fenced block per problem**:
+
+```json
+{"schema": "pipeline-acceptance-second-look/1", "plan": "TOD-100", "head": "<40 hex>", "id": "white-card",
+ "refuted": false, "why": "Still white on the dark board at 375 wide.", "severity": "high"}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `pipeline-acceptance-second-look/1` | The marker. |
+| `plan` | ticket id | The epic the check is about, as the reply names it. |
+| `head` | 40 hex characters | The head the check judged, as the reply names it. |
+| `id` | problem id | The problem's own id from the result block (§21). |
+| `refuted` | boolean | True only when the second look shows the problem is not real. |
+| `why` | one line, 1 to 300 characters | Why. Neutralized before any comment carries it. |
+| `severity` | `high` \| `medium` \| `low` | The severity after the second look. |
+
+The schema is `schemas/pipeline-acceptance-second-look.schema.json`.
+
+**How to read it.**
+
+- Read the session's newest response after its result. Take only fenced blocks in this shape, for this plan and this
+  head, about a problem the reply asked about. Anything else answers nothing, and is not counted as judged.
+- A problem answered twice, or not at all, is **not judged**.
+- `refuted: true` disproves the problem: it is not filed, and the verdict lists it with its `why`.
+- Otherwise the problem is confirmed. Its severity becomes the lower of the reported one and `severity`: a second look
+  can lower a severity, never raise one.
+- A problem not judged is filed, marked as not confirmed by the second pass, and a high one still holds the plan.
+- No answer within the live pass's `time_limit_minutes`, counted from the reply, or a session error, leaves every
+  problem not judged. So does a reply that could not be posted.
+- The verdict (§22) lists which problems were confirmed, disproved and not judged.
+- The live pass records the second look's cost with the check, in its own state: one prompt, its minutes, the
+  outcome, and how many problems it judged.
+
+---
+
+## 28. Run record
+
+The runner's store: the requests that ask it for a session, and one record for each run (KIT-642).
+The runner is our own dispatcher's one always-on job (`scripts/pipeline_runner.py`). The store is
+`scripts/pipeline_runner_store.py`, the one module that reads and writes it. Design:
+`docs/adr/2026-11-11-our-own-dispatcher-built-new-beside-the-old-one.md`. Guide: `docs/RUNNER.md`.
+When the tracker on the machine is built, these records move into it.
+
+**Built beside the old dispatcher, and off.** Every lane is off for every project until the owner
+switches it on. Six lanes can ask it, each only for a project whose lane is on in the runner's own
+`lanes`: the review job (KIT-644), the planner job (KIT-705), the coding lane (KIT-645), the fix
+lane (KIT-765), and the conflict and acceptance lanes (KIT-708). Each lane moves on the owner's yes,
+behind its own setting.
+
+**Where it lives.** One folder, the runner's `store_dir`: an absolute path, outside every git
+working tree, a real folder owned by the runner's account, writable by no one else (mode 0700).
+Nothing reads or writes a store that fails one of these. A request a session wrote could start a
+session nobody approved.
+
+```
+<store>/requests/<id>.json     a request that waits
+<store>/taken/<id>.json        a request the runner acted on, with its answer
+<store>/runs/<run>/run.json    the run's record
+<store>/trees/<run>.json       the processes the runner remembered of the run (KIT-739)
+<store>/outputs/<run>.json     the session's final message, kept when the run ends (KIT-858)
+<store>/lanes.json             the lanes the runner takes, for the jobs that ask it (KIT-708)
+```
+
+### A request
+
+One JSON file, written whole by `ask()`, mode 0600.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `schema` | `"pipeline-runner-request/1"` | Anything else is refused. |
+| `id` | `rq-` and 32 hex characters | Made by `ask()`, or one its caller chose and recorded before asking (KIT-644). An id already waiting or answered is refused, so one request is never asked twice. |
+| `at` | time, UTC, to the second | Stamped by `ask()`, never by the caller. |
+| `caller` | `queue` \| `review` \| `planner` \| `fix-driver` \| `acceptance` | The job that asks. |
+| `action` | `start` \| `resume` \| `stop` | |
+| `kind` | `code` \| `fix` \| `conflict` \| `review` \| `plan` \| `acceptance` | The kind of session. |
+| `project` | a key of the runner's `projects` | Which repository. |
+| `ticket` | ticket id | The ticket the session is for. |
+| `run` | `run-` and 32 hex characters, or null | The run to resume or stop. Null for a start. |
+| `text` | text of 1 to 20000 characters, or null | A resume's words, or a start's facts, written by the caller's own code (KIT-858). A resume must carry it, a start may, and a stop never does. A review's start must carry it, up to 150000: its facts hold the diff (KIT-644). |
+| `tier` | `standard` \| `guarded`; absent for any other request | A review's start must say it (KIT-644): `guarded` is a change to a guarded path, which runs on the runner's `guarded_model` (KIT-418). |
+
+**Who may ask, each for its own kinds.**
+
+| Caller | Its kinds | Notes |
+| --- | --- | --- |
+| `queue`, the queue's starter | `code` | |
+| `review`, the review job | `review` | |
+| `planner`, the planner job | `plan` | |
+| `fix-driver`, the fix driver | `fix`, `conflict` | Only as a resume of a `code`, `fix` or `conflict` run. |
+| `acceptance`, the acceptance job | `acceptance` | |
+
+A caller may start, resume and stop only its own kinds. A `fix` or `conflict` is never a start.
+A request is written as UTF-8, not ASCII escapes, so the largest review's request still fits the
+store's 1 MiB document limit. A caller may withdraw its own request while it still waits
+(`withdraw()`). The runner holds a lock on a request's file while it judges and answers it, and a
+withdrawal takes the same lock without waiting: it lands before the runner comes to the request,
+which then gets no answer, or it is refused, and the caller reads the run.
+
+**The caller's word is not the authority.** Before anything starts, the runner reads the ticket from
+the tracker and judges it.
+
+- **A `code` start (KIT-645)** is judged by the queue's own reader and judge, called as they are:
+  `scripts/pipeline_queue_read.py`'s `gather()` over the queue's settings, then
+  `scripts/pipeline_queue_pool.py`'s `decide()`. One rule, for the queue and the runner. It starts
+  only a ticket the judge admits with a named approver: the owner's move, his creation where the
+  judge counts one, his approval of a plan in Slack (the bridge's record), or the validator in his
+  place while its pieces switch is on (§23, §24). An agent-filed finding the judge's limits admit
+  names nobody, and is refused. A judge that could not read what it needs leaves the request
+  waiting.
+- **Any other start** needs the owner's own move into one of the kind's approved states in the
+  ticket's whole history: the newest move for a `plan` start, any move for the kinds that follow an
+  approved ticket. A ticket the owner made in such a state, with no move recorded, counts as his
+  move.
+- **A review follows the coding it judges (KIT-644).** Its kind's data says
+  `approval: {from_run: code}`: it is let start only by the approval the runner recorded when it
+  started the ticket's newest code run, one started by the owner's move or creation, while its
+  approver is still the owner. Its record says `how: code-run`. A ticket coded on the old
+  dispatcher has no such run, so its review is refused.
+- **A resume** follows its kind's own rule over the history, with the session writer's moves left
+  out, since the runner's own move into the working state counts neither way. Or it follows the
+  approval the runner itself recorded for the start of the work it carries on, while no later move
+  of the owner's took the ticket back out of the approved states.
+
+The old dispatcher's own user never approves. A history that cannot be read whole approves nothing.
+
+**The runner's one tracker write (KIT-645).** A `code` start's ticket is moved into its project's
+working state (`delivery.json`'s `linear.stateIds.working`) just before the program starts, so its
+history says the run began. The runner writes it with the session writer's key (its `session_tools`
+setting), which it first checks belongs to the writer and to no owner, so the move never reads as an
+approval. A move the tracker does not take leaves no workspace, pin or run folder, and the request
+waits. The runner writes nothing else to the tracker.
+
+**Who asked is reporting.** Under one account any process that can write the store can name any
+caller, so `caller` narrows what a request may ask and nothing more. What keeps a session from
+writing a request at all is the store's walls and the session's sandbox. A start's or a resume's
+text, whoever wrote it, reaches the session only fenced as data.
+
+**The answer.** Each request is answered once, in `taken/<id>.json`: `{"request", "answer": {"at",
+"ok", "run", "why"}}`. A request the runner cannot judge now waits, and is not answered: the tracker
+did not answer, git could not fetch, or the watcher's hold (§20) is set. Everything else is answered
+`ok: false` with the reason in words. A start refused after its workspace was made removes the
+workspace and its branch. A stop follows the run it names on through the runner's own resumes of
+it: their newest run is stopped, and a resume still to come is called off, its record saying
+`auto_resume: refused` (KIT-644). It never reaches a run that a caller asked for. Off (`enabled` false), the runner takes no request and resumes nothing.
+
+**A caller reads back its own requests (KIT-705).** `asked(store, caller, kind, since)` gives every
+request one caller made for one of its kinds, waiting or answered, oldest first, each with its answer
+once it has one. A file it cannot read is counted in `unread`, never passed over. That count is
+store-wide, since such a file cannot say whose it is: the planner counts each one as a run
+against its day's cap. A folder it cannot list is an error, never "none asked" (§13). When
+`withdraw()` (above) says false, the runner took the request first: the planner reads its answer,
+and stops a run that started anyway.
+
+**The planner's start (KIT-705).** A `plan` start names the idea itself as its `ticket`: no planning
+ticket is made. Its `text` opens with three lines, `Planning-run trigger: <the move's id>`,
+`Idea: <ticket>` and `Repository: <owner>/<repo>`, then one sentence, then any earlier attempts and
+the owner's note in the planner's own fences. The planner finds a request whose record it lost by
+that first line, read from the head alone, and counts its day's starts from `asked()`. The runner
+gives a plan run the planning brief (`scripts/pipeline_plan_brief.py`) in its rules, before the
+project's instructions. The planner reads the run back from its record and its final message, and
+runs the plan executor pinned to the idea.
+
+**Each project's lanes (KIT-866).** A project's `lanes` say, for each kind, whether the runner takes
+it for that project. Absent is off. A start or resume for a lane that is off, the runner's own
+included, is refused with "the <kind> lane is off for project <key>", before anything is made or
+read: a request's answer says `ok: false`, and an interrupted run's record says `auto_resume:
+refused`. A stop is always taken.
+
+**The lanes it takes, for the jobs that ask it (KIT-708).** Each pass writes `lanes.json`, whole, from
+its own checked settings, when they change. The runner alone writes it.
+
+```json
+{"schema": "pipeline-runner-lanes/1", "enabled": true, "work_dir": "/abs", "look_config_dir": "/abs",
+ "projects": {"app": ["acceptance", "conflict"]}}
+```
+
+`enabled` is the runner's own switch, `work_dir` and `look_config_dir` its real paths (the second
+null when unset), and each project lists the kinds whose lane is on. A job reads it with
+`read_lanes()` and asks `lane_on()`: true only while `enabled` is true and the kind is listed for the
+project. No file is every lane off: the runner has said nothing. A file that cannot be read, or is
+not this shape, is an error, never "off" (§13). So a job sends a kind to the runner only while its
+lane is on, and takes its old road otherwise: each project's `lanes` is the one switch. The runner
+still refuses any request for a lane that is off, whatever a job read.
+
+**A kind that changes nothing gets a fresh workspace at each start (KIT-858).** Before a review, plan
+or acceptance start makes its workspace, the runner removes, through git, the workspace and branch an
+earlier run of that kind left on the ticket. It does so only once every such run has ended and none
+waits for the runner's own resume; until then the start is refused. It removes only the planned path
+and the fixed branch, and only what its own records name. A folder no run of its own left is never
+removed, and the start is refused. A code run's workspace is never removed this way.
+
+### A run record
+
+`runs/<run>/run.json`. Only the runner writes it, whole, through `write_run()`.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `schema` | `"pipeline-runner-run/1"` | |
+| `run` | `run-` and 32 hex characters | The pin's `dispatch_id` (§3). |
+| `request` | request id, or null | Null for the runner's own resume or fresh start. |
+| `caller` | a caller, or `runner` | `runner` only for the resume after an interruption, and the fresh start after a lost session. |
+| `kind`, `project`, `ticket` | as in the request | |
+| `resumes` | run id, or null | The run this one resumed, or carries on afresh. |
+| `started_for` | `request` \| `interrupted` \| `session-gone` | `session-gone`: the fresh start after a resume found its session gone. |
+| `approved_by`, `approved_at`, `how` | an approver's id; time or null; `move` \| `creation` \| `slack` \| `validator` \| `resumed-run` \| `fresh-session` \| `code-run` | Who approved, as the check found it: a tracker user, the owner's Slack member for `slack`, or `validator`. |
+| `session_id` | UUID | Given to the program at the start, kept by a resume. A fresh start gets a new one. |
+| `gone_session` | UUID, or null | The session a fresh start could not resume. Set on a fresh start, and only there. |
+| `workspace`, `branch` | absolute path; branch name | `<work_dir>/<kind>/<TICKET>`, on one fixed pattern. |
+| `pin` | absolute path, or null | The run's pin, removed when it ends. |
+| `pid` | number, or null | The wrapper's process, and its process group. |
+| `state` | `running` \| `stopping` \| `ended` \| `stopped` \| `interrupted` \| `failed` | |
+| `started_at`, `ended_at`, `seconds` | time; time or null; number or null | |
+| `exit` | whole number, or null | The program's exit code. Null when it left none. |
+| `reason` | `ended` \| `stopped` \| `interrupted` \| `could-not-start` \| `session-gone` \| `limit:time` \| `limit:memory` \| `limit:disk`, or null | Null while it runs. A run being stopped at a limit already carries that limit, in state `stopping`. |
+| `why` | one line of at most 300 characters, or null | In the runner's own fixed words, never the program's. |
+| `cost_usd`, `turns` | number or null; whole number or null | When the program gives them. Never zero for "not given". |
+| `stop_asked_at` | time, or null | When a stop was asked. |
+| `auto_resume` | `pending` \| `started` \| `refused`, or null | For an interrupted run, or a resume whose session was gone: the runner's own next start of it. |
+| `resumed_by` | run id, or null | The run that resumed it, or carried it on afresh. |
+
+**A run that died is resumed once.** A run whose process is gone with no result and no exit is
+`interrupted`, once whatever is left of its process group has been killed. The runner resumes it
+once, as itself, with fixed words. A run that is itself that resume is never resumed again. A run
+whose wrapper never started is `failed` with `could-not-start`, and is never resumed. A lock only
+the wrapper holds says whether a run is alive: the session is never given it.
+
+**A resume whose session is gone starts afresh once (KIT-764).** The program may no longer have the
+conversation a resume names. Then it says so: an error result after no turn, whose text says no
+conversation was found, or no result and those words as the last line of its errors. The tech
+lead's turn reads the same words. That run ends with reason `session-gone`, and the runner starts
+one fresh session, as itself, on its next pass. The fresh start uses the same workspace and branch
+and a new `session_id`. Its prompt holds the ticket and the text of the request whose work it
+carries on, each fenced. That text is read back from `taken/`, past any resume the runner made of
+its own, so a fix that was cut short and then lost keeps its own words. Its record says
+`started_for: "session-gone"`, `how: "fresh-session"` and `resumes` (the run that failed), and
+`gone_session` names the lost session. **Once per request.** Only a resume can end
+`session-gone`. If the runs back to its request already hold a fresh start, no second one is made.
+That happens when a fresh start was interrupted before its session was saved and then resumed. No
+fresh start is made either when those runs cannot all be read. Either way the record's `why`
+says so. A resume that fails any other way ends with its own reason and is never retried. The
+words come from the program's own output. A session that printed them itself would gain one
+fresh start of the same request, and never a second.
+
+**Its limits (KIT-643).** Each run is held to a wall-clock limit, a memory limit for its whole
+process tree and a disk limit for its own folders, from the runner's `limits` settings, each held to
+its kind's own ceiling in `session-kinds/<kind>.json` (KIT-704): the smaller wins. Its time is held to
+its pin's `budget.maxMinutes` too (KIT-645); a pin it cannot read is told once. Past one,
+its tree is stopped and the record says `stopped` with that `limit:` reason. Below the machine's floor
+no new session starts. Each incident is recorded once, in plain words, in `<store>/incidents.json`
+(`{"schema": "pipeline-runner-incidents/1", "open", "told"}`), which the runner alone writes.
+
+**What is left of a run (KIT-739).** A run is finished only once its lock is free, its process group
+is empty and no process it remembered is alive. The runner kills what is left, and again until
+nothing is. It remembers each process it saw in the run's tree, with its start time, in
+`<store>/trees/<run>.json`: `{"schema": "pipeline-runner-tree/1", "method", "resolution", "leader",
+"procs", "dropped"}`. The runner alone writes it, and never reads a process from the run's folder.
+`leader` is the wrapper, noted when it starts, so a group number a later process took is never
+signalled. `procs` holds `[pid, start]` pairs, first seen first. Each look drops the ones that are
+gone. `method` is how start times were read: `sysctl` to the microsecond on macOS, `proc` in clock
+ticks on Linux, or `ps` to the second, and `resolution` says which. More than 4096 alive at once
+keeps the newest, counts the rest in `dropped`, and stops the run at `limit:memory`.
+
+**How to read it.** `read_runs()` gives every record, oldest first, and says `read`, `partly-read`
+(a record it could not read is named) or `could-not-read`. Then the runs are `None`, never an empty
+list (§13). The usage job reads the runs through it when its config names the store
+(`runner_store`, KIT-860), and `USAGE_KINDS` gives the usage file's kind for each (§17).
+
+**A run's final message (KIT-858).** When a run ends, and before its record says so, the runner keeps
+the final message the program reported in `<store>/outputs/<run>.json`: `{"schema":
+"pipeline-runner-output/1", "run", "at", "is_error", "subtype", "text", "cut", "model", "tokens"}`.
+`text` is the message's last 150,000 characters, or null when the program's result carried none, and
+`cut` says it was longer. `model` is the model the run billed most and `tokens` its token count, each
+null when the result did not say (KIT-644). The runner reads the program's result line whole up to 8 MiB; a longer one counts as no
+result. A run that left no result at all has no file. The runner alone writes it, outside the
+run's folder. The caller that asked for the run reads it with `run_output()`: the document, `None`
+when there is none, or an error when one is there and cannot be read (§13). The text is the
+session's own words: data for its caller, checked by the caller's own rules, never part of the record.
+
+**Fields only.** No ticket text is in a request's fields or a record, but its `text`. A start's or a
+resume's `text` reaches the session fenced as data. A review's reaches it line by line, inside a tag
+whose end carries a mark the text does not hold, and with no read of the ticket beside it: the
+review's instructions are its run's rules, from the kit (KIT-644). Each run's own folder also holds its command's inputs, the program's
+output and its exit. Those are the run's. Only the runner reads them, except the run's own tool server, which
+reads its run file and keeps its counts there (below).
+
+### The session's own tool server (KIT-706)
+
+With the runner's `session_tools` setting, a `code`, `fix` or `conflict` run gets one tool server
+of its own: `scripts/pipeline_session_tools.py`. The session holds no tracker credential, and this
+server is its only way to the tracker. Its five tools are §8's requests as calls, with §8's caps.
+Two files in the run's folder hold its state.
+
+`runs/<run>/session-tools.json` is the run file. The runner writes it whole, mode 0600, before the
+program starts, and names it as the server's one start-up argument. The server does not start on
+one that is a link, another account's, changeable by others, or not this shape.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `schema` | `"pipeline-session-tools/1"` | |
+| `run` | run id | This run. The telemetry block's `run_id` and `dispatch_id`. |
+| `kind` | `code` \| `fix` \| `conflict` | The kinds that get the tools. |
+| `ticket`, `team_key` | ticket id; its team's key | The only ticket any tool reads or writes. No tool takes a ticket. |
+| `auth_mode`, `model`, `started_at` | from the pin and the settings | For the telemetry block. |
+| `key_file` | absolute path | The session writer's tracker key. Walled from the session. |
+| `writer_user_id` | user id | The user the key must belong to. Checked with the tracker before the first call. |
+| `owner_user_ids` | user ids | The writer is never one of them. |
+
+`runs/<run>/session-tools-state.json` holds the run's counts. Only the server writes it, whole,
+mode 0600: `{"schema": "pipeline-session-tools-state/1", "run", "writes": [{"tool", "at",
+"state"}]}`. Each write's `state` is `pending`, `posted` or `failed`.
+
+- A write is recorded `pending` before it is sent. So a server that dies mid-write still counts it.
+- A `pending` or `posted` write counts against the caps. A `failed` one, which the tracker did not
+  confirm, does not.
+- A counts file that cannot be read is never read as no writes. Every write is refused until it
+  can be read.
+
+---
+
+## 29. Queue settings ledger
+
+Every change to a queue setting made between two installs goes through one write path,
+`scripts/pipeline_queue_settings.py` (KIT-700): the tech lead's `queue_setting` on the owner's own DM ask, and the
+sprint review's `apply` reply. Each change appends **one JSON line** to `settings-changes.jsonl`, beside the queue's
+config, mode `0600`:
+
+```json
+{"schema": "pipeline-queue-settings/1", "at": "2026-11-12T14:02:00Z", "who": "U0OWNER", "via": "dm",
+ "key": "PLANNED_LOAD", "old": "40", "new": "30"}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `pipeline-queue-settings/1` | The marker. |
+| `at` | UTC time, to the second | When the change was made. |
+| `who` | 1 to 40 of `A-Z a-z 0-9 _ . -` | The Slack user who asked, or `terminal` for the command line. |
+| `via` | `dm` \| `sprint review` \| `terminal` | How it was asked. |
+| `key` | `PLANNED_LOAD` \| `DAY_STOP` \| `LANES_PER_REPO` | The queue.conf key. |
+| `old`, `new` | queue.conf values | The installed copy's value before, and the new one. |
+
+**How to read it.** A row in any other shape is left out. No file is no change. A file that cannot be read is said,
+never read as no change. The stand-up names each row written since the last stand-up.
+
+**The installed copy.** The queue installer writes `queue.conf` beside the queue's config: the owner's file, after one
+first line, `# The queue installer's copy of queue.conf (KIT-700). Base: DAY_STOP=… LANES_PER_REPO=… PLANNED_LOAD=…`.
+The write path changes one setting's line in that copy. At the next install, a setting the copy changed from its base
+is written into the owner's queue.conf, unless the owner's own value also moved from the base; then the owner's stays.
+
+---
+
+## 30. Spend ledgers
+
+Some model calls leave no dispatcher log, so the usage file (§17) could not count them: the morning
+job's planner call, the stand-up's turn, the tech lead's turns and the conflict waker's fix sessions
+(KIT-687). Each of those callers keeps its own small ledger, one row per call, and the usage job
+reads every ledger beside the dispatcher's logs (KIT-844). Machine-readable:
+`schemas/pipeline-spend-ledger.schema.json`, which is one row.
+
+**One writer, one reader.** `scripts/pipeline_spend_ledger.py` holds both. `row_from_result()`
+builds a row from the CLI's JSON output. `append()` adds it, and nothing else writes a ledger.
+`read()` is the one reader, and the usage job reads every ledger through it.
+
+**Append-only, one line at a time.** `append()` stamps the row's time, checks the row, and adds
+it as one line at the ledger's end, in one write, never through a link. A last line that a crash
+left without its line break gets one first, so the torn row stays one bad line and the new row
+stays whole.
+
+**A lost row is never read as no call.** When the row is not one, or the ledger cannot be written,
+`append()` raises, and first adds the call's time as one line to a mark beside the ledger,
+`<ledger>.failed`. The reader counts each time in the mark from the time asked for: the ledger is
+then `partly-read`, or `could-not-read` when no row could be trusted. A folder that takes no write
+at all (a full disk, say) cannot hold the mark either, and then the caller's own output is the
+only word (Stage E on #622).
+
+**Fields only.** Numbers, closed words, a model name that matches §17's pattern, a session id and a
+time. No prompt, reply or error text reaches a row.
+
+**Unknown is never zero.** A cost the caller could not read is null, and the usage job counts the
+call as unpriced. So is a zero total from a call that did not end in success, as §17 reads a
+crash's zeroed total. A token count the CLI's output did not give is null.
+
+**A row is its own call's cost.** For a resumed session the CLI's `total_cost_usd` is the session's
+running total, while its `usage` is that run's own (measured 18 Nov 2026 on Claude Code 2.1.287:
+a resumed call's total was the first call's total plus its own usage priced, exactly). So a caller
+that resumes a session records each run's own share: its total less the same session's previous
+total, through `own_costs()`. A smaller total is a session begun again, so its whole total is its
+own. A resumed run whose session's earlier total the caller does not know has a null cost, never
+its running total. The tech lead's DM conversation keeps its newest total for that (KIT-687).
+
+### Where each ledger lives
+
+Each ledger is a JSON Lines file in its caller's own state folder, outside every git working tree:
+one row per line, oldest first, only ever added to, mode 644.
+
+| Caller | Its ledger | Where, by default |
+|---|---|---|
+| `morning` | `morning-spend.jsonl`, beside the day plan | `~/.stage-e/queue/` |
+| `standup` | `standup-spend.jsonl`, in the bridge's state folder | `~/.stage-e/state/` |
+| `tech_lead` | `tech-lead-spend.jsonl`, in the bridge's state folder | `~/.stage-e/state/` |
+| `conflict_waker` | `conflict-waker-spend.jsonl`, in the waker's state folder | `~/.pr-conflict-waker/state/`, in the owner's home |
+
+The first three are in the role account's home, where the usage job runs, and its defaults read
+them: each default is where that ledger's writer puts it with its own defaults, and the usage job's
+selftest pins each to its writer's, so none is a guess (KIT-687). The waker runs as a person, so its
+ledger is in that person's home, which the role account cannot read: the usage job leaves it off
+unless its config names it.
+
+### Who writes each ledger
+
+Each caller adds one row for each run of the CLI it started, a run that timed out included, after
+that run ends (KIT-687). A run that never started (the CLI could not be run) adds none.
+
+| Caller | Its writer | Model | Billing | Cost |
+|---|---|---|---|---|
+| `morning` | the morning job's one planner call (`scripts/pipeline_morning.py`) | the output's, else `planner_model` | `plan` | the CLI's; unknown after a timeout |
+| `standup` | the stand-up's turn, in the bridge (`scripts/pipeline_bridge_tech_lead.py`) | the output's, else `turn_model` | `plan` | the CLI's; unknown after a timeout |
+| `tech_lead` | a DM's turn and a plan note's turn, in the bridge | the output's, else `turn_model` | `plan` | the CLI's; for a resumed DM conversation, the run's share of its running total; unknown after a timeout |
+| `conflict_waker` | each fix session the waker starts (`scripts/pr_conflict.py wake`) | `--model`, or null | `unknown` | unknown: the session prints text, not JSON |
+
+The morning job and the turns send only a `claude setup-token` token, so their calls draw on the
+plan. A turn that has to begin a conversation again runs the CLI twice, and so adds two rows. A
+turn keeps only what a row is built from of each run's output (`kept_output()`), never its reply.
+A row that cannot be written is said in the caller's own log and never fails the call: its time
+goes in the ledger's mark, so the usage job says the call was not counted.
+
+### A row
+
+```json
+{"schema": "pipeline-spend-ledger/1", "at": "2026-11-18T09:12:03Z", "caller": "morning",
+ "model": "claude-sonnet-5-5", "usd": 0.041235,
+ "tokens": {"input": 1200, "output": 340, "cache_read": 8000, "cache_write": 0},
+ "run_id": "0b6c3e1e-1d2f-4a5b-8c9d-0e1f2a3b4c5d", "billing": "plan"}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema` | `"pipeline-spend-ledger/1"` | On every row. A row with any other value is left out. |
+| `at` | time | When the call ended, in UTC to the second. `append()` stamps it; a caller cannot. |
+| `caller` | `morning` \| `standup` \| `tech_lead` \| `conflict_waker` | Who made the call. A ledger holds its own caller's rows only. |
+| `model` | string \| null | The model that carried the call: of the models the CLI's `modelUsage` names, the one it gives the most cost. `other` for a name that is not a plain one. With no such output, the model the caller asked for, or null when it asked for none. |
+| `usd` | number \| null | The CLI's own estimate of the call's cost at API prices, from its `total_cost_usd`, to a millionth of a dollar: for a resumed session, that total less the session's previous total (above). Null when the caller could not read it: no JSON output, a call that ended in an error with no total, or a resumed session whose earlier total is not known. |
+| `tokens` | object | `input`, `output`, `cache_read` and `cache_write`: the CLI's `usage` figures `input_tokens`, `output_tokens`, `cache_read_input_tokens` and `cache_creation_input_tokens`. Each is null when the output did not give it. |
+| `run_id` | string \| null | The CLI's `session_id` for the call, when its output gave one. |
+| `billing` | `plan` \| `key` \| `unknown` | How the call was paid for, from the credential the caller handed the CLI. `plan`: a `claude setup-token` token and no key, so the call draws on the plan's usage windows. `key`: an API key, billed by the token. `unknown`: the CLI ran under a sign-in the caller did not choose, as a fix session on a person's machine does. |
+
+### How the reader reads
+
+`read()` gives a ledger's calls from a time on, oldest first, and a note: its state, and why, in
+fixed words. It never quotes a line of the ledger.
+
+| State | When |
+|---|---|
+| `off` | No path is named. |
+| `read` | Every line is a row of this ledger, and its mark records no failed call from the time asked for. A ledger not written yet, in a folder that exists, is read: no call yet. |
+| `partly-read` | Some lines are not rows of this ledger, its mark records a failed call, or its end does not reach back to the time asked for. The rows it read are given. |
+| `could-not-read` | Its folder is missing, this account may not read it, it is a link or not a regular file, it is inside a git working tree (where a session could write rows), or no row could be trusted. No calls are given at all, never an empty list, so nothing can count it as zero. |
+
+A line is left out when it is longer than 2 KiB, is not JSON, is not a row, or is another caller's
+row. Rows are appended in time order, so a bad line that comes before the first row from the time
+asked for, and before a row older than that time, is older still: it does not make the read
+partial, and a row a crash tore months ago does not mark the ledger forever. A bad line after a row
+from the time asked for always counts, even when a row stamped older follows it: that only says the
+clock went back (Stage E on #622). Past 4 MiB only the ledger's end is read, which holds over ten
+thousand rows. The same holds for the mark.
+
+### Who reads it
+
+The usage job, through `read()`, for each ledger its `spend_ledgers` config names. Each call counts
+as one run of its caller's kind, in the local day it ended and in the week: `morning` and `standup`
+are kinds of their own, a turn of the tech lead's counts as `tech_lead`, and a fix of the waker's
+as `conflict_fix`. The usage file's `spend` says what was read of each ledger (§17).

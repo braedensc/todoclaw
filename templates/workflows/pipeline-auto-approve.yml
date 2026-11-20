@@ -24,8 +24,9 @@ name: Pipeline auto-approve
 # are the classes an agent (or anything that can trip a probe, or edit a diff)
 # can cause to be filed — so if any of them could approve itself, the pipeline
 # could widen its own mandate by writing a ticket. And an `epic/<ID>` reference
-# is not taken on faith: the epic is fetched and must itself be out of intake,
-# or `epic/<anything>` would be a self-serve approval.
+# is not taken on faith: the epic is fetched and must itself sit in the
+# human-approval state `ready` (not merely any state out of intake), or
+# `epic/<anything>` — or a stray forward move — would be a self-serve approval.
 #
 # ── Setup (repo → Settings → Secrets and variables → Actions) ────────────────
 #   Secret  LINEAR_API_KEY                 Linear personal API key
@@ -68,7 +69,7 @@ concurrency:
 jobs:
   approve:
     name: Evaluate the backlog
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       # Contract §1: anything that gates behavior is read from the committed copy
@@ -165,6 +166,19 @@ jobs:
                   {"f": {"state": {"id": {"eq": raw_state}}}})
               nodes = data["issues"]["nodes"]
 
+          # KIT-161: who moved an epic into `ready`, read from the tracker's history. The gate
+          # (scripts/check_auto_approve.py) approves a tree only when that person is on
+          # autonomy.epicApprovers; an epic whose mover cannot be read gets no `readyBy` and holds.
+          HISTORY = "history(first: 50) { nodes { createdAt actor { id } toState { id } } }"
+
+          def ready_by(n, ready_id):
+              moves = [h for h in ((n.get("history") or {}).get("nodes") or [])
+                       if ready_id and (h.get("toState") or {}).get("id") == ready_id]
+              if not moves:
+                  return None
+              return ((max(moves, key=lambda h: h.get("createdAt") or "").get("actor") or {}).get("id")
+                      or None)
+
           def shape(n):
               return {
                   "id": n["identifier"],
@@ -184,17 +198,19 @@ jobs:
           # fetching its epic for nothing is wasted API budget.
           tickets = [t for t in tickets if t["stateId"] == raw_state]
 
-          # §5 rule 2: the referenced epic must exist and be out of intake. Fetch
-          # every distinct parent named by the backlog — the gate treats an epic
-          # it was not shown as a fabricated one.
+          # §5 rule 2: the referenced epic must exist and sit in the human-approval
+          # state `ready` (the gate decides; here we only supply the epic's state).
+          # Fetch every distinct parent named by the backlog — the gate treats an
+          # epic it was not shown as a fabricated one.
           epic_ids = sorted({t["parentId"] for t in tickets if t["parentId"]})
           epics = {}
           for eid in epic_ids:
-              got = gql("query($id: String!) { issue(id: $id) { %s } }" % ISSUE_FIELDS,
+              got = gql("query($id: String!) { issue(id: $id) { %s %s } }" % (ISSUE_FIELDS, HISTORY),
                         {"id": eid})
               node = got.get("issue")
               if node:
-                  epics[node["identifier"]] = shape(node)
+                  epics[node["identifier"]] = dict(shape(node),
+                                                   readyBy=ready_by(node, lin["stateIds"].get("ready")))
 
           out = os.path.join(os.environ["RUNNER_TEMP"], "approve")
           json.dump({"tickets": tickets}, open(os.path.join(out, "tickets.json"), "w"), indent=2)

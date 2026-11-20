@@ -12,12 +12,13 @@ there by an out-of-session automation that holds the tracker credential.
 
 THE DISCRIMINATOR IS THE WHOLE POINT (contract §5). A ticket auto-approves only
 when its provenance is `epic/<ID>` — decomposed from an epic a human already
-approved. `monitor`, `review`, `retro-proposal` and `human` never auto-approve,
-and the reason is adversarial, not stylistic: those are exactly the paths an
-attacker-influenced payload takes into the backlog. A monitor files what a
+approved. `monitor`, `review`, `retro-proposal`, `human` and `agent` never
+auto-approve, and the reason is adversarial, not stylistic: those are exactly the
+paths an attacker-influenced payload takes into the backlog. A monitor files what a
 failing probe told it; a review pass files what it read in a diff; a retro
-proposes what it inferred from its own telemetry. If any of those could approve
-itself, the pipeline could widen its own mandate by writing a ticket — and
+proposes what it inferred from its own telemetry; an `agent` files a finding it met
+mid-session (§8 ticket-create). If any of those could approve itself, the pipeline
+could widen its own mandate by writing a ticket — and
 "write a ticket that asks for X" is a capability every one of those paths has.
 `epic/*` is the only class whose approval is anchored in something a human did.
 
@@ -30,7 +31,8 @@ rather than making an operator fix them one at a time.
   state         the ticket is actually sitting in linear.stateIds.raw
   supervision   no dispatcher-owned agent:*/blocked:* label, no hooks-change (§6)
   provenance    resolves to epic/<ID> per §5 rule 4 (label class + parent link)
-  epic          that epic exists and a human moved it out of intake (§5 rule 2)
+  epic          that epic exists and a human moved it into the approval state
+                (`ready`), not merely out of intake (§5 rule 2)
   dor           scripts/check_ticket_dor.py passes, in --strict mode
   risk-paths    nothing the ticket names matches autonomy.riskPaths (§1)
 
@@ -84,7 +86,7 @@ SUPPORTED_VERSION = 1  # §1: an unrecognized version refuses to run, it does no
 # constant so the "subset of [epic]" rule is one literal, not a spelled-out
 # assumption in three places.
 APPROVABLE_CLASS = "epic"
-NEVER_APPROVE = ("monitor", "review", "retro-proposal", "human")
+NEVER_APPROVE = ("monitor", "review", "retro-proposal", "human", "agent")
 
 # §6: dispatcher-owned lifecycle labels. A ticket already under supervision is
 # not a candidate — whatever put `agent:needs-human` on it is a decision this
@@ -94,20 +96,39 @@ SUPERVISED_LABEL_RE = re.compile(r"^(agent:|blocked:)")
 # a human has already said needs eyes.
 HUMAN_ONLY_LABELS = ("hooks-change",)
 
-# The epic must have been moved OUT of intake by a person. Every state except
-# `raw` means someone acted; `raw` is where things land unreviewed.
+# Intake: where proposals land unreviewed. An epic sitting here has been approved
+# by nobody, so nothing decomposed from it inherits approval.
 INTAKE_STATE = "raw"
+
+# The ONE state that reads as "a human approved this epic's decomposition" — NOT
+# "any state that isn't `raw`". Moving an epic to `working` ("I'm looking at
+# this"), or a Linear board automation nudging it to `review`/`done`, is not an
+# approval; treating it as one would release the epic's whole child tree to
+# auto-approval off a signal no person deliberately gave. `ready` is the
+# contract's approved state (§1 stateIds: "Approved and dispatchable") and the
+# exact state the children are themselves released *into* — so the epic reaching
+# it is the same "approved" gesture, one level up (§5 rule 2). See
+# docs/adr/2026-09-06-approve-tier-epic-approval-state.md.
+EPIC_APPROVAL_STATE = "ready"
 
 # Always-risky regardless of what a project's `autonomy.riskPaths` says. §7
 # already requires the first three to be present, and this floor makes the gate
 # correct even against a config that predates that rule or was hand-edited.
 # `.claude/skills/**` is here because skills ARE the prompts and rubrics — a
 # ticket that rewrites a grader must never ride an epic into `ready`.
+# `templates/**`'s two mirrors are here for the same reason the destinations
+# are: the kit ships the inert copies that BECOME `.github/workflows/**` and
+# `.claude/hooks/**` at bootstrap, so a ticket scoped to a staged workflow is a
+# ticket to choose the bytes CI will later run. Approving that without a person
+# because the file is not visible yet is the same defect as gating it only once
+# it is.
 RISK_PATH_FLOOR = (
     ".claude/hooks/**",
     ".claude/settings*.json",
     ".claude/skills/**",
     ".github/workflows/**",
+    "templates/workflows/**",
+    "templates/hooks/**",
     "delivery.json",
 )
 
@@ -296,7 +317,7 @@ def resolve_provenance(ticket):
     if not dor.PROVENANCE_RE.match(value):
         return None, label_class, (
             "%r is not a contract §5 provenance value (epic/<ID>, monitor, review, "
-            "retro-proposal, human)" % value
+            "retro-proposal, human, agent)" % value
         )
     cls = APPROVABLE_CLASS if value.startswith(APPROVABLE_CLASS + "/") else value
     if label_class and cls != label_class:
@@ -408,15 +429,22 @@ def _why_not(cls):
                           "would let the pipeline widen its mandate by writing a ticket.",
         "human": "A person already decided — a human-filed ticket enters `ready` directly, "
                  "and does not need this gate.",
+        "agent": "A working session filed this finding (§8 ticket-create); approving it "
+                 "would let a session queue its own next work, which is exactly the loop "
+                 "the finding channel is shaped to avoid.",
     }.get(cls, "")
 
 
 def check_epic(value, epics, config, v):
-    """§5 rule 2: the referenced epic exists and is itself human-approved.
+    """§5 rule 2: the referenced epic exists and sits in the human-approval state.
 
-    Without this, `epic/<anything>` is a self-serve approval: a fabricated ID
-    would mint autonomy, because the string alone is what the provenance gate
-    matched on.
+    Two failures this closes. Without the *existence* check, `epic/<anything>` is
+    a self-serve approval: a fabricated ID would mint autonomy, because the string
+    alone is what the provenance gate matched on. Without the *state* check being
+    specific — exactly `EPIC_APPROVAL_STATE`, not "any state out of intake" — any
+    forward nudge of the epic (a human parking it in `working`, a board automation
+    advancing it) would read as approval and release the whole child tree off a
+    gesture no person deliberately made.
     """
     epic_id = value.split("/", 1)[1]
     epic = epics.get(epic_id)
@@ -439,11 +467,44 @@ def check_epic(value, epics, config, v):
             "epic %s is in state %r, which matches none of linear.stateIds — an "
             "unclassifiable state cannot be read as approval" % (epic_id, got),
         )
-    if key == INTAKE_STATE:
+    if key != EPIC_APPROVAL_STATE:
+        if key == INTAKE_STATE:
+            return v.gate(
+                "epic", False,
+                "epic %s is still in intake (`raw`) — nobody has approved it, so nothing "
+                "decomposed from it inherits approval" % epic_id,
+            )
         return v.gate(
             "epic", False,
-            "epic %s is still in intake (`raw`) — nobody has approved it, so nothing "
-            "decomposed from it inherits approval" % epic_id,
+            "epic %s is in `%s`, not the human-approval state `%s` — moving an epic out of "
+            "intake into any OTHER state (a human parking it, a board automation advancing "
+            "it) is not the deliberate approval this gate requires (§5 rule 2)"
+            % (epic_id, key, EPIC_APPROVAL_STATE),
+        )
+    # KIT-161: the state says WHERE the epic is; only the actor says a person put it there. The
+    # caller reads who moved it into `ready` from the tracker's history (`readyBy`), and the
+    # project config names the people allowed (`autonomy.epicApprovers`). Anything that cannot
+    # be shown is "not approved", and says which part (§13).
+    approvers = [str(a) for a in (((config or {}).get("autonomy") or {}).get("epicApprovers") or [])
+                 if str(a).strip()]
+    if not approvers:
+        return v.gate(
+            "epic", False,
+            "epic %s is in `%s`, but autonomy.epicApprovers names nobody, so no move into it can "
+            "be shown to be a person's (§5 rule 2)" % (epic_id, key),
+        )
+    mover = epic.get("readyBy")
+    if not isinstance(mover, str) or not mover.strip():
+        return v.gate(
+            "epic", False,
+            "epic %s is in `%s`, but who moved it there could not be read from the tracker's "
+            "history — an unreadable actor is not approval (§5 rule 2, §13)" % (epic_id, key),
+        )
+    if mover not in approvers:
+        return v.gate(
+            "epic", False,
+            "epic %s was moved into `%s` by %s, who is not on autonomy.epicApprovers — only a "
+            "person on that list approves a tree (§5 rule 2)" % (epic_id, key, mover),
         )
     epic_labels = [str(x) for x in (epic.get("labels") or [])]
     blocked = sorted(l for l in epic_labels if SUPERVISED_LABEL_RE.match(l))
@@ -453,7 +514,11 @@ def check_epic(value, epics, config, v):
             "epic %s carries %s — its own supervision is unresolved"
             % (epic_id, ", ".join(blocked)),
         )
-    return v.gate("epic", True, "epic %s is in `%s` — a human moved it out of intake" % (epic_id, key))
+    return v.gate(
+        "epic", True,
+        "epic %s is in `%s`, moved there by %s on autonomy.epicApprovers — a person approved it "
+        "out of intake" % (epic_id, key, mover),
+    )
 
 
 def check_dor(ticket, config_path, repo_root, strict, v):
@@ -623,6 +688,7 @@ GOOD_CONFIG = {
         "autoApproveProvenance": ["epic"],
         "autoMergeMaxLines": 0,
         "riskPaths": [".claude/hooks/**", ".claude/settings*.json", "delivery.json"],
+        "epicApprovers": ["user-ann"],
     },
 }
 
@@ -641,7 +707,8 @@ def good_ticket():
 
 
 def good_epics():
-    return {"ENG-100": {"id": "ENG-100", "stateId": "state-working", "labels": ["track:platform"]}}
+    return {"ENG-100": {"id": "ENG-100", "stateId": "state-ready", "labels": ["track:platform"],
+                        "readyBy": "user-ann"}}
 
 
 def selftest():
@@ -707,16 +774,90 @@ def selftest():
             decide(good_ticket(), {"ENG-100": {"id": "ENG-100", "stateId": "state-raw"}}),
             False, "epic",
         )
+        # §5 rule 2 tightened: ONLY the approval state (`ready`) reads as approval.
+        expect(
+            "epic in ready approves",
+            decide(good_ticket(), {"ENG-100": {"id": "ENG-100", "stateId": "state-ready",
+                                               "readyBy": "user-ann"}}),
+            True,
+        )
+        # KIT-161: the approval is a PERSON's move, so the actor is checked as well as the state.
+        # An epic in `ready` that the dispatcher's agent user (or any id not on the allowlist)
+        # moved there is held; one whose mover could not be read is held and says so (§13).
+        for label, ready_by, want in (("the agent user's move", "agent-user", "not on"),
+                                      ("a move with no actor read", None, "could not be read"),
+                                      ("a move whose actor is empty", "", "could not be read")):
+            epic = {"id": "ENG-100", "stateId": "state-ready"}
+            if ready_by is not None:
+                epic["readyBy"] = ready_by
+            got = decide(good_ticket(), {"ENG-100": epic})
+            expect("epic in ready: %s holds" % label, got, False, "epic")
+            cases[0] += 1
+            if not any(want in h["reason"] for h in got["held"] if h["gate"] == "epic"):
+                failures.append("epic in ready: %s: the reason should say %r, got %r" % (label, want, got["held"]))
+        # KIT-161 (Stage E's review of #404): the producer. Both workflow templates carry the same
+        # `ready_by`, which turns an epic's history into the id of whoever made its newest move
+        # into `ready`. The code is run from the templates themselves, so the gate and the
+        # thing that feeds it cannot drift.
+        import re as _re
+        for name in ("pipeline-auto-approve.yml", "pipeline-auto-merge.yml"):
+            text = open(os.path.join(root, "templates", "workflows", name), encoding="utf-8").read()
+            block = _re.search(r"^( +)def ready_by\(n, ready_id\):\n((?:\1 .*\n)+)", text, _re.M)
+            cases[0] += 1
+            if not block or "readyBy=ready_by(" not in text:
+                failures.append("%s: no ready_by producer feeding readyBy" % name)
+                continue
+            indent = len(block.group(1))
+            code = "def ready_by(n, ready_id):\n" + "\n".join(l[indent:] for l in block.group(2).split("\n"))
+            ns = {}
+            exec(code, ns)
+            moves = lambda *h: {"history": {"nodes": list(h)}}
+            mv = lambda at, actor, to: {"createdAt": at, "actor": {"id": actor} if actor else None,
+                                        "toState": {"id": to}}
+            got = (ns["ready_by"](moves(mv("2026-01-01", "user-a", "state-ready"),
+                                        mv("2026-01-03", "user-b", "state-ready"),
+                                        mv("2026-01-04", "user-c", "state-working")), "state-ready"),
+                   ns["ready_by"](moves(mv("2026-01-01", "user-a", "state-working")), "state-ready"),
+                   ns["ready_by"](moves(mv("2026-01-01", None, "state-ready")), "state-ready"),
+                   ns["ready_by"]({}, "state-ready"), ns["ready_by"](moves({"createdAt": "2026-01-01", "actor": {"id": "user-a"}, "toState": None}), None))
+            if got != ("user-b", None, None, None, None):
+                failures.append("%s: ready_by should take the newest move into ready, and None when it "
+                                "cannot tell; got %r" % (name, got))
+        for label, approvers in (("no approvers named", None), ("an empty allowlist", []),
+                                 ("an allowlist of blanks", ["", "  "])):
+            cfg = copy.deepcopy(GOOD_CONFIG)
+            if approvers is None:
+                del cfg["autonomy"]["epicApprovers"]
+            else:
+                cfg["autonomy"]["epicApprovers"] = approvers
+            got = decide(good_ticket(), None, cfg)
+            expect("epic in ready with %s holds" % label, got, False, "epic")
+            cases[0] += 1
+            if not any("names nobody" in h["reason"] for h in got["held"] if h["gate"] == "epic"):
+                failures.append("%s: the reason should say the list names nobody, got %r" % (label, got["held"]))
+        # Any OTHER out-of-intake state is not the deliberate gesture — a human
+        # parking the epic in `working`, a board automation nudging it to
+        # `review`/`done` — and must hold the whole child tree. This is the
+        # regression guard for the "any non-`raw` = approved" defect.
+        for weak in ("working", "review", "done"):
+            expect(
+                "epic in %s holds (out of intake is not approval)" % weak,
+                decide(good_ticket(), {"ENG-100": {"id": "ENG-100",
+                                                   "stateId": "state-%s" % weak}}),
+                False, "epic",
+            )
         # An epic in a state matching no configured ID is unclassifiable.
         expect(
             "epic in unknown state holds",
             decide(good_ticket(), {"ENG-100": {"id": "ENG-100", "stateId": "state-mystery"}}),
             False, "epic",
         )
-        # A blocked epic drags its supervision down the tree.
+        # A blocked epic drags its supervision down the tree — even sitting in the
+        # approval state, an unresolved supervision label holds it.
         expect(
             "blocked epic holds",
-            decide(good_ticket(), {"ENG-100": {"id": "ENG-100", "stateId": "state-working",
+            decide(good_ticket(), {"ENG-100": {"id": "ENG-100", "stateId": "state-ready",
+                                               "readyBy": "user-ann",
                                                "labels": ["agent:needs-human"]}}),
             False, "epic",
         )
@@ -786,6 +927,17 @@ def selftest():
         t = good_ticket()
         t["description"] = GOOD_DESCRIPTION.replace("`README.md`", "`.claude/hooks`")
         expect("riskPath directory form holds", decide(t), False, "risk-paths")
+        # Staging mirrors: a ticket scoped to the INERT copy is a ticket to
+        # choose the bytes CI later runs. Held with an emptied config list too —
+        # these are floor entries, not config the project can opt out of.
+        cfg = copy.deepcopy(GOOD_CONFIG)
+        cfg["autonomy"]["riskPaths"] = []
+        for staged in ("templates/workflows/pipeline-review.yml",
+                       "templates/hooks/session-start-provision-env.sh"):
+            t = good_ticket()
+            t["description"] = GOOD_DESCRIPTION.replace("`README.md`", "`%s`" % staged)
+            expect("staged mirror holds (%s)" % staged, decide(t, config=cfg),
+                   False, "risk-paths")
 
         # ── DoR ─────────────────────────────────────────────────────────────
         t = good_ticket()
@@ -879,7 +1031,8 @@ def main():
     args = ap.parse_args()
 
     if args.selftest:
-        return selftest()
+        from scratch_run import contained   # KIT-450: its temp folders go when it ends
+        return contained(selftest, "auto-approve-selftest-run-")
 
     repo_root = os.path.abspath(args.repo_root)
     config, config_path, config_error = load_config(args.config, repo_root)

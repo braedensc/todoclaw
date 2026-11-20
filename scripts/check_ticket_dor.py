@@ -68,6 +68,8 @@ HEADING_RE = re.compile(r"^##\s+(\S.*?)\s*$")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
 CHECKLIST_RE = re.compile(r"^\s*[-*]\s+\[[ xX]\]\s*(.*)$")
 BULLET_RE = re.compile(r"^\s*[-*]\s+(?!\[[ xX]\])(.*)$")
+# Any list item, bulleted or numbered, at any depth.
+LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
 CODE_SPAN_RE = re.compile(r"`([^`\n]+)`")
 # Residue of an unfinished draft. The doubled-brace form is spelled with escapes
 # so this file never itself contains a placeholder token.
@@ -78,17 +80,17 @@ DRAFT_RE = re.compile(r"\b(TBD|TKTK)\b|\{\{[A-Z0-9_]+\}\}")
 ANGLE_PROMPT_RE = re.compile(r"<[A-Za-z][^<>]*?\s[^<>]*?>", re.DOTALL)
 # Linear rewrites a bare sibling ID typed into a description into inline-mention
 # markup and serves that markup back over the API verbatim:
-#     <issue id="03fab27f-…" href="https://linear.app/…/TOD-64">TOD-64</issue>
+#     <issue id="00000000-…" href="https://linear.app/…/ENG-99">ENG-99</issue>
 #     <linear-embed node-type="video">{…}</linear-embed>
 # Both satisfy ANGLE_PROMPT_RE (leading letter, internal whitespace), so a ticket
 # that merely CITES a sibling read as N unfilled template prompts — the author
 # never typed the thing they were blamed for.
 #
-# Keyed on structure, not on a list of tag names: Linear documents no tag set
-# (`issue` and `linear-embed` are what this workspace's API actually returns),
-# so a name allowlist would silently re-break the day Linear emits a form that
-# was not on it. A generated tag has a lowercase HTML-ish name and at least one
-# quoted `attr="value"`; a template prompt is prose in angle brackets and has no
+# Keyed on structure, not on a list of tag names: the tracker documents no tag
+# set (`issue` and `linear-embed` are what its API actually returns today), so a
+# name allowlist would silently re-break the day it emits a form that was not on
+# it. A generated tag has a lowercase HTML-ish name and at least one quoted
+# `attr="value"`; a template prompt is prose in angle brackets and has no
 # attribute syntax, so the genuine check is untouched.
 GENERATED_TAG_RE = re.compile(
     r"""<[a-z][a-z0-9-]*(?:\s+[A-Za-z_:][\w.:-]*\s*=\s*(?:"[^"]*"|'[^']*'))+\s*/?>"""
@@ -206,8 +208,44 @@ def body_of(sections, name):
     return None
 
 
+# KIT-441: the criteria heading may run on past its two words, as `## Acceptance criteria
+# (its DM form)` or `## Acceptance criteria:` do. The exact heading still wins, and the
+# words must end where the name does, so `## Acceptance criteriaX` is not it. Only this
+# section: every other heading still matches in full.
+CRITERIA_HEADING = "Acceptance criteria"
+_CRITERIA_PREFIX_RE = re.compile(r"^acceptance criteria(?![a-z0-9_])", re.IGNORECASE)
+
+
+def criteria_index(names):
+    """The index of the criteria heading among `names`: the exact one, else the first that
+    starts with the words "Acceptance criteria", else None."""
+    lowered = [n.strip().lower() for n in names]
+    if CRITERIA_HEADING.lower() in lowered:
+        return lowered.index(CRITERIA_HEADING.lower())
+    return next((i for i, n in enumerate(names) if _CRITERIA_PREFIX_RE.match(n.strip())), None)
+
+
+def criteria_lines(sections):
+    """The criteria section's body lines, read by the one rule above, or None."""
+    i = criteria_index([name for name, _ in sections])
+    return sections[i][1] if i is not None else None
+
+
 def checklist_items(lines):
     return [m.group(1).strip() for m in map(CHECKLIST_RE.match, lines or []) if m]
+
+
+def nested_lines(lines):
+    """The non-blank lines that follow the first `- [ ]` item and are not themselves one:
+    a wrapped line, a sub-bullet, a trailing paragraph or fenced block. The parser keeps only the checklist
+    lines, so the reviewer, the snapshot and the pin never see these (KIT-303)."""
+    seen_item, found = False, []
+    for line in lines or []:
+        if CHECKLIST_RE.match(line):
+            seen_item = True
+        elif seen_item and line.strip():
+            found.append(line.strip())
+    return found
 
 
 def bullets(lines):
@@ -249,7 +287,7 @@ def pin_fields(description):
     """
     sections = split_sections(description)
     return {
-        "acceptance_criteria": checklist_items(body_of(sections, "Acceptance criteria")),
+        "acceptance_criteria": checklist_items(criteria_lines(sections)),
         "out_of_scope": scope_items(body_of(sections, "Out of scope")),
     }
 
@@ -259,9 +297,10 @@ def prose_only(text):
 
     Markers like TODO and angle-bracket prompts are residue in prose and
     perfectly legitimate inside code — judging them needs the code stripped.
+
     Tracker-generated markup goes too: it is not something an author typed, so
     it can be neither residue nor an unfilled prompt. The tag is dropped and its
-    inner text kept, leaving the `TOD-64` a reader actually sees.
+    inner text kept, leaving the `ENG-99` a reader actually sees.
     """
     out, fence = [], None
     for line in GENERATED_TAG_RE.sub("", text or "").splitlines():
@@ -283,6 +322,19 @@ def code_spans(lines):
     out = []
     for line in lines or []:
         out.extend(s.strip() for s in CODE_SPAN_RE.findall(line))
+    return out
+
+
+def pointer_lines(lines):
+    """The lines, each indented continuation joined to the line above it, so a
+    bullet wrapped onto a second line is still one line with one pointer. A list
+    item starts its own line at any depth."""
+    out = []
+    for line in lines or []:
+        if out and line[:1].isspace() and not LIST_ITEM_RE.match(line):
+            out[-1] += " " + line.strip()
+        else:
+            out.append(line)
     return out
 
 
@@ -328,6 +380,18 @@ def looks_like_path(span):
         return True
     ext = re.search(r"\.([A-Za-z0-9]{1,6})$", span)
     return ext is not None and ext.group(1).lower() in PATH_EXTENSIONS
+
+
+def unmistakably_path(span):
+    """A span that can only be a repo path: a directory AND a known extension,
+    after any `#anchor` or `:line`, and neither absolute nor a URL, which no file
+    in this tree can be. check_pointers holds a line's later spans to this,
+    because those are usually prose about the line's pointer."""
+    if not looks_like_path(span) or span.startswith("/") or "://" in span:
+        return False
+    bare = re.sub(r":\d+(-\d+)?$", "", span.split("#", 1)[0])
+    ext = re.search(r"\.([A-Za-z0-9]{1,6})$", bare)
+    return "/" in bare and ext is not None and ext.group(1).lower() in PATH_EXTENSIONS
 
 
 def within(repo_root, path):
@@ -404,6 +468,13 @@ def check_sections(t, r, canonical):
     sections = split_sections(t.get("description"))
     names = [n.strip() for n, _ in sections]
     lowered = [n.lower() for n in names]
+    ci = criteria_index(names)
+    if ci is not None:
+        lowered[ci] = CRITERIA_HEADING.lower()      # the section the pin reads (KIT-441)
+    longer = [n for n in names if _CRITERIA_PREFIX_RE.match(n) and n.lower() != CRITERIA_HEADING.lower()]
+    if CRITERIA_HEADING.lower() not in [n.lower() for n in names] and len(longer) > 1:
+        r.err("sections", "%d headings start with 'Acceptance criteria' and none is exactly that; "
+                          "the pin reads only the first: %s" % (len(longer), "; ".join(longer[:3])))
     for want in canonical:
         n = lowered.count(want.lower())
         if n == 0:
@@ -423,7 +494,7 @@ def check_sections(t, r, canonical):
 
 
 def check_acceptance(sections, r, strict):
-    lines = body_of(sections, "Acceptance criteria")
+    lines = criteria_lines(sections)
     if lines is None:
         return  # already reported by check_sections
     items = checklist_items(lines)
@@ -433,6 +504,14 @@ def check_acceptance(sections, r, strict):
             "no checklist items under '## Acceptance criteria' (use `- [ ] …`)",
         )
         return
+    nested = nested_lines(lines)
+    if nested:
+        r.warn(
+            "ac-nested",
+            f"{len(nested)} line(s) under the acceptance criteria are not `- [ ]` items, so "
+            "the reviewer never sees them (first: %r). Put each criterion on one `- [ ]` line, "
+            "or give each part its own item" % nested[0][:60],
+        )
     thin = [i for i in items if len(i) < MIN_AC_CHARS]
     if thin:
         r.err(
@@ -464,16 +543,31 @@ def check_scope_and_tests(sections, r, strict):
             )
 
 
-def check_pointers(sections, r, strict, repo_root):
+def check_pointers(sections, r, strict, repo_root, excused=()):
+    """`excused`: exact paths the caller says a sibling of the same plan creates (KIT-319).
+    A pointer in it counts as a path but is not held to exist; any other missing path, a typo
+    included, is still reported."""
     lines = body_of(sections, "Pointers")
     if lines is None:
         return
     # Existence is the authoritative signal; the heuristic only has to catch the
-    # paths that do NOT exist, which is the case worth reporting.
-    spans = [
-        s for s in code_spans(lines)
-        if looks_like_path(s) or path_exists(repo_root, s)
-    ]
+    # paths that do NOT exist, which is the case worth reporting. A line's pointer is its
+    # first span that exists or is unmistakably a path (KIT-523): a class such as
+    # `ring-black/10` before the file is prose about it, as a later one is (KIT-273). A
+    # later span counts only when it is unmistakably a path too, so `boot.js`, a file a
+    # sibling ticket creates, is not held against the line. A line with no such span
+    # still counts its first span when it looks like a path, so a typo is reported.
+    spans = []
+    for line in pointer_lines(lines):
+        found = code_spans([line])
+        first = next((k for k, s in enumerate(found)
+                      if unmistakably_path(s) or path_exists(repo_root, s)), None)
+        if first is None:
+            if found and looks_like_path(found[0]):
+                spans.append(found[0])
+            continue
+        spans += [s for k, s in enumerate(found) if k >= first
+                  and (k == first or unmistakably_path(s) or path_exists(repo_root, s))]
     if not spans:
         (r.err if strict else r.warn)(
             "pointers",
@@ -481,7 +575,10 @@ def check_pointers(sections, r, strict, repo_root):
             "to write this ticket",
         )
         return
-    missing = [s for s in spans if not path_exists(repo_root, s)]
+    # Never a path outside this repo: an absolute path or a `..` part is not excused, whoever
+    # names it (path_exists refuses them for the same reason).
+    safe = set(x for x in excused if x and not x.startswith("/") and ".." not in x.split("/"))
+    missing = [s for s in spans if not path_exists(repo_root, s) and s not in safe]
     if missing:
         (r.err if strict else r.warn)(
             "pointers",
@@ -628,6 +725,180 @@ def check_state(t, r, config, skipped):
         r.err("state", f"stateId {got!r} is not linear.stateIds.raw ({raw!r})")
 
 
+# --------------------------------------------------------------------------- #
+# Browser checks (KIT-331, contract §15): what a machine can run, in place of "Manual"
+# --------------------------------------------------------------------------- #
+# Three rules, all about the `acceptance` section of delivery.json (contract §1). Without it the
+# acceptance check is off, and the two that need it are SKIPPED AND NAMED, never quietly passed.
+#   browser-check           a block in the Test plan is well formed. Always an error.
+#   browser-check-required  a UI ticket carries a block, or says `No browser check:` and why.
+#   manual-step             no Test plan item of a UI ticket starts with "Manual".
+# The last two are warnings, and errors under --strict. An epic's `## How we will know it works`
+# section is read the same way as a ticket's Test plan.
+BLOCK_MARKER = "pipeline-browser-check/"
+BLOCK_SCHEMA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "schemas", "browser-check.schema.json")
+DEFAULT_VIEWPORTS = ("desktop", "phone")
+MAX_BLOCK_CHARS = 8000
+EPIC_PLAN_HEADING = "How we will know it works"
+FENCE_OPEN_RE = re.compile(r"^\s*(```|~~~)\s*([A-Za-z0-9_-]*)\s*$")
+MANUAL_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\*\*)?manual\b", re.IGNORECASE)
+NO_CHECK_RE = re.compile(r"^\s*(?:[-*+]\s+)?No browser check:\s*(\S.{19,})$", re.IGNORECASE)
+ASSERTIONS = ("visible", "count", "text", "hasClass", "lacksClass", "attr", "css", "contrast")
+
+
+def glob_to_re(pat):
+    """The `autonomy.riskPaths` glob syntax (check_auto_approve.glob_to_re), kept local so this gate
+    imports no other check script."""
+    out, i = [], 0
+    while i < len(pat):
+        if pat.startswith("**/", i):
+            out.append(r"(?:[^/]+/)*")
+            i += 3
+        elif pat.startswith("**", i):
+            out.append(r".*")
+            i += 2
+        elif pat[i] == "*":
+            out.append(r"[^/]*")
+            i += 1
+        elif pat[i] == "?":
+            out.append(r"[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pat[i]))
+            i += 1
+    return "^" + "".join(out) + "$"
+
+
+def fenced_blocks(lines):
+    """[(info string, body text)] for every fenced block among a section's lines."""
+    blocks, fence, info, buf = [], None, None, []
+    for line in lines or []:
+        m = FENCE_OPEN_RE.match(line)
+        if fence is None and m:
+            fence, info, buf = m.group(1), m.group(2).lower(), []
+        elif fence is not None and line.strip() == fence:
+            blocks.append((info, "\n".join(buf)))
+            fence = None
+        elif fence is not None:
+            buf.append(line)
+    return blocks
+
+
+def ui_paths_named(sections):
+    """Paths the ticket CHANGES or PROVES: Pointers and Acceptance criteria only. Context is left
+    out on purpose: it names sibling tickets' files."""
+    spans = code_spans(body_of(sections, "Pointers") or [])
+    spans += code_spans(body_of(sections, CRITERIA_HEADING) or [])
+    out = []
+    for span in spans:
+        if looks_like_path(span):
+            out.append(re.sub(r":\d+(-\d+)?$", "", span.split("#", 1)[0]).strip().rstrip("/"))
+    return [p for p in out if p]
+
+
+def ui_hits(sections, acceptance):
+    rxs = [re.compile(glob_to_re(g)) for g in acceptance.get("uiPaths") or []]
+    return [p for p in ui_paths_named(sections) if any(rx.match(p) or rx.match(p + "/_") for rx in rxs)]
+
+
+def check_browser(sections, r, strict, config, skipped):
+    plan = body_of(sections, "Test plan")
+    from_epic = plan is None
+    if from_epic:
+        plan = body_of(sections, EPIC_PLAN_HEADING)
+    acceptance = (config or {}).get("acceptance") if isinstance(config, dict) else None
+    if acceptance is None:
+        skipped.update(("browser-check-required", "manual-step"))
+    if plan is None:
+        return
+    blocks = [b for b in fenced_blocks(plan) if BLOCK_MARKER in b[1]]
+    # 1. Shape: judged with or without a config. A marked block that does not parse is an error, never
+    #    "no block" (contract §13: a malformed thing is not an absent one).
+    block = None
+    if len(blocks) > 1:
+        r.err("browser-check", f"{len(blocks)} browser-check blocks: put every check in one")
+    for info, text in blocks[:1]:
+        if info != "json":
+            r.err("browser-check", f"the browser-check block is fenced as {info or 'plain'!r}; fence it as ```json")
+        if len(text) > MAX_BLOCK_CHARS:
+            r.err("browser-check", f"the browser-check block is {len(text)} chars (max {MAX_BLOCK_CHARS})")
+        try:
+            block = json.loads(text)
+        except ValueError as exc:
+            r.err("browser-check", f"the browser-check block is not valid JSON: {exc}")
+    if block is not None:
+        import jsonschema_mini as jsm
+        with open(BLOCK_SCHEMA_FILE, encoding="utf-8") as fh:
+            errs = jsm.validate(block, json.load(fh))
+        for e in errs[:5]:
+            r.err("browser-check", f"{e['path'] or 'block'}: {e['message']}")
+        if errs:
+            block = None
+    if block is not None:
+        n_ac = len(checklist_items(body_of(sections, CRITERIA_HEADING) or []))
+        ids = [c["id"] for c in block["checks"]]
+        dup = sorted({i for i in ids if ids.count(i) > 1})
+        if dup:
+            r.err("browser-check", "check ids repeat: " + ", ".join(dup))
+        for c in block["checks"]:
+            if from_epic and "criteria" in c:
+                r.err("browser-check", f"check {c['id']}: `criteria` is for child tickets; an epic's block does not use it")
+            bad = [k for k in c.get("criteria", []) if k > n_ac]
+            if bad and not from_epic:
+                r.err("browser-check", f"check {c['id']}: criteria {bad}: the ticket has {n_ac} acceptance criteria")
+            expects = [st for st in c["steps"] if st["do"] == "expect"]
+            if not expects and not c.get("look"):
+                r.err("browser-check", f"check {c['id']} asserts nothing: add an `expect` step or a `look`")
+            for st in expects:
+                if not any(k in st for k in ASSERTIONS):
+                    r.err("browser-check", f"check {c['id']}: an expect step names no assertion")
+                if st.get("at") and any(k in st for k in ("visible", "count", "text", "attr", "contrast")):
+                    r.err("browser-check", f"check {c['id']}: at=first-paint takes only css, hasClass or lacksClass")
+            for st in c["steps"]:
+                stray = [v for v in st.get("only", []) if v not in c["viewports"]]
+                if stray:
+                    r.err("browser-check", f"check {c['id']}: a step's `only` names {stray}, not among the check's viewports")
+        # 2. Names: they need the project's acceptance section.
+        if acceptance is None:
+            skipped.add("browser-check-names")
+        else:
+            vps = set(acceptance.get("viewports") or {}) or set(DEFAULT_VIEWPORTS)
+            proj_modes = set(acceptance.get("modes") or {})
+            own_modes = set(block.get("modes") or {})
+            clash = sorted((proj_modes | {"default"}) & own_modes)
+            if clash:
+                r.err("browser-check", "the block redefines modes delivery.json declares: " + ", ".join(clash))
+            scenarios = set(acceptance.get("scenarios") or [])
+            for c in block["checks"]:
+                for v in c["viewports"]:
+                    if v not in vps:
+                        r.err("browser-check", f"check {c['id']}: viewport {v!r} is not in delivery.json acceptance.viewports {sorted(vps)}")
+                for m in c["modes"]:
+                    if m not in proj_modes | own_modes | {"default"}:
+                        r.err("browser-check", f"check {c['id']}: mode {m!r} is declared neither in delivery.json nor in this block")
+                if c.get("scenario") and scenarios and c["scenario"] not in scenarios:
+                    r.err("browser-check", f"check {c['id']}: scenario {c['scenario']!r} is not in acceptance.scenarios {sorted(scenarios)}")
+    # 3. A UI ticket carries checks, and no step is left "manual".
+    if acceptance is None:
+        return
+    ui = ui_hits(sections, acceptance)
+    if not ui:
+        return
+    if not blocks and not any(NO_CHECK_RE.match(ln) for ln in plan):
+        (r.err if strict else r.warn)(
+            "browser-check-required",
+            f"a UI ticket (it names {', '.join(ui[:3])}) needs a browser check a machine can run: a ```json block with "
+            "\"schema\": \"pipeline-browser-check/1\" under '## Test plan', or the line `No browser check: <why a "
+            "browser cannot show it>`")
+    manual = [ln.strip() for ln in plan if MANUAL_RE.match(ln)]
+    if manual:
+        (r.err if strict else r.warn)(
+            "manual-step",
+            f"{len(manual)} Test plan step(s) say Manual: {squash(manual[0])!r}. Write it as a browser check, or as "
+            "`Human only: <step> — <what a browser cannot do>`")
+
+
 def check_ticket(t, index, canonical, config, strict, repo_root, skipped):
     if not isinstance(t, dict):
         r = Report(f"draft#{index + 1}", "")
@@ -639,11 +910,17 @@ def check_ticket(t, index, canonical, config, strict, repo_root, skipped):
     sections = check_sections(t, r, canonical)
     check_acceptance(sections, r, strict)
     check_scope_and_tests(sections, r, strict)
-    check_pointers(sections, r, strict, repo_root)
+    siblings = t.get("sibling_paths")
+    if siblings is not None and not (isinstance(siblings, list)
+                                     and all(isinstance(x, str) for x in siblings)):
+        r.err("input", "sibling_paths must be a list of path strings")
+        siblings = None
+    check_pointers(sections, r, strict, repo_root, set(siblings or ()))
     check_placeholders(t, r)
     provs = check_labels(t, r, config, skipped)
     check_links(t, r, provs)
     check_state(t, r, config, skipped)
+    check_browser(sections, r, strict, config, skipped)
     return r
 
 
@@ -908,6 +1185,41 @@ def selftest():
         if errs or warns != ["ac-mechanical"]:
             failures.append(f"ac-mechanical: got errors={errs} warnings={warns}")
 
+        # KIT-303 (B): the parser keeps only the `- [ ]` lines, so a line under a criterion
+        # (a wrapped line, a sub-bullet) is not read by the reviewer, the snapshot or the pin.
+        # The gate says so, as a warning; a criterion that fits on one line says nothing.
+        for label, extra in (("a wrapped line", ["      and then it continues here"]),
+                             ("a sub-bullet", ["  - a: one", "  - b: two"])):
+            t = good_ticket()
+            lines = t["description"].split("\n")
+            first = next(i for i, l in enumerate(lines) if l.startswith("- [ ] "))
+            lines[first + 1:first + 1] = extra
+            t["description"] = "\n".join(lines)
+            note()
+            errs, warns = rules(check(t))
+            if errs or warns != ["ac-nested"]:
+                failures.append(f"ac-nested ({label}): got errors={errs} warnings={warns}")
+        t = good_ticket()
+        lines = t["description"].split("\n")
+        first = next(i for i, l in enumerate(lines) if l.startswith("- [ ] "))
+        lines[first:first] = ["Two things must hold before this ships.", ""]
+        t["description"] = "\n".join(lines)
+        note()
+        if "ac-nested" in rules(check(t))[1]:
+            failures.append("ac-nested: prose BEFORE the first item is not under a criterion")
+        t = good_ticket()
+        lines = t["description"].split("\n")
+        first = next(i for i, l in enumerate(lines) if l.startswith("- [ ] "))
+        lines[first + 1:first + 1] = ["  ```", "  a block under the criterion", "  ```"]
+        t["description"] = "\n".join(lines)
+        note()
+        if "ac-nested" not in rules(check(t))[1]:
+            failures.append("ac-nested: a fenced block under a criterion is unread too and must warn")
+        t = good_ticket()
+        note()
+        if "ac-nested" in rules(check(t))[1]:
+            failures.append("ac-nested: a ticket whose criteria are one line each must not warn")
+
         t = good_ticket()
         t["description"] = t["description"].replace("- Refresh-token rotation", "")
         note()
@@ -922,7 +1234,7 @@ def selftest():
         if not res["ok"]:
             failures.append("no-config run should not error on config-dependent rules")
         note()
-        if res["skipped_rules"] != ["labels-resolve", "state"]:
+        if res["skipped_rules"] != ["browser-check-required", "labels-resolve", "manual-step", "state"]:
             failures.append(f"no-config skips not named: {res['skipped_rules']}")
 
         # 6. A fenced `## ` inside the description is not a section heading.
@@ -961,13 +1273,97 @@ def selftest():
         )
         expect("pointers-escape", t, ["pointers"], strict=True)
 
-        # A dotted, slash-free code span is an identifier far more often than a
-        # file. `vi.mock` in a Pointers bullet used to fail the section with
-        # "pointer path(s) do not exist: vi.mock".
+        # 8. A section left as the template's verbatim prompt is not "filled".
         t = good_ticket()
         t["description"] = t["description"].replace(
-            "- `session.ts` \u2014 the reactive refresh this replaces",
-            "- `session.ts` \u2014 stub it with `vi.mock`; see `process.env` and `github.ref`",
+            "- Refresh-token rotation",
+            "- <A thing a reasonable reader would assume is included, and is not.>",
+        )
+        expect("unfilled-template-prompt", t, ["no-placeholders"])
+
+        note()
+        prose = "Use `List<T>` and a <div> here; check if x < 5 and y > 3 holds."
+        if ANGLE_PROMPT_RE.search(prose_only(prose)):
+            failures.append(f"angle-prompt rule false-positives on: {prose}")
+
+        # 9. Round trip: Linear returns the parent link and the label, never a
+        #    `provenance` field — the value must be reconstructable from those.
+        t = good_ticket(); t["id"] = "ENG-123"; t.pop("provenance")
+        expect("round-trip-provenance", t, [])
+
+        t = good_ticket(); t.pop("provenance"); t["parentId"] = None
+        expect("round-trip-provenance-no-parent", t, ["provenance"])
+
+        # 9b. provenance:agent (KIT-96): the class an agent-filed finding ticket
+        #     carries. A copy lacking the class rejects the ticket with an
+        #     unknown-class error, so this case bites the exact drift a downstream
+        #     copy still has.
+        t = good_ticket()
+        t["labels"] = ["track:platform", "effort:M", "provenance:agent"]
+        t.pop("provenance")
+        t["parentId"] = None
+        expect("provenance-agent", t, [])
+
+        # PROJECT DIVERGENCE (todoclaw, .claude/kit-sync.json): this repo's own regression case,
+        # kept when the kit's file replaced it. Out of scope written as checkboxes (Linear's
+        # editor emits the same syntax as the section above) must still be read as a scope
+        # fence; `bullets()` alone dropped these.
+        t = good_ticket()
+        t["description"] = t["description"].replace(
+            "- Refresh-token rotation", "- [ ] Refresh-token rotation"
+        )
+        note()
+        errs, warns = rules(check(t))
+        if errs or warns:
+            failures.append(f"checkbox-style out-of-scope dropped: errors={errs} warnings={warns}")
+
+        # 9c. Linear rewrites a bare sibling ID typed into a description into
+        #     inline-mention markup and serves it back over the API. Before the
+        #     markup carve-out, a body that merely CITED a sibling cost one
+        #     "template prompt left unfilled" error per mention.
+        MENTION = (
+            '<issue id="00000000-0000-4000-8000-000000000000" '
+            'href="https://linear.app/acme/issue/ENG-99/a-sibling-ticket">'
+            "ENG-99</issue>"
+        )
+        EMBED = '<linear-embed node-type="video">{"uploadState":"finished"}</linear-embed>'
+
+        note()
+        if ANGLE_PROMPT_RE.search(prose_only(MENTION + "\n" + EMBED)):
+            failures.append("tracker-generated mention markup read as an unfilled prompt")
+        note()
+        if "ENG-99" not in prose_only(MENTION):
+            failures.append("stripping the mention tag also dropped the text a reader sees")
+
+        # End to end, on the shape a ticket actually has: a sibling cited in
+        # both prose and a scope bullet is clean, warnings included.
+        t = good_ticket()
+        t["description"] = t["description"].replace(
+            "- Refresh-token rotation", f"- Rotation and reuse detection — that is {MENTION}"
+        ).replace(
+            "Tokens refresh only after a 401,",
+            f"Follow-on from {MENTION}. Tokens refresh only after a 401,",
+        )
+        expect("linear-mention-markup", t, [])
+        note()
+        if rules(check(t))[1]:
+            failures.append(f"linear mention markup raised warnings: {rules(check(t))[1]}")
+
+        # The genuine rule still fires when the markup is present too, so the
+        # carve-out is not an off switch.
+        t["description"] = t["description"].replace(
+            "## Test plan\n\n- `npm test`",
+            "## Test plan\n\n- <How the change is proven, in the order someone would run it>\n- `npm test`",
+        )
+        expect("linear-mention-plus-real-stub", t, ["no-placeholders"])
+
+        # 9d. A dotted, slash-free code span is an identifier far more often than
+        #     a file. Before PATH_EXTENSIONS, `vi.mock` in a Pointers bullet
+        #     failed the section with "pointer path(s) do not exist: vi.mock".
+        t = good_ticket()
+        t["description"] = t["description"].replace(
+            "- `session.ts` — the reactive refresh this replaces",
+            "- `session.ts` — stub it with `vi.mock`; see `process.env` and `github.ref`",
         )
         note()
         errs, warns = rules(check(t))
@@ -984,87 +1380,155 @@ def selftest():
             if warns != ["pointers"]:
                 failures.append(f"missing pointer {bad!r} no longer reported: warnings={warns}")
 
-        # 8. A section left as the template's verbatim prompt is not "filled".
-        t = good_ticket()
-        t["description"] = t["description"].replace(
-            "- Refresh-token rotation",
-            "- <A thing a reasonable reader would assume is included, and is not.>",
-        )
-        expect("unfilled-template-prompt", t, ["no-placeholders"])
+        # 9e. A Pointers line's pointer is its first span that exists or is unmistakably a
+        #     path (KIT-523); a span before or after it is usually prose about that file
+        #     (KIT-273). A live plan was refused whole over
+        #     lines like the first four: Tailwind classes with an opacity modifier,
+        #     and a file that a sibling ticket creates.
+        for rel in ("src/components/Sheet.tsx", "src/features/grid/TouchSurface.tsx",
+                    "src/features/grid/Surface.tsx", "index.html"):
+            os.makedirs(os.path.dirname(os.path.join(tmp, rel)), exist_ok=True)
+            open(os.path.join(tmp, rel), "w").close()
 
-        note()
-        prose = "Use `List<T>` and a <div> here; check if x < 5 and y > 3 holds."
-        if ANGLE_PROMPT_RE.search(prose_only(prose)):
-            failures.append(f"angle-prompt rule false-positives on: {prose}")
+        def pointer_errors(line):
+            t = good_ticket()
+            t["description"] = t["description"].replace(
+                "- `session.ts` — the reactive refresh this replaces", line)
+            return [f["message"] for f in check(t, strict=True)["tickets"][0]["errors"]
+                    if f["rule"] == "pointers"]
 
-        # Linear rewrites a typed sibling ID into inline-mention markup and
-        # serves it back over the API. Both specimens below are verbatim from a
-        # real `get_issue` response; the first used to cost a ticket one
-        # "template prompt left unfilled" error per sibling it cited.
-        MENTION = (
-            '<issue id="d14ebdb7-10d3-4c1f-8af9-3984270d6040" '
-            'href="https://linear.app/braedenclaw/issue/TOD-100/port-the-ci-side-pipeline">'
-            "TOD-100</issue>"
-        )
-        EMBED = '<linear-embed node-type="video">{"uploadState":"finished"}</linear-embed>'
+        no_path = ("'## Pointers' names no file path in backticks — nobody read the "
+                   "codebase to write this ticket")
+        gone = ["1 pointer path(s) do not exist: Gone.tsx"]
+        for name, line, want in (
+            ("pointers-later-class-name-is-prose",
+             "- `src/components/Sheet.tsx`: `bg-black/40` scrim example", []),
+            ("pointers-later-identifier-and-class-are-prose",
+             "- `src/features/grid/TouchSurface.tsx`: imperative `boxShadow` and "
+             "`ring-black/10`", []),
+            ("pointers-later-class-alone-is-prose",
+             "- `src/features/grid/Surface.tsx`: `ring-black/10`", []),
+            ("pointers-later-sibling-file-is-prose",
+             "- `index.html`: where `boot.js` is loaded", []),
+            # KIT-523 (F2 of KIT-319): a line's pointer is its first span that exists or is
+            # unmistakably a path, so a class or a word before the file is prose about it.
+            ("pointers-class-before-the-path-is-prose",
+             "- `bg-ink/40` in `src/components/Sheet.tsx`", []),
+            ("pointers-label-and-class-before-the-path-are-prose",
+             "- **Scrim:** `bg-ink/40` and `ring-black/10` on `src/features/grid/Surface.tsx`", []),
+            ("pointers-class-before-a-missing-path-still-fails",
+             "- `bg-ink/40` in `src/components/Gone.tsx`",
+             ["1 pointer path(s) do not exist: src/components/Gone.tsx"]),
+            ("pointers-a-later-missing-path-after-the-pointer-still-fails",
+             "- `bg-ink/40` in `src/components/Sheet.tsx` and `src/components/Gone.tsx`",
+             ["1 pointer path(s) do not exist: src/components/Gone.tsx"]),
+            ("pointers-later-dotted-method-is-prose",
+             "- `src/components/Sheet.tsx`: calls `api/conversations.list`", []),
+            ("pointers-later-command-is-prose",
+             "- `src/components/Sheet.tsx`: run `npm test -- src/gone.test.ts`", []),
+            # A later absolute path or URL can never be a file in this tree.
+            ("pointers-later-absolute-path-is-prose",
+             "- `index.html`: where `/boot.js` is loaded", []),
+            ("pointers-later-url-is-prose",
+             "- `index.html`: see `https://example.com/docs/setup.md`", []),
+            # A bullet wrapped onto an indented line is still one line, one pointer.
+            ("pointers-wrapped-line-continues-its-pointer",
+             "- `src/features/grid/TouchSurface.tsx`: imperative `boxShadow` and\n"
+             "  `ring-black/10`", []),
+            # ...and the narrowing keeps its teeth. Each line, nested or not, leads
+            # with its own pointer; only an indented non-item line continues one.
+            ("pointers-leading-missing-path-still-fails",
+             "- `src/components/Gone.tsx`: `bg-black/40` scrim example",
+             ["1 pointer path(s) do not exist: src/components/Gone.tsx"]),
+            ("pointers-second-line-leading-missing-file-still-fails",
+             "- `src/components/Sheet.tsx`: the sheet\n- `Gone.tsx`: the old one", gone),
+            ("pointers-nested-bullet-is-its-own-pointer",
+             "- `src/components/Sheet.tsx`: the sheet\n  - `Gone.tsx`: the old one", gone),
+            ("pointers-nested-numbered-item-is-its-own-pointer",
+             "1. `src/components/Sheet.tsx`: the sheet\n   1. `Gone.tsx`: the old one",
+             gone),
+            ("pointers-unindented-line-is-its-own-pointer",
+             "- `src/components/Sheet.tsx`: the sheet\n`Gone.tsx`: the old one", gone),
+            ("pointers-later-missing-path-still-fails",
+             "- `src/components/Sheet.tsx`: replaces `src/components/old/Sheet.tsx`",
+             ["1 pointer path(s) do not exist: src/components/old/Sheet.tsx"]),
+            # A sibling's file named by its full path is not excused on its own: the gate
+            # cannot tell it from a made-up path. A caller that knows a sibling creates it
+            # says so in `sibling_paths` (9f below).
+            ("pointers-later-sibling-file-by-full-path-still-fails",
+             "- `index.html`: where `public/boot.js` is loaded",
+             ["1 pointer path(s) do not exist: public/boot.js"]),
+            ("pointers-later-missing-path-with-line-still-fails",
+             "- `index.html`: loads `src/boot/theme.ts:12`",
+             ["1 pointer path(s) do not exist: src/boot/theme.ts:12"]),
+            ("pointers-later-missing-path-with-line-range-still-fails",
+             "- `index.html`: see `src/boot/theme.ts:10-20`",
+             ["1 pointer path(s) do not exist: src/boot/theme.ts:10-20"]),
+            ("pointers-later-missing-path-with-anchor-still-fails",
+             "- `index.html`: see `docs/gone.md#setup`",
+             ["1 pointer path(s) do not exist: docs/gone.md#setup"]),
+            ("pointers-later-missing-path-upper-case-extension-still-fails",
+             "- `index.html`: see `src/boot/Theme.TSX`",
+             ["1 pointer path(s) do not exist: src/boot/Theme.TSX"]),
+            # A line with no span that exists or is unmistakably a path counts its first
+            # span when it looks like one, so a class name that is all a line holds is
+            # judged as before: a path, and a missing one.
+            ("pointers-leading-class-name-is-still-the-pointer",
+             "- `bg-black/40`: the scrim class",
+             ["1 pointer path(s) do not exist: bg-black/40"]),
+            # A later span that is a path still names one, so the section is not empty.
+            ("pointers-later-path-is-the-only-path",
+             "- `boxShadow` is set in `src/components/Sheet.tsx`", []),
+            ("pointers-later-existing-file-is-the-only-path",
+             "- `boxShadow` is set in `index.html`", []),
+            ("pointers-only-prose-names-no-path",
+             "- `boxShadow` and `ring-black/10`", [no_path]),
+        ):
+            note()
+            got = pointer_errors(line)
+            if got != want:
+                failures.append(f"{name}: expected {want}, got {got}")
 
-        note()
-        if ANGLE_PROMPT_RE.search(prose_only(MENTION + "\n" + EMBED)):
-            failures.append("tracker-generated mention markup read as an unfilled prompt")
-
-        note()
-        if "TOD-100" not in prose_only(MENTION):
-            failures.append("stripping the mention tag also dropped the text a reader sees")
-
-        # End to end, on the shape a ticket actually has: a sibling cited in
-        # both prose and a scope bullet is clean.
-        t = good_ticket()
-        t["description"] = t["description"].replace(
-            "- Refresh-token rotation", f"- Rotation and reuse detection \u2014 that is {MENTION}"
-        ).replace(
-            "Tokens refresh only after a 401,",
-            f"Follow-on from {MENTION}. Tokens refresh only after a 401,",
-        )
-        expect("linear-mention-markup", t, [])
-        note()
-        if rules(check(t))[1]:
-            failures.append(f"linear mention markup raised warnings: {rules(check(t))[1]}")
-
-        # The genuine rule still fires when the markup is present too, so the
-        # fix is a carve-out and not an off switch.
-        t["description"] = t["description"].replace(
-            "## Test plan\n\n- `npm test`",
-            "## Test plan\n\n- <How the change is proven, in the order someone would run it>\n- `npm test`",
-        )
-        expect("linear-mention-plus-real-stub", t, ["no-placeholders"])
-
-        # 9. Round trip: Linear returns the parent link and the label, never a
-        #    `provenance` field — the value must be reconstructable from those.
-        t = good_ticket(); t["id"] = "ENG-123"; t.pop("provenance")
-        expect("round-trip-provenance", t, [])
-
-        t = good_ticket(); t.pop("provenance"); t["parentId"] = None
-        expect("round-trip-provenance-no-parent", t, ["provenance"])
-
-        # provenance:agent (KIT-96): the class an agent-filed finding ticket
-        # carries. Ported from the kit; before it, the class was rejected.
-        t = good_ticket()
-        t["labels"] = ["track:platform", "effort:M", "provenance:agent"]
-        t.pop("provenance")
-        t["parentId"] = None
-        expect("provenance-agent", t, [])
-
-        # Out of scope written as checkboxes (Linear's editor emits the same
-        # syntax as the section above) must still be read as a scope fence.
-        # Ported from the kit's scope_items; `bullets()` alone dropped these.
-        t = good_ticket()
-        t["description"] = t["description"].replace(
-            "- Refresh-token rotation", "- [ ] Refresh-token rotation"
-        )
-        note()
-        errs, warns = rules(check(t))
-        if errs or warns:
-            failures.append(f"checkbox-style out-of-scope dropped: errors={errs} warnings={warns}")
+        # 9f. A pointer a sibling of the same plan creates is excused when the caller names it
+        #     in the ticket's `sibling_paths` (KIT-319, the owner's choice on 6 Nov). The gate
+        #     itself cannot tell a sibling's file from a made-up one, so it excuses only the
+        #     exact paths it is given; a typo is not among them.
+        def sibling_errors(line, siblings):
+            t = good_ticket()
+            t["description"] = t["description"].replace(
+                "- `session.ts` — the reactive refresh this replaces", line)
+            if siblings is not None:
+                t["sibling_paths"] = siblings
+            return [(f["rule"], f["message"]) for f in check(t, strict=True)["tickets"][0]["errors"]
+                    if f["rule"] in ("pointers", "input")]
+        mine = "- `src/new/Thing.tsx`: the component a sibling ticket creates"
+        for name, line, siblings, want in (
+            ("sibling-path-named-is-excused", mine, ["src/new/Thing.tsx"], []),
+            ("sibling-path-not-named-is-refused", mine, [],
+             [("pointers", "1 pointer path(s) do not exist: src/new/Thing.tsx")]),
+            ("sibling-path-field-absent-is-refused", mine, None,
+             [("pointers", "1 pointer path(s) do not exist: src/new/Thing.tsx")]),
+            ("sibling-path-typo-is-refused", "- `src/new/Thinng.tsx`: the component", [
+                "src/new/Thing.tsx"],
+             [("pointers", "1 pointer path(s) do not exist: src/new/Thinng.tsx")]),
+            ("sibling-path-excuses-only-what-is-named",
+             "- `src/new/Thing.tsx`: new, and replaces `src/old/Gone.tsx`", ["src/new/Thing.tsx"],
+             [("pointers", "1 pointer path(s) do not exist: src/old/Gone.tsx")]),
+            # A path outside this repo is never excused, whoever names it (Stage E, KIT-319).
+            ("sibling-path-that-escapes-the-repo-is-refused",
+             "- `../outside/Thing.tsx`: a file outside the repo", ["../outside/Thing.tsx"],
+             [("pointers", "1 pointer path(s) do not exist: ../outside/Thing.tsx")]),
+            ("sibling-absolute-path-is-refused", "- `/etc/outside/Thing.tsx`: an absolute path",
+             ["/etc/outside/Thing.tsx"],
+             [("pointers", "1 pointer path(s) do not exist: /etc/outside/Thing.tsx")]),
+            ("sibling-paths-that-are-not-a-list-are-refused", mine, "src/new/Thing.tsx",
+             [("input", "sibling_paths must be a list of path strings"),
+              ("pointers", "1 pointer path(s) do not exist: src/new/Thing.tsx")]),
+        ):
+            note()
+            got = sibling_errors(line, siblings)
+            if got != want:
+                failures.append(f"{name}: expected {want}, got {got}")
 
     # 10. An unrecognized delivery.json version refuses; it does not guess.
     with tempfile.TemporaryDirectory() as tmp2:
@@ -1129,10 +1593,192 @@ def selftest():
     if pin_fields("## Out of scope (draft)\n- draft only\n")["out_of_scope"]:
         failures.append("heading matched as a substring; it must match in full")
 
+    # KIT-441: the CRITERIA heading may run on past its two words (a form, a date, a colon):
+    # Stage E declined a real ticket over `## Acceptance criteria (its DM form, …)`. The
+    # exact heading still wins, and the words must end where the heading's name ends.
+    note()
+    if pin_fields("## Acceptance criteria (its DM form, added 2 Nov)\n\n- [ ] the DM form works\n"
+                  )["acceptance_criteria"] != ["the DM form works"]:
+        failures.append("KIT-441: a heading that starts with 'Acceptance criteria' was not read")
+    note()
+    if pin_fields("## Acceptance criteria:\n\n- [ ] with a colon\n")["acceptance_criteria"] != ["with a colon"]:
+        failures.append("KIT-441: '## Acceptance criteria:' was not read")
+    note()
+    if pin_fields("## Acceptance criteria (old)\n\n- [ ] old one\n\n## Acceptance criteria\n\n"
+                  "- [ ] exact one\n")["acceptance_criteria"] != ["exact one"]:
+        failures.append("KIT-441: a longer heading won over the exact one")
+    note()
+    if pin_fields("## Acceptance criteriaX\n\n- [ ] not it\n")["acceptance_criteria"]:
+        failures.append("KIT-441: '## Acceptance criteriaX' was read as the criteria")
+    # …and the gate reads that section the same way, so it never disagrees with the pin.
+    note()
+    if filled is not None:
+        r441 = Report("KIT-441", "a longer criteria heading")
+        longer = filled.replace("## Acceptance criteria\n", "## Acceptance criteria (its DM form)\n", 1)
+        check_acceptance(check_sections({"description": longer}, r441, canonical), r441, False)
+        if longer == filled or r441.errors:
+            failures.append("KIT-441: the gate refused a longer criteria heading the pin reads: %s"
+                            % [e["message"] for e in r441.errors])
+        note()
+        thin = Report("KIT-441", "a thin criterion under a longer heading")
+        check_acceptance(split_sections("## Acceptance criteria (draft)\n\n- [ ] tiny\n"), thin, False)
+        if [e["rule"] for e in thin.errors] != ["acceptance-criteria"]:
+            failures.append("KIT-441: the gate did not judge the criteria under a longer heading: %s"
+                            % thin.errors)
+    # …and two longer headings with no exact one is ambiguous: the pin reads the first, and
+    # the gate says so rather than let the second be dropped in silence (review of #293).
+    note()
+    two = Report("KIT-441", "two longer criteria headings")
+    check_sections({"description": "## Acceptance criteria (a)\n\n- [ ] x\n\n"
+                                   "## Acceptance criteria (b)\n\n- [ ] y\n"}, two, ["Acceptance criteria"])
+    if not any("start with 'Acceptance criteria'" in e["message"] for e in two.errors):
+        failures.append("KIT-441: two longer criteria headings and no exact one were not flagged")
+
     # A missing section is an empty list, never an inferred one.
     note()
     if pin_fields("## Context\n\nNo criteria here.\n") != {"acceptance_criteria": [], "out_of_scope": []}:
         failures.append("a description with neither section did not yield two empty lists")
+
+    # KIT-331: browser checks. Each rule has a case, and each would pass silently on a gate without it.
+    ACC = {"uiPaths": ["src/**/*.tsx", "src/**/*.css"], "serve": {"mode": "files", "dir": "dist"},
+           "viewports": {"desktop": {"width": 1280, "height": 800}, "phone": {"width": 390, "height": 844, "mobile": True}},
+           "modes": {"light": {"colorScheme": "light"}, "dark": {"colorScheme": "dark"}}, "scenarios": ["signed-in", "empty"]}
+    ON = dict(GOOD_CONFIG, acceptance=ACC)
+    FENCE = "`" * 3
+    for rel in ("src/components/Panel.tsx", "docs/guide.md"):
+        os.makedirs(os.path.join(tmp, os.path.dirname(rel)), exist_ok=True)
+        open(os.path.join(tmp, rel), "w").close()
+    MARKED = '{"schema": "pipeline-browser-check/1", oops'
+
+    def check_block(**over):
+        c = {"id": "dark-panel", "viewports": ["desktop", "phone"], "modes": ["light", "dark"], "open": "/",
+             "criteria": [1], "steps": [{"do": "expect", "on": {"role": "button", "name": "Save"}, "visible": True}]}
+        c.update(over)
+        return {"schema": "pipeline-browser-check/1", "checks": [c]}
+
+    def ui_ticket(plan, pointer="`src/components/Panel.tsx` — the panel", name="Test plan"):
+        t = good_ticket()
+        t["description"] = (GOOD_DESCRIPTION.replace("- `npm test` — the new near-expiry cases\n", plan)
+                            .replace("`session.ts` — the reactive refresh this replaces", pointer)
+                            .replace("## Test plan", "## " + name))
+        return t
+
+    def fenced(block, info="json"):
+        return "- `npm test`\n\n%s%s\n%s\n%s\n" % (FENCE, info, block if isinstance(block, str) else json.dumps(block), FENCE)
+
+    def browser_rules(ticket, strict=False, config=ON):
+        res = check(ticket, strict, config)["tickets"][0]
+        return (sorted({f["rule"] for f in res["errors"] if f["rule"].startswith(("browser", "manual"))}),
+                sorted({f["rule"] for f in res["warnings"] if f["rule"].startswith(("browser", "manual"))}),
+                " | ".join(f["message"] for f in res["errors"] + res["warnings"] if f["rule"].startswith(("browser", "manual"))))
+
+    def browser_case(name, got, want):
+        note()
+        if got != want:
+            failures.append(f"browser: {name}: got {got!r}, want {want!r}")
+
+    browser_case("a UI ticket with a well-formed block is clean",
+                 browser_rules(ui_ticket(fenced(check_block())), True)[:2], ([], []))
+    errs, warns, msg = browser_rules(ui_ticket("- `npm test`\n"))
+    browser_case("a UI ticket with no block is a warning, naming the path it matched",
+                 (errs, warns, "src/components/Panel.tsx" in msg), ([], ["browser-check-required"], True))
+    browser_case("…and an error under --strict", browser_rules(ui_ticket("- `npm test`\n"), True)[:2],
+                 (["browser-check-required"], []))
+    browser_case("the built-in default mode needs no declaring",
+                 browser_rules(ui_ticket(fenced(check_block(modes=["default"]))), True)[:2], ([], []))
+    browser_case("a block may not redefine the built-in default mode",
+                 browser_rules(ui_ticket(fenced(dict(check_block(modes=["default"]),
+                                                     modes={"default": {"colorScheme": "dark"}}))), True)[:2],
+                 (["browser-check"], []))
+    epic_c = ui_ticket(fenced(check_block(criteria=[1])), name="How we will know it works")
+    browser_case("criteria on an epic's block is refused",
+                 browser_rules(epic_c, True)[:2], (["browser-check"], []))
+    ctx = ui_ticket("- `npm test`\n", pointer="`session.ts` — the reactive refresh this replaces")
+    ctx["description"] = ctx["description"].replace(
+        "## Context\n", "## Context\nThe sibling ticket edits `src/components/Panel.tsx`.\n", 1)
+    assert "src/components/Panel.tsx" in ctx["description"]
+    browser_case("a UI path named only in Context does not make a UI ticket",
+                 browser_rules(ctx, True)[:2], ([], []))
+    browser_case("a `No browser check:` line with a reason satisfies it",
+                 browser_rules(ui_ticket("- `npm test`\n- No browser check: a copy change a browser shows no differently\n"), True)[:2],
+                 ([], []))
+    browser_case("…but a reason shorter than 20 characters does not",
+                 browser_rules(ui_ticket("- `npm test`\n- No browser check: n/a\n"), True)[:2],
+                 (["browser-check-required"], []))
+    browser_case("a ticket that names no UI path needs no block",
+                 browser_rules(ui_ticket("- `npm test`\n", pointer="`docs/guide.md` — the guide"), True)[:2], ([], []))
+    errs, warns, msg = browser_rules(ui_ticket("1. Manual: open devtools and add `dark` to <html>\n- `npm test`\n"))
+    browser_case("a Manual step of a UI ticket is a warning, and says what to write instead",
+                 (errs, "manual-step" in warns, "Human only:" in msg), ([], True, True))
+    browser_case("…an error under --strict", "manual-step" in browser_rules(
+        ui_ticket("1. Manual: open devtools\n- `npm test`\n"), True)[0], True)
+    browser_case("a `Human only:` step is allowed",
+                 "manual-step" in browser_rules(ui_ticket(fenced(check_block()) + "- Human only: check it on a phone — a browser cannot\n"),
+                                                True)[0], False)
+    browser_case("a Manual step of a non-UI ticket is left alone",
+                 browser_rules(ui_ticket("1. Manual: read it\n- `npm test`\n", pointer="`docs/guide.md`"), True)[:2], ([], []))
+
+    # The shape of a block, with or without the project's acceptance section.
+    for label, bad_text in (("not JSON", MARKED), ("a schema violation", json.dumps(
+            {"schema": "pipeline-browser-check/1", "checks": [{"id": "x", "steps": []}]})),
+            ("an unknown verb", json.dumps(check_block(steps=[{"do": "eval", "code": "1"}])))):
+        for cfg_name, cfg in (("with acceptance", ON), ("without", GOOD_CONFIG)):
+            browser_case("a malformed block is an error, %s: %s" % (cfg_name, label),
+                         browser_rules(ui_ticket(fenced(bad_text)), False, cfg)[0], ["browser-check"])
+    browser_case("a block fenced as something other than json is an error",
+                 browser_rules(ui_ticket(fenced(check_block(), "yaml")))[0], ["browser-check"])
+    browser_case("two blocks are an error",
+                 browser_rules(ui_ticket(fenced(check_block()) + fenced(check_block(id="other"))))[0], ["browser-check"])
+    browser_case("a block over the size limit is an error",
+                 "chars (max" in browser_rules(ui_ticket(fenced(json.dumps(check_block(look="x" * 12) ) + " " * 9000)))[2], True)
+    browser_case("criteria past the ticket's own count are refused, naming them",
+                 "criteria [5]" in browser_rules(ui_ticket(fenced(check_block(criteria=[5]))))[2], True)
+    two = check_block()
+    two["checks"].append(dict(two["checks"][0]))
+    browser_case("a repeated check id is refused", "ids repeat: dark-panel" in browser_rules(ui_ticket(fenced(two)))[2], True)
+    browser_case("a check that asserts nothing is refused",
+                 "asserts nothing" in browser_rules(ui_ticket(fenced(check_block(steps=[{"do": "reload"}]))))[2], True)
+    browser_case("an expect step with no assertion is refused", "names no assertion" in browser_rules(ui_ticket(fenced(
+        check_block(steps=[{"do": "expect", "on": {"role": "button"}}, {"do": "reload"}]))))[2], True)
+    browser_case("a first-paint expect may use only css and classes", "at=first-paint" in browser_rules(ui_ticket(fenced(
+        check_block(steps=[{"do": "expect", "on": {"css": "html"}, "at": "first-paint", "text": "x"}]))))[2], True)
+    browser_case("a step's `only` must name a viewport of the check", "`only` names ['tablet']" in browser_rules(ui_ticket(fenced(
+        check_block(steps=[{"do": "click", "on": {"role": "button"}, "only": ["tablet"]},
+                           {"do": "expect", "on": {"role": "button"}, "visible": True}]))))[2], True)
+
+    # Names: refused when delivery.json does not define them, naming each.
+    for field, value, said in (("viewports", ["watch"], "viewport 'watch'"), ("modes", ["sepia"], "mode 'sepia'"),
+                               ("scenario", "offline", "scenario 'offline'")):
+        browser_case("a block naming a %s delivery.json does not define is refused, naming it" % field.rstrip("s"),
+                     said in browser_rules(ui_ticket(fenced(check_block(**{field: value}))))[2], True)
+    own = check_block()
+    own["modes"] = {"sepia": {"colorScheme": "light"}}
+    own["checks"][0]["modes"] = ["sepia"]
+    browser_case("a mode the block defines itself is allowed", browser_rules(ui_ticket(fenced(own)))[:2], ([], []))
+    own["modes"] = {"dark": {"colorScheme": "dark"}}
+    own["checks"][0]["modes"] = ["dark"]
+    browser_case("…but not one delivery.json already declares", "redefines modes delivery.json declares: dark" in browser_rules(
+        ui_ticket(fenced(own)))[2], True)
+
+    # No `acceptance` section: the check is off, and the rules that need it say so.
+    note()
+    res = run([ui_ticket("1. Manual: do it\n- `npm test`\n")], canonical, GOOD_CONFIG, True, tmp)
+    if not res["ok"] or not {"browser-check-required", "manual-step"} <= set(res["skipped_rules"]):
+        failures.append(f"browser: without acceptance a UI ticket must pass and the two rules be named skipped: {res['skipped_rules']}")
+    note()
+    res = run([ui_ticket(fenced(check_block()))], canonical, GOOD_CONFIG, True, tmp)
+    if "browser-check-names" not in res["skipped_rules"] or not res["ok"]:
+        failures.append("browser: a well-formed block without acceptance must pass, and its names be named skipped")
+    note()
+    if "browser-check-names" in run([ui_ticket(fenced(check_block()))], canonical, ON, True, tmp)["skipped_rules"]:
+        failures.append("browser: the names are judged, not skipped, when acceptance is present")
+
+    # An epic's `## How we will know it works` is read the way a Test plan is.
+    only_epic = good_ticket()
+    only_epic["description"] = GOOD_DESCRIPTION.replace("## Test plan", "## How we will know it works").replace(
+        "- `npm test` — the new near-expiry cases\n", fenced(MARKED))
+    res = check_ticket(only_epic, 0, [c for c in canonical if c != "Test plan"], ON, False, tmp, set())
+    browser_case("…a malformed block there is an error", [f["rule"] for f in res.errors if f["rule"] == "browser-check"], ["browser-check"])
 
     if failures:
         print("FAIL: check_ticket_dor selftest")
@@ -1155,7 +1801,8 @@ def main():
     args = ap.parse_args()
 
     if args.selftest:
-        return selftest()
+        from scratch_run import contained   # KIT-450: its temp folders go when it ends
+        return contained(selftest, "ticket-dor-selftest-run-")
 
     repo_root = os.path.abspath(args.repo_root)
     canonical = template_sections(repo_root) or template_sections(

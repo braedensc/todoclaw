@@ -34,7 +34,10 @@ fi
 # ── 1. Block planning/ and real .env files from being staged ─────────────────
 # Match planning/ or any path component starting with .env, then explicitly
 # allow .env.example. (|| true so a no-match grep doesn't abort under `sh -e`)
-FORBIDDEN=$(git diff --cached --name-only \
+# -z, then one name a line: git quotes a name holding a non-ASCII character, and a
+# quoted `"planning/\303\251.md"` matched nothing. A deletion is not refused: taking a
+# forbidden file out of the tree is the fix.
+FORBIDDEN=$(git diff --cached -z --name-only --diff-filter=d | tr '\0' '\n' \
   | grep -E '^planning/|(^|/)\.env' \
   | grep -v -E '(^|/)\.env\.example$' \
   || true)
@@ -58,8 +61,14 @@ fi
 # working tree). CWD stays the worktree, so the staged paths + .secretlintrc.json
 # resolve there while secretlint loads its rule preset from its own install.
 # If no binary is found we FAIL loudly — silently skipping would disable layer 2.
-STAGED=$(git diff --cached --name-only --diff-filter=ACM || true)
-if [ -n "$STAGED" ]; then
+#
+# The list is every staged path but a deletion (`--diff-filter=d`), NOT `ACM`: that filter
+# drops RENAMED and type-changed files, so `git mv` plus an appended secret staged an `R`
+# entry the scan never saw, and the value was already on a public repository when CI
+# flagged it (TOD-124, a port of the kit's KIT-151). The list is NUL-separated end to end,
+# so a name with a space or a quote is just a name.
+STAGED_COUNT=$(git diff --cached -z --name-only --diff-filter=d | tr -cd '\0' | wc -c | tr -d ' ')
+if [ "${STAGED_COUNT:-0}" -gt 0 ]; then
   if [ -x node_modules/.bin/secretlint ]; then
     SECRETLINT=node_modules/.bin/secretlint
   else
@@ -81,7 +90,7 @@ if [ -n "$STAGED" ]; then
     exit 1
   fi
 
-  if ! echo "$STAGED" | xargs "$SECRETLINT" --secretlintrc .secretlintrc.json; then
+  if ! git diff --cached -z --name-only --diff-filter=d | xargs -0 "$SECRETLINT" --secretlintrc .secretlintrc.json; then
     echo ""
     echo "  BLOCKED: secretlint found a potential secret in staged files."
     echo "  Remove the secret value and reference it by env var name only."
