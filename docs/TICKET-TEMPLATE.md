@@ -37,11 +37,29 @@ and the PRD document rather than restating them.>
 
 ## Acceptance criteria
 
-- [ ] <A statement that is true or false about the finished system, not a task.
-      Prefer mechanically checkable: name the command, endpoint, file, or
-      observable state. e.g. "`npm test` covers the expired-token path and
-      passes">
+<One `- [ ]` line per criterion. The parser reads only those lines: a wrapped line or a
+sub-bullet under one is not read by the gate, the snapshot, the pin or the reviewer, and the
+reviewer then judges a shorter list than you wrote. List parts as items of their own. The
+gate warns (`ac-nested`) on a line under a criterion.>
+
+- [ ] <A true-or-false statement about the finished system, on one line, naming the command, endpoint, file or state, e.g. "`npm test` covers the expired-token path">
 - [ ] <...>
+
+**The heading and the checkboxes are both load-bearing.** One parser reads this
+section — a top-level `## Acceptance criteria` heading with `- [ ]` items — and
+the dispatcher pins what it returns. The heading may run on, as
+`## Acceptance criteria (draft)` or `## Acceptance criteria:` do, but the exact
+heading wins. A `###` heading, a renamed heading such as `## Deliverable`, bold,
+or plain bullets all read as **no criteria at all**, silently: the ticket looks
+fine, and the review of its pull request declines as unreviewable. Measured on a
+real ticket, 2026-09-08.
+
+**A criterion requiring a change under `.github/workflows/` cannot be met by a
+session.** The pipeline's push credential deliberately lacks the Workflows
+permission — a session that can rewrite CI can switch off the guards that
+supervise it (`docs/AUTONOMY.md`). Neither `git push` nor the REST contents API
+gets round it. Split that change out for a person, or the review will correctly
+report the criterion unmet and a fix pass will be spent failing at it.
 
 ## Out of scope
 
@@ -95,10 +113,7 @@ Errors (exit 1 — the ticket is not ready):
 - Acceptance criteria has at least one real checklist item
 - Title well-formed; no unfinished-draft residue — `TBD` and unfilled tokens anywhere,
   `TODO`/`FIXME`/`XXX` outside a code span (backtick one you mean literally), and no
-  section left as this file's verbatim `<Prose prompt…>`. Markup the tracker generates
-  for you is not residue: typing a bare `TOD-64` makes Linear store an
-  `<issue id="…" href="…">TOD-64</issue>` element and serve it back over the API, so
-  cite siblings however you like — the gate strips it before judging
+  section left as this file's verbatim `<Prose prompt…>`
 - Exactly one `effort:`, at least one `track:`, exactly one `provenance:`, and no
   `agent:*` / `blocked:capacity`
 - Every label resolves to a non-empty ID in `linear.labels.ids` (when `delivery.json` is present)
@@ -109,11 +124,11 @@ Warnings (exit 0 by default, errors under `--strict`):
 
 - Out of scope or Test plan empty
 - No acceptance criterion contains an inline-code span (nothing mechanically checkable)
-- Pointers empty, or a pointer path does not exist in the working tree. Paths are
-  repo-relative: an absolute path or one that `..`-escapes the root counts as missing,
-  because a pointer names a file in *this* tree. A backticked span with no `/` counts as
-  a path only when it ends in a real file extension, so a dotted identifier in the prose
-  (`vi.mock`, `process.env`, `github.ref`) reads as code rather than a missing file
+- Pointers empty, or a pointer path does not exist in the working tree. A line's first
+  backticked span is its pointer; a later span on the line is checked too when it is a
+  repo path written `dir/name.ext`. Paths are repo-relative: an absolute pointer or one
+  that `..`-escapes the root counts as missing, because a pointer names a file in *this*
+  tree. A file another ticket will create is not a pointer yet: name it in Context
 
 The gate refuses outright (exit 2) if `delivery.json` declares a contract `version` it
 does not implement — contract §1: a reader that does not recognize the version refuses
@@ -127,6 +142,30 @@ Run `python3 scripts/check_ticket_dor.py --selftest` (or `npm run test:dor`) to 
 gate itself still works — it includes the drift check against this file.
 
 ---
+
+## Work no session can land (KIT-108)
+
+A dispatched session's push credential cannot change `.github/workflows`, branch protection or
+an installer, by design: a session that could rewrite CI could disable the guards that
+supervise it. So **a criterion that asks for such a change can never be met by a session.**
+Write it for a person instead, or leave it out and say so under *Out of scope*.
+
+Three places already know:
+
+- **The tech lead** never offers to plan such work, and its `plan`, `replan`, `approve`, `retry`
+  and `start` tools refuse it (the reach check).
+- **The bounce driver** does not re-prompt a session for a review finding about a file under
+  `.github/workflows` or `.github/actions`. It hands the PR to you and spends no bounce
+  (`docs/STAGE-E-OPERATOR.md`, Step 5).
+- **You**, when you write the ticket. The DoR gate does not flag it, on purpose: a ticket may
+  name `.github/workflows/ci.yml` as a pointer to read, which is fine, and the gate cannot tell
+  a pointer from a demand without guessing. A guess that blocks good tickets costs more than the
+  one that lets a bad ticket through, because the other two places catch it.
+
+Good: *Acceptance: the helper returns the new field.* *Out of scope: wiring it into
+`.github/workflows/ci.yml` (a person does that).*
+Not: *Acceptance: the CI job runs the new check.* A session will build the check and then be
+unable to land the one line that runs it.
 
 ## Input shape
 

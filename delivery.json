@@ -84,7 +84,9 @@
       "src/lib/**",
       "scripts/check-*.mjs",
       "evals/**",
-      ".claude/hooks/**"
+      ".claude/hooks/**",
+      "e2e/acceptance/**",
+      "scripts/build-acceptance.mjs"
     ]
   },
 
@@ -113,8 +115,8 @@
 
   "auth": {
     "devSessions": "subscription",
-    "scheduled": "api-key",
-    "review": "api-key"
+    "scheduled": "subscription",
+    "review": "subscription"
   },
 
   "autonomy": {
@@ -128,11 +130,32 @@
       ".github/workflows/**",
       "templates/hooks/**",
       "templates/workflows/**",
+      "e2e/acceptance/**",
+      "scripts/build-acceptance.mjs",
       ".husky/**",
       "delivery.json",
       "**/*.pem",
       "**/*.key"
     ]
+  },
+
+  "acceptance": {
+    "setup": "npm ci",
+    "build": "node scripts/build-acceptance.mjs",
+    "serve": {
+      "mode": "files",
+      "dir": "dist-acceptance",
+      "fallback": "index.html",
+      "origin": "http://127.0.0.1:9"
+    },
+    "fakeBackend": "e2e/acceptance/fake-backend.mjs",
+    "scenarios": ["signed-in", "signed-out", "empty"],
+    "viewports": {
+      "desktop": { "width": 1280, "height": 800 },
+      "phone": { "width": 390, "height": 844, "mobile": true }
+    },
+    "modes": {},
+    "uiPaths": ["src/**/*.tsx", "src/**/*.css", "index.html", "public/**", "tailwind.config.js"]
   },
 
   "dispatch": {

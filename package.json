@@ -16,6 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "build:acceptance": "node scripts/build-acceptance.mjs",
+    "test:acceptance": "node scripts/build-acceptance.mjs && node e2e/acceptance/check-fake-backend.mjs",
     "test:e2e:golden": "playwright test --config playwright.golden.config.ts",
     "test:hooks": "python3 .claude/hooks/test_hooks.py",
     "test:schemas": "python3 scripts/check_schemas.py --selftest",
@@ -30,6 +32,9 @@
     "test:auto-merge": "python3 scripts/check_auto_merge.py --selftest",
     "test:weekly-review": "python3 scripts/check_weekly_review.py --selftest",
     "test:gh-fallback": "python3 scripts/gh_fallback.py --selftest",
+    "test:union": "python3 scripts/check_pr_union.py --selftest",
+    "test:scratch-run": "python3 scripts/scratch_run.py --selftest",
+    "test:hooks-path": "python3 scripts/pin_hooks_path.py --selftest",
     "device-lab": "playwright test --config playwright.device-lab.config.ts",
     "seed:demo": "tsx scripts/demo-seed/import.ts",
     "eval": "cd evals && deno task eval --",
@@ -45,7 +50,7 @@
     "check:edge-fetch": "node scripts/check-edge-fetch.mjs",
     "check:schemas": "python3 scripts/check_schemas.py",
     "check:delivery": "python3 scripts/check_delivery_config.py",
-    "prepare": "husky"
+    "prepare": "husky && (python3 scripts/pin_hooks_path.py || echo 'WARNING: could not pin core.hooksPath; a worktree made later may run no pre-commit hook (KIT-420)' >&2)"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

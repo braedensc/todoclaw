@@ -67,8 +67,8 @@ DEFAULT_DAYS = 7
 # --------------------------------------------------------------------------- #
 SELECTS = {
     "runs": """
-        SELECT run_id, ticket_id, team_key, stage, model, auth_mode,
-               started_at, ended_at, tokens_in, tokens_out, cost_usd, turns,
+        SELECT run_id, ticket_id, team_key, stage, model, model_note, auth_mode,
+               started_at, ended_at, tokens_in, tokens_out, cost_usd, cost_note, turns,
                outcome, error_class, files_changed, lines_added, lines_removed,
                pr_number
           FROM {s}.runs
@@ -88,19 +88,46 @@ SELECTS = {
 }
 
 
+# Columns a store may predate. telemetry_scrape.MIGRATIONS adds them on its next sweep;
+# until then this read leaves them out rather than failing, and SAYS it did (KIT-130).
+OPTIONAL_COLUMNS = {"runs": ("model_note", "cost_note")}
+
+
+def select_for(table, sql, present):
+    """(sql, missing) — `sql` with every optional column the store lacks removed.
+    `present` None means "not asked", and nothing is removed."""
+    missing = [c for c in OPTIONAL_COLUMNS.get(table) or ()
+               if present is not None and c not in present]
+    for col in missing:
+        sql = re.sub(r",\s*%s\b" % re.escape(col), "", sql)
+    return sql, missing
+
+
 def collect(dsn, schema, since):
-    """The one read. Returns {table: [row dicts]} for the window."""
+    """The one read. Returns {table: [row dicts]} for the window, plus `_missing_columns`
+    naming any optional column the store does not have yet."""
     conn = _connect(dsn)
-    out = {}
+    out, lacking = {}, []
     try:
         cur = conn.cursor()
         for table, sql in SELECTS.items():
+            present = None
+            if OPTIONAL_COLUMNS.get(table):
+                # Every other statement names the schema unquoted, and Postgres folds an
+                # unquoted name to lower case; the catalog holds the folded name.
+                cur.execute("SELECT column_name FROM information_schema.columns "
+                            "WHERE table_schema = %s AND table_name = %s",
+                            (schema.lower(), table))
+                present = {r[0] for r in cur.fetchall()}
+            sql, missing = select_for(table, sql, present)
+            lacking += ["%s.%s" % (table, c) for c in missing]
             cur.execute(sql.format(s=schema), (since,))
             cols = [d[0] for d in cur.description]
             out[table] = [dict(zip(cols, r)) for r in cur.fetchall()]
         cur.close()
     finally:
         conn.close()
+    out["_missing_columns"] = lacking
     return out
 
 
@@ -159,17 +186,37 @@ def fmt_hours(v):
 # and `emphasis` (a metric rendered as the hero tile). The renderer reads this
 # list and knows nothing else about any metric.
 # --------------------------------------------------------------------------- #
+def floor_clause(d):
+    """The words that make a cost figure read as a floor, or "" when it is a total.
+
+    §4: a run whose cost was not measured contributes 0 to every sum built from
+    `cost_usd`. A store that predates the note columns cannot say which runs those are.
+    Either way the figure is said to be a floor on the figure it distorts, never only
+    in a table further down the page."""
+    reasons = []
+    if d.get("_cost_unmeasured"):
+        reasons.append("%d run(s) carry no measured cost" % d["_cost_unmeasured"])
+    if d.get("_store_lacks"):
+        reasons.append("the store lacks %s, the column(s) that name an unmeasured run"
+                       % ", ".join(d["_store_lacks"]))
+    return ("; %s, so this is a floor, not a total" % " and ".join(reasons)) if reasons else ""
+
+
 def m_spend(d):
     spent = d["_spend"]
     budget = d["_budget"]
     pct = (spent / budget * 100.0) if budget else None
+    floor = floor_clause(d)
+    note = (("%.0f%% of the %s period budget" % (pct, fmt_usd(budget)))
+            if pct is not None else "no budgets.dailyUsd configured") + floor
     return {
         "value": round(spent, 4),
         "budget": round(budget, 2) if budget else None,
         "pct_of_budget": round(pct, 1) if pct is not None else None,
+        "cost_unmeasured_runs": d.get("_cost_unmeasured", 0),
+        "floor": bool(floor),
         "display": fmt_usd(spent),
-        "note": ("%.0f%% of the %s period budget" % (pct, fmt_usd(budget)))
-                if pct is not None else "no budgets.dailyUsd configured",
+        "note": note,
     }
 
 
@@ -183,10 +230,14 @@ def m_cost_per_merged_pr(d):
     n = len(d["_merged_tickets"])
     spent = d["_spend"]
     value = round(spent / n, 2) if n else None
+    # The same sum as spend, so the same floor: this is the figure a review leads with.
+    floor = floor_clause(d) if n else ""
     return {
         "value": value,
+        "cost_unmeasured_runs": d.get("_cost_unmeasured", 0),
+        "floor": bool(floor),
         "display": fmt_usd(value) if value is not None else "—",
-        "note": ("%s across %d merged ticket(s)" % (fmt_usd(spent), n)) if n
+        "note": ("%s across %d merged ticket(s)%s" % (fmt_usd(spent), n, floor)) if n
                 else "nothing merged in this window — spend bought no delivery",
     }
 
@@ -243,6 +294,82 @@ METRICS = [
     {"key": "wasted_runs", "label": "Runs with no PR", "fn": m_wasted, "emphasis": False,
      "why": "Runs that spent tokens and opened nothing. The cheapest thing to fix first."},
 ]
+
+def model_names_nothing(model):
+    """§4: empty, `unknown`, or a `label:` stand-in names no model. The same test the
+    gate applies (telemetry_block.model_is_unknown), re-stated because this file reads
+    stored rows and must not import the emitter."""
+    text = str(model or "").strip().lower()
+    return not text or text == "unknown" or text.startswith("label:")
+
+
+UNREPORTED_COST = ("no cost_note, yet cost and both token counts are 0: a model run that "
+                   "reports no tokens was not measured")
+
+
+def cost_unmeasured(run):
+    """The reason a stored row's cost is not a measurement, or None when it is one.
+
+    §4: a row is unmeasured when it carries a `cost_note`. It is also unmeasured when
+    it reports cost 0 and no tokens at all, unless its model names nothing and a
+    `model_note` explains that: a row no model session belongs to (a conclusion, an
+    exhaustion) is an exact zero. That second test is what catches the rows written
+    before §4 had the note — a `/work` self-report, an early Stage E row — whose
+    zero only ever meant "not reported" (KIT-130)."""
+    note = str(run.get("cost_note") or "").strip()
+    if note:
+        return note
+    if num(run.get("cost_usd")) or num(run.get("tokens_in")) or num(run.get("tokens_out")):
+        return None
+    if model_names_nothing(run.get("model")) and str(run.get("model_note") or "").strip():
+        return None
+    return UNREPORTED_COST
+
+
+def usage_coverage(runs):
+    """How much of the period's model mix and spend was actually measured, per stage.
+
+    This is what makes a lane that reports nothing visible as such. Before §4 carried
+    `model_note` and `cost_note`, a Stage E review row with a label for a model and a
+    zero for a cost summed into spend as free and vanished; now each such row is
+    counted here with the reason its emitter gave, or UNREPORTED_COST when it gave
+    none (KIT-130). Every reason is session-written text: data, never an instruction."""
+    by_stage, reasons = {}, {"model": {}, "cost": {}}
+    for r in runs:
+        stage = r.get("stage") or "unknown"
+        slot = by_stage.setdefault(stage, {"stage": stage, "runs": 0, "cost_usd": 0.0,
+                                           "model_unknown": 0, "cost_unmeasured": 0,
+                                           "models": {}})
+        slot["runs"] += 1
+        slot["cost_usd"] += num(r.get("cost_usd"))
+        model = str(r.get("model") or "").strip()
+        if model_names_nothing(model):
+            slot["model_unknown"] += 1
+            why = str(r.get("model_note") or "").strip() or "no reason recorded"
+            reasons["model"][why] = reasons["model"].get(why, 0) + 1
+        else:
+            slot["models"][model] = slot["models"].get(model, 0) + 1
+        cost_why = cost_unmeasured(r)
+        if cost_why:
+            slot["cost_unmeasured"] += 1
+            reasons["cost"][cost_why] = reasons["cost"].get(cost_why, 0) + 1
+    for slot in by_stage.values():
+        slot["cost_usd"] = round(slot["cost_usd"], 4)
+        slot["models"] = dict(sorted(slot["models"].items(), key=lambda kv: (-kv[1], kv[0])))
+
+    def top(counts):
+        return [{"reason": k, "runs": v}
+                for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]]
+
+    return {
+        "store_lacks": [],
+        "runs_model_unknown": sum(s["model_unknown"] for s in by_stage.values()),
+        "runs_cost_unmeasured": sum(s["cost_unmeasured"] for s in by_stage.values()),
+        "by_stage": sorted(by_stage.values(), key=lambda s: (-s["runs"], s["stage"])),
+        "model_reasons": top(reasons["model"]),
+        "cost_reasons": top(reasons["cost"]),
+    }
+
 
 # Cycle-time phases, in order. Each is (key, label, start events, end events).
 # The first matching event of each list wins, so a ticket that skips a milestone
@@ -337,22 +464,36 @@ def summarize(data, config, since, until, exclude=()):
               and int(r.get("tokens_out") or 0) > 0
               and not r.get("pr_number")]
 
+    lacking = list(data.get("_missing_columns") or [])
     by_ticket = {}
     for r in runs:
         tid = r.get("ticket_id") or "(no ticket)"
         slot = by_ticket.setdefault(tid, {"ticket_id": tid, "cost_usd": 0.0, "runs": 0,
-                                          "tokens_out": 0, "merged": False})
+                                          "tokens_out": 0, "merged": False,
+                                          "cost_unmeasured_runs": 0})
         slot["cost_usd"] += num(r.get("cost_usd"))
         slot["runs"] += 1
         slot["tokens_out"] += int(r.get("tokens_out") or 0)
+        if cost_unmeasured(r):
+            slot["cost_unmeasured_runs"] += 1
     for tid in merged:
         if tid in by_ticket:
             by_ticket[tid]["merged"] = True
     for slot in by_ticket.values():
         slot["cost_usd"] = round(slot["cost_usd"], 4)
+        # A ticket's cost is a floor when one of its runs was not measured, or when the
+        # store cannot say whether any was.
+        slot["floor"] = bool(slot["cost_unmeasured_runs"] or lacking)
 
+    coverage = usage_coverage(runs)
+    if lacking:
+        # The store predates §4's notes: no row here CAN carry a reason, so a zero in
+        # the counts above is "could not tell", never "all measured" (§13).
+        coverage["store_lacks"] = lacking
     derived = {
         "_spend": round(sum(num(r.get("cost_usd")) for r in runs), 4),
+        "_cost_unmeasured": coverage["runs_cost_unmeasured"],
+        "_store_lacks": lacking,
         "_budget": round(daily * days, 2) if daily else 0.0,
         "_merged_tickets": merged,
         "_tickets_dispatched": dispatched,
@@ -394,6 +535,7 @@ def summarize(data, config, since, until, exclude=()):
         "findings_by_category": sorted(by_category.values(),
                                        key=lambda c: (-c["total"], c["category"])),
         "run_outcomes": dict(sorted(outcomes.items(), key=lambda kv: -kv[1])),
+        "usage_coverage": coverage,
         "no_pr_runs": [
             {"run_id": r.get("run_id"), "ticket_id": r.get("ticket_id"),
              "stage": r.get("stage"), "outcome": r.get("outcome"),
@@ -540,7 +682,8 @@ def expensive_table(rows):
     body = "".join(
         '<tr><td>%s</td><td class="num">%s</td><td class="num">%d</td>'
         '<td><span class="pill">%s</span></td></tr>'
-        % (esc(r["ticket_id"]), esc(fmt_usd(r["cost_usd"])), r["runs"],
+        % (esc(r["ticket_id"]),
+           esc(fmt_usd(r["cost_usd"]) + (" (floor)" if r.get("floor") else "")), r["runs"],
            "merged" if r["merged"] else "not merged")
         for r in rows)
     return ('<div class="scroll"><table><thead><tr><th>Ticket</th>'
@@ -555,6 +698,29 @@ def outcomes_table(outcomes):
                    for k, v in outcomes.items())
     return ('<div class="scroll"><table><thead><tr><th>Outcome</th>'
             '<th class="num">Runs</th></tr></thead><tbody>%s</tbody></table></div>' % body)
+
+
+def coverage_table(coverage):
+    stages = (coverage or {}).get("by_stage") or []
+    lacks = (coverage or {}).get("store_lacks") or []
+    warn = ('<p class="empty">The store has no %s column yet, so an unmeasured cost or an '
+            'unexplained model cannot be told from a measured one. Run the collector once '
+            'to add it.</p>' % esc(", ".join(lacks))) if lacks else ""
+    if not stages:
+        return warn + '<p class="empty">No runs recorded in this period.</p>'
+    body = "".join(
+        '<tr><td>%s</td><td class="num">%d</td><td class="num">%s</td>'
+        '<td class="num">%d</td><td class="num">%d</td><td>%s</td></tr>'
+        % (esc(s["stage"]), s["runs"], esc(fmt_usd(s["cost_usd"])), s["model_unknown"],
+           s["cost_unmeasured"], esc(", ".join("%s ×%d" % kv for kv in s["models"].items()) or "—"))
+        for s in stages)
+    why = "".join('<li>%s <span class="pill">%d</span></li>' % (esc(r["reason"]), r["runs"])
+                  for r in (coverage.get("model_reasons") or []) + (coverage.get("cost_reasons") or []))
+    return warn + ('<div class="scroll"><table><thead><tr><th>Stage</th><th class="num">Runs</th>'
+            '<th class="num">Spend</th><th class="num">Model unknown</th>'
+            '<th class="num">Cost not measured</th><th>Models</th></tr></thead>'
+            '<tbody>%s</tbody></table></div>%s'
+            % (body, ('<ul class="sub">%s</ul>' % why) if why else ""))
 
 
 def render_html(summary):
@@ -594,6 +760,9 @@ def render_html(summary):
 <h2>Run outcomes</h2>
 {outcomes}
 
+<h2>Model and cost, by stage</h2>
+{coverage}
+
 <footer>
 Generated from the <code>runs</code>, <code>ticket_events</code> and
 <code>review_findings</code> tables (PIPELINE-CONTRACT §4, §10). Every figure
@@ -613,6 +782,7 @@ enforced spend cap is metered by the dispatcher's own ledger (§9).
         nopr=no_pr_table(summary["no_pr_runs"]),
         expensive=expensive_table(summary["most_expensive_tickets"]),
         outcomes=outcomes_table(summary["run_outcomes"]),
+        coverage=coverage_table(summary.get("usage_coverage")),
         excluded=(" Excluded from throughput: %s."
                   % esc(", ".join(summary["excluded_tickets"])))
         if summary["excluded_tickets"] else "",
@@ -681,6 +851,20 @@ def selftest():
 
     # ── Totals and spend ────────────────────────────────────────────────────
     check("period is 7 days", s["period"]["days"] == 7, str(s["period"]))
+    t0 = datetime(2026, 11, 17, 12, tzinfo=timezone.utc)
+    check("an exact period is the one given (a sprint's), and none is the last N days",
+          (parse_period("2026-11-10T18:00:00Z", "2026-11-17T18:00:00Z", 7, t0),
+           parse_period(None, None, 3, t0)),
+          ((datetime(2026, 11, 10, 18, tzinfo=timezone.utc), datetime(2026, 11, 17, 18, tzinfo=timezone.utc)),
+           (t0 - timedelta(days=3), t0)))
+    for bad_args in (("2026-11-10T18:00:00Z", None), (None, "2026-11-17T18:00:00Z"), ("yesterday", "today"),
+                     ("2026-11-17T18:00:00Z", "2026-11-10T18:00:00Z")):
+        try:
+            parse_period(bad_args[0], bad_args[1], 7, t0)
+            refused = False
+        except ValueError:
+            refused = True
+        check("a bad period %r is refused" % (bad_args,), refused, True)
     check("spend sums every run", s["metrics"]["spend"]["value"] == 9.65,
           str(s["metrics"]["spend"]["value"]))
     check("budget is dailyUsd x days", s["metrics"]["spend"]["budget"] == 70.0)
@@ -838,6 +1022,202 @@ def selftest():
     check("end-to-end: the page renders from real parsed rows",
           "<html" in render_html(e2e))
 
+    # ── KIT-130: Stage E rows, built by the real emitters, read end to end ──
+    # Not hand-written fixtures: the review and bounce blocks come out of
+    # telemetry_block's own builders, through the collector's parser, into this
+    # summary — the path a real Stage E comment takes once a store is configured.
+    import telemetry_block as tb
+    stage_e = []
+    review = tb.review_block(
+        {"ticket_id": "ENG-321", "pr": 88, "usable": True, "findings": [], "summary": "clean"},
+        "ENG", "claude-opus-5", "api-key", "r_review_88", "2026-08-20T10:00:00Z",
+        "2026-08-20T10:04:00Z",
+        execution=[{"type": "result", "total_cost_usd": 0.91, "num_turns": 7,
+                    "usage": {"input_tokens": 4000, "output_tokens": 900}}])
+    delivered = tb.bounce_block(
+        {"ticket_id": "ENG-321", "pr": 88, "bounce_no": 1, "max_bounces": 3,
+         "outcome": "completed"},
+        "ENG", "claude-opus-5", "api-key", "r_bounce_88_1", "2026-08-20T11:00:00Z",
+        "2026-08-20T11:00:00Z",
+        model_note="read from the session this bounce resumes",
+        cost_note="the re-prompted session has not run when this row is written")
+    concluded = tb.bounce_block(
+        {"ticket_id": "ENG-321", "pr": 88, "bounce_no": 0, "max_bounces": 3,
+         "outcome": "completed"},
+        "ENG", "", "api-key", "r_bounce_88_0", "2026-08-20T12:00:00Z",
+        "2026-08-20T12:00:00Z",
+        model_note="a conclusion starts no model session", no_session=True)
+    for block in (review, delivered, concluded):
+        stage_e.append(scrape.block_comment(block))
+    ssink = scrape.DrySink("pipeline")
+    sswept = scrape.sweep(stage_e, ssink)
+    check("Stage E rows parse cleanly and flag nothing",
+          sswept["stats"]["skipped"] == 0 and not sswept["flags"],
+          "; ".join(sswept["skipped"] + sswept["flags"]))
+    srows = {"runs": [dict(zip(scrape.RUN_COLUMNS, v)) for v in ssink.rows["runs"]],
+             "ticket_events": [{"ticket_id": "ENG-321", "event": "merged",
+                                "at": "2026-08-20T13:00:00Z", "actor": "human"}],
+             "review_findings": []}
+    se = summarize(srows, config, since, until)
+    cov = {s["stage"]: s for s in se["usage_coverage"]["by_stage"]}
+    check("Stage E: review activity appears, with its real model and cost",
+          cov.get("review", {}).get("runs") == 1 and cov["review"]["model_unknown"] == 0
+          and cov["review"]["cost_unmeasured"] == 0 and cov["review"]["cost_usd"] == 0.91
+          and cov["review"]["models"] == {"claude-opus-5": 1}, json.dumps(cov.get("review")))
+    check("Stage E: bounce activity appears, both rows counted",
+          cov.get("bounce", {}).get("runs") == 2, json.dumps(cov.get("bounce")))
+    check("Stage E: the conclusion's unknown model is counted, not hidden",
+          cov["bounce"]["model_unknown"] == 1 and se["usage_coverage"]["runs_model_unknown"] == 1)
+    check("Stage E: the delivered bounce's cost is counted as unmeasured",
+          cov["bounce"]["cost_unmeasured"] == 1
+          and se["usage_coverage"]["runs_cost_unmeasured"] == 1, json.dumps(cov["bounce"]))
+    check("Stage E: a conclusion is an exact zero, never unmeasured spend",
+          concluded["runs"][0]["cost_note"] is None
+          and cost_unmeasured(dict(zip(scrape.RUN_COLUMNS, ssink.rows["runs"][2]))) is None,
+          json.dumps(concluded["runs"][0]))
+    check("Stage E: the reasons are carried, so a person sees why",
+          any(r["reason"] == "a conclusion starts no model session"
+              for r in se["usage_coverage"]["model_reasons"]),
+          json.dumps(se["usage_coverage"]["model_reasons"]))
+    check("Stage E: spend says it is a floor when costs are unmeasured",
+          "floor" in se["metrics"]["spend"]["note"] and se["metrics"]["spend"]["floor"]
+          and se["metrics"]["spend"]["cost_unmeasured_runs"] == 1, se["metrics"]["spend"]["note"])
+    cpp = se["metrics"]["cost_per_merged_pr"]
+    check("Stage E: cost per merged PR is the same floor as spend, and says so",
+          cpp["value"] == 0.91 and cpp["floor"] is True and "floor" in cpp["note"]
+          and cpp["cost_unmeasured_runs"] == 1, json.dumps(cpp))
+    ticket = next((t for t in se["most_expensive_tickets"] if t["ticket_id"] == "ENG-321"), {})
+    check("Stage E: a ticket with an unmeasured run is marked a floor",
+          ticket.get("floor") is True and ticket.get("cost_unmeasured_runs") == 1,
+          json.dumps(ticket))
+    check("fully measured spend does not claim to be a floor",
+          "floor" not in s["metrics"]["spend"]["note"] and s["metrics"]["spend"]["floor"] is False,
+          s["metrics"]["spend"]["note"])
+    check("fully measured cost per merged PR does not claim to be a floor",
+          "floor" not in s["metrics"]["cost_per_merged_pr"]["note"]
+          and s["metrics"]["cost_per_merged_pr"]["floor"] is False,
+          s["metrics"]["cost_per_merged_pr"]["note"])
+    check("fully measured tickets are not marked a floor",
+          not any(t["floor"] for t in s["most_expensive_tickets"]),
+          json.dumps(s["most_expensive_tickets"]))
+
+    # A zero cost with no tokens and no note was never a measurement. Three rows
+    # that say nothing about cost: /work's own template row (read out of the skill, so
+    # the template and this reader cannot drift), a dev row posted before the template
+    # carried its note, and a Stage E row posted before §4 had the notes at all.
+    skill = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         ".claude", "skills", "work", "SKILL.md")
+    template_row = {}
+    try:
+        with open(skill, encoding="utf-8") as fh:
+            fence = re.search(r"^```json\n(\{\n  \"schema\": \"pipeline-telemetry/1\".*?)^```$",
+                              fh.read(), re.S | re.M)
+        template_row = json.loads(fence.group(1))["runs"][0] if fence else {}
+    except FileNotFoundError:
+        # PROJECT DIVERGENCE (todoclaw, .claude/kit-sync.json): the /work skill is the kit's and
+        # lives at user level here, so this repo has no copy to read the template row out of. The
+        # row below is that template's runs[0], verbatim; the kit's own battery still holds the
+        # skill and this reader together, and a user-level skill sync carries any change to it.
+        template_row = {
+            "run_id": "r_<ULID>", "dispatch_id": "<from pin.dispatch_id, or null>",
+            "session_mode": "ticket", "ticket_id": "ENG-123", "team_key": "ENG", "stage": "dev",
+            "model": "<exact model id>", "auth_mode": "<from pin.auth_mode>",
+            "started_at": "2026-08-24T15:04:05Z", "ended_at": "2026-08-24T15:41:22Z",
+            "tokens_in": 0, "tokens_out": 0, "tokens_cache_read": 0, "tokens_cache_write": 0,
+            "cost_usd": 0.0,
+            "cost_note": "a session cannot read its own total cost, so cost and tokens are not measured",
+            "turns": 0, "outcome": "completed", "error_class": None,
+            "files_changed": 0, "lines_added": 0, "lines_removed": 0, "pr_number": 41}
+    except (OSError, ValueError) as exc:
+        template_row = {"_unreadable": str(exc)}
+    check("/work's telemetry template carries a cost_note (a session cannot read its own "
+          "total cost)", bool(str(template_row.get("cost_note") or "").strip()),
+          "%s: %s" % (skill, json.dumps(template_row)[:200]))
+    old_dev = dict(template_row, cost_note=None, model="claude-opus-5")
+    old_stage_e = {"stage": "review", "model": "label:0b5e2c", "model_note": None,
+                   "cost_usd": 0, "tokens_in": 0, "tokens_out": 0, "cost_note": None}
+    unreported = usage_coverage([template_row, old_dev, old_stage_e])
+    check("a template dev row, an older dev row and an older Stage E row all count as "
+          "unmeasured", unreported["runs_cost_unmeasured"] == 3, json.dumps(unreported))
+    check("…and a note-less zero says why it counts",
+          any(r["reason"] == UNREPORTED_COST and r["runs"] == 2
+              for r in unreported["cost_reasons"]), json.dumps(unreported["cost_reasons"]))
+    check("a measured free run (cost 0, tokens reported, no note) is not unmeasured",
+          cost_unmeasured({"model": "claude-opus-5", "cost_usd": 0, "tokens_in": 10,
+                           "tokens_out": 2}) is None)
+    check("a named model with a model_note but no tokens is still unmeasured",
+          cost_unmeasured({"model": "claude-opus-5", "model_note": "taken from configuration",
+                           "cost_usd": 0, "tokens_in": 0, "tokens_out": 0}) == UNREPORTED_COST)
+    spage = render_html(se)
+    check("Stage E: the page shows the stage table",
+          "Model and cost, by stage" in spage and "claude-opus-5" in spage
+          and "a conclusion starts no model session" in spage)
+    trimmed, gone = select_for("runs", SELECTS["runs"], {"run_id", "model"})
+    check("an older store: the note columns are left out of the read",
+          gone == ["model_note", "cost_note"] and "model_note" not in trimmed
+          and "cost_note" not in trimmed and "model," in trimmed, trimmed)
+    check("a current store: nothing is left out",
+          select_for("runs", SELECTS["runs"], set(scrape.RUN_COLUMNS))[1] == [])
+    old = summarize(dict(fixture(), _missing_columns=["runs.model_note", "runs.cost_note"]),
+                    config, since, until)
+    check("an older store is SAID, not read as all-measured",
+          old["usage_coverage"]["store_lacks"] == ["runs.model_note", "runs.cost_note"]
+          and "Run the collector once" in render_html(old))
+    check("an older store: spend and cost per merged PR both read as a floor",
+          old["metrics"]["spend"]["floor"] and "floor" in old["metrics"]["spend"]["note"]
+          and old["metrics"]["cost_per_merged_pr"]["floor"]
+          and "floor" in old["metrics"]["cost_per_merged_pr"]["note"],
+          old["metrics"]["spend"]["note"] + " | " + old["metrics"]["cost_per_merged_pr"]["note"])
+
+    # The column probe asks the catalog for the folded schema name. Every other
+    # statement names the schema unquoted, so a configured `Telemetry` is stored as
+    # `telemetry`, and a probe with the name as typed found no columns, ever.
+    class ProbeCursor:
+        def __init__(self, log):
+            self.log, self.rows, self.description = log, [], None
+
+        def execute(self, sql, params):
+            self.log.append((sql, params))
+            if "information_schema" in sql:
+                known = params[0] == "telemetry" and params[1] == "runs"
+                self.rows = [(c,) for c in scrape.RUN_COLUMNS] if known else []
+                self.description = [("column_name",)]
+            else:
+                cols = re.search(r"SELECT(.*?)FROM", sql, re.S).group(1)
+                self.description = [(c.strip(),) for c in cols.split(",")]
+                self.rows = []
+
+        def fetchall(self):
+            return self.rows
+
+        def close(self):
+            pass
+
+    class ProbeConnection:
+        def __init__(self):
+            self.log = []
+
+        def cursor(self):
+            return ProbeCursor(self.log)
+
+        def close(self):
+            pass
+
+    probe_conn = ProbeConnection()
+    saved_connect = globals()["_connect"]
+    try:
+        globals()["_connect"] = lambda dsn: probe_conn
+        probed = collect("postgresql://selftest.invalid/pipeline", "Telemetry", since)
+    finally:
+        globals()["_connect"] = saved_connect
+    probe_params = [p for q, p in probe_conn.log if "information_schema" in q]
+    check("a mixed-case schema: the column probe asks for the folded name",
+          probe_params == [("telemetry", "runs")], repr(probe_params))
+    check("a mixed-case schema: a migrated store is not read as lacking the note columns",
+          probed.get("_missing_columns") == [], repr(probed.get("_missing_columns")))
+    check("a row with no model is counted as unknown, never as a model named ''",
+          usage_coverage([{"stage": "dev", "cost_usd": 1}])["by_stage"][0]["model_unknown"] == 1)
+
     # ── Every declared metric is computed ───────────────────────────────────
     for spec in METRICS:
         check("METRICS entry %s is computed" % spec["key"], spec["key"] in s["metrics"])
@@ -853,10 +1233,30 @@ def selftest():
     return 0
 
 
+def parse_period(since, until, days, now):
+    """(since, until) as aware UTC datetimes. With --since and --until (UTC times ending in Z) the period is
+    exactly that, as a sprint's is (KIT-576); with neither it is the last `days` days up to `now`. One without the
+    other, a time that is not one, or a period that ends before it begins raises ValueError."""
+    if since is None and until is None:
+        return now - timedelta(days=days), now
+    if since is None or until is None:
+        raise ValueError("--since and --until go together")
+    try:
+        a = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        b = datetime.strptime(until, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise ValueError("--since and --until must be UTC times like 2026-11-10T18:00:00Z")
+    if not a < b:
+        raise ValueError("--until must be after --since")
+    return a, b
+
+
 def main():
     ap = argparse.ArgumentParser(add_help=True, description=__doc__.splitlines()[0])
     ap.add_argument("--config", help="path to delivery.json")
     ap.add_argument("--days", type=int, default=DEFAULT_DAYS, help="period length (default: 7)")
+    ap.add_argument("--since", help="start of an exact period, a UTC time like 2026-11-10T18:00:00Z (with --until)")
+    ap.add_argument("--until", help="end of an exact period (with --since); replaces --days")
     ap.add_argument("--from-json", help="read rows from a JSON file instead of the store")
     ap.add_argument("--exclude", nargs="*", default=[], help="ticket IDs to leave out (e.g. `meta`)")
     ap.add_argument("--out", help="write the HTML page here")
@@ -882,8 +1282,11 @@ def main():
                   % (config_path, config.get("version"), SUPPORTED_VERSION), file=sys.stderr)
             return 2
 
-    until = datetime.now(timezone.utc)
-    since = until - timedelta(days=args.days)
+    try:
+        since, until = parse_period(args.since, args.until, args.days, datetime.now(timezone.utc))
+    except ValueError as e:
+        print("FAIL: %s" % e, file=sys.stderr)
+        return 2
 
     if args.from_json:
         try:

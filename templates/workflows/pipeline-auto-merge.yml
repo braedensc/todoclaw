@@ -83,7 +83,7 @@ jobs:
     # `pull_request` reaches the revoke job only — a push is never an occasion to
     # grant auto-merge, only to take it away.
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -167,7 +167,13 @@ jobs:
           git fetch --no-tags origin "$BASE" "$HEAD" 2>/dev/null || true
 
           # ── The diff, from git, not from the PR's own description of itself ──
-          git diff --name-only "$BASE...$HEAD" > "$E/changed.txt" || true
+          # No `|| true` (contract §13). An empty changed.txt is what a failed
+          # `git diff` leaves behind, and check_auto_merge.py's risk-paths gate
+          # reads an empty list as "0 changed file(s), none risk-allowlisted" —
+          # i.e. the gate that keeps auto-merge away from `.claude/hooks/**`
+          # would PASS on a diff nobody managed to compute. `set -e` makes that
+          # a failed job instead, which is what the next two lines already do.
+          git diff --name-only "$BASE...$HEAD" > "$E/changed.txt"
           add=$(git diff --numstat "$BASE...$HEAD" | awk '{a+=$1} END {print a+0}')
           del=$(git diff --numstat "$BASE...$HEAD" | awk '{d+=$2} END {print d+0}')
           echo "added=$add" >> "$GITHUB_OUTPUT"
@@ -193,19 +199,34 @@ jobs:
           # with `jobs.fix.name` in pipeline-bounce.yml.
           PRNUM=$(jq -r .number "$E/pr.json")
           PR_CREATED=$(jq -r .createdAt "$E/pr.json")
+          # COULD NOT LOOK is not NOTHING FOUND (§13, KIT-669): a listing that fails must
+          # never become an empty one, because an empty one counts 0 and 0 passes. A failed
+          # lookup writes `bounces=unknown`, which the gate holds on.
           n=0
-          gh api "repos/$REPO/actions/workflows/pipeline-bounce.yml/runs?per_page=100" \
-            > "$E/bounce-runs.json" 2>/dev/null || echo '{"workflow_runs":[]}' > "$E/bounce-runs.json"
-          runs=$(jq -r --arg since "$PR_CREATED" \
-                   '.workflow_runs[] | select($since == "" or .created_at >= $since) | .id' \
-                   "$E/bounce-runs.json")
+          lookup_failed=0
+          if gh api "repos/$REPO/actions/workflows/pipeline-bounce.yml/runs?per_page=100" \
+               > "$E/bounce-runs.json" 2>/dev/null; then
+            runs=$(jq -r --arg since "$PR_CREATED" \
+                     '.workflow_runs[] | select($since == "" or .created_at >= $since) | .id' \
+                     "$E/bounce-runs.json") || lookup_failed=1
+          else
+            runs=""
+            lookup_failed=1
+          fi
           for id in $runs; do
-            if gh api "repos/$REPO/actions/runs/$id/jobs?per_page=50" \
+            if ! fix_jobs=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=50" \
                  --jq ".jobs[] | select(.name | startswith(\"Fix PR #$PRNUM (\")) | .conclusion" \
-                 2>/dev/null | grep -qvE '^(skipped)?$'; then
+                 2>/dev/null); then
+              lookup_failed=1
+              break
+            fi
+            if printf '%s\n' "$fix_jobs" | grep -qvE '^(skipped)?$'; then
               n=$((n + 1))
             fi
           done
+          if [ "$lookup_failed" = 1 ]; then
+            n=unknown
+          fi
           echo "bounces=$n" >> "$GITHUB_OUTPUT"
           echo "Found $n prior bounce run(s) for PR #$PRNUM."
 
@@ -278,6 +299,19 @@ jobs:
             labels(first: 50) { nodes { id name } }
           """
 
+          # KIT-161: who moved an epic into `ready`, read from the tracker's history. The gate
+          # (scripts/check_auto_approve.py) approves a tree only when that person is on
+          # autonomy.epicApprovers; an epic whose mover cannot be read gets no `readyBy` and holds.
+          HISTORY = "history(first: 50) { nodes { createdAt actor { id } toState { id } } }"
+
+          def ready_by(n, ready_id):
+              moves = [h for h in ((n.get("history") or {}).get("nodes") or [])
+                       if ready_id and (h.get("toState") or {}).get("id") == ready_id]
+              if not moves:
+                  return None
+              return ((max(moves, key=lambda h: h.get("createdAt") or "").get("actor") or {}).get("id")
+                      or None)
+
           def shape(n):
               return {
                   "id": n["identifier"], "title": n.get("title") or "",
@@ -302,10 +336,11 @@ jobs:
 
           epics = {}
           if t["parentId"]:
-              enode = gql("query($id: String!) { issue(id: $id) { %s } }" % FIELDS,
+              enode = gql("query($id: String!) { issue(id: $id) { %s %s } }" % (FIELDS, HISTORY),
                           {"id": t["parentId"]}).get("issue")
               if enode:
-                  epics[enode["identifier"]] = shape(enode)
+                  ready_id = ((cfg.get("linear") or {}).get("stateIds") or {}).get("ready")
+                  epics[enode["identifier"]] = dict(shape(enode), readyBy=ready_by(enode, ready_id))
 
           json.dump({"tickets": [t]}, open(os.path.join(E, "ticket.json"), "w"))
           json.dump({"epics": epics}, open(os.path.join(E, "epics.json"), "w"))
@@ -439,7 +474,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
